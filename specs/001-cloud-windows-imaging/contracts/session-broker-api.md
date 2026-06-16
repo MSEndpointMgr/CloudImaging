@@ -1,5 +1,16 @@
 # SessionBroker API Contract
 
+> Legacy / Superseded
+>
+> This document describes the pre-refactor SessionBroker design and is kept only
+> for migration context. It is not the source of truth for current
+> implementation.
+>
+> Use these documents instead:
+> - `api-overview.md`
+> - `device-gateway-api.md`
+> - `imaging-core-api.md`
+
 **Service**: `CloudImaging.SessionBroker`
 **Type**: Azure Function App v4, isolated worker, .NET 10
 **Visibility**: Public HTTPS endpoint

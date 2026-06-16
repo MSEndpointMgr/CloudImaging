@@ -1,5 +1,16 @@
 # SessionHandler API Contract
 
+> Legacy / Superseded
+>
+> This document describes the pre-refactor SessionHandler design and is kept
+> only for migration context. It is not the source of truth for current
+> implementation.
+>
+> Its responsibilities are now split across:
+> - `operator-api.md`
+> - `imaging-core-api.md`
+> - `api-overview.md`
+
 **Service**: `CloudImaging.SessionHandler`
 **Type**: Azure Function App v4, isolated worker, .NET 10
 **Visibility**: Private -- accessible only via Private Endpoint (no public network access, FR-020)

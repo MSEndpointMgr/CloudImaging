@@ -1,191 +1,175 @@
 # Data Model: Cloud Windows Imaging
 
-**Feature**: 001-cloud-windows-imaging
-**Date**: 2026-06-14
-**Storage**: Azure Table Storage (entities) + Azure Blob Storage (files)
+**Feature**: 001-cloud-windows-imaging  
+**Date**: 2026-06-16  
+**Storage Baseline**: Azure Table Storage (metadata/state) + Azure Blob Storage (artifacts)
 
----
+## Entity: DeviceSession
 
-## Entities
+Represents one imaging workflow instance for one device.
 
-### DeviceSession
+**Suggested table**: `DeviceSessions`
+- `PartitionKey`: state bucket or date bucket (implementation choice)
+- `RowKey`: `sessionId` (UUID)
 
-Represents a single imaging session for one bare-metal device, from initial
-WPF client registration through imaging completion.
+| Field | Type | Description |
+|------|------|-------------|
+| sessionId | string (UUID) | Unique identifier for session. |
+| passcodeHash | string | Hash of one-time pairing passcode; passcode plaintext is never persisted. |
+| passcodeExpiresAt | datetime | Expiry for one-time passcode. |
+| passcodeConsumedAt | datetime? | Timestamp when passcode was successfully used for coupling. |
+| deviceSessionTokenRef | string | Reference to issued device-session token material/claims id. |
+| status | enum | `SessionInit`, `SessionAllowed`, `SessionAssigned`, `SessionStarted`, `SessionInProgress`, `SessionCompleted`, `SessionFailed`. |
+| assignedImageId | string? | OS image assignment reference. |
+| currentSasUrl | string? | Current SAS URL issued for the assigned image. |
+| currentSasExpiresAt | datetime? | Expiry for current SAS URL. |
+| lastHeartbeatAt | datetime? | Last client polling/progress heartbeat timestamp. |
+| currentStepName | string? | Last known imaging step name. |
+| overallProgressPercent | int? | Session-level imaging completion percentage for portal display. |
+| errorDetail | string? | Terminal or current error detail. |
+| createdAt | datetime | Session creation timestamp. |
+| terminalAt | datetime? | Timestamp when session became completed/failed. |
+| purgeAt | datetime? | Retention boundary for terminal state purge. |
+| deviceInfoJson | string? | Optional model/serial/mac payload. |
 
-**Table Storage**: table `DeviceSessions`
-- PartitionKey: `status` (enables efficient list-by-status queries)
-- RowKey: `sessionId` (UUID, globally unique)
+### Lifecycle Rules
 
-| Field | Type | Notes |
-|-------|------|-------|
-| sessionId | string (UUID) | Primary identifier. RowKey. |
-| passcode | string (6 chars, alphanumeric) | Displayed on WPF client; entered by technician in portal to couple session. Uppercase only, excludes ambiguous chars (0/O, 1/I/L). |
-| status | enum | `Waiting`, `Coupled`, `Imaging`, `Completed`, `Failed` |
-| assignedImageId | string (UUID) or null | Set when technician assigns an OS image. References OSImageMetadata.imageId. |
-| sessionToken | string | Signed JWT issued by SessionBroker to the WPF client. Not returned to the Admin Portal. |
-| sessionTokenExpiry | DateTime (UTC) | When the session token expires (default: 8 hours from creation). |
-| createdAt | DateTime (UTC) | When WPF client registered the session. |
-| coupledAt | DateTime (UTC) or null | When technician coupled the session via passcode. |
-| imagingStartedAt | DateTime (UTC) or null | When the WPF client began downloading the image. |
-| completedAt | DateTime (UTC) or null | When imaging completed (success or failure). |
-| lastProgressAt | DateTime (UTC) or null | Timestamp of most recent ImagingStep update. |
-| errorDetail | string or null | Set on failure; included in portal display and WPF error screen. |
-| deviceInfo | string (JSON) | Optional hardware info reported by WPF client at startup (model, serial, MAC). |
+1. `SessionAssigned -> SessionStarted` is automatic on next poll when assignment details are requested.
+2. Pre-imaging states expire after 30 minutes of inactivity.
+3. In-progress states fail after heartbeat timeout policy (> 4 hours without heartbeat).
+4. Terminal states are purged after 24 hours.
+5. Pairing passcode is invalidated immediately after successful coupling or expiry.
 
-**State transitions**:
-```
-[WPF registers] --> Waiting
-[Technician enters passcode + assigns image] --> Coupled
-[WPF begins download] --> Imaging
-[Imaging pipeline completes] --> Completed
-[Any unrecoverable error] --> Failed
-```
+## Entity: ImagingStep
 
-**Passcode uniqueness**: Passcode MUST be unique among all sessions in
-`Waiting` or `Coupled` status. SessionHandler enforces this at creation time
-with a conditional write. Passcode is freed when a session reaches `Completed`
-or `Failed`.
+Tracks per-step execution progress for a device session.
 
----
+**Suggested table**: `ImagingSteps`
+- `PartitionKey`: `sessionId`
+- `RowKey`: step identifier
 
-### ImagingStep
+| Field | Type | Description |
+|------|------|-------------|
+| sessionId | string (UUID) | Parent session id. |
+| stepName | string | Step key (`DownloadStarted`, `ApplyStarted`, etc.). |
+| status | enum | `Pending`, `InProgress`, `Completed`, `Failed`. |
+| startedAt | datetime? | Step start timestamp. |
+| completedAt | datetime? | Step completion timestamp. |
+| errorDetail | string? | Step-level failure detail. |
+| progressPercent | int? | Optional per-step progress percentage. |
 
-Represents one discrete step in the imaging pipeline for a device session.
-Used to drive the real-time per-step progress display in both the WPF client
-and the Admin Portal.
+## Entity: OSImage
 
-**Table Storage**: table `ImagingSteps`
-- PartitionKey: `sessionId`
-- RowKey: `stepName`
+Catalog metadata for Windows deployment images.
 
-| Field | Type | Notes |
-|-------|------|-------|
-| sessionId | string (UUID) | Foreign key to DeviceSession. PartitionKey. |
-| stepName | string | RowKey. One of the standard step names listed below. |
-| status | enum | `Pending`, `InProgress`, `Completed`, `Failed` |
-| startedAt | DateTime (UTC) or null | When the WPF client reported this step as started. |
-| completedAt | DateTime (UTC) or null | When the WPF client reported this step as finished. |
-| errorDetail | string or null | Error message if status is Failed. |
+**Suggested table**: `OSImages`
+- `PartitionKey`: `catalog`
+- `RowKey`: `imageId`
 
-**Standard step names** (in order):
-1. `SessionRegistered`
-2. `SessionCoupled`
-3. `CredentialIssued`
-4. `DownloadStarted`
-5. `DownloadCompleted`
-6. `ApplyStarted`
-7. `ApplyCompleted`
-8. `Finalizing`
-9. `Complete`
+| Field | Type | Description |
+|------|------|-------------|
+| imageId | string (UUID) | Unique image identifier. |
+| name | string | Display name. |
+| version | string | Version label. |
+| description | string | Admin description. |
+| blobContainerName | string | Storage container. |
+| blobName | string | Blob path/name. |
+| fileSizeBytes | long | Artifact size. |
+| isActive | bool | Assignment visibility flag. |
+| activeSessionCount | int | Active usage guard for deletion policy. |
+| uploadedAt | datetime | Upload timestamp. |
+| uploadedBy | string | Operator identity reference. |
 
-WPF client reports steps sequentially. Admin Portal shows steps as a progress
-timeline per device.
+## Entity: BootImage
 
----
+Catalog metadata for generated WinPE+Client boot artifacts.
 
-### OSImageMetadata
+**Suggested table**: `BootImages`
+- `PartitionKey`: `catalog`
+- `RowKey`: `bootImageId`
 
-Describes a Windows OS image file stored in Blob Storage. Used to build the
-assignment catalog in the Admin Portal and to resolve the blob path when
-issuing a SAS token.
+| Field | Type | Description |
+|------|------|-------------|
+| bootImageId | string (UUID) | Unique boot image identifier. |
+| version | string | Boot image version label. |
+| manifestVersion | string | Embedded manifest schema version. |
+| blobContainerName | string | Storage container. |
+| blobName | string | Blob path/name. |
+| fileSizeBytes | long | Artifact size. |
+| checksum | string | Integrity checksum. |
+| isActive | bool | Availability flag. |
+| createdAt | datetime | Artifact creation timestamp. |
+| createdBy | string | Operator identity reference. |
+| notes | string? | Optional metadata notes. |
 
-**Table Storage**: table `OSImages`
-- PartitionKey: `"catalog"` (all images in one partition for simple list queries)
-- RowKey: `imageId` (UUID)
+## Entity: BrandingConfiguration
 
-| Field | Type | Notes |
-|-------|------|-------|
-| imageId | string (UUID) | RowKey. Referenced by DeviceSession.assignedImageId. |
-| name | string | Human-readable display name, e.g., "Windows 11 24H2 Enterprise". |
-| version | string | Version tag, e.g., "24H2" or "1.0.3". |
-| description | string | Optional notes for technicians. |
-| blobContainerName | string | Blob Storage container name where the file lives. |
-| blobName | string | Blob name (path within container), e.g., "win11-24h2-ent.wim". |
-| fileSizeBytes | long | Used to display download size estimate in WPF UI. |
-| uploadedAt | DateTime (UTC) | When the image was uploaded via the Admin Portal. |
-| uploadedBy | string | Entra ID object ID of the admin who uploaded. |
-| activeSessionCount | int | Count of sessions currently in Imaging status assigned to this image. Prevents deletion when > 0. Updated transactionally by SessionHandler. |
-| isActive | bool | Soft-enable/disable; inactive images do not appear in the assignment catalog. |
+Runtime UI branding configuration.
 
----
+**Suggested table**: `Configuration`
+- `PartitionKey`: `branding`
+- `RowKey`: `default`
 
-### BrandingConfiguration
+| Field | Type | Description |
+|------|------|-------------|
+| applicationName | string | App name shown in UI. |
+| logoUrl | string? | Logo blob URL. |
+| primaryColorHsl | string | Primary color token. |
+| accentColorHsl | string | Accent color token. |
+| updatedAt | datetime | Last update timestamp. |
+| updatedBy | string | Operator identity reference. |
 
-Stores the portal's configurable branding settings. Single row (one branding
-config per deployment).
+## Value Object: SASToken (Transient)
 
-**Table Storage**: table `Configuration`
-- PartitionKey: `"branding"`
-- RowKey: `"default"`
+Returned to clients and not persisted as a standalone table row.
 
-| Field | Type | Notes |
-|-------|------|-------|
-| applicationName | string | Display name shown in the portal header and browser title. |
-| logoUrl | string or null | URL of logo blob in Blob Storage. Null uses the default placeholder. |
-| primaryColorHsl | string | HSL value, e.g., `"210 100% 50%"`. Maps to `--primary` CSS variable. |
-| accentColorHsl | string | HSL value. Maps to `--accent` CSS variable. |
-| updatedAt | DateTime (UTC) | Last modification timestamp. |
-| updatedBy | string | Entra ID object ID of the admin who last updated. |
+| Field | Type | Description |
+|------|------|-------------|
+| downloadUrl | string | Time-limited SAS URL. |
+| expiresAt | datetime | SAS expiry. |
+| targetArtifactId | string | Related `imageId` or `bootImageId`. |
+| sessionId | string? | Session context when applicable. |
 
-Branding values are served by the Admin Portal Express backend at startup and
-injected as CSS custom properties into `client/src/index.css` at runtime.
-Changes take effect on next page load without redeployment.
+## Value Object: BootImageManifest
 
----
+Manifest embedded in generated boot image payloads.
 
-## Transient Types (not persisted)
+| Field | Type | Description |
+|------|------|-------------|
+| manifestVersion | string | Manifest schema version. |
+| imageVersion | string | Boot image version. |
+| createdAt | datetime | Manifest creation timestamp. |
+| winPeVersion | string | WinPE baseline version. |
+| clientVersion | string | Cloud Imaging Client version. |
+| componentChecksums | object | Integrity checksums per component. |
+| deploymentMetadata | object | Additional deployment metadata. |
 
-### SASCredential
+## Value Object: UsbPreparationManifest
 
-Returned to the WPF client upon session coupling and on refresh requests.
-Not stored; generated on demand by SessionHandler.
+Manifest written to prepared USB media.
 
-| Field | Type | Notes |
-|-------|------|-------|
-| downloadUrl | string | Full SAS URL for the assigned blob (includes SAS query parameters). |
-| expiresAt | DateTime (UTC) | When the SAS token expires (configurable, default: 4 hours from issue). |
-| fileSizeBytes | long | Duplicated from OSImageMetadata for WPF client display. |
+| Field | Type | Description |
+|------|------|-------------|
+| manifestVersion | string | Manifest schema version. |
+| preparedAt | datetime | Preparation timestamp. |
+| toolVersion | string | Media Builder app version. |
+| bootImageVersion | string | Deployed boot image version. |
+| selectedDiskId | string | Target disk identifier. |
+| partitionSchema | object | Two-partition layout details. |
+| validationResults | object | Disk/operation validation output. |
+| autoStartConfigured | bool | WinPE auto-start configuration flag. |
 
-### SessionToken
+## Relationship Summary
 
-Issued by SessionBroker to the WPF client at session registration. Signed JWT.
+- `DeviceSession` 1..* `ImagingStep`
+- `DeviceSession` *..1 `OSImage`
+- `BootImage` is managed separately from `OSImage`
+- `BrandingConfiguration` is singleton configuration
 
-| Claim | Value |
-|-------|-------|
-| `sub` | sessionId |
-| `jti` | unique token ID |
-| `iat` | issued-at (Unix timestamp) |
-| `exp` | expiry (Unix timestamp, default: 8 hours) |
-| `iss` | `"cloudimaging/session-broker"` |
+## Contract Alignment
 
----
-
-## Storage Layout
-
-```
-Azure Blob Storage
-  Container: os-images/
-    {imageId}/{blobName}          # OS image files (.wim / .esd)
-  Container: branding/
-    logo/{filename}               # Uploaded branding logos
-
-Azure Table Storage
-  Table: DeviceSessions           # DeviceSession entities
-  Table: ImagingSteps             # ImagingStep entities
-  Table: OSImages                 # OSImageMetadata entities
-  Table: Configuration            # BrandingConfiguration + future config rows
-```
-
----
-
-## Entity Relationships
-
-```
-DeviceSession (1) ----< (N) ImagingStep
-DeviceSession (N) >---- (1) OSImageMetadata
-BrandingConfiguration     (singleton, no FK)
-```
-
-All foreign key references are by ID only (no joins). Referential integrity is
-enforced by SessionHandler application logic, not by Table Storage.
+The model aligns to these contracts:
+- `contracts/device-gateway-api.md`
+- `contracts/operator-api.md`
+- `contracts/imaging-core-api.md`
+- `contracts/cloud-imaging-portal-api.md`

@@ -1,9 +1,9 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change  : 1.1.0 -> 1.2.0 (MINOR - stricter WPF threading and UI responsiveness policy)
-Modified        : Principle IV (zero UI freeze rule, explicit multithreading requirements)
-                  Development Workflow (added UI responsiveness gate, now 6 gates)
+Version change  : 1.3.0 -> 1.4.0 (MINOR - API topology and product naming alignment)
+Modified        : Project Architecture (ingress/core API separation)
+                  Principle III (stack-appropriate Cloud Imaging Portal and Media Builder integration testing)
 Added sections  : Project Architecture
 Removed sections: N/A
 Templates status:
@@ -17,19 +17,22 @@ Deferred TODOs  : none
 
 ## Project Architecture
 
-CloudImaging is a pure .NET 10 solution composed of four components that MUST
-be designed, built, and deployed as a coherent system:
+CloudImaging is a polyglot solution composed of six components that MUST be
+designed, built, and deployed as a coherent system:
 
 | Component | Runtime | Description |
 |-----------|---------|-------------|
-| **WPF Client** | .NET 10 / WinPE | Imaging client application running inside Windows PE on bare-metal devices. Operates under WinPE constraints: no persistent storage, limited memory, no full Windows shell. |
-| **Function App - Imaging** | .NET 10 / Azure Functions v4 (isolated) | Handles imaging workflow orchestration: job dispatch, status tracking, and device lifecycle events. |
-| **Function App - Backend** | .NET 10 / Azure Functions v4 (isolated) | Handles background processing: image management, blob operations, notification delivery, and scheduled tasks. |
-| **Admin Portal** | ASP.NET Core 10 / Azure App Service | Operational and administrative web interface for IT administrators. Single App Service deployment. |
+| **Cloud Imaging Client** | .NET 10 / WinPE | Imaging client application running inside Windows PE on bare-metal devices. Operates under WinPE constraints: no persistent storage, limited memory, no full Windows shell. |
+| **Device Gateway API** | .NET 10 / Azure Functions v4 (isolated) | Publicly reachable device-facing ingress for Cloud Imaging Client. Manages session bootstrap and device polling/progress relay. |
+| **Operator API** | .NET 10 / Azure Functions v4 (isolated) | Entra-authenticated operator-facing ingress for Cloud Imaging Portal and Cloud Imaging Media Builder. |
+| **Imaging Core API** | .NET 10 / Azure Functions v4 (isolated) | Private core orchestration API reachable only via Private Link from Device Gateway API and Operator API. Owns state transitions and SAS issuance. |
+| **Cloud Imaging Portal** | React 19 + TypeScript (frontend) on Azure Static Web Apps; Node.js 22 + Express + TypeScript (backend) on Azure App Service | Operational and administrative interface for IT administrators with authenticated APIs, dashboard workflows, and configurable branding. |
+| **Cloud Imaging Media Builder** | .NET 10 / Windows desktop (WPF) | Technician desktop application that generates boot images and prepares USB media with safe disk validation and progress reporting. |
 
-All four components target **net10.0** (or **net10.0-windows** for the WPF
-client). Shared business logic and contracts MUST live in dedicated class
-libraries referenced by each component - never duplicated.
+All .NET components target **net10.0** (or **net10.0-windows** for desktop/WPF
+applications). The Cloud Imaging Portal is TypeScript-based. Shared business logic and
+contracts MUST have a single source of truth per runtime boundary and MUST NOT
+be duplicated ad hoc.
 
 ## Core Principles
 
@@ -80,29 +83,34 @@ Integration tests are required for all boundaries where components communicate.
 
 - Every new HTTP/Function contract MUST have a corresponding contract test
   using `Microsoft.AspNetCore.Mvc.Testing` or the Azure Functions test host.
-- WPF client logic that does not depend on the Windows shell MUST be covered
+- Cloud Imaging Client logic that does not depend on the Windows shell MUST be covered
   by headless unit tests; UI interaction tests MUST use a WinPE-compatible
   test harness or be clearly marked as manual verification items in the spec.
+- Cloud Imaging Media Builder logic that does not depend on privileged OS APIs
+  MUST be covered by headless unit tests; privileged disk/boot operations MUST
+  be validated by integration tests or documented manual verification tasks.
 - Cloud provisioning workflows MUST have end-to-end smoke tests executed in a
   dedicated Azure staging environment (separate subscription or resource group)
   before any merge to main.
 - External service interactions (Azure APIs, Blob storage, Entra ID) MUST be
   tested against real endpoints in CI using short-lived managed identities and
   isolated resource groups - never mocked at the HTTP layer in integration tests.
-- The Admin Portal MUST have integration tests covering all authenticated routes
-  using `WebApplicationFactory<T>` with a test identity provider.
+- The Cloud Imaging Portal MUST have integration tests covering all authenticated
+  routes using a stack-appropriate host and HTTP harness: `WebApplicationFactory<T>`
+  for ASP.NET Core or Vitest + Supertest (or equivalent) for Node.js/Express.
 
 ### IV. User Experience Consistency
 
-All user-facing surfaces - the WPF imaging client, the Admin Portal, and any
-in-process status/error output - MUST conform to a single, consistent style.
+All user-facing surfaces - Cloud Imaging Client, Cloud Imaging Portal, Cloud Imaging
+Media Builder, and any in-process status/error output - MUST conform to a single,
+consistent style.
 
-**WPF Client (WinPE)**
+**Cloud Imaging Client (WinPE)**
 - The UI MUST function correctly in WinPE: no reliance on user profile, shell
   extensions, COM automation, or components absent from the WinPE image.
 - Workflows MUST be linear and touch-friendly; no more than three clicks/taps
   to reach any primary action.
-- The WPF client MUST be fully non-blocking on the UI thread. All I/O, network,
+- The Cloud Imaging Client MUST be fully non-blocking on the UI thread. All I/O, network,
   file, cryptographic, and CPU-intensive operations MUST execute off the
   dispatcher thread via asynchronous patterns or background workers.
 - UI thread work is limited to rendering, binding updates, and lightweight
@@ -114,12 +122,19 @@ in-process status/error output - MUST conform to a single, consistent style.
 - Error dialogs MUST include: what went wrong, likely cause, and a clear
   remediation instruction or support reference code.
 
-**Admin Portal**
+**Cloud Imaging Portal**
 - The portal MUST follow a consistent component library (agreed per feature
   plan); ad-hoc inline styles are forbidden.
 - All administrative actions with destructive or irreversible effects MUST
   require an explicit confirmation step.
 - The portal MUST be accessible to WCAG 2.1 AA standard.
+
+**Cloud Imaging Media Builder**
+- The app MUST be fully non-blocking on the UI thread during boot image
+  generation, download, partitioning, and deployment workflows.
+- Destructive disk operations MUST require explicit user confirmation and clear
+  target disk identification before execution.
+- Error dialogs MUST include a support reference code and remediation guidance.
 
 **All components**
 - All user-facing strings MUST use ASCII-only punctuation; no Unicode em-dashes,
@@ -134,18 +149,20 @@ Every feature touching the imaging pipeline MUST meet defined performance budget
 - **End-to-end provisioning**: Cloud image round-trip (PXE/network boot to
   first-boot-complete of the provisioned OS) MUST complete within 15 minutes
   for a reference workload on standard-tier Azure compute.
-- **WPF client startup**: The WPF client MUST reach its main window within
+- **Cloud Imaging Client startup**: The Cloud Imaging Client MUST reach its main window within
   5 seconds of process launch on hardware meeting the minimum WinPE spec
   (2 GB RAM, dual-core CPU).
-- **Function App cold start**: Both Function Apps MUST respond to their first
+- **Cloud Imaging Media Builder startup**: The Cloud Imaging Media Builder MUST
+  reach its main window within 5 seconds on a standard technician workstation.
+- **Function App cold start**: All Function Apps MUST respond to their first
   HTTP trigger within 3 seconds of a cold start in the Consumption or Flex
   Consumption plan.
-- **Admin Portal**: All server-rendered page responses MUST be <= 500 ms at
+- **Cloud Imaging Portal**: All server-rendered page responses MUST be <= 500 ms at
   p95; all API calls from the portal MUST be <= 300 ms at p95 under a
   50-concurrent-user load.
-- **Memory**: The WPF client MUST remain below 512 MB working set during
-  normal imaging; Function App instances MUST remain below 256 MB RSS under
-  steady-state load.
+- **Memory**: Cloud Imaging Client and Cloud Imaging Media Builder MUST each
+  remain below 512 MB working set during normal operation; Function App
+  instances MUST remain below 256 MB RSS under steady-state load.
 - Performance regressions > 10% from the recorded baseline MUST be treated as
   bugs and block merge until resolved.
 
@@ -157,7 +174,8 @@ This section elaborates the enforcement mechanism for Principle I.
   `Directory.Build.props` so the build itself rejects any warning.
 - Roslyn analyzers (Microsoft.CodeAnalysis.NetAnalyzers) MUST be enabled at
   the `Recommended` rule set or stricter.
-- All projects MUST target **net10.0**; the WPF client MUST target
+- All projects MUST target **net10.0**; Cloud Imaging Client and Cloud Imaging
+  Media Builder MUST target
   **net10.0-windows**. Deviating from .NET 10 requires a documented
   compatibility constraint approved in the feature plan.
 - Nullable reference types MUST be enabled (`<Nullable>enable</Nullable>`) in
@@ -182,9 +200,10 @@ before merge to `main`:
    (`dotnet format --verify-no-changes`).
 5. **Performance Gate**: No performance regression > 10% vs. the recorded
    baseline for affected pipeline stages.
-6. **UI Responsiveness Gate**: WPF client verification proves all long-running
-  operations execute off the UI thread, with no dispatcher block > 100 ms in
-  instrumentation traces for representative workflows.
+6. **UI Responsiveness Gate**: Cloud Imaging Client and Cloud Imaging Media
+  Builder verification proves all long-running operations execute off the UI
+  thread, with no dispatcher block > 100 ms in instrumentation traces for
+  representative workflows.
 
 Pull requests MUST be reviewed by at least one other engineer before merge.
 Auto-merge is permitted only when all six gates pass and at least one approval
@@ -207,4 +226,4 @@ All pull requests and code reviews MUST verify compliance with this
 constitution. Complexity MUST be justified against the principles above;
 unnecessary abstraction is a violation of Principle II and V.
 
-**Version**: 1.2.0 | **Ratified**: 2026-06-14 | **Last Amended**: 2026-06-14
+**Version**: 1.4.0 | **Ratified**: 2026-06-14 | **Last Amended**: 2026-06-15

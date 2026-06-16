@@ -1,0 +1,99 @@
+# Cloud Imaging Portal API Contract
+
+> Current authoritative portal-backend contract.
+
+**Service**: cloud-imaging-portal/server (Node.js + Express + TypeScript)  
+**Visibility**: Private backend for portal frontend  
+**Primary Consumer**: cloud-imaging-portal/client  
+**Auth**: Entra ID session/token validation on protected routes
+
+## Purpose
+
+Defines frontend-to-portal-backend endpoints. The backend then calls Operator API for business operations.
+
+## Core Responsibilities
+
+- Validate portal user authentication context.
+- Enforce backend-side authorization checks before calling Operator API.
+- Normalize and return ProblemDetails-compatible error responses.
+- Keep browser clients isolated from direct calls to Imaging Core API.
+
+## Base Path
+
+`/api`
+
+## Auth and Health
+
+- `GET /api/auth/me`
+  - Return authenticated user profile and role claims.
+- `GET /api/health`
+  - Health probe endpoint.
+
+## Session Operations
+
+- `GET /api/sessions`
+- `GET /api/sessions/{sessionId}`
+- `POST /api/sessions/couple`
+- `POST /api/sessions/bulk-assign`
+
+These routes proxy to Operator API session endpoints and surface the current session state, per-step status, and overall imaging completion percentage in the portal UI.
+
+## OS Image Operations
+
+- `GET /api/images`
+- `POST /api/images/upload`
+- `PATCH /api/images/{imageId}`
+- `DELETE /api/images/{imageId}`
+
+Metadata operations proxy through Operator API.
+
+Upload flow expectations:
+
+- `POST /api/images/upload` creates a staged upload session for an OS image artifact.
+- The browser uploads the OS image to Blob Storage in chunks through the portal backend, with progress and retry state visible in the UI.
+- The upload session uses a 4 MB default chunk size, 24-hour session TTL, and exponential retry for interrupted chunks.
+- The backend validates the final SHA256 checksum and only then calls the publish finalize step through Operator API.
+- The uploaded OS image remains unpublished and hidden from catalog queries until finalize publish completes.
+
+## Boot Image Operations
+
+- `GET /api/boot-images`
+- `POST /api/boot-images/upload`
+- `PATCH /api/boot-images/{bootImageId}`
+- `DELETE /api/boot-images/{bootImageId}`
+
+These routes support portal-side boot image lifecycle management and align with FR-063.
+
+Upload flow expectations:
+
+- `POST /api/boot-images/upload` creates a staged upload session for a WIM artifact.
+- The browser uploads the WIM directly to Blob Storage in chunks and shows progress and retry state.
+- The upload session uses the same resumable chunked-transfer expectations as OS image uploads.
+- The backend only calls the publish finalize step after the upload commits and validation succeeds.
+- The uploaded boot image remains unpublished and hidden from catalog queries until finalize publish completes.
+
+## Branding Operations
+
+- `GET /api/branding/public` (public read)
+- `GET /api/branding`
+- `PUT /api/branding`
+
+## Error Shape
+
+All error payloads return ProblemDetails-compatible structure:
+
+```json
+{
+  "type": "https://cloudimaging.io/errors/{error-code}",
+  "title": "string",
+  "status": 400,
+  "detail": "string",
+  "instance": "/api/..."
+}
+```
+
+## Non-Responsibilities
+
+- No direct browser call path to Imaging Core API.
+- No device bootstrap operations.
+- No bypass of Operator API authorization boundaries.
