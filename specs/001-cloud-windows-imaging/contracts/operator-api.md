@@ -20,8 +20,10 @@ Authenticated operator boundary for administrative and technician operations. Th
 
 ## App Roles
 
-- `CloudImagingPortal`: full operator/admin operations (sessions, OS images, branding, boot image lifecycle).
-- `CloudImagingMediaBuilder`: read boot images and request boot-image SAS URLs.
+> These are **service-level** app roles for service-to-service authorization on the Operator API. User-level access control (`CloudImagingAdministrator`, `CloudImagingTechnician`) is enforced upstream: at the Portal backend (FR-040a) and the Media Builder UI (FR-050b), using roles from the shared Entra ID enterprise app registration (FR-040b).
+
+- `CloudImagingPortal`: assigned to the Portal backend managed identity; grants full operator access (sessions, OS images, branding, boot image lifecycle).
+- `CloudImagingMediaBuilder`: assigned to the Media Builder service principal; grants read-only access to boot images and SAS token URL generation.
 
 ## App Role Authorization Matrix
 
@@ -29,9 +31,11 @@ Authenticated operator boundary for administrative and technician operations. Th
 |----------|-------------------|--------------------------|
 | GET /api/sessions | YES | NO |
 | POST /api/sessions/couple | YES | NO |
+| POST /api/sessions/{sessionId}/assign | YES | NO |
 | POST /api/sessions/bulk-assign | YES | NO |
 | GET /api/images | YES | NO |
-| POST /api/images | YES | NO |
+| POST /api/images/upload-session | YES | NO |
+| POST /api/images/{imageId}/upload/complete | YES | NO |
 | PATCH /api/images/{imageId} | YES | NO |
 | DELETE /api/images/{imageId} | YES | NO |
 | GET /api/boot-images | YES | YES |
@@ -42,6 +46,9 @@ Authenticated operator boundary for administrative and technician operations. Th
 | DELETE /api/boot-images/{bootImageId} | YES | NO |
 | GET /api/branding | YES | NO |
 | PUT /api/branding | YES | NO |
+| GET /api/branding/logo/sas | YES | YES |
+| GET /api/configuration | YES | NO |
+| PATCH /api/configuration | YES | NO |
 
 **Key distinction**: Media Builder role has read-only access to boot image queries and SAS generation. Portal role has full lifecycle (create/update/delete) for boot images and OS images.
 
@@ -52,20 +59,29 @@ Authenticated operator boundary for administrative and technician operations. Th
 ## Session Endpoints (Portal role)
 
 - `GET /api/sessions`
-  - List sessions with status filters and pagination.
+  - List sessions with status group filter and pagination. Filter query parameter aligns with Portal UI filter tabs:
+    - `filter=active` (default): sessions in `SessionAllowed`, `SessionAssigned`, `SessionStarted`, `SessionInProgress`.
+    - `filter=completed`: sessions in `SessionCompleted`.
+    - `filter=failed`: sessions in `SessionFailed` and `SessionNotAuthorized`.
+    - `filter=all`: all sessions regardless of state.
+  - Response includes per-group counts for Portal tab badge display.
 - `GET /api/sessions/{sessionId}`
   - Get full session detail and imaging steps.
 - `POST /api/sessions/couple`
-  - Couple one session by passcode and assign OS image.
+  - Couple one session by passcode. Transitions session to `SessionAssigned` state. Does NOT assign an OS image; image assignment is a separate subsequent step.
+- `POST /api/sessions/{sessionId}/assign`
+  - Assign an OS image to a single coupled (`SessionAssigned`) session. Triggers transition to `SessionStarted` on next device poll.
 - `POST /api/sessions/bulk-assign`
-  - Bulk assign image to multiple sessions.
+  - Assign one OS image to multiple `SessionAssigned` sessions simultaneously.
 
 ## OS Image Endpoints (Portal role)
 
 - `GET /api/images`
   - List OS image catalog.
-- `POST /api/images`
-  - Register uploaded OS image metadata.
+- `POST /api/images/upload-session`
+  - Create a staged upload session for an OS image artifact; returns authorized SAS token URL for direct browser-to-blob upload and a chunk size.
+- `POST /api/images/{imageId}/upload/complete`
+  - Finalize a staged OS image upload after the blob is fully uploaded and SHA256 hash verified; makes the image available in the catalog.
 - `PATCH /api/images/{imageId}`
   - Update OS image metadata.
 - `DELETE /api/images/{imageId}`
@@ -77,13 +93,20 @@ Authenticated operator boundary for administrative and technician operations. Th
   - Get branding configuration.
 - `PUT /api/branding`
   - Update branding configuration.
+- `GET /api/branding/logo/sas`
+  - Get a time-limited read SAS token URL for the current branding logo asset in Storage. Used by the Cloud Imaging Media Builder to embed the logo during boot image generation (FR-062). Accessible by both `CloudImagingPortal` and `CloudImagingMediaBuilder` roles.
 
-## Boot Image Endpoints
+## Portal Configuration Endpoints (Portal role only)
+
+- `GET /api/configuration`
+  - Return current portal deployment configuration (`devicePreFlightAuthorizationEnabled`, `sasTokenUrlExpiryMinutes`). Available to all authenticated portal service callers; user-level read restriction is not applied at this layer.
+- `PATCH /api/configuration`
+  - Update portal configuration settings. The Portal backend MUST verify the calling user holds the `CloudImagingAdministrator` role before forwarding this request. Changes to `sasTokenUrlExpiryMinutes` take effect immediately for all newly issued SAS token URLs.
 
 - `GET /api/boot-images`
   - List available boot images and metadata.
 - `POST /api/boot-images/{bootImageId}/sas`
-  - Get time-limited SAS URL for boot image download.
+  - Get time-limited SAS token URL for boot image download.
 
 ### Portal role only (boot image lifecycle)
 
@@ -104,7 +127,7 @@ Authenticated operator boundary for administrative and technician operations. Th
 
 OS image uploads support chunked transfer for large files (5-10 GB typical). This protocol enables resumable uploads and progress tracking:
 
-- **Session creation**: POST /api/images/upload-session returns `uploadSessionId`, authorized SAS URL for a temporary blob, and `chunkSize` (default: 4 MB, configurable).
+- **Session creation**: POST /api/images/upload-session returns `uploadSessionId`, authorized SAS token URL for a temporary blob, and `chunkSize` (default: 4 MB, configurable).
 - **Chunk upload**: Client uploads each 4 MB chunk via PUT with byte-range header (e.g., `Content-Range: bytes 0-4194303/*`).
 - **Chunk acknowledgment**: Server responds 201 Created with `nextChunkOffset` for resume capability.
 - **Upload session TTL**: 24 hours from creation. Incomplete uploads are auto-purged after TTL expiry.

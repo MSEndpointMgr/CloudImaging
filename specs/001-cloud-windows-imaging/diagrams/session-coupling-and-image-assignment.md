@@ -22,13 +22,13 @@ sequenceDiagram
     
     alt Passcode matches
         Storage-->>ImagingCore: Session record (session-id)
-        ImagingCore->>Storage: Update session state = SessionAllowed
-        Note over ImagingCore: Pre-flight checks passed<br/>Session now allowed
+        ImagingCore->>ImagingCore: Consume and invalidate passcode
+        Note over ImagingCore: State: SessionAssigned<br/>Passcode consumed; awaiting image assignment
         ImagingCore-->>OperatorAPI: session-id
         OperatorAPI-->>PortalBackend: session-id + status
         PortalBackend-->>Portal: session-id
         Portal->>Tech: Display "Session coupled"
-    else Passcode not found
+    else Passcode not found or already consumed
         Storage-->>ImagingCore: No match
         ImagingCore-->>OperatorAPI: Error: passcode not found
         OperatorAPI-->>PortalBackend: Error (4xx)
@@ -37,10 +37,10 @@ sequenceDiagram
     end
     
     Tech->>Portal: Select OS image to assign
-    Portal->>PortalBackend: PUT /sessions/{session-id}/assign<br/>(image-id)
+    Portal->>PortalBackend: POST /sessions/{session-id}/assign<br/>(image-id)
     Note over PortalBackend: Entra ID authenticated
     
-    PortalBackend->>OperatorAPI: PUT /sessions/{session-id}/assign<br/>(Entra ID token + image-id)
+    PortalBackend->>OperatorAPI: POST /api/sessions/{session-id}/assign<br/>(Entra ID token + image-id)
     OperatorAPI->>ImagingCore: Assign image to session
     ImagingCore->>Storage: Fetch OS image metadata
     
@@ -48,10 +48,10 @@ sequenceDiagram
         Storage-->>ImagingCore: Image record
         ImagingCore->>Storage: Query storage for image blob
         Storage-->>ImagingCore: Blob location confirmed
-        ImagingCore->>ImagingCore: Generate SAS URL (15 min expiry)
+        ImagingCore->>ImagingCore: Generate SAS token URL (configurable TTL, default 4 hours)
         ImagingCore->>Storage: Update session state = SessionAssigned
-        Note over ImagingCore: State: SessionAssigned<br/>Image: {image-id}<br/>SAS: {URL}<br/>Assigned by: {user}
-        ImagingCore-->>OperatorAPI: assignment-id + SAS URL
+        Note over ImagingCore: State: SessionAssigned<br/>Image: {image-id}<br/>SAS token URL: {URL}<br/>Assigned by: {user}
+        ImagingCore-->>OperatorAPI: assignment-id + SAS token URL
         OperatorAPI-->>PortalBackend: success
         PortalBackend-->>Portal: assignment confirmed
         Portal->>Tech: Display "Image assigned, device will download on next poll"

@@ -16,10 +16,10 @@ sequenceDiagram
     participant ClientN as Cloud Imaging<br/>Client N (WinPE)
 
     Tech->>Portal: Select multiple coupled sessions
-    Portal->>PortalBackend: PUT /sessions/bulk-assign<br/>(session-ids, image-id)
+    Portal->>PortalBackend: POST /sessions/bulk-assign<br/>(session-ids, image-id)
     Note over PortalBackend: Entra ID authenticated
     
-    PortalBackend->>OperatorAPI: PUT /sessions/bulk-assign<br/>(Entra ID token, session list, image-id)
+    PortalBackend->>OperatorAPI: POST /api/sessions/bulk-assign<br/>(Entra ID token, session list, image-id)
     OperatorAPI->>ImagingCore: Validate image exists
     
     loop For each session in list
@@ -34,8 +34,8 @@ sequenceDiagram
     Portal->>Tech: Display "Assigned to 3 devices"
     
     Tech->>Portal: Open session progress dashboard
-    Portal->>PortalBackend: GET /sessions/progress?bulk-id={id}
-    PortalBackend->>OperatorAPI: GET /sessions with filter
+    Portal->>PortalBackend: GET /sessions?filter=active
+    PortalBackend->>OperatorAPI: GET /api/sessions?filter=active
     OperatorAPI->>ImagingCore: Fetch all session states
     ImagingCore->>Storage: Query latest session records
     Storage-->>ImagingCore: Session records with state/progress
@@ -70,9 +70,11 @@ sequenceDiagram
         end
     and Portal Refresh
         loop Every 5 sec
-            Portal->>PortalBackend: GET /sessions/progress
-            PortalBackend->>ImagingCore: Fetch current states
-            ImagingCore-->>PortalBackend: state update
+            Portal->>PortalBackend: GET /sessions?filter=active
+            PortalBackend->>OperatorAPI: GET /api/sessions?filter=active
+            OperatorAPI->>ImagingCore: Fetch current session states
+            ImagingCore-->>OperatorAPI: state update
+            OperatorAPI-->>PortalBackend: state update
             PortalBackend-->>Portal: progress update
             Portal->>Tech: Update dashboard (1 downloading, 1 applied, 1 completed)
         end
@@ -98,7 +100,7 @@ sequenceDiagram
 ## Bulk Operations
 
 - **Atomic assignment**: All N sessions updated in single transaction
-- **Per-device SAS**: Each device gets unique SAS URL
+- **Per-device SAS**: Each device gets unique SAS token URL
 - **Dashboard refresh**: 5-second polling for real-time progress
 - **Concurrent polling**: All clients poll independently every 30 sec
 - **Progress states**: Downloading, Applied, Completed tracked per-device

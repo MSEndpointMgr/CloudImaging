@@ -1,93 +1,141 @@
 # Boot Image Generation, Upload, and Device Imaging
 
-Complete sequence showing boot image creation, manifest signing, portal upload (chunked with progress/retry), finalization, device deployment, and USB preparation.
+Complete sequence showing Media Builder sign-in, boot image creation with branding embed, manual portal upload, USB preparation, device session registration, coupling, and imaging.
 
 ```mermaid
 sequenceDiagram
     actor Tech as Technician
     participant MediaBuilder as Cloud Imaging<br/>Media Builder
+    participant EntraID as Microsoft<br/>Entra ID
+    participant GitHub as MSEndpointMgr<br/>GitHub Releases
     participant Portal as Cloud Imaging<br/>Portal
     participant OperatorAPI as Operator API
     participant ImagingCore as Imaging Core API
     participant Storage as Azure Blob<br/>Storage
+    participant USB as USB Storage Device
     participant ClientWinPE as Cloud Imaging<br/>Client (WinPE)
     participant DeviceGW as Device Gateway<br/>API
 
-    Tech->>MediaBuilder: Generate Boot Image
-    Note over MediaBuilder: Bundle WinPE + Client + Config
-    MediaBuilder->>MediaBuilder: Create signed boot image manifest
-    
-    MediaBuilder->>Portal: Upload/register boot image metadata
+    Note over Tech,MediaBuilder: Generate Boot Image Workflow
+    Tech->>MediaBuilder: Launch Media Builder
+    MediaBuilder->>EntraID: Sign in with Entra ID (FR-052)
+    EntraID-->>MediaBuilder: Access token (Operator scope)
+    MediaBuilder->>MediaBuilder: SignInView -> OperationSelectionView
+    Note over MediaBuilder: Check copype.cmd + makewinpemedia (FR-050a)<br/>Both workflow cards disabled if ADK or WinPE add-on absent
+
+    Tech->>MediaBuilder: Select Generate Boot Image
+    MediaBuilder->>MediaBuilder: Show GenerateBootImageView (FR-051a)
+    Note over MediaBuilder: Choose: GitHub auto-download or custom local path
+
+    alt GitHub auto-download
+        MediaBuilder->>GitHub: GET /repos/MSEndpointMgr/CloudImaging/releases/latest
+        GitHub-->>MediaBuilder: Latest release tag + asset URL
+        MediaBuilder->>GitHub: Download Cloud Imaging Client binaries (real-time progress)
+        GitHub-->>MediaBuilder: Client binaries
+    else Custom local path
+        Tech->>MediaBuilder: Specify path to pre-downloaded Client binaries
+    end
+
+    Tech->>MediaBuilder: Select output folder
+
+    MediaBuilder->>OperatorAPI: GET /api/branding/logo/sas (Entra ID token)
+    OperatorAPI->>ImagingCore: Issue read SAS token URL for branding logo blob
+    ImagingCore-->>OperatorAPI: SAS token URL (or no branding configured)
+    OperatorAPI-->>MediaBuilder: SAS token URL
+
+    alt Branding logo configured
+        MediaBuilder->>Storage: Download branding logo via SAS token URL
+        Storage-->>MediaBuilder: Logo asset
+    else No branding configured
+        Note over MediaBuilder: Embed MSEndpointMgr default logo as fallback (FR-051)
+    end
+
+    MediaBuilder->>MediaBuilder: Assemble WinPE + Client binaries + branding logo + config
+    MediaBuilder->>MediaBuilder: Create signed manifest (version, checksums, timestamp)
+    MediaBuilder->>MediaBuilder: Write boot image WIM to output folder
+    Note over MediaBuilder: WIM contains: WinPE + Client executable + branding logo
+    MediaBuilder->>Tech: Completion notification -- output path + portal upload instructions (FR-051b)
+
+    Note over Tech,Portal: Technician uploads WIM manually via Cloud Imaging Portal
+    Tech->>Portal: Upload boot image WIM via boot image catalog
     Portal->>OperatorAPI: POST /api/boot-images/upload-session
     OperatorAPI->>ImagingCore: Create staged upload session
-    ImagingCore-->>OperatorAPI: bootImageId + write SAS URL
-    OperatorAPI-->>Portal: bootImageId + write SAS URL
-    Portal->>Tech: Upload session created, get SAS
+    ImagingCore-->>OperatorAPI: bootImageId + write SAS token URL
+    OperatorAPI-->>Portal: bootImageId + write SAS token URL
     Tech->>Storage: Upload WIM in chunks (progress, retry)
     Note over Storage: Staged blob (unpublished)
-    Storage-->>Portal: Chunk received
-    
-    Portal->>Portal: Validate checksum & manifest
+
+    Portal->>Portal: Validate checksum and manifest
     Portal->>OperatorAPI: POST /api/boot-images/{bootImageId}/upload/complete
     OperatorAPI->>ImagingCore: Finalize publish
     Note over ImagingCore: Boot image now visible in catalog
     ImagingCore->>Storage: Mark blob published
-    
-    Tech->>Tech: Prepare USB Storage Device
+
+    Note over Tech,USB: Prepare USB Storage Device Workflow
+    Tech->>MediaBuilder: Select Prepare USB Storage Device
     MediaBuilder->>OperatorAPI: GET /api/boot-images (Entra ID)
     OperatorAPI->>ImagingCore: Query boot image catalog
-    Note over ImagingCore: Latest user image metadata
     ImagingCore-->>OperatorAPI: Boot image list
     OperatorAPI-->>MediaBuilder: Boot image list
-    
+
     MediaBuilder->>OperatorAPI: POST /api/boot-images/{bootImageId}/sas
     OperatorAPI->>ImagingCore: Generate boot image SAS
-    ImagingCore->>Storage: Create SAS URL
-    Storage-->>ImagingCore: SAS URL + expiry
-    ImagingCore-->>OperatorAPI: SAS URL
-    OperatorAPI-->>MediaBuilder: SAS URL (+ expiry)
-    
-    MediaBuilder->>Storage: Download boot image via SAS
-    Storage-->>MediaBuilder: Boot image downloaded
-    MediaBuilder->>MediaBuilder: Validate removable disk
-    MediaBuilder->>MediaBuilder: Configure UEFI partition
-    MediaBuilder->>MediaBuilder: Deploy boot image
-    MediaBuilder->>MediaBuilder: Configure auto-start (client config)
-    Tech->>Tech: Boot device from USB
-    
-    ClientWinPE->>DeviceGW: POST /api/sessions (register)
-    DeviceGW->>ImagingCore: Create session record
-    Note over ImagingCore: SessionInit state
-    ImagingCore-->>DeviceGW: device-session token
+    ImagingCore->>Storage: Create SAS token URL + expiry
+    Storage-->>ImagingCore: SAS token URL
+    ImagingCore-->>OperatorAPI: SAS token URL
+    OperatorAPI-->>MediaBuilder: SAS token URL
+
+    MediaBuilder->>Storage: Download boot image WIM via SAS token URL
+    Storage-->>MediaBuilder: Boot image WIM downloaded
+
+    Note over MediaBuilder,USB: Qualify USB: bus type = USB, removable flag = true (FR-054)
+    MediaBuilder->>USB: Create two partitions (cache + bootable)
+    MediaBuilder->>USB: Deploy boot image WIM to bootable partition
+    Note over USB: WIM contains WinPE + Cloud Imaging Client + branding logo
+    MediaBuilder->>USB: Configure UEFI auto-start
+    MediaBuilder->>USB: Write preparation manifest
+
+    Tech->>ClientWinPE: Boot device from USB
+
+    Note over ClientWinPE,DeviceGW: Device Session Registration and Imaging
+    ClientWinPE->>ClientWinPE: Read branding logo from executable directory (FR-002a)
+    ClientWinPE->>DeviceGW: POST /api/v1/sessions (register)
+    DeviceGW->>ImagingCore: Create session record + pre-flight authorization
+    Note over ImagingCore: SessionInit -> SessionAllowed (if authorized)<br/>SessionInit -> SessionNotAuthorized (terminal, if no match)
+    ImagingCore-->>DeviceGW: device-session token + passcode (or SessionNotAuthorized)
     DeviceGW-->>ClientWinPE: Token + passcode
     ClientWinPE->>Tech: Display passcode on screen
-    
-    Tech->>Portal: Enter passcode + select OS image
-    Portal->>OperatorAPI: POST /api/sessions/couple
-    OperatorAPI->>ImagingCore: Couple and assign by passcode + imageId
-    Note over ImagingCore: SessionAssigned state
-    
+
+    Tech->>Portal: Enter passcode in coupling modal
+    Portal->>OperatorAPI: POST /api/sessions/couple (passcode)
+    OperatorAPI->>ImagingCore: Couple session by passcode
+    Note over ImagingCore: SessionAssigned state (passcode consumed)
+    Tech->>Portal: Select OS image and click Assign
+    Portal->>OperatorAPI: POST /api/sessions/{sessionId}/assign (image-id)
+    OperatorAPI->>ImagingCore: Assign image to session
+    Note over ImagingCore: SessionAssigned with image reference + SAS token URL generated
+
     loop Every 30 sec
-        ClientWinPE->>DeviceGW: GET /api/sessions/{id}/status
-        DeviceGW->>ImagingCore: GET /api/internal/sessions/{id}/status
-        Note over ImagingCore: Returns SAS + image details
-        ImagingCore-->>DeviceGW: Session state
-        DeviceGW-->>ClientWinPE: SAS URL for OS image
+        ClientWinPE->>DeviceGW: GET /api/v1/sessions/{id}/status
+        DeviceGW->>ImagingCore: GET status
+        ImagingCore-->>DeviceGW: state + SAS token URL + image details + currentStep + overallProgressPercent
+        DeviceGW-->>ClientWinPE: SAS token URL for OS image + currentStep + overallProgressPercent
     end
-    
-    ClientWinPE->>Storage: Download OS image via SAS
-    Note over ClientWinPE: Refresh SAS if < 15min remaining
+
+    ClientWinPE->>ClientWinPE: Format target disk (format-disk step)
+    ClientWinPE->>Storage: Download OS image via SAS token URL (download-image step)
+    Note over ClientWinPE: Refresh SAS token URL if < 15 min remaining
     Storage-->>ClientWinPE: OS image chunks
-    ClientWinPE->>ClientWinPE: Apply image to disk
-    ClientWinPE->>DeviceGW: POST /api/sessions/{id}/progress (Complete)
-    DeviceGW->>ImagingCore: POST /api/internal/sessions/{id}/progress
-    Note over ImagingCore: SessionCompleted state
+    ClientWinPE->>ClientWinPE: Apply image to disk via DISM (apply-image step)
+    ClientWinPE->>DeviceGW: POST /api/v1/sessions/{id}/progress (SessionCompleted)
+    DeviceGW->>ImagingCore: Update session state = SessionCompleted
     ClientWinPE->>ClientWinPE: Reboot into deployed OS
 ```
 
 ## Key Flows
 
-- **Boot Image Lifecycle**: Generation → metadata registration → staged upload → validation → publish commit
-- **Device Imaging**: Register session → couple → assign image → poll → download → apply → reboot
-- **USB Preparation**: Query boot images → get SAS → download → validate disk → deploy
-- **Staged Visibility**: Boot image remains unpublished until finalize succeeds
+- **Generate Boot Image**: Sign in -> ADK check -> source selection (GitHub or custom path) -> branding retrieval from Operator API -> WIM assembly with branding logo -> completion notification with output path
+- **Portal Upload**: Manual step by technician via Cloud Imaging Portal boot image catalog (Media Builder does not upload)
+- **Prepare USB**: Query boot images -> get SAS -> download WIM -> qualify USB (bus type = USB + removable flag) -> deploy WIM
+- **Device Session**: Register -> pre-flight authorization -> passcode display -> couple -> assign -> poll (with currentStep + overallProgressPercent) -> format -> download -> apply -> reboot
+- **Branding**: Retrieved from Operator API and embedded in boot image WIM during Generate Boot Image; Client reads from executable directory at startup (FR-002a, FR-051)

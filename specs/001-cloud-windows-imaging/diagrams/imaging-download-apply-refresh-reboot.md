@@ -1,6 +1,6 @@
-# OS Image Download, Apply, and Session Completion
+# OS Image Format, Download, Apply, and Session Completion
 
-Device checks cache partition for matching image, validates hash, and either uses cached image or downloads new image. Then formats disk, applies image, and completes session with reboot.
+Device formats the target disk first (format-disk step), then checks cache partition for a matching image and validates its hash. Either uses the cached image or downloads a fresh copy. Then applies the image to the formatted disk and completes the session with a reboot.
 
 ```mermaid
 sequenceDiagram
@@ -12,7 +12,14 @@ sequenceDiagram
     participant Disk as Local Disk
 
     Note over ClientWinPE: Previous poll returned SAS + image-id + sha256Hash
-    
+
+    Note over ClientWinPE: format-disk step
+    ClientWinPE->>Disk: Format target system disk (partition + NTFS)
+    Disk-->>ClientWinPE: Format complete
+    ClientWinPE->>DeviceGW: POST /api/v1/sessions/{id}/progress (format-disk: Completed)
+    DeviceGW->>ImagingCore: Persist step progress
+
+    Note over ClientWinPE: download-image step
     ClientWinPE->>ClientWinPE: Check USB cache for image-id + version
     alt Cached image exists
         ClientWinPE->>Cache: Read cached image metadata + hash
@@ -37,7 +44,7 @@ sequenceDiagram
     end
     
     alt Need to download fresh image
-        ClientWinPE->>Storage: GET /images/{image-id}<br/>(SAS URL, Range header for resume)
+        ClientWinPE->>Storage: GET /images/{image-id}<br/>(SAS token URL, Range header for resume)
         Note over ClientWinPE: Resume-capable, chunked transfer
         Storage-->>ClientWinPE: Image chunk + progress
         
@@ -46,12 +53,12 @@ sequenceDiagram
             ClientWinPE->>ClientWinPE: Compute running checksum
             ClientWinPE->>ClientWinPE: Update progress UI
             alt SAS expires in < 15 minutes
-                ClientWinPE->>DeviceGW: GET /sessions/{session-id}/refresh-sas<br/>(device-session token)
+                ClientWinPE->>DeviceGW: POST /api/v1/sessions/{sessionId}/sas/refresh<br/>(device-session token)
                 DeviceGW->>ImagingCore: Refresh SAS
-                ImagingCore->>ImagingCore: Generate new SAS URL (15 min buffer)
-                ImagingCore-->>DeviceGW: new SAS URL
-                DeviceGW-->>ClientWinPE: new SAS URL
-                Note over ClientWinPE: Resume download with new SAS
+                ImagingCore->>ImagingCore: Generate new SAS token URL (15 min buffer)
+                ImagingCore-->>DeviceGW: new SAS token URL
+                DeviceGW-->>ClientWinPE: new SAS token URL
+                Note over ClientWinPE: Resume download with new SAS token URL
             end
         end
         
@@ -59,30 +66,31 @@ sequenceDiagram
         ClientWinPE->>ClientWinPE: Validate checksum vs API hash
         
         alt Checksum matches
-            ClientWinPE->>Cache: Store downloaded image + hash + metadata
-            Cache-->>ClientWinPE: cached
+            ClientWinPE->>ClientWinPE: Check space on USB cache partition after 30-day purge
+            alt Sufficient cache space available
+                ClientWinPE->>Cache: Store downloaded image + hash + metadata
+                Cache-->>ClientWinPE: Cached successfully
+            else Insufficient space after purge (FR-009d)
+                Note over ClientWinPE: Skip cache write -- proceed with in-memory staging<br/>No LRU eviction of existing valid cache entries
+            end
             Note over ClientWinPE: Image ready for apply
         else Checksum mismatch
-            ClientWinPE->>DeviceGW: POST /sessions/{session-id}/error<br/>(error: checksum-mismatch)
+            ClientWinPE->>DeviceGW: POST /api/v1/sessions/{session-id}/progress<br/>(error: checksum-mismatch)
             DeviceGW->>ImagingCore: Mark session error
-            Note over ImagingCore: State: SessionError
+            Note over ImagingCore: State: SessionFailed
             ClientWinPE->>ClientWinPE: Retry download from beginning
         end
     end
-    
-    Note over ClientWinPE: Proceed with remaining workflow steps
-    ClientWinPE->>Disk: Format disk for Windows image applicability
-    Note over Disk: NTFS formatting, partition layout
-    Disk-->>ClientWinPE: format complete
-    
+
+    Note over ClientWinPE: apply-image step
     ClientWinPE->>Disk: Apply image to disk (via DISM)
     Note over Disk: Write image blocks, boot config
     ClientWinPE->>ClientWinPE: Polling UI: show apply progress
     Disk-->>ClientWinPE: Apply complete
     
-    ClientWinPE->>DeviceGW: POST /sessions/{session-id}/complete<br/>(device-session token)
-    Note over DeviceGW: Mark session done
-    DeviceGW->>ImagingCore: Update session state = SessionCompleted
+    ClientWinPE->>DeviceGW: POST /api/v1/sessions/{sessionId}/progress<br/>(apply-image: Completed, device-session token)
+    Note over DeviceGW: Final step reported -- Imaging Core auto-transitions to SessionCompleted
+    DeviceGW->>ImagingCore: Persist final step + transition session to SessionCompleted
     ImagingCore->>Storage: Persist session record + completion time
     Note over ImagingCore: State: SessionCompleted<br/>Completed at: {timestamp}
     ImagingCore-->>DeviceGW: acknowledged
@@ -92,10 +100,13 @@ sequenceDiagram
     Note over ClientWinPE: Windows starts from deployed image
 ```
 
-## Download & Retry Semantics
+## Step Order and Semantics
 
-- **Resume-capable**: Ranges supported, client tracks offset
-- **SAS refresh**: Auto-refresh if < 15 min remaining
-- **Checksum validation**: Against known image manifest
-- **Error handling**: On failure, session marked SessionError, client can retry download
-- **Progress reporting**: UI updated every chunk (for technician visibility)
+- **Step order**: format-disk -> download-image -> apply-image (matches ProgressView label order: Format, Download, Apply)
+- **Format target**: System disk (device internal drive) formatted before download/apply
+- **Download staging**: OS image downloaded to USB cache partition or in-memory staging; not written to the system disk
+- **Cache skip**: If insufficient space on USB cache partition after 30-day auto-purge, cache write is skipped and direct staging used; no LRU eviction of valid cache entries (FR-009d)
+- **Resume-capable download**: Range headers supported; client tracks byte offset across SAS refreshes
+- **SAS refresh**: Auto-refresh if < 15 min remaining on current token
+- **Checksum validation**: Downloaded image validated against API-provided SHA256 hash before apply
+- **Failure state**: SessionFailed (not SessionError) is the terminal error state; support reference code shown in ResultsView

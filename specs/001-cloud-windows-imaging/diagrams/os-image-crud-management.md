@@ -16,7 +16,7 @@ sequenceDiagram
     Portal->>PortalBackend: POST /images/upload<br/>(multipart: file, name, description)
     Note over PortalBackend: Entra ID admin role required
     
-    PortalBackend->>OperatorAPI: POST /api/internal/images/upload-session<br/>(file size, content-type)
+    PortalBackend->>OperatorAPI: POST /api/images/upload-session<br/>(file size, content-type)
     OperatorAPI->>ImagingCore: Create chunked upload session
     ImagingCore->>ImagingCore: Generate session-id, calculate chunks (4MB each)
     ImagingCore->>Storage: Create staging blob
@@ -48,7 +48,7 @@ sequenceDiagram
     end
     
     Portal->>PortalBackend: All chunks uploaded, finalize
-    PortalBackend->>OperatorAPI: POST /api/internal/images/{id}/upload/complete<br/>(full-file SHA256)
+    PortalBackend->>OperatorAPI: POST /api/images/{imageId}/upload/complete<br/>(full-file SHA256)
     OperatorAPI->>ImagingCore: Validate & publish image
     ImagingCore->>ImagingCore: Verify uploaded chunk hashes + full-file SHA256
     

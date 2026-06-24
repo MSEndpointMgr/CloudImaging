@@ -105,3 +105,18 @@
 
 **Alternatives considered**:
 - Relaxed warning/test gating during early delivery: rejected due to constitutional non-negotiables.
+
+## Decision 9: GitHub Actions with OIDC Workload Identity Federation for internal dev deployments
+
+**Decision**: Use GitHub Actions workflows with OIDC-based Azure Workload Identity Federation for all core developer deployments to the shared Azure dev environment. Two workflows are provided: `deploy-dev.yml` (full-stack IaC + all component deployment, manual trigger for initial setup or complete refresh) and `deploy-components.yml` (per-component redeployment via `workflow_dispatch` with a component name input for iterative development). Both are stored in `.github/workflows/` but are explicitly excluded from community release bundles. VS Code tasks (`.vscode/tasks.json`) invoke `deploy-components.yml` via `gh workflow run` to provide an in-editor deployment trigger.
+
+**Rationale**:
+- OIDC Workload Identity Federation eliminates long-lived Azure credentials from GitHub repository secrets; access tokens are short-lived, scoped to the workflow run, and auto-rotated by the Azure/GitHub trust relationship.
+- Two-workflow model balances initial full-stack provisioning needs (deploy-dev.yml) with iterative development efficiency (deploy-components.yml targeting only the changed component).
+- Keeping these workflows inside `.github/workflows/` but explicitly excluding them from the community release bundle cleanly separates internal team tooling from the self-hoster deliverable; community deployment is performed exclusively via `deploy.ps1` and `update.ps1`.
+- The VS Code task layer provides a low-friction in-editor trigger without bypassing the GitHub Actions audit trail.
+
+**Alternatives considered**:
+- Long-lived service principal client secret in GitHub repository secrets: rejected -- credential exposure risk on secret compromise, rotation burden, and counter to current Azure best-practice guidance.
+- Self-hosted runner with managed identity: rejected -- requires a persistent Azure VM or ACI instance, which is disproportionate overhead for a two-contributor project sharing a single subscription.
+- Per-developer `az login` from local workstations: rejected -- not reproducible as a team process, no audit trail, and diverges from the GitHub Actions deployment path used for release validation.

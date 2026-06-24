@@ -34,9 +34,18 @@ Defines frontend-to-portal-backend endpoints. The backend then calls Operator AP
 - `GET /api/sessions`
 - `GET /api/sessions/{sessionId}`
 - `POST /api/sessions/couple`
+- `POST /api/sessions/{sessionId}/assign`
 - `POST /api/sessions/bulk-assign`
 
 These routes proxy to Operator API session endpoints and surface the current session state, per-step status, and overall imaging completion percentage in the portal UI.
+
+`GET /api/sessions` supports a `filter` query parameter corresponding to the Portal UI filter tabs:
+- `filter=active` (default): `SessionAllowed`, `SessionAssigned`, `SessionStarted`, `SessionInProgress`
+- `filter=completed`: `SessionCompleted`
+- `filter=failed`: `SessionFailed`, `SessionNotAuthorized`
+- `filter=all`: all sessions regardless of state
+
+Response includes per-group counts for real-time tab badge display.
 
 ## OS Image Operations
 
@@ -77,6 +86,13 @@ Upload flow expectations:
 - `GET /api/branding/public` (public read)
 - `GET /api/branding`
 - `PUT /api/branding`
+
+## Portal Configuration Operations
+
+- `GET /api/configuration`
+  - Return current portal deployment configuration (`devicePreFlightAuthorizationEnabled`, `sasTokenUrlExpiryMinutes`). Available to all authenticated portal users.
+- `PATCH /api/configuration`
+  - Update portal configuration settings. Restricted to users with the `CloudImagingAdministrator` role; backend enforces role check before calling Operator API.
 
 ## Error Shape
 

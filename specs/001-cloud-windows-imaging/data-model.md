@@ -19,10 +19,10 @@ Represents one imaging workflow instance for one device.
 | passcodeExpiresAt | datetime | Expiry for one-time passcode. |
 | passcodeConsumedAt | datetime? | Timestamp when passcode was successfully used for coupling. |
 | deviceSessionTokenRef | string | Reference to issued device-session token material/claims id. |
-| status | enum | `SessionInit`, `SessionAllowed`, `SessionAssigned`, `SessionStarted`, `SessionInProgress`, `SessionCompleted`, `SessionFailed`. |
+| status | enum | `SessionInit`, `SessionAllowed`, `SessionAssigned`, `SessionStarted`, `SessionInProgress`, `SessionCompleted`, `SessionFailed`, `SessionNotAuthorized` (terminal). |
 | assignedImageId | string? | OS image assignment reference. |
-| currentSasUrl | string? | Current SAS URL issued for the assigned image. |
-| currentSasExpiresAt | datetime? | Expiry for current SAS URL. |
+| currentSasTokenUrl | string? | Current SAS token URL issued for the assigned image. |
+| currentSasTokenUrlExpiresAt | datetime? | Expiry for current SAS token URL. |
 | lastHeartbeatAt | datetime? | Last client polling/progress heartbeat timestamp. |
 | currentStepName | string? | Last known imaging step name. |
 | overallProgressPercent | int? | Session-level imaging completion percentage for portal display. |
@@ -38,7 +38,7 @@ Represents one imaging workflow instance for one device.
 2. Pre-imaging states expire after 30 minutes of inactivity.
 3. In-progress states fail after heartbeat timeout policy (> 4 hours without heartbeat).
 4. Terminal states are purged after 24 hours.
-5. Pairing passcode is invalidated immediately after successful coupling or expiry.
+5. Pairing passcode has its own configurable TTL (deployment parameter; default: 30 minutes) independent of the session inactivity timeout; invalidated on TTL expiry or successful coupling, whichever occurs first. Passcode uniqueness is scoped to currently active (non-terminal, non-expired) sessions only; passcodes from terminal or expired sessions are considered released and MAY be reused in new sessions.
 
 ## Entity: ImagingStep
 
@@ -102,6 +102,20 @@ Catalog metadata for generated WinPE+Client boot artifacts.
 | createdBy | string | Operator identity reference. |
 | notes | string? | Optional metadata notes. |
 
+## Entity: PortalConfiguration
+
+Deployment-wide portal configuration settings. Singleton per deployment.
+
+**Suggested table**: `Configuration`
+- `PartitionKey`: `portalconfig`
+- `RowKey`: `default`
+
+| Field | Type | Description |
+|------|------|-------------|
+| devicePreFlightAuthorizationEnabled | bool | Global on/off toggle for device pre-flight authorization check. Default: `true`. |
+| sasTokenUrlExpiryMinutes | int | Expiry window in minutes for newly issued OS image SAS token URLs. Default: `240` (4 hours). Changes take immediate effect for newly issued tokens; existing tokens are not retroactively affected. Modifiable by `CloudImagingAdministrator` role from Portal deployment configuration section. |
+| lastModifiedAt | datetime | Timestamp of last configuration change. |
+
 ## Entity: BrandingConfiguration
 
 Runtime UI branding configuration.
@@ -119,14 +133,28 @@ Runtime UI branding configuration.
 | updatedAt | datetime | Last update timestamp. |
 | updatedBy | string | Operator identity reference. |
 
-## Value Object: SASToken (Transient)
+## Value Object: SupportReferenceCode (Transient)
+
+Structured error code produced at failure events in Cloud Imaging Client and Cloud Imaging Media Builder.
+
+| Field | Type | Description |
+|------|------|-------------|
+| componentCode | string | 3-letter prefix: `CIC` (Cloud Imaging Client) or `CMB` (Cloud Imaging Media Builder). |
+| sessionRef | string | First 8 characters of the associated session ID for Client operations; short operation-stage identifier for standalone Media Builder operations without session context. |
+| stageCode | string | Abbreviated step identifier. Client codes: `REG` (session-registration), `FMT` (format-disk), `DWN` (download-image), `APL` (apply-image). Media Builder codes: `DVI` (disk-validation), `PRT` (partitioning), `BID` (boot-image-download), `BCF` (boot-config). |
+| epochSeconds | long | Unix epoch at time of error (seconds since 1970-01-01 UTC). |
+
+Rendered format: `{componentCode}-{sessionRef}-{stageCode}-{epochSeconds}`  
+Example: `CIC-A1B2C3D4-DWN-1750000000`
+
+## Value Object: SASTokenUrl (Transient)
 
 Returned to clients and not persisted as a standalone table row.
 
 | Field | Type | Description |
 |------|------|-------------|
-| downloadUrl | string | Time-limited SAS URL. |
-| expiresAt | datetime | SAS expiry. |
+| downloadUrl | string | Pre-signed, time-limited SAS token URL for blob download. |
+| expiresAt | datetime | SAS token URL expiry. |
 | targetArtifactId | string | Related `imageId` or `bootImageId`. |
 | sessionId | string? | Session context when applicable. |
 

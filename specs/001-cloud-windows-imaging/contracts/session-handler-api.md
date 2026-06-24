@@ -164,7 +164,7 @@ simultaneously for the same passcode, the first succeeds and the second returns
   "sessionId": "uuid",
   "status": "Coupled",
   "credential": {
-    "downloadUrl": "string (SAS URL)",
+    "downloadUrl": "string (SAS token URL)",
     "expiresAt": "datetime",
     "fileSizeBytes": 0
   }
@@ -180,7 +180,7 @@ simultaneously for the same passcode, the first succeeds and the second returns
 
 ### POST /sessions/{sessionId}/credential/refresh
 
-Regenerate a SAS token for an active imaging session. Called by SessionBroker
+Regenerate a SAS token URL for an active imaging session. Called by SessionBroker
 on behalf of the WPF client.
 
 **Required role**: `SessionBroker`

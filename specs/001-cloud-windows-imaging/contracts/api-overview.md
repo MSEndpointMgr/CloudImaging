@@ -6,9 +6,9 @@ This document defines the purpose and responsibility split between the three API
 
 | API | Primary Consumers | Network Exposure | Auth Model | Core Responsibility |
 |-----|-------------------|------------------|------------|---------------------|
-| Device Gateway API | Cloud Imaging Client (WinPE) | Public HTTPS | Unauthenticated bootstrap, then device-session bearer token | Device-facing session bootstrap, polling, progress relay, SAS refresh relay |
+| Device Gateway API | Cloud Imaging Client (WinPE) | Public HTTPS | Unauthenticated bootstrap, then device-session bearer token | Device-facing session bootstrap, polling, progress relay, SAS token URL refresh relay |
 | Operator API | Cloud Imaging Portal backend, Cloud Imaging Media Builder | Public HTTPS | Entra ID bearer token + app-role authorization | Operator-facing authenticated operations (sessions, image catalogs, branding, boot images) |
-| Imaging Core API | Device Gateway API, Operator API | Private Link only | Trusted service-to-service calls + app roles | Source of truth for session state, SAS issuance, catalog metadata, lifecycle enforcement |
+| Imaging Core API | Device Gateway API, Operator API | Private Link only | Trusted service-to-service calls + app roles | Source of truth for session state, SAS token URL issuance, catalog metadata, lifecycle enforcement |
 
 ## Why Three APIs Exist
 
@@ -23,7 +23,7 @@ This document defines the purpose and responsibility split between the three API
 - Handles Cloud Imaging Client startup and session bootstrap.
 - Issues device-session tokens for ongoing client calls.
 - Relays client status and progress to Imaging Core API.
-- Returns assignment and SAS details to clients from Imaging Core API.
+- Returns assignment and SAS token URL details to clients from Imaging Core API.
 - Never holds direct Storage Account read/write rights.
 
 ### Operator API
@@ -36,25 +36,28 @@ This document defines the purpose and responsibility split between the three API
 ### Imaging Core API
 
 - Owns the authoritative device session lifecycle and transition rules.
-- Generates and refreshes SAS tokens for OS image and boot image downloads.
-- Stores and serves OS image metadata, branding metadata, and boot image metadata.
-- Enforces passcode consume semantics and inactivity/heartbeat/purge policies.
+- Generates and refreshes SAS token URLs for OS image and boot image downloads.
+- Stores and serves OS image metadata, branding metadata, boot image metadata, and portal configuration.
+- Enforces passcode consume semantics, inactivity/heartbeat/purge policies, and passcode TTL (configurable deployment parameter).
+- Persists and serves portal deployment configuration (`devicePreFlightAuthorizationEnabled`, `sasTokenUrlExpiryMinutes`).
 
 ## High-Level Call Flows
 
 ### Device Imaging Flow
 
-1. Cloud Imaging Client -> Device Gateway API: create session.
-2. Device Gateway API -> Imaging Core API: create session and passcode/hash metadata.
-3. Cloud Imaging Portal backend -> Operator API: couple/assign image.
-4. Operator API -> Imaging Core API: couple session and assign image.
-5. Cloud Imaging Client -> Device Gateway API: poll status/progress.
-6. Device Gateway API -> Imaging Core API: state/progress/SAS refresh.
+1. Cloud Imaging Client -> Device Gateway API: create session (with full device hardware metadata).
+2. Device Gateway API -> Imaging Core API: create session and passcode/hash metadata; response may be `SessionNotAuthorized` (terminal) if pre-flight check fails.
+3. If `SessionNotAuthorized`: Device Gateway API relays status to Client; Client transitions immediately to ResultsView. No further steps.
+4. Cloud Imaging Portal backend -> Operator API: couple session by passcode (transitions to `SessionAssigned`).
+5. Cloud Imaging Portal backend -> Operator API: assign OS image to coupled session (single or bulk).
+6. Operator API -> Imaging Core API: couple and assign calls forwarded over Private Link.
+7. Cloud Imaging Client -> Device Gateway API: poll status/progress (rate-limited: 10 calls per 30-second window).
+8. Device Gateway API -> Imaging Core API: state/progress/SAS refresh.
 
 ### Media Builder Flow
 
 1. Cloud Imaging Media Builder -> Operator API: list boot images and retrieve SAS for the latest published boot image (Entra token).
-2. Cloud Imaging Media Builder downloads boot image via SAS URL from Storage.
+2. Cloud Imaging Media Builder downloads boot image via SAS token URL from Storage.
 
 ### Boot Image Upload Flow
 

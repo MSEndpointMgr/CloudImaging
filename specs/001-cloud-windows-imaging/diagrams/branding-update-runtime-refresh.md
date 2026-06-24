@@ -15,10 +15,10 @@ sequenceDiagram
 
     Admin->>Portal: Open Settings / Branding
     Admin->>Portal: Change logo, colors, organization name
-    Portal->>PortalBackend: PUT /config/branding<br/>(logo-url, colors, org-name)
+    Portal->>PortalBackend: PUT /api/branding<br/>(logo-url, colors, org-name)
     Note over PortalBackend: Entra ID admin role required
     
-    PortalBackend->>OperatorAPI: PUT /api/config/branding<br/>(Entra ID token + branding)
+    PortalBackend->>OperatorAPI: PUT /api/branding<br/>(Entra ID token + branding)
     Note over OperatorAPI: Validate admin role
     OperatorAPI->>ImagingCore: Update branding config
     ImagingCore->>MetadataStore: Store branding record
@@ -31,8 +31,8 @@ sequenceDiagram
     Note over Portal: Admin session reflects new branding immediately<br/>(cached locally)
     
     Tech->>PortalFront2: Open portal (new session)
-    PortalFront2->>PortalBackend: GET /config/branding
-    PortalBackend->>OperatorAPI: GET /config/branding
+    PortalFront2->>PortalBackend: GET /api/branding
+    PortalBackend->>OperatorAPI: GET /api/branding
     OperatorAPI->>ImagingCore: Fetch branding config
     ImagingCore->>MetadataStore: Query latest branding
     MetadataStore-->>ImagingCore: branding config
@@ -46,9 +46,11 @@ sequenceDiagram
     
     alt Tech already has portal open (existing session)
         Tech->>PortalFront2: (background service worker polling every 60s)
-        PortalFront2->>PortalBackend: GET /config/branding
-        PortalBackend->>ImagingCore: Fetch latest
-        ImagingCore-->>PortalBackend: config (updated-at changed)
+        PortalFront2->>PortalBackend: GET /api/branding
+        PortalBackend->>OperatorAPI: GET /api/branding
+        OperatorAPI->>ImagingCore: Fetch latest
+        ImagingCore-->>OperatorAPI: config (updated-at changed)
+        OperatorAPI-->>PortalBackend: config (updated-at changed)
         PortalBackend-->>PortalFront2: new config
         PortalFront2->>PortalFront2: Detect config change (via etag or updated-at)
         PortalFront2->>PortalFront2: Apply new CSS + re-render

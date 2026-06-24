@@ -88,7 +88,7 @@ assignment.
     "fileSizeBytes": 0
   },
   "credential": {
-    "downloadUrl": "string (SAS URL)",
+    "downloadUrl": "string (SAS token URL)",
     "expiresAt": "2026-06-14T18:00:00Z",
     "fileSizeBytes": 0
   },
@@ -137,7 +137,7 @@ transition. All calls are off the WPF UI thread.
 
 ### POST /sessions/{sessionId}/credential/refresh
 
-Request a fresh SAS token when the current credential is approaching expiry.
+Request a fresh SAS token URL when the current credential is approaching expiry.
 WPF client calls this when the credential has less than 30 minutes remaining.
 
 **Path parameters**: `sessionId` (UUID)
@@ -148,7 +148,7 @@ WPF client calls this when the credential has less than 30 minutes remaining.
 
 ```json
 {
-  "downloadUrl": "string (new SAS URL)",
+  "downloadUrl": "string (new SAS token URL)",
   "expiresAt": "2026-06-14T22:00:00Z",
   "fileSizeBytes": 0
 }

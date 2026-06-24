@@ -34,22 +34,23 @@ sequenceDiagram
     MediaBuilder->>MediaBuilder: Display USB device selector
     MediaOp->>USB: Insert USB drive
     
-    MediaBuilder->>MediaBuilder: Detect removable devices
+    MediaBuilder->>MediaBuilder: Detect USB devices
     MediaBuilder->>USB: Query device properties
-    Note over USB: Size, removable flag, file system
+    Note over USB: Bus type, removable flag
     USB-->>MediaBuilder: device info
-    MediaBuilder->>MediaBuilder: Validate: is removable, size >= 8GB
+    MediaBuilder->>MediaBuilder: Qualify: bus type = USB, removable flag = true (FR-054)
+    Note over MediaBuilder: Host OS/system disk always blocked
     
-    alt Device is valid
+    alt Device qualifies (USB bus, removable, not host OS disk)
         MediaOp->>MediaBuilder: Confirm preparation (irreversible)
         MediaBuilder->>OperatorAPI: Request SAS for boot image<br/>(image-id, Entra ID token)
         OperatorAPI->>ImagingCore: Generate SAS
-        ImagingCore->>Storage: Create SAS URL (1 hour expiry)
-        Storage-->>ImagingCore: SAS URL
-        ImagingCore-->>OperatorAPI: SAS URL
-        OperatorAPI-->>MediaBuilder: SAS URL
+        ImagingCore->>Storage: Create SAS token URL (1 hour expiry)
+        Storage-->>ImagingCore: SAS token URL
+        ImagingCore-->>OperatorAPI: SAS token URL
+        OperatorAPI-->>MediaBuilder: SAS token URL
         
-        MediaBuilder->>Storage: Download boot image via SAS<br/>(chunked, resume-capable)
+        MediaBuilder->>Storage: Download boot image via SAS token URL<br/>(chunked, resume-capable)
         Note over Storage: Stream WIM to staging area
         Storage-->>MediaBuilder: boot image chunks
         MediaBuilder->>MediaBuilder: Validate checksum
@@ -64,13 +65,11 @@ sequenceDiagram
             USB-->>MediaBuilder: boot image deployed
             
             MediaBuilder->>USB: Configure UEFI boot order (auto-start)
-            Note over USB: Set USB as boot device, launch Cloud Imaging Client on WinPE boot
+            Note over USB: Set USB as boot device; Cloud Imaging Client in WIM launches on WinPE boot
             USB-->>MediaBuilder: configured
             
-            MediaBuilder->>MediaBuilder: Write client config (session-init endpoint, cache partition ref, etc.)
-            MediaBuilder->>USB: Copy Cloud Imaging Client binary to bootable partition
-            MediaBuilder->>USB: Copy client config file to bootable partition
             MediaBuilder->>USB: Write USB preparation manifest
+            Note over USB: Client executable and branding logo are inside the boot image WIM (FR-051, FR-053)
             Note over USB: Timestamp, Media Builder version, boot image version, partition layout, validation status
             
             MediaBuilder->>MediaBuilder: Display success message
@@ -80,22 +79,22 @@ sequenceDiagram
             MediaBuilder->>MediaBuilder: Error: checksum validation failed
             MediaOp->>MediaBuilder: Retry download
         end
-    else Device not valid
-        MediaBuilder->>MediaBuilder: Error: device is not removable or too small
-        MediaOp->>USB: Use different USB drive
+    else Device does not qualify (wrong bus type, not removable, or host OS disk)
+        MediaBuilder->>MediaBuilder: Error: device does not meet USB qualification criteria (FR-054)
+        MediaOp->>USB: Use a different USB drive
     end
 ```
 
 ## USB Preparation Steps
 
-1. **Device validation**: Removable flag, size >= 8GB, sufficient capacity (32GB+ recommended)
+1. **Device qualification**: Bus type = USB AND removable flag = true; host OS/system disk always blocked (FR-054)
 2. **SAS request**: 1-hour expiry for download session
 3. **Download**: Chunked, resume-capable transfer
 4. **Checksum**: Validate against manifest
-5. **Create partitions**: Two partitions on USB (Cache: min 20GB for OS image caching + Bootable: UEFI format for WinPE)
-6. **Deploy**: Write WIM to bootable partition
-7. **Configure**: UEFI auto-start, client config, preparation manifest
-8. **Eject**: Ready for device deployment (boot partition has WinPE + Cloud Imaging Client, cache partition empty)
+5. **Create partitions**: Two partitions on USB (Cache: for OS image caching + Bootable: UEFI format for WinPE)
+6. **Deploy**: Write WIM to bootable partition (WIM contains WinPE + Cloud Imaging Client + branding logo; FR-051, FR-053)
+7. **Configure**: UEFI auto-start and preparation manifest
+8. **Eject**: Ready for device deployment (boot partition has WIM; cache partition empty)
 
 ## Authorization
 
