@@ -194,11 +194,11 @@ Expected result:
 3. Manually trigger `deploy-dev.yml` via workflow_dispatch in GitHub Actions.
 4. Verify the workflow authenticates using the OIDC federated token (no password prompt, no stored client secret used).
 5. Verify the Bicep IaC deployment completes and all Azure resources in the shared dev subscription reflect the desired state.
-6. Verify all six application components are deployed and responding.
+6. Verify all five Azure-hosted components are deployed and responding (Device Gateway API Function App, Operator API Function App, Imaging Core API Function App, Portal backend App Service, Portal frontend Static Web Apps); Cloud Imaging Client and Media Builder are build-only components and are not Azure-deployed.
 
 Expected result:
 - All Azure resources created or updated to match the IaC definition.
-- All six components deployed with current build artifacts.
+- All five Azure-hosted components deployed with current build artifacts.
 - No long-lived Azure credentials were required or stored.
 
 ### Per-component redeployment

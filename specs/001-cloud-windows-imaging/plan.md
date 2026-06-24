@@ -69,8 +69,9 @@ environment without code changes.
 - USB preparation tooling package for technician workstations that produces
   standardized two-partition bootable media and writes preparation manifest data
 - Release model: every versioned GitHub Release is a complete bundle containing
-  all six component artifacts (Function App packages, Portal frontend and backend,
-  Cloud Imaging Client WinPE binary, Media Builder Windows installer), IaC
+  release artifacts from all six components (three Function App packages, Portal
+  frontend and backend as separate artifacts, Cloud Imaging Client WinPE binary,
+  and Media Builder Windows installer -- seven release artifacts in total), IaC
   templates, parameter templates, and documentation; all six components are
   included in every release regardless of which changed since the prior release;
   no component is released independently; versioning is solution-level
