@@ -187,12 +187,37 @@ Manifest written to prepared USB media.
 | validationResults | object | Disk/operation validation output. |
 | autoStartConfigured | bool | WinPE auto-start configuration flag. |
 
+---
+
+## Entity: BootMediaCertificate
+
+Represents the active mTLS client certificate embedded in boot media. Only one certificate is active at any time; rotation is an immediate atomic swap.
+
+**Table**: `BootMediaCertificates`
+
+| Field | Type | Description |
+|------|------|-------------|
+| PartitionKey | string | Fixed value `certificate` (all entries share one partition). |
+| RowKey (certificateId) | string | GUID. Unique identifier for this certificate instance. |
+| thumbprint | string | SHA-256 thumbprint of the certificate public key. |
+| subject | string | Certificate subject (CN). |
+| validityPeriodDays | int | Validity duration in days (default: 365). |
+| issuedAt | datetime | Timestamp when the certificate was generated. |
+| expiresAt | datetime | Timestamp when the certificate expires. |
+| issuedBy | string | Entra ID identity (UPN) of the Portal admin who generated the cert. |
+| status | string | `active` or `inactive`. Exactly one row has status `active` at any time. |
+
+> **PFX storage**: The certificate private key and full certificate chain (PFX) are stored in Azure Key Vault, keyed by `certificateId`. Table Storage holds metadata only.
+
+---
+
 ## Relationship Summary
 
 - `DeviceSession` 1..* `ImagingStep`
 - `DeviceSession` *..1 `OSImage`
 - `BootImage` is managed separately from `OSImage`
 - `BrandingConfiguration` is singleton configuration
+- `BootMediaCertificate` is singleton-active configuration (exactly one active row; managed via atomic swap)
 
 ## Contract Alignment
 

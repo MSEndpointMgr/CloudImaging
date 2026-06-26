@@ -61,8 +61,7 @@ environment without code changes.
 - Infrastructure-as-Code bundle (Bicep preferred) for all Azure resources:
   Storage Account, Function Apps, App Service, Static Web Apps, VNet,
   Private Endpoint, Private DNS, App Insights, Managed Identities, and RBAC
-- Environment-specific configuration package (`.env.example`, app settings
-  templates, and deployment parameter files) for dev, test, and production
+- Azure Template Spec deployment package: Bicep source files and Form View UI definition (`uiFormDefinition.json`) published to the admin's own Azure subscription via the included `publish-template-spec.ps1` script; admin then deploys from the portal Template Spec resource (full tabbed wizard experience, no external hosting required); parameter templates for dev and production environments included
 - Cloud Imaging Media Builder-generated boot image output and instructions so
   organizations can generate WinPE boot media that embeds the Cloud Imaging
   Client without modifying application source
@@ -75,11 +74,7 @@ environment without code changes.
   templates, parameter templates, and documentation; all six components are
   included in every release regardless of which changed since the prior release;
   no component is released independently; versioning is solution-level
-- In-place upgrade support: an included upgrade script (update.ps1) re-applies
-  the IaC package and redeploys all application components against an existing
-  deployment, bringing it to the new release version without manual resource
-  deletion or re-entry of unchanged parameter values; the script is idempotent
-  and suitable for self-hosters maintaining a single production environment
+- Version upgrade support: an included `update.ps1` script deploys new component packages to existing Azure resources via zip deploy (`az functionapp deployment source config-zip` for Function Apps, `az webapp deploy` for App Service, SWA deployment token for Static Web Apps) without re-provisioning infrastructure; no ARM template re-run required for code-only upgrades; suitable for self-hosters maintaining separate dev and production environments in parallel
 - Internal CI/CD (dev team only): the two core contributors provision and update
   the shared Azure dev environment exclusively via GitHub Actions workflows --
   deploy-dev.yml for initial full-stack IaC and component deployment and
@@ -98,17 +93,17 @@ environment without code changes.
 - Cloud Imaging Client: Windows PE (WinPE 10) x64 bare-metal hardware
 - Cloud Imaging Media Builder: Windows 10/11 x64 technician workstation with
   administrator permissions for disk and boot operations; Entra ID sign-in required
-- DeviceGatewayApi: Azure Functions v4, Flex Consumption plan (public HTTPS endpoint; Premium EP1 recommended for production standard-tier deployments >= 1000 sessions/day per SC-001 baseline)
-- OperatorApi: Azure Functions v4, Flex Consumption plan (public HTTPS endpoint, Entra ID secured; Premium EP1 recommended for production standard-tier deployments per SC-001 baseline)
+- DeviceGatewayApi: Azure Functions v4, Premium EP1 plan (public HTTPS endpoint; Premium EP1 required for mTLS client certificate enforcement via clientCertificateMode=require; optional Azure Application Gateway deployable as additive edge enforcement via deployApplicationGateway IaC parameter, default false)
+- OperatorApi: Azure Functions v4, Premium EP1 plan (public HTTPS endpoint, Entra ID secured; Premium EP1 provides pre-warmed instances consistent with the SC-001 15-minute imaging completion target and the SC-016 99.5% monthly uptime requirement; Flex Consumption is not used due to cold-start penalty incompatibility with SC-001)
 - ImagingCoreApi: Azure Functions v4, Premium EP1 plan (VNet-integrated, no public endpoint)
 - Cloud Imaging Portal backend: Azure App Service Linux Node.js 22 (VNet-integrated)
 - Cloud Imaging Portal frontend: Azure Static Web Apps
 
 **Authentication Model**:
-- **Cloud Imaging Client**: No inbound auth from WinPE; session token issued by DeviceGatewayApi after session registration
+- **Cloud Imaging Client**: mTLS client certificate authentication to DeviceGatewayApi; certificate PFX embedded in boot image WIM by Media Builder at Generate Boot Image time; session token issued by DeviceGatewayApi after session registration for subsequent authenticated calls
 - **Cloud Imaging Portal**: Azure Entra ID (portal frontend and backend)
 - **Cloud Imaging Media Builder**: Azure Entra ID sign-in on Windows workstation; obtains access token for OperatorApi
-- **DeviceGatewayApi**: Publicly reachable; accepts unauthenticated session bootstrap calls from Cloud Imaging Client; uses session bearer token for subsequent client requests
+- **DeviceGatewayApi**: Publicly reachable; requires valid boot media client certificate on ALL endpoints via platform mTLS (clientCertificateMode=require, Premium EP1); session bearer token used for device-session authenticated calls after bootstrap
 - **OperatorApi**: Entra ID bearer token on all endpoints with App Role checks (CloudImagingPortal and CloudImagingMediaBuilder roles)
 - **ImagingCoreApi**: Private Link only; accepts trusted service-to-service calls from DeviceGatewayApi and OperatorApi
 
@@ -130,7 +125,7 @@ environment without code changes.
 - DeviceGatewayApi: minimum Azure RBAC -- no direct Storage Account access; session-based auth only
 - OperatorApi: public endpoint requiring Entra ID token and role-based authorization
 - All .NET: `TreatWarningsAsErrors=true`, `Nullable=enable`, zero diagnostics
-- No pre-shared secrets or credentials embedded in the WinPE image or boot image
+- Boot media client certificate PFX (issued by Portal, embedded in boot image WIM by Media Builder) is the only credential present in a WinPE boot image; no pre-shared secrets or hardcoded service credentials are embedded
 - USB media layout must always produce exactly two partitions: cache and bootable boot image
 - SAS token URL expiry: configurable via PortalConfiguration.sasTokenUrlExpiryMinutes (default: 240 min / 4 hours); administrator-settable at runtime from Portal deployment configuration section; changes take immediate effect for newly issued SAS token URLs; does NOT retroactively affect already-issued tokens
 - Boot image SAS token URLs: configurable, shorter expiry window than OS image SAS token URLs (e.g., 2 hours)
@@ -155,6 +150,10 @@ environment without code changes.
   test-first development requirements as DeviceGatewayApi and ImagingCoreApi
 - Session status responses from Imaging Core API and Device Gateway API MUST include both `currentStep` (the name of the active ImagingStep) and `overallProgressPercent` (integer 0-100, computed by uniform step-milestone weighting as defined in spec clarifications); the Cloud Imaging Portal polls this data via the Operator API and displays both fields per device in the session dashboard.
 - Imaging Core API managed identity MUST be granted the DeviceManagementServiceConfig.Read.All application permission in the customer tenant for Microsoft Graph pre-flight authorization queries (FR-026); this grant MUST be provisioned via Bicep resource or post-deploy script and MUST NOT require manual portal configuration.
+- DeviceGatewayApi MUST be deployed on Azure Functions Premium EP1 plan; mTLS enforcement via clientCertificateMode=require is not supported on Flex Consumption plan; the active boot media certificate thumbprint MUST be cached in Function memory and refreshed from Table Storage at an interval of no more than 60 seconds
+- Optional Azure Application Gateway (Standard_v2 or WAF_v2 SKU) is deployable in front of DeviceGatewayApi via the deployApplicationGateway IaC parameter (default: false); when deployed, the Function App MUST accept traffic only from the Application Gateway subnet; no Cloud Imaging Client code changes are required
+- Azure resource naming convention: `{prefix}-{env}-{type}[-{name}]` using Microsoft standard type abbreviations (`func`, `plan`, `app`, `stapp`, `kv`, `appi`, `log`, `vnet`, `msi`, `agw`, `pep`, `nsg`); `resourcePrefix` max 4 alphanumeric characters; `environment` value max 4 characters (`dev` or `prod`); singleton resources (Key Vault, Application Insights, Log Analytics, VNet) omit the `{name}` segment; Storage Accounts use `{prefix}{env}st{purpose}` (no hyphens, lowercase, max 24 chars) due to platform naming restriction
+- One resource group per environment, naming recommendation `rg-{prefix}-{env}-cloudimaging`; deploying user requires Owner at resource group scope (or Contributor + User Access Administrator) because the ARM template provisions role assignments for managed system identities
 
 **Scale/Scope**:
 - 50 concurrent device imaging sessions (V1); standard-tier deployment baseline: up to 1000 sessions/day on Premium EP1 (SC-001)
@@ -276,3 +275,4 @@ to deploy the system into company-owned Azure environments.
 | Two-layer role model: service-level on Operator API + user-level on Portal/MediaBuilder | Operator API can enforce service identity without knowing which Portal user is acting; Portal/MediaBuilder enforce fine-grained feature access independently | Collapsing to one layer would either expose user-level roles to a shared service API or require per-user tokens to reach Operator API, breaking service isolation |
 | PortalConfiguration for runtime-settable ops config (SAS expiry, pre-flight toggle) | Both settings need immediate effect without redeployment; Table Storage row is the simplest always-on runtime store | Deployment parameters only would require redeployment to change SAS expiry; portal config enables operational tuning without infra change |
 | Staged direct-to-blob upload for OS images and boot images | Avoids routing large binary files (5-10 GB) through Portal backend and Operator API; browser/tool uploads directly to Storage via short-lived SAS token URL | API-proxied upload would impose network cost and memory pressure on App Service and Function Apps for large image files |
+| Boot media client certificate + mTLS on DeviceGatewayApi | Eliminates unauthenticated session bootstrap attack surface; Portal-managed single active cert with immediate atomic revocation ensures only trusted boot media can reach the public API | Session passcode and device-session token alone cannot prevent arbitrary network clients from initiating sessions; mTLS enforces boot media origin at the TLS handshake before any application logic runs |
