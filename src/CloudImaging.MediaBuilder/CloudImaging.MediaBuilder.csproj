@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- WPF requires net10.0-windows -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>CloudImaging.MediaBuilder</RootNamespace>
+    <!-- Technician workstation app: Entra ID sign-in via MSAL desktop (FR-052) -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Identity.Web" />
+    <!-- MSAL Desktop (Entra ID interactive sign-in) -->
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.65.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CloudImaging.Contracts\CloudImaging.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

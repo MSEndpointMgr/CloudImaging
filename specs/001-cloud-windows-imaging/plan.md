@@ -1,4 +1,4 @@
-# Implementation Plan: Cloud Windows Imaging
+﻿# Implementation Plan: Cloud Windows Imaging
 
 **Branch**: `001-cloud-windows-imaging` | **Date**: 2026-06-14 | **Spec**: [spec.md](spec.md)
 
@@ -51,7 +51,7 @@ environment without code changes.
 **Storage**:
 - Azure Blob Storage:
   - OS image files (.wim / .esd) for device provisioning
-  - Boot image artifacts (.iso or .vhd format) for Cloud Imaging Media Builder
+  - Boot image artifacts (.wim format) for Cloud Imaging Media Builder
   - Branding logo uploads (Cloud Imaging Portal)
 - Azure Table Storage:
   - DeviceSession, ImagingStep, OSImageMetadata, BrandingConfiguration entities (ImagingCoreApi)
@@ -104,7 +104,7 @@ environment without code changes.
 - **Cloud Imaging Portal**: Azure Entra ID (portal frontend and backend)
 - **Cloud Imaging Media Builder**: Azure Entra ID sign-in on Windows workstation; obtains access token for OperatorApi
 - **DeviceGatewayApi**: Publicly reachable; requires valid boot media client certificate on ALL endpoints via platform mTLS (clientCertificateMode=require, Premium EP1); session bearer token used for device-session authenticated calls after bootstrap
-- **OperatorApi**: Entra ID bearer token on all endpoints with App Role checks (CloudImagingPortal and CloudImagingMediaBuilder roles)
+- **OperatorApi**: Entra ID bearer token on all endpoints with App Role checks (CloudImaging.PortalAccess and CloudImaging.MediaBuilderAccess roles)
 - **ImagingCoreApi**: Private Link only; accepts trusted service-to-service calls from DeviceGatewayApi and OperatorApi
 
 **Performance Goals**:
@@ -133,7 +133,7 @@ environment without code changes.
 - Boot image catalog: maximum 5 active entries; only the latest published entry is eligible for USB preparation selection
 - USB bootable partition minimum size: 2 GB; cache partition minimum: 20 GB (per deployment assumptions)
 - Support reference codes: structured format {ComponentCode}-{SessionRef}-{StageCode}-{EpochSeconds} (CIC=Cloud Imaging Client, CMB=Media Builder); defined in Session June 22, 2026 spec clarification
-- User-level roles (CloudImagingAdministrator / CloudImagingTechnician) enforced at Portal backend and Media Builder; service-level roles (CloudImagingPortal / CloudImagingMediaBuilder) enforced at Operator API; shared enterprise app registration for both Portal and Media Builder (FR-040b)
+- User-level roles (CloudImaging.Administrator / CloudImaging.Technician) enforced at Portal backend and Media Builder; service-level roles (CloudImaging.PortalAccess / CloudImaging.MediaBuilderAccess) enforced at Operator API; shared enterprise app registration for both Portal and Media Builder (FR-040b); **both the shared registration and the Operator API registration are manual prerequisites created by the administrator before deployment** -- neither is provisioned by Bicep in this release
 - All deployable components must support customer-managed naming, regions,
   RBAC assignments, and network address ranges through configuration rather
   than source edits

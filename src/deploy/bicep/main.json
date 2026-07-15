@@ -1,0 +1,1749 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.45.15.27210",
+      "templateHash": "6581701940401127620"
+    }
+  },
+  "parameters": {
+    "resourcePrefix": {
+      "type": "string",
+      "maxLength": 4,
+      "metadata": {
+        "description": "Short alphanumeric organization identifier used as the leading segment of all resource names."
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "maxLength": 4,
+      "metadata": {
+        "description": "Deployment environment label (dev, prod, or custom abbreviation)."
+      }
+    },
+    "userAuthClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Application (client) ID of the shared user-facing Entra ID enterprise app registration used by the Cloud Imaging Portal and Media Builder for user authentication (Registration A in the prerequisites guide)."
+      }
+    },
+    "tenantId": {
+      "type": "string",
+      "defaultValue": "[tenant().tenantId]",
+      "metadata": {
+        "description": "Entra ID tenant ID (auto-populated from portal session)."
+      }
+    },
+    "deployApplicationGateway": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Deploy Azure Application Gateway WAF_v2 in front of Device Gateway API (Enterprise tier)."
+      }
+    },
+    "certValidityPeriodDays": {
+      "type": "int",
+      "defaultValue": 365,
+      "metadata": {
+        "description": "Boot media certificate validity period in days."
+      }
+    },
+    "passcodeTtlMinutes": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Passcode TTL in minutes."
+      }
+    },
+    "operatorApiClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Application (client) ID of the manually-created Operator API Entra app registration. Used to configure the Operator API token validation audience (FR-040b)."
+      }
+    },
+    "sasTokenExpiryMinutes": {
+      "type": "int",
+      "defaultValue": 240,
+      "metadata": {
+        "description": "OS image SAS token URL expiry in minutes."
+      }
+    },
+    "bootImageSasExpiryMinutes": {
+      "type": "int",
+      "defaultValue": 120,
+      "metadata": {
+        "description": "Boot image SAS token URL expiry in minutes."
+      }
+    },
+    "clockSkewToleranceSeconds": {
+      "type": "int",
+      "defaultValue": 30,
+      "metadata": {
+        "description": "Clock skew tolerance for token expiry validation in seconds."
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "VNet address prefix."
+      }
+    },
+    "apiFunctionSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.1.0/24",
+      "metadata": {
+        "description": "Subnet for Function Apps (Device Gateway, Operator, Imaging Core)."
+      }
+    },
+    "privateEndpointSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.2.0/24",
+      "metadata": {
+        "description": "Subnet for Private Endpoints."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources."
+      }
+    },
+    "functionAppSku": {
+      "type": "string",
+      "defaultValue": "EP1",
+      "allowedValues": [
+        "EP1",
+        "EP2",
+        "EP3"
+      ],
+      "metadata": {
+        "description": "Elastic Premium SKU for all API Function App plans. EP1 is required as the minimum for mTLS, VNet integration, and pre-warmed instances."
+      }
+    },
+    "appServiceSku": {
+      "type": "string",
+      "defaultValue": "P1v3",
+      "allowedValues": [
+        "P1v3",
+        "P2v3",
+        "P3v3"
+      ],
+      "metadata": {
+        "description": "PremiumV3 SKU for the Cloud Imaging Portal backend App Service plan."
+      }
+    }
+  },
+  "variables": {
+    "prefix": "[format('{0}-{1}', parameters('resourcePrefix'), parameters('environment'))]",
+    "storagePrefix": "[format('{0}{1}', parameters('resourcePrefix'), parameters('environment'))]",
+    "names": {
+      "vnet": "[format('{0}-vnet', variables('prefix'))]",
+      "apiFunctionSubnet": "[format('{0}-snet-functions', variables('prefix'))]",
+      "privateEndpointSubnet": "[format('{0}-snet-pe', variables('prefix'))]",
+      "nsgFunctions": "[format('{0}-nsg-functions', variables('prefix'))]",
+      "storageApp": "[format('{0}stapp', variables('storagePrefix'))]",
+      "storageCoreApi": "[format('{0}stcore', variables('storagePrefix'))]",
+      "keyVault": "[format('{0}-kv', variables('prefix'))]",
+      "logAnalytics": "[format('{0}-log', variables('prefix'))]",
+      "appInsights": "[format('{0}-appi', variables('prefix'))]",
+      "msiDeviceGateway": "[format('{0}-msi-gateway', variables('prefix'))]",
+      "msiOperatorApi": "[format('{0}-msi-operator', variables('prefix'))]",
+      "msiImagingCore": "[format('{0}-msi-core', variables('prefix'))]",
+      "msiPortalBackend": "[format('{0}-msi-portal', variables('prefix'))]",
+      "planDeviceGateway": "[format('{0}-plan-gateway', variables('prefix'))]",
+      "planOperatorApi": "[format('{0}-plan-operator', variables('prefix'))]",
+      "planImagingCore": "[format('{0}-plan-core', variables('prefix'))]",
+      "planPortalBackend": "[format('{0}-plan-portal', variables('prefix'))]",
+      "funcDeviceGateway": "[format('{0}-func-gateway', variables('prefix'))]",
+      "funcOperatorApi": "[format('{0}-func-operator', variables('prefix'))]",
+      "funcImagingCore": "[format('{0}-func-core', variables('prefix'))]",
+      "appPortalBackend": "[format('{0}-app-portal', variables('prefix'))]",
+      "stappPortalFrontend": "[format('{0}-stapp-portal', variables('prefix'))]",
+      "pepImagingCore": "[format('{0}-pep-core', variables('prefix'))]",
+      "agw": "[format('{0}-agw', variables('prefix'))]"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "observability",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "logAnalyticsName": {
+            "value": "[variables('names').logAnalytics]"
+          },
+          "appInsightsName": {
+            "value": "[variables('names').appInsights]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "16072966250666274187"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "logAnalyticsName": {
+              "type": "string"
+            },
+            "appInsightsName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[parameters('logAnalyticsName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[parameters('appInsightsName')]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "appInsightsConnectionString": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').ConnectionString]"
+            },
+            "appInsightsInstrumentationKey": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').InstrumentationKey]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "networking",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vnetName": {
+            "value": "[variables('names').vnet]"
+          },
+          "vnetAddressPrefix": {
+            "value": "[parameters('vnetAddressPrefix')]"
+          },
+          "apiFunctionSubnetName": {
+            "value": "[variables('names').apiFunctionSubnet]"
+          },
+          "apiFunctionSubnetPrefix": {
+            "value": "[parameters('apiFunctionSubnetPrefix')]"
+          },
+          "privateEndpointSubnetName": {
+            "value": "[variables('names').privateEndpointSubnet]"
+          },
+          "privateEndpointSubnetPrefix": {
+            "value": "[parameters('privateEndpointSubnetPrefix')]"
+          },
+          "nsgFunctionsName": {
+            "value": "[variables('names').nsgFunctions]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "10408038546387580145"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "vnetName": {
+              "type": "string"
+            },
+            "vnetAddressPrefix": {
+              "type": "string"
+            },
+            "apiFunctionSubnetName": {
+              "type": "string"
+            },
+            "apiFunctionSubnetPrefix": {
+              "type": "string"
+            },
+            "privateEndpointSubnetName": {
+              "type": "string"
+            },
+            "privateEndpointSubnetPrefix": {
+              "type": "string"
+            },
+            "nsgFunctionsName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[parameters('nsgFunctionsName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "AllowHttpsInbound",
+                    "properties": {
+                      "priority": 100,
+                      "direction": "Inbound",
+                      "access": "Allow",
+                      "protocol": "Tcp",
+                      "sourcePortRange": "*",
+                      "destinationPortRange": "443",
+                      "sourceAddressPrefix": "AzureFrontDoor.Backend",
+                      "destinationAddressPrefix": "*"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2024-01-01",
+              "name": "[parameters('vnetName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[parameters('vnetAddressPrefix')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "[parameters('apiFunctionSubnetName')]",
+                    "properties": {
+                      "addressPrefix": "[parameters('apiFunctionSubnetPrefix')]",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
+                      },
+                      "delegations": [
+                        {
+                          "name": "delegation",
+                          "properties": {
+                            "serviceName": "Microsoft.Web/serverFarms"
+                          }
+                        }
+                      ],
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  },
+                  {
+                    "name": "[parameters('privateEndpointSubnetName')]",
+                    "properties": {
+                      "addressPrefix": "[parameters('privateEndpointSubnetPrefix')]",
+                      "privateEndpointNetworkPolicies": "Disabled"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+            },
+            "apiFunctionSubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName')), '2024-01-01').subnets[0].id]"
+            },
+            "privateEndpointSubnetId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName')), '2024-01-01').subnets[1].id]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "storageAppName": {
+            "value": "[variables('names').storageApp]"
+          },
+          "storageCoreApiName": {
+            "value": "[variables('names').storageCoreApi]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "7918570013246384978"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "storageAppName": {
+              "type": "string"
+            },
+            "storageCoreApiName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('storageAppName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": false
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[parameters('storageCoreApiName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "kind": "StorageV2",
+              "properties": {
+                "supportsHttpsTrafficOnly": true,
+                "minimumTlsVersion": "TLS1_2",
+                "allowBlobPublicAccess": false
+              }
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageCoreApiName'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageCoreApiName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'os-images')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'boot-images')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'branding')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            }
+          ],
+          "outputs": {
+            "storageAppId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]"
+            },
+            "storageCoreApiId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageCoreApiName'))]"
+            },
+            "storageCoreApiName": {
+              "type": "string",
+              "value": "[parameters('storageCoreApiName')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "key-vault",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "keyVaultName": {
+            "value": "[variables('names').keyVault]"
+          },
+          "imagingCoreMsiPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.imagingCorePrincipalId.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "5033432696489984808"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "keyVaultName": {
+              "type": "string"
+            },
+            "imagingCoreMsiPrincipalId": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "kvSecretsOfficerRoleId": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2024-04-01-preview",
+              "name": "[parameters('keyVaultName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "softDeleteRetentionInDays": 90,
+                "enabledForDeployment": false,
+                "enabledForTemplateDeployment": false,
+                "enabledForDiskEncryption": false,
+                "networkAcls": {
+                  "bypass": "AzureServices",
+                  "defaultAction": "Deny"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+              "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), parameters('imagingCoreMsiPrincipalId'), variables('kvSecretsOfficerRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('kvSecretsOfficerRoleId'))]",
+                "principalId": "[parameters('imagingCoreMsiPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+            },
+            "keyVaultUri": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2024-04-01-preview').vaultUri]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "identities",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "msiDeviceGatewayName": {
+            "value": "[variables('names').msiDeviceGateway]"
+          },
+          "msiOperatorApiName": {
+            "value": "[variables('names').msiOperatorApi]"
+          },
+          "msiImagingCoreName": {
+            "value": "[variables('names').msiImagingCore]"
+          },
+          "msiPortalBackendName": {
+            "value": "[variables('names').msiPortalBackend]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "6181982036001541377"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "msiDeviceGatewayName": {
+              "type": "string"
+            },
+            "msiOperatorApiName": {
+              "type": "string"
+            },
+            "msiImagingCoreName": {
+              "type": "string"
+            },
+            "msiPortalBackendName": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('msiDeviceGatewayName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('msiOperatorApiName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('msiImagingCoreName')]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[parameters('msiPortalBackendName')]",
+              "location": "[parameters('location')]"
+            }
+          ],
+          "outputs": {
+            "deviceGatewayMsiId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiDeviceGatewayName'))]"
+            },
+            "deviceGatewayMsiClientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiDeviceGatewayName')), '2023-01-31').clientId]"
+            },
+            "operatorApiMsiId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiOperatorApiName'))]"
+            },
+            "operatorApiMsiClientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiOperatorApiName')), '2023-01-31').clientId]"
+            },
+            "imagingCoreMsiId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiImagingCoreName'))]"
+            },
+            "imagingCoreMsiClientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiImagingCoreName')), '2023-01-31').clientId]"
+            },
+            "imagingCorePrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiImagingCoreName')), '2023-01-31').principalId]"
+            },
+            "portalBackendMsiId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiPortalBackendName'))]"
+            },
+            "portalBackendMsiClientId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiPortalBackendName')), '2023-01-31').clientId]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "imaging-core-api",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "funcName": {
+            "value": "[variables('names').funcImagingCore]"
+          },
+          "planName": {
+            "value": "[variables('names').planImagingCore]"
+          },
+          "storageAccountName": {
+            "value": "[variables('names').storageCoreApi]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'observability'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+          },
+          "msiId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.imagingCoreMsiId.value]"
+          },
+          "msiClientId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.imagingCoreMsiClientId.value]"
+          },
+          "vnetSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.apiFunctionSubnetId.value]"
+          },
+          "pepSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.privateEndpointSubnetId.value]"
+          },
+          "pepName": {
+            "value": "[variables('names').pepImagingCore]"
+          },
+          "keyVaultName": {
+            "value": "[variables('names').keyVault]"
+          },
+          "sharedEntraClientId": {
+            "value": "[parameters('userAuthClientId')]"
+          },
+          "tenantId": {
+            "value": "[parameters('tenantId')]"
+          },
+          "passcodeTtlMinutes": {
+            "value": "[parameters('passcodeTtlMinutes')]"
+          },
+          "sasTokenExpiryMinutes": {
+            "value": "[parameters('sasTokenExpiryMinutes')]"
+          },
+          "bootImageSasExpiryMinutes": {
+            "value": "[parameters('bootImageSasExpiryMinutes')]"
+          },
+          "certValidityPeriodDays": {
+            "value": "[parameters('certValidityPeriodDays')]"
+          },
+          "clockSkewToleranceSeconds": {
+            "value": "[parameters('clockSkewToleranceSeconds')]"
+          },
+          "functionAppSku": {
+            "value": "[parameters('functionAppSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "919505934983180962"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "funcName": {
+              "type": "string"
+            },
+            "planName": {
+              "type": "string"
+            },
+            "storageAccountName": {
+              "type": "string"
+            },
+            "appInsightsConnectionString": {
+              "type": "string"
+            },
+            "msiId": {
+              "type": "string"
+            },
+            "msiClientId": {
+              "type": "string"
+            },
+            "vnetSubnetId": {
+              "type": "string"
+            },
+            "pepSubnetId": {
+              "type": "string"
+            },
+            "pepName": {
+              "type": "string"
+            },
+            "keyVaultName": {
+              "type": "string"
+            },
+            "sharedEntraClientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "passcodeTtlMinutes": {
+              "type": "int"
+            },
+            "sasTokenExpiryMinutes": {
+              "type": "int"
+            },
+            "bootImageSasExpiryMinutes": {
+              "type": "int"
+            },
+            "certValidityPeriodDays": {
+              "type": "int"
+            },
+            "clockSkewToleranceSeconds": {
+              "type": "int"
+            },
+            "functionAppSku": {
+              "type": "string",
+              "defaultValue": "EP1",
+              "allowedValues": [
+                "EP1",
+                "EP2",
+                "EP3"
+              ]
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('planName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('functionAppSku')]",
+                "tier": "ElasticPremium"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('funcName')]",
+              "location": "[parameters('location')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('msiId'))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "virtualNetworkSubnetId": "[parameters('vnetSubnetId')]",
+                "vnetRouteAllEnabled": true,
+                "publicNetworkAccess": "Disabled",
+                "siteConfig": {
+                  "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "appSettings": [
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "dotnet-isolated"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage__accountName",
+                      "value": "[parameters('storageAccountName')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "AZURE_CLIENT_ID",
+                      "value": "[parameters('msiClientId')]"
+                    },
+                    {
+                      "name": "Entra__TenantId",
+                      "value": "[parameters('tenantId')]"
+                    },
+                    {
+                      "name": "Entra__ClientId",
+                      "value": "[parameters('sharedEntraClientId')]"
+                    },
+                    {
+                      "name": "KeyVault__VaultUri",
+                      "value": "[format('https://{0}{1}', parameters('keyVaultName'), environment().suffixes.keyvaultDns)]"
+                    },
+                    {
+                      "name": "Security__PasscodeTtlMinutes",
+                      "value": "[string(parameters('passcodeTtlMinutes'))]"
+                    },
+                    {
+                      "name": "Security__SasTokenExpiryMinutes",
+                      "value": "[string(parameters('sasTokenExpiryMinutes'))]"
+                    },
+                    {
+                      "name": "Security__BootImageSasExpiryMinutes",
+                      "value": "[string(parameters('bootImageSasExpiryMinutes'))]"
+                    },
+                    {
+                      "name": "Security__CertValidityPeriodDays",
+                      "value": "[string(parameters('certValidityPeriodDays'))]"
+                    },
+                    {
+                      "name": "Security__ClockSkewToleranceSeconds",
+                      "value": "[string(parameters('clockSkewToleranceSeconds'))]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[parameters('pepName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('pepSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[parameters('pepName')]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.Web/sites', parameters('funcName'))]",
+                      "groupIds": [
+                        "sites"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "internalBaseUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01').defaultHostName)]"
+            },
+            "funcId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]",
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]",
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "device-gateway-api",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "funcName": {
+            "value": "[variables('names').funcDeviceGateway]"
+          },
+          "planName": {
+            "value": "[variables('names').planDeviceGateway]"
+          },
+          "storageAccountName": {
+            "value": "[variables('names').storageApp]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'observability'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+          },
+          "msiId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.deviceGatewayMsiId.value]"
+          },
+          "msiClientId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.deviceGatewayMsiClientId.value]"
+          },
+          "imagingCoreApiBaseUrl": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'imaging-core-api'), '2025-04-01').outputs.internalBaseUrl.value]"
+          },
+          "keyVaultName": {
+            "value": "[variables('names').keyVault]"
+          },
+          "deployApplicationGateway": {
+            "value": "[parameters('deployApplicationGateway')]"
+          },
+          "agwName": {
+            "value": "[variables('names').agw]"
+          },
+          "functionAppSku": {
+            "value": "[parameters('functionAppSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "11816012433615232577"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "funcName": {
+              "type": "string"
+            },
+            "planName": {
+              "type": "string"
+            },
+            "storageAccountName": {
+              "type": "string"
+            },
+            "appInsightsConnectionString": {
+              "type": "string"
+            },
+            "msiId": {
+              "type": "string"
+            },
+            "msiClientId": {
+              "type": "string"
+            },
+            "imagingCoreApiBaseUrl": {
+              "type": "string"
+            },
+            "keyVaultName": {
+              "type": "string"
+            },
+            "deployApplicationGateway": {
+              "type": "bool"
+            },
+            "agwName": {
+              "type": "string"
+            },
+            "functionAppSku": {
+              "type": "string",
+              "defaultValue": "EP1",
+              "allowedValues": [
+                "EP1",
+                "EP2",
+                "EP3"
+              ]
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('planName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('functionAppSku')]",
+                "tier": "ElasticPremium"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('funcName')]",
+              "location": "[parameters('location')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('msiId'))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "clientCertEnabled": true,
+                "clientCertMode": "Required",
+                "siteConfig": {
+                  "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "appSettings": [
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "dotnet-isolated"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage__accountName",
+                      "value": "[parameters('storageAccountName')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "AZURE_CLIENT_ID",
+                      "value": "[parameters('msiClientId')]"
+                    },
+                    {
+                      "name": "ImagingCoreApi__BaseUrl",
+                      "value": "[parameters('imagingCoreApiBaseUrl')]"
+                    },
+                    {
+                      "name": "KeyVault__VaultUri",
+                      "value": "[format('https://{0}{1}', parameters('keyVaultName'), environment().suffixes.keyvaultDns)]"
+                    },
+                    {
+                      "name": "Security__CertThumbprintCacheRefreshSeconds",
+                      "value": "60"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('deployApplicationGateway')]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "agw",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "agwName": {
+                    "value": "[parameters('agwName')]"
+                  },
+                  "backendFqdn": {
+                    "value": "[reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01').defaultHostName]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.45.15.27210",
+                      "templateHash": "13150711444865311648"
+                    }
+                  },
+                  "parameters": {
+                    "location": {
+                      "type": "string"
+                    },
+                    "agwName": {
+                      "type": "string"
+                    },
+                    "backendFqdn": {
+                      "type": "string"
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/applicationGateways",
+                      "apiVersion": "2024-01-01",
+                      "name": "[parameters('agwName')]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "sku": {
+                          "name": "WAF_v2",
+                          "tier": "WAF_v2",
+                          "capacity": 1
+                        },
+                        "gatewayIPConfigurations": [],
+                        "frontendIPConfigurations": [],
+                        "frontendPorts": [],
+                        "httpListeners": [],
+                        "requestRoutingRules": [],
+                        "backendAddressPools": [
+                          {
+                            "name": "deviceGatewayBackend",
+                            "properties": {
+                              "backendAddresses": [
+                                {
+                                  "fqdn": "[parameters('backendFqdn')]"
+                                }
+                              ]
+                            }
+                          }
+                        ],
+                        "backendHttpSettingsCollection": [],
+                        "webApplicationFirewallConfiguration": {
+                          "enabled": true,
+                          "firewallMode": "Prevention",
+                          "ruleSetType": "OWASP",
+                          "ruleSetVersion": "3.2"
+                        }
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "agwId": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Network/applicationGateways', parameters('agwName'))]"
+                    },
+                    "agwPublicIp": {
+                      "type": "string",
+                      "value": ""
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "baseUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01').defaultHostName)]"
+            },
+            "funcId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]",
+        "[resourceId('Microsoft.Resources/deployments', 'imaging-core-api')]",
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "operator-api",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "funcName": {
+            "value": "[variables('names').funcOperatorApi]"
+          },
+          "planName": {
+            "value": "[variables('names').planOperatorApi]"
+          },
+          "storageAccountName": {
+            "value": "[variables('names').storageApp]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'observability'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+          },
+          "msiId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.operatorApiMsiId.value]"
+          },
+          "msiClientId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.operatorApiMsiClientId.value]"
+          },
+          "imagingCoreApiBaseUrl": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'imaging-core-api'), '2025-04-01').outputs.internalBaseUrl.value]"
+          },
+          "sharedEntraClientId": {
+            "value": "[parameters('userAuthClientId')]"
+          },
+          "operatorApiClientId": {
+            "value": "[parameters('operatorApiClientId')]"
+          },
+          "tenantId": {
+            "value": "[parameters('tenantId')]"
+          },
+          "functionAppSku": {
+            "value": "[parameters('functionAppSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "2493961313607648725"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "funcName": {
+              "type": "string"
+            },
+            "planName": {
+              "type": "string"
+            },
+            "storageAccountName": {
+              "type": "string"
+            },
+            "appInsightsConnectionString": {
+              "type": "string"
+            },
+            "msiId": {
+              "type": "string"
+            },
+            "msiClientId": {
+              "type": "string"
+            },
+            "imagingCoreApiBaseUrl": {
+              "type": "string"
+            },
+            "sharedEntraClientId": {
+              "type": "string"
+            },
+            "operatorApiClientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "functionAppSku": {
+              "type": "string",
+              "defaultValue": "EP1",
+              "allowedValues": [
+                "EP1",
+                "EP2",
+                "EP3"
+              ]
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('planName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('functionAppSku')]",
+                "tier": "ElasticPremium"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('funcName')]",
+              "location": "[parameters('location')]",
+              "kind": "functionapp,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('msiId'))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "siteConfig": {
+                  "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "appSettings": [
+                    {
+                      "name": "FUNCTIONS_WORKER_RUNTIME",
+                      "value": "dotnet-isolated"
+                    },
+                    {
+                      "name": "FUNCTIONS_EXTENSION_VERSION",
+                      "value": "~4"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage__accountName",
+                      "value": "[parameters('storageAccountName')]"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "AZURE_CLIENT_ID",
+                      "value": "[parameters('msiClientId')]"
+                    },
+                    {
+                      "name": "ImagingCoreApi__BaseUrl",
+                      "value": "[parameters('imagingCoreApiBaseUrl')]"
+                    },
+                    {
+                      "name": "Entra__TenantId",
+                      "value": "[parameters('tenantId')]"
+                    },
+                    {
+                      "name": "Entra__ClientId",
+                      "value": "[parameters('operatorApiClientId')]"
+                    },
+                    {
+                      "name": "Entra__SharedClientId",
+                      "value": "[parameters('sharedEntraClientId')]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "baseUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01').defaultHostName)]"
+            },
+            "funcId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]",
+        "[resourceId('Microsoft.Resources/deployments', 'imaging-core-api')]",
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "cloud-imaging-portal",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "appServiceName": {
+            "value": "[variables('names').appPortalBackend]"
+          },
+          "planName": {
+            "value": "[variables('names').planPortalBackend]"
+          },
+          "stappName": {
+            "value": "[variables('names').stappPortalFrontend]"
+          },
+          "appInsightsConnectionString": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'observability'), '2025-04-01').outputs.appInsightsConnectionString.value]"
+          },
+          "msiId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.portalBackendMsiId.value]"
+          },
+          "msiClientId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.portalBackendMsiClientId.value]"
+          },
+          "operatorApiBaseUrl": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'operator-api'), '2025-04-01').outputs.baseUrl.value]"
+          },
+          "sharedEntraClientId": {
+            "value": "[parameters('userAuthClientId')]"
+          },
+          "tenantId": {
+            "value": "[parameters('tenantId')]"
+          },
+          "appServiceSku": {
+            "value": "[parameters('appServiceSku')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.45.15.27210",
+              "templateHash": "1832656093605723143"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string"
+            },
+            "appServiceName": {
+              "type": "string"
+            },
+            "planName": {
+              "type": "string"
+            },
+            "stappName": {
+              "type": "string"
+            },
+            "appInsightsConnectionString": {
+              "type": "string"
+            },
+            "msiId": {
+              "type": "string"
+            },
+            "msiClientId": {
+              "type": "string"
+            },
+            "operatorApiBaseUrl": {
+              "type": "string"
+            },
+            "sharedEntraClientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "appServiceSku": {
+              "type": "string",
+              "defaultValue": "P1v3",
+              "allowedValues": [
+                "P1v3",
+                "P2v3",
+                "P3v3"
+              ]
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Web/serverfarms",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('planName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('appServiceSku')]",
+                "tier": "PremiumV3"
+              },
+              "properties": {
+                "reserved": true
+              }
+            },
+            {
+              "type": "Microsoft.Web/sites",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('appServiceName')]",
+              "location": "[parameters('location')]",
+              "kind": "app,linux",
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', parameters('msiId'))]": {}
+                }
+              },
+              "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "siteConfig": {
+                  "linuxFxVersion": "NODE|22",
+                  "appSettings": [
+                    {
+                      "name": "NODE_ENV",
+                      "value": "production"
+                    },
+                    {
+                      "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                      "value": "[parameters('appInsightsConnectionString')]"
+                    },
+                    {
+                      "name": "AZURE_CLIENT_ID",
+                      "value": "[parameters('msiClientId')]"
+                    },
+                    {
+                      "name": "OPERATOR_API_BASE_URL",
+                      "value": "[parameters('operatorApiBaseUrl')]"
+                    },
+                    {
+                      "name": "ENTRA_CLIENT_ID",
+                      "value": "[parameters('sharedEntraClientId')]"
+                    },
+                    {
+                      "name": "ENTRA_TENANT_ID",
+                      "value": "[parameters('tenantId')]"
+                    },
+                    {
+                      "name": "ENTRA_AUTHORITY",
+                      "value": "[format('{0}{1}', environment().authentication.loginEndpoint, parameters('tenantId'))]"
+                    },
+                    {
+                      "name": "CORS_ALLOWED_ORIGINS",
+                      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', parameters('stappName')), '2024-04-01').defaultHostname)]"
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "[resourceId('Microsoft.Web/staticSites', parameters('stappName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/staticSites",
+              "apiVersion": "2024-04-01",
+              "name": "[parameters('stappName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Standard"
+              },
+              "properties": {
+                "repositoryUrl": "",
+                "branch": "",
+                "buildProperties": {
+                  "appLocation": "src/cloud-imaging-portal/client",
+                  "outputLocation": "dist"
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "portalUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', parameters('stappName')), '2024-04-01').defaultHostname)]"
+            },
+            "backendUrl": {
+              "type": "string",
+              "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('appServiceName')), '2024-04-01').defaultHostName)]"
+            },
+            "staticWebAppName": {
+              "type": "string",
+              "value": "[parameters('stappName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]",
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]",
+        "[resourceId('Microsoft.Resources/deployments', 'operator-api')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "portalUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cloud-imaging-portal'), '2025-04-01').outputs.portalUrl.value]"
+    },
+    "deviceGatewayApiUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'device-gateway-api'), '2025-04-01').outputs.baseUrl.value]"
+    },
+    "operatorApiUrl": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'operator-api'), '2025-04-01').outputs.baseUrl.value]"
+    },
+    "resourceNames": {
+      "type": "object",
+      "value": "[variables('names')]"
+    }
+  }
+}

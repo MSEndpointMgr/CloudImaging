@@ -1,4 +1,6 @@
-# Operator API Contract
+﻿# Operator API Contract
+
+> **Contract Revision — 2026-06-26** (post-freeze): Added boot media client certificate PFX endpoint introduced by FR-068, FR-069, FR-070, FR-071. Per contract freeze policy this constitutes a versioned revision; all implementation MUST target these updated semantics.
 
 **Service**: CloudImaging.OperatorApi  
 **Type**: Azure Functions v4 isolated worker (.NET 10)  
@@ -20,14 +22,14 @@ Authenticated operator boundary for administrative and technician operations. Th
 
 ## App Roles
 
-> These are **service-level** app roles for service-to-service authorization on the Operator API. User-level access control (`CloudImagingAdministrator`, `CloudImagingTechnician`) is enforced upstream: at the Portal backend (FR-040a) and the Media Builder UI (FR-050b), using roles from the shared Entra ID enterprise app registration (FR-040b).
+> These are **service-level** app roles for service-to-service authorization on the Operator API. User-level access control (`CloudImaging.Administrator`, `CloudImaging.Technician`) is enforced upstream: at the Portal backend (FR-040a) and the Media Builder UI (FR-050b), using roles from the shared Entra ID enterprise app registration (FR-040b).
 
-- `CloudImagingPortal`: assigned to the Portal backend managed identity; grants full operator access (sessions, OS images, branding, boot image lifecycle).
-- `CloudImagingMediaBuilder`: assigned to the Media Builder service principal; grants read-only access to boot images and SAS token URL generation.
+- `CloudImaging.PortalAccess`: assigned to the Portal backend managed identity; grants full operator access (sessions, OS images, branding, boot image lifecycle).
+- `CloudImaging.MediaBuilderAccess`: assigned to the Media Builder service principal; grants read-only access to boot images and SAS token URL generation.
 
 ## App Role Authorization Matrix
 
-| Endpoint | CloudImagingPortal | CloudImagingMediaBuilder |
+| Endpoint | CloudImaging.PortalAccess | CloudImaging.MediaBuilderAccess |
 |----------|-------------------|--------------------------|
 | GET /api/sessions | YES | NO |
 | POST /api/sessions/couple | YES | NO |
@@ -49,6 +51,8 @@ Authenticated operator boundary for administrative and technician operations. Th
 | GET /api/branding/logo/sas | YES | YES |
 | GET /api/configuration | YES | NO |
 | PATCH /api/configuration | YES | NO |
+| GET /api/bootmedia/certificate/pfx | NO | YES |
+| GET /api/bootmedia/certificate/metadata | NO | YES |
 
 **Key distinction**: Media Builder role has read-only access to boot image queries and SAS generation. Portal role has full lifecycle (create/update/delete) for boot images and OS images.
 
@@ -94,19 +98,19 @@ Authenticated operator boundary for administrative and technician operations. Th
 - `PUT /api/branding`
   - Update branding configuration.
 - `GET /api/branding/logo/sas`
-  - Get a time-limited read SAS token URL for the current branding logo asset in Storage. Used by the Cloud Imaging Media Builder to embed the logo during boot image generation (FR-062). Accessible by both `CloudImagingPortal` and `CloudImagingMediaBuilder` roles.
+  - Get a time-limited read SAS token URL for the current branding logo asset in Storage. Used by the Cloud Imaging Media Builder to embed the logo during boot image generation (FR-062). Accessible by both `CloudImaging.PortalAccess` and `CloudImaging.MediaBuilderAccess` roles.
 
 ## Portal Configuration Endpoints (Portal role only)
 
 - `GET /api/configuration`
   - Return current portal deployment configuration (`devicePreFlightAuthorizationEnabled`, `sasTokenUrlExpiryMinutes`). Available to all authenticated portal service callers; user-level read restriction is not applied at this layer.
 - `PATCH /api/configuration`
-  - Update portal configuration settings. The Portal backend MUST verify the calling user holds the `CloudImagingAdministrator` role before forwarding this request. Changes to `sasTokenUrlExpiryMinutes` take effect immediately for all newly issued SAS token URLs.
+  - Update portal configuration settings. The Portal backend MUST verify the calling user holds the `CloudImaging.Administrator` role before forwarding this request. Changes to `sasTokenUrlExpiryMinutes` take effect immediately for all newly issued SAS token URLs.
 
 - `GET /api/boot-images`
-  - List available boot images and metadata.
+  - List all active boot images and metadata. Response items include: `bootImageId`, `version`, `createdAt`, `sizeBytes`, `manifestVersion`, `sha256Hash` (of the WIM blob), and `isLatestPublished` (boolean; `true` for exactly one entry — the most recently published boot image). All active entries are eligible for USB preparation. The `isLatestPublished=true` entry is the recommended default and MUST be pre-selected in the Media Builder PrepareStorageDeviceView; the technician may choose a different active entry to use a previously known-good boot image.
 - `POST /api/boot-images/{bootImageId}/sas`
-  - Get time-limited SAS token URL for boot image download.
+  - Get time-limited SAS token URL for boot image download. Response includes `downloadUrl`, `expiresAt`, and `sha256Hash` (SHA256 hash of the WIM blob; Media Builder MUST verify the downloaded file against this value before deploying to USB partition, per FR-056).
 
 ### Portal role only (boot image lifecycle)
 
@@ -150,3 +154,28 @@ OS image uploads support chunked transfer for large files (5-10 GB typical). Thi
 - No direct client bootstrap for WinPE devices.
 - No direct public access to Imaging Core API.
 - No bypass of app-role authorization.
+
+---
+
+## Boot Media Certificate Endpoint (MediaBuilder role only)
+
+> **Added 2026-06-26** — post-freeze revision for FR-068, FR-070.
+
+- `GET /api/bootmedia/certificate/pfx`
+  - Returns the current active boot media client certificate PFX bytes (certificate + private key) from Azure Key Vault via the Imaging Core API.
+  - **Role**: `CloudImaging.MediaBuilderAccess` only. `CloudImaging.PortalAccess` is explicitly excluded to prevent portal code from accessing private key material.
+  - **Consumer**: Media Builder Generate Boot Image workflow exclusively. The Media Builder embeds the PFX at `certificates\bootmedia.pfx` relative to the Cloud Imaging Client executable directory within the boot image WIM (FR-070).
+  - **Failure behaviour**: If no active boot media certificate is configured in the Portal, the endpoint returns HTTP 404. The Media Builder MUST abort boot image generation with a clear error instructing the technician to generate a certificate first in Portal Configuration.
+  - **Response**: `application/octet-stream` — raw PFX bytes. No JSON envelope; the entire response body is the PFX.
+  - **Security**: Transport is Entra ID bearer token + TLS. The PFX is never logged, never included in error responses, and is not cached by the Operator API layer.
+
+- `GET /api/bootmedia/certificate/metadata`
+  - Returns non-sensitive metadata for the current active boot media certificate without PFX bytes.
+  - **Role**: `CloudImaging.MediaBuilderAccess` only.
+  - **Consumer**: Media Builder OperationSelectionView certificate existence check (FR-050a, FR-062). Called at startup after sign-in to determine whether the Generate Boot Image card should be enabled or disabled.
+  - **Response** `200 OK`:
+    - `thumbprintDisplay` (last 8 characters of SHA-256 thumbprint, for display only)
+    - `subject`
+    - `issuedAt`
+    - `expiresAt`
+  - **HTTP 404**: No active certificate is configured. The Media Builder MUST show the Generate Boot Image card as disabled with a message directing the administrator to generate a certificate in Portal Configuration.

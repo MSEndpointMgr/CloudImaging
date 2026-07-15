@@ -1,0 +1,70 @@
+## CloudImaging .gitignore
+## .NET + Node.js + WPF + Bicep + Azure Functions
+
+# -------
+# .NET
+# -------
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+*.userprefs
+TestResults/
+coverage/
+*.ncrunch*
+*_ReSharper*
+*.DotSettings.user
+
+# -------
+# Node.js / TypeScript
+# -------
+**/node_modules/
+**/dist/
+**/.cache/
+**/.parcel-cache/
+**/coverage/
+**/.turbo/
+*.tsbuildinfo
+
+# -------
+# Environment / Secrets — NEVER commit these
+# -------
+**/.env
+**/.env.local
+**/.env.production
+**/.env.*.local
+local.settings.json
+**/appsettings.Development.json
+**/appsettings.Local.json
+
+# -------
+# Azure Functions local settings
+# -------
+local.settings.json
+
+# -------
+# Bicep / ARM
+# -------
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# -------
+# OS / IDE
+# -------
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.log
+.idea/
+*.iml
+
+# -------
+# VS Code workspace-specific (developer-local only)
+# -------
+.vscode/settings.json
+.vscode/launch.json
+# tasks.json is committed (FR-046 VS Code deployment tasks)

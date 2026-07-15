@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "resourcePrefix": { "value": "mse" },
+    "environment": { "value": "prod" },
+    "userAuthClientId": { "value": "" },
+    "operatorApiClientId": { "value": "" },
+    "tenantId": { "value": "" },
+    "deployApplicationGateway": { "value": false },
+    "functionAppSku": { "value": "EP1" },
+    "appServiceSku": { "value": "P1v3" },
+    "certValidityPeriodDays": { "value": 365 },
+    "passcodeTtlMinutes": { "value": 30 },
+    "sasTokenExpiryMinutes": { "value": 240 },
+    "bootImageSasExpiryMinutes": { "value": 120 },
+    "clockSkewToleranceSeconds": { "value": 30 },
+    "vnetAddressPrefix": { "value": "10.12.0.0/16" },
+    "apiFunctionSubnetPrefix": { "value": "10.12.1.0/24" },
+    "privateEndpointSubnetPrefix": { "value": "10.12.2.0/24" },
+    "location": { "value": "eastus" }
+  }
+}

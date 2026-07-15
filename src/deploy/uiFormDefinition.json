@@ -1,0 +1,297 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2021-09-09/uiFormDefinition.schema.json",
+  "view": {
+    "kind": "Form",
+    "properties": {
+      "title": "Cloud Imaging",
+      "steps": [
+        {
+          "name": "basics",
+          "label": "Basics",
+          "elements": [
+            {
+              "name": "resourceScope",
+              "type": "Microsoft.Common.ResourceScope",
+              "location": {
+                "resourceTypes": [
+                  "microsoft.network/virtualnetworks",
+                  "microsoft.web/serverfarms",
+                  "microsoft.web/sites",
+                  "microsoft.web/staticsites",
+                  "microsoft.insights/components",
+                  "microsoft.operationalinsights/workspaces",
+                  "microsoft.keyvault/vaults",
+                  "microsoft.storage/storageaccounts",
+                  "microsoft.network/privateendpoints",
+                  "microsoft.managedidentity/userassignedidentities"
+                ]
+              }
+            },
+            {
+              "name": "environment",
+              "type": "Microsoft.Common.DropDown",
+              "label": "Deployment Environment",
+              "defaultValue": "Development",
+              "toolTip": "Select the environment. The selected value determines the second segment in all resource names.",
+              "constraints": {
+                "allowedValues": [
+                  { "label": "Development (dev)", "value": "dev" },
+                  { "label": "Production (prod)",  "value": "prod" }
+                ],
+                "required": true
+              },
+              "visible": true
+            }
+          ]
+        },
+        {
+          "name": "configuration",
+          "label": "Configuration",
+          "elements": [
+            {
+              "name": "namingSection",
+              "type": "Microsoft.Common.Section",
+              "label": "Resource Naming",
+              "elements": [
+                {
+                  "name": "resourcePrefix",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Resource Prefix",
+                  "placeholder": "mse",
+                  "toolTip": "Short alphanumeric identifier (max 4 characters). Used as the leading segment of all Azure resource names. Example: mse",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[a-z0-9]{1,4}$",
+                    "validationMessage": "Must be 1-4 lowercase alphanumeric characters."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "namingPreview",
+                  "type": "Microsoft.Common.InfoBox",
+                  "visible": true,
+                  "options": {
+                    "style": "Info",
+                    "text": "[concat('Example names: ', steps('configuration').namingSection.resourcePrefix, '-', steps('basics').environment, '-func-gateway  |  ', steps('configuration').namingSection.resourcePrefix, steps('basics').environment, 'stcore')]"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "entraSection",
+              "type": "Microsoft.Common.Section",
+              "label": "Entra ID App Registrations",
+              "elements": [
+                {
+                  "name": "userAuthClientId",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Shared User Auth - Application (client) ID",
+                  "toolTip": "Client ID of the shared enterprise app registration (Registration A). Contains CloudImaging.Administrator and CloudImaging.Technician user roles. Used by the Portal and Media Builder for user sign-in.",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "validationMessage": "Must be a valid GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "operatorApiClientId",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Operator API - Application (client) ID",
+                  "toolTip": "Client ID of the Operator API app registration (Registration B). Contains CloudImaging.PortalAccess and CloudImaging.MediaBuilderAccess service-level roles.",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "validationMessage": "Must be a valid GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."
+                  },
+                  "visible": true
+                }
+              ]
+            },
+            {
+              "name": "tierSection",
+              "type": "Microsoft.Common.Section",
+              "label": "Deployment Tier",
+              "elements": [
+                {
+                  "name": "deployApplicationGateway",
+                  "type": "Microsoft.Common.DropDown",
+                  "label": "Deployment Tier",
+                  "defaultValue": false,
+                  "toolTip": "Standard: mTLS enforced at the Azure Functions Premium EP1 platform layer (recommended for most organizations). Enterprise: adds Azure Application Gateway WAF_v2 in front of the Device Gateway API.",
+                  "constraints": {
+                    "required": true,
+                    "allowedValues": [
+                      { "label": "Standard - mTLS at Function App layer (default)", "value": false },
+                      { "label": "Enterprise - Application Gateway WAF_v2",        "value": true }
+                    ]
+                  },
+                  "visible": true
+                }
+              ]
+            },
+            {
+              "name": "computeSection",
+              "type": "Microsoft.Common.Section",
+              "label": "Compute (SKU Selection)",
+              "elements": [
+                {
+                  "name": "computeInfo",
+                  "type": "Microsoft.Common.InfoBox",
+                  "visible": true,
+                  "options": {
+                    "style": "Warning",
+                    "text": "All API Function Apps must remain on the Elastic Premium tier (EP1/EP2/EP3). EP1 is sufficient for most deployments. EP2 or EP3 is recommended for high-volume environments imaging 500+ devices per day. The Portal App Service can be P1v3 for standard use."
+                  }
+                },
+                {
+                  "name": "functionAppSku",
+                  "type": "Microsoft.Common.DropDown",
+                  "label": "API Function App SKU (applies to Device Gateway, Operator, and Imaging Core APIs)",
+                  "defaultValue": "EP1",
+                  "toolTip": "Elastic Premium SKU for all three API Function App plans. EP1 is the minimum required for mTLS, VNet integration, and pre-warmed instances. Scale up for higher throughput.",
+                  "constraints": {
+                    "required": true,
+                    "allowedValues": [
+                      { "label": "EP1 - 1 vCore, 3.5 GB RAM (recommended for most deployments)", "value": "EP1" },
+                      { "label": "EP2 - 2 vCores, 7 GB RAM (high-volume imaging environments)",   "value": "EP2" },
+                      { "label": "EP3 - 4 vCores, 14 GB RAM (very high-volume or enterprise use)", "value": "EP3" }
+                    ]
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "appServiceSku",
+                  "type": "Microsoft.Common.DropDown",
+                  "label": "Portal Backend App Service SKU",
+                  "defaultValue": "P1v3",
+                  "toolTip": "PremiumV3 SKU for the Cloud Imaging Portal backend App Service. P1v3 handles up to 50 concurrent operator users comfortably.",
+                  "constraints": {
+                    "required": true,
+                    "allowedValues": [
+                      { "label": "P1v3 - 2 vCores, 8 GB RAM (recommended for most deployments)", "value": "P1v3" },
+                      { "label": "P2v3 - 4 vCores, 16 GB RAM (high operator concurrency)",       "value": "P2v3" },
+                      { "label": "P3v3 - 8 vCores, 32 GB RAM (enterprise scale)",                "value": "P3v3" }
+                    ]
+                  },
+                  "visible": true
+                }
+              ]
+            },
+            {
+              "name": "securitySection",
+              "type": "Microsoft.Common.Section",
+              "label": "Security Settings",
+              "elements": [
+                {
+                  "name": "certValidityPeriodDays",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Boot Media Certificate Validity (days)",
+                  "defaultValue": "365",
+                  "toolTip": "Validity period for the boot media mTLS client certificate. Default: 365 days.",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[1-9][0-9]*$",
+                    "validationMessage": "Must be a positive integer."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "passcodeTtlMinutes",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Session Passcode TTL (minutes)",
+                  "defaultValue": "30",
+                  "toolTip": "How long a one-time device pairing passcode remains valid. Default: 30 minutes.",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[1-9][0-9]*$",
+                    "validationMessage": "Must be a positive integer."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "sasTokenExpiryMinutes",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "OS Image SAS Token Expiry (minutes)",
+                  "defaultValue": "240",
+                  "toolTip": "How long an OS image SAS download URL remains valid. Default: 240 minutes (4 hours).",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[1-9][0-9]*$",
+                    "validationMessage": "Must be a positive integer."
+                  },
+                  "visible": true
+                }
+              ]
+            },
+            {
+              "name": "networkSection",
+              "type": "Microsoft.Common.Section",
+              "label": "Networking (CIDR ranges)",
+              "elements": [
+                {
+                  "name": "vnetAddressPrefix",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "VNet Address Prefix",
+                  "defaultValue": "10.0.0.0/16",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+                    "validationMessage": "Must be a valid CIDR block."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "apiFunctionSubnetPrefix",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Function Apps Subnet",
+                  "defaultValue": "10.0.1.0/24",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+                    "validationMessage": "Must be a valid CIDR block."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "privateEndpointSubnetPrefix",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Private Endpoints Subnet",
+                  "defaultValue": "10.0.2.0/24",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+                    "validationMessage": "Must be a valid CIDR block."
+                  },
+                  "visible": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "outputs": {
+      "kind": "ResourceGroup",
+      "location": "[steps('basics').resourceScope.location.name]",
+      "resourceGroupId": "[steps('basics').resourceScope.resourceGroup.id]",
+      "parameters": {
+        "resourcePrefix": "[steps('configuration').namingSection.resourcePrefix]",
+        "environment": "[steps('basics').environment]",
+        "userAuthClientId": "[steps('configuration').entraSection.userAuthClientId]",
+        "operatorApiClientId": "[steps('configuration').entraSection.operatorApiClientId]",
+        "tenantId": "[steps('basics').resourceScope.subscription.tenantId]",
+        "deployApplicationGateway": "[steps('configuration').tierSection.deployApplicationGateway]",
+        "functionAppSku": "[steps('configuration').computeSection.functionAppSku]",
+        "appServiceSku": "[steps('configuration').computeSection.appServiceSku]",
+        "certValidityPeriodDays": "[int(steps('configuration').securitySection.certValidityPeriodDays)]",
+        "passcodeTtlMinutes": "[int(steps('configuration').securitySection.passcodeTtlMinutes)]",
+        "sasTokenExpiryMinutes": "[int(steps('configuration').securitySection.sasTokenExpiryMinutes)]",
+        "vnetAddressPrefix": "[steps('configuration').networkSection.vnetAddressPrefix]",
+        "apiFunctionSubnetPrefix": "[steps('configuration').networkSection.apiFunctionSubnetPrefix]",
+        "privateEndpointSubnetPrefix": "[steps('configuration').networkSection.privateEndpointSubnetPrefix]",
+        "location": "[steps('basics').resourceScope.location.name]"
+      }
+    }
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "version": "2.0.0",
+  // VS Code workspace deployment tasks for the core development team (FR-046, FR-047).
+  // These tasks are for INTERNAL DEVELOPER USE ONLY and MUST NOT be included in community release bundles.
+  // Each task triggers the deploy-components.yml workflow via `gh workflow run`,
+  // which uses OIDC-based federated identity (no long-lived credentials).
+  // Fallback az CLI commands are documented as comments for offline scenarios.
+  "tasks": [
+    {
+      "label": "Deploy: Device Gateway API",
+      "type": "shell",
+      "command": "gh workflow run deploy-components.yml --field component=DeviceGatewayApi",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Triggers GitHub Actions deploy-components.yml to redeploy DeviceGatewayApi to the shared dev environment. Requires `gh` CLI authenticated to the repo."
+      // Fallback (offline): az functionapp deployment source config-zip
+      //   --resource-group <your-rg> --name <your-prefix>-dev-func-gateway
+      //   --src <zip-path>
+    },
+    {
+      "label": "Deploy: Operator API",
+      "type": "shell",
+      "command": "gh workflow run deploy-components.yml --field component=OperatorApi",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Triggers deploy-components.yml for OperatorApi."
+      // Fallback: az functionapp deployment source config-zip ... --name <prefix>-dev-func-operator
+    },
+    {
+      "label": "Deploy: Imaging Core API",
+      "type": "shell",
+      "command": "gh workflow run deploy-components.yml --field component=ImagingCoreApi",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Triggers deploy-components.yml for ImagingCoreApi."
+      // Fallback: az functionapp deployment source config-zip ... --name <prefix>-dev-func-core
+    },
+    {
+      "label": "Deploy: Portal Backend",
+      "type": "shell",
+      "command": "gh workflow run deploy-components.yml --field component=PortalBackend",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Triggers deploy-components.yml for the Portal backend App Service."
+      // Fallback: az webapp deploy --name <prefix>-dev-app-portal --src-path <zip>
+    },
+    {
+      "label": "Deploy: Portal Frontend",
+      "type": "shell",
+      "command": "gh workflow run deploy-components.yml --field component=PortalFrontend",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Triggers deploy-components.yml for the Portal frontend Static Web App."
+      // Fallback: npx @azure/static-web-apps-cli deploy ./dist --deployment-token <token>
+    },
+    {
+      "label": "Deploy: Full Stack (IaC + all components)",
+      "type": "shell",
+      "command": "gh workflow run deploy-dev.yml --field confirm=deploy",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Triggers deploy-dev.yml for a full-stack deployment (Bicep IaC + all components). Use only for initial setup or full environment refresh."
+    },
+    {
+      "label": "Build: .NET Solution (Release)",
+      "type": "shell",
+      "command": "dotnet build CloudImaging.sln --configuration Release",
+      "problemMatcher": ["$msCompile"],
+      "group": { "kind": "build", "isDefault": true },
+      "detail": "Build all .NET projects in Release configuration with TreatWarningsAsErrors."
+    },
+    {
+      "label": "Test: .NET Solution",
+      "type": "shell",
+      "command": "dotnet test CloudImaging.sln --configuration Release",
+      "problemMatcher": ["$msCompile"],
+      "group": { "kind": "test", "isDefault": true },
+      "detail": "Run all .NET unit and integration tests."
+    },
+    {
+      "label": "IaC: Publish Template Spec to dev",
+      "type": "shell",
+      "command": ".\\src\\deploy\\scripts\\publish-template-spec.ps1 -ResourceGroupName '${input:resourceGroup}' -Location '${input:location}' -Version '${input:version}'",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Publish the Bicep + uiFormDefinition.json as a Template Spec to your dev resource group."
+    }
+  ],
+  "inputs": [
+    {
+      "id": "resourceGroup",
+      "type": "promptString",
+      "description": "Azure Resource Group name",
+      "default": "rg-mse-dev-cloudimaging"
+    },
+    {
+      "id": "location",
+      "type": "promptString",
+      "description": "Azure region",
+      "default": "eastus"
+    },
+    {
+      "id": "version",
+      "type": "promptString",
+      "description": "Template Spec version",
+      "default": "1.0.0"
+    }
+  ]
+}

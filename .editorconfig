@@ -1,0 +1,49 @@
+# .editorconfig — CloudImaging project style rules (Constitution Principle I)
+# VS Code + Rider + Visual Studio all respect this file.
+
+root = true
+
+[*]
+indent_style = space
+end_of_line = crlf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.cs]
+indent_size = 4
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+
+# Naming conventions
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+dotnet_naming_style.camel_case.capitalization = camel_case
+dotnet_naming_style.i_prefix_pascal_case.required_prefix = I
+dotnet_naming_style.i_prefix_pascal_case.capitalization = pascal_case
+
+dotnet_naming_rule.interfaces_should_be_prefixed_with_i.symbols = interfaces
+dotnet_naming_rule.interfaces_should_be_prefixed_with_i.style = i_prefix_pascal_case
+dotnet_naming_rule.interfaces_should_be_prefixed_with_i.severity = warning
+
+# Require braces
+csharp_prefer_braces = true:warning
+
+# Require 'this.' qualification — off (we use primary constructors)
+dotnet_style_qualification_for_field = false:silent
+dotnet_style_qualification_for_property = false:silent
+
+# Prefer var where type is evident
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+
+[*.{ts,tsx,js,jsx}]
+indent_size = 2
+
+[*.{json,yaml,yml}]
+indent_size = 2
+
+[*.{bicep}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

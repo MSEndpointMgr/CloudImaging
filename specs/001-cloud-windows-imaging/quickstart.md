@@ -1,4 +1,4 @@
-# Quickstart Validation Guide: Cloud Windows Imaging
+﻿# Quickstart Validation Guide: Cloud Windows Imaging
 
 **Feature**: 001-cloud-windows-imaging  
 **Date**: 2026-06-16  
@@ -129,13 +129,13 @@ Expected result:
 
 **Validates**: FR-022, FR-026a, PortalConfiguration entity
 
-1. Sign in as `CloudImagingAdministrator`.
+1. Sign in as `CloudImaging.Administrator`.
 2. Navigate to Portal deployment configuration section.
 3. Change `sasTokenUrlExpiryMinutes` to a non-default value (e.g., 60 minutes).
 4. Save and issue a new OS image SAS token URL via a new imaging session assignment.
 5. Verify new SAS token URL expiry reflects the updated value.
 6. Verify sessions that already have SAS token URLs are not retroactively affected.
-7. Attempt the same configuration change as `CloudImagingTechnician`.
+7. Attempt the same configuration change as `CloudImaging.Technician`.
 
 Expected result:
 - SAS expiry change takes effect immediately for newly issued tokens.

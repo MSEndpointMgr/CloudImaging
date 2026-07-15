@@ -1,4 +1,4 @@
-# Data Model: Cloud Windows Imaging
+﻿# Data Model: Cloud Windows Imaging
 
 **Feature**: 001-cloud-windows-imaging  
 **Date**: 2026-06-16  
@@ -113,7 +113,7 @@ Deployment-wide portal configuration settings. Singleton per deployment.
 | Field | Type | Description |
 |------|------|-------------|
 | devicePreFlightAuthorizationEnabled | bool | Global on/off toggle for device pre-flight authorization check. Default: `true`. |
-| sasTokenUrlExpiryMinutes | int | Expiry window in minutes for newly issued OS image SAS token URLs. Default: `240` (4 hours). Changes take immediate effect for newly issued tokens; existing tokens are not retroactively affected. Modifiable by `CloudImagingAdministrator` role from Portal deployment configuration section. |
+| sasTokenUrlExpiryMinutes | int | Expiry window in minutes for newly issued OS image SAS token URLs. Default: `240` (4 hours). Changes take immediate effect for newly issued tokens; existing tokens are not retroactively affected. Modifiable by `CloudImaging.Administrator` role from Portal deployment configuration section. |
 | lastModifiedAt | datetime | Timestamp of last configuration change. |
 
 ## Entity: BrandingConfiguration

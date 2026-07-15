@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "resourcePrefix": { "value": "mse" },
+    "environment": { "value": "dev" },
+    "userAuthClientId": { "value": "0095f085-6166-4154-ace4-f268fd58a500" },
+    "operatorApiClientId": { "value": "beb5c8c0-e7f0-4f67-9b00-5e011bc71d10" },
+    "tenantId": { "value": "cec1aa3f-dff2-48dd-8ddb-7c83e39f4547" },
+    "deployApplicationGateway": { "value": false },
+    "functionAppSku": { "value": "EP1" },
+    "appServiceSku": { "value": "P1v3" },
+    "certValidityPeriodDays": { "value": 365 },
+    "passcodeTtlMinutes": { "value": 30 },
+    "sasTokenExpiryMinutes": { "value": 240 },
+    "bootImageSasExpiryMinutes": { "value": 120 },
+    "clockSkewToleranceSeconds": { "value": 30 },
+    "vnetAddressPrefix": { "value": "10.10.0.0/16" },
+    "apiFunctionSubnetPrefix": { "value": "10.10.1.0/24" },
+    "privateEndpointSubnetPrefix": { "value": "10.10.2.0/24" },
+    "location": { "value": "westeurope" }
+  }
+}
