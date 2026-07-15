@@ -13,6 +13,11 @@ param imagingCoreApiBaseUrl string
 param keyVaultName string
 param deployApplicationGateway bool
 param agwName string
+// When Application Gateway is deployed the Function App restricts inbound traffic
+// to the AGW subnet only (defence-in-depth, FR-042, FR-069).
+// Set to the AGW subnet address prefix (e.g. '10.0.3.0/24').
+// Ignored when deployApplicationGateway=false.
+param agwSubnetPrefix string = '10.0.3.0/24'
 // Elastic Premium SKU for the Function App plan.
 // Allowed: EP1 (default), EP2, EP3. Must remain ElasticPremium tier for mTLS support.
 @allowed(['EP1','EP2','EP3'])
@@ -39,8 +44,24 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
     clientCertEnabled: true
     clientCertMode: 'Required'
     siteConfig: {
-      linuxFxVersion: 'DOTNET-ISOLATED|10'
-      appSettings: [
+      linuxFxVersion: 'DOTNET-ISOLATED|10'      // When Application Gateway is deployed, restrict inbound traffic to the AGW subnet.
+      // This is a defence-in-depth layer on top of mTLS cert validation (T163/T164).
+      ipSecurityRestrictions: deployApplicationGateway ? [
+        {
+          ipAddress: agwSubnetPrefix
+          action: 'Allow'
+          priority: 100
+          name: 'AllowApplicationGatewaySubnet'
+          description: 'Allow traffic from Application Gateway subnet only (FR-042)'
+        }
+        {
+          ipAddress: 'Any'
+          action: 'Deny'
+          priority: 65000
+          name: 'DenyAll'
+          description: 'Deny all other inbound traffic'
+        }
+      ] : []      appSettings: [
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'AzureWebJobsStorage__accountName', value: storageAccountName }

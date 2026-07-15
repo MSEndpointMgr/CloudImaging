@@ -1,0 +1,141 @@
+using System.Net;
+using System.Text.Json;
+using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models;
+using CloudImaging.ImagingCoreApi.Domain;
+using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace CloudImaging.ImagingCoreApi.Functions;
+
+/// <summary>
+/// POST /api/internal/sessions — Internal endpoint called by Device Gateway API over Private Link.
+/// Creates a device imaging session with one-time passcode and runs device pre-flight authorization (T030).
+///
+/// Response shape:
+/// {
+///   "sessionId": "...",
+///   "passcode": "ABCDEF",           // plain passcode — returned ONCE at session init only
+///   "deviceSessionToken": "...",    // opaque bearer token for subsequent Device Gateway calls
+///   "state": "SessionInit",
+///   "preFlightResult": "Skipped|MatchedAutopilotV1|MatchedCorporateIdentifier|NotAuthorized"
+/// }
+/// </summary>
+public sealed partial class CreateSessionFunction
+{
+    private readonly DeviceSessionRepository _sessionRepo;
+    private readonly DevicePreFlightAuthorizationService _preFlight;
+    private readonly PortalConfigurationRepository _configRepo;
+    private readonly IConfiguration _config;
+    private readonly ILogger<CreateSessionFunction> _logger;
+
+    public CreateSessionFunction(
+        DeviceSessionRepository sessionRepo,
+        DevicePreFlightAuthorizationService preFlight,
+        PortalConfigurationRepository configRepo,
+        IConfiguration config,
+        ILogger<CreateSessionFunction> logger)
+    {
+        _sessionRepo = sessionRepo;
+        _preFlight   = preFlight;
+        _configRepo  = configRepo;
+        _config      = config;
+        _logger      = logger;
+    }
+
+    [Function(nameof(CreateSessionFunction))]
+    public async Task<HttpResponseData> Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions")] HttpRequestData req,
+        FunctionContext context)
+    {
+        DeviceRegistrationPayload? payload;
+        try
+        {
+            payload = await JsonSerializer.DeserializeAsync<DeviceRegistrationPayload>(
+                req.Body,
+                cancellationToken: context.CancellationToken);
+        }
+        catch (JsonException ex)
+        {
+            LogInvalidPayload(_logger, ex);
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Invalid registration payload.", context.CancellationToken);
+            return bad;
+        }
+
+        if (payload is null || string.IsNullOrWhiteSpace(payload.SerialNumber))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("SerialNumber is required.", context.CancellationToken);
+            return bad;
+        }
+
+        // Read configuration
+        int passcodeTtlMinutes = _config.GetValue<int>("Security__PasscodeTtlMinutes", 10);
+        int sessionInactivityMinutes = _config.GetValue<int>("Security__SessionInactivityMinutes", 30);
+
+        var passcodeTtl           = TimeSpan.FromMinutes(passcodeTtlMinutes);
+        var sessionInactivityTimeout = TimeSpan.FromMinutes(sessionInactivityMinutes);
+
+        // Create session with passcode
+        var (session, plainPasscode) = DeviceSessionFactory.CreateNew(
+            payload, passcodeTtl, sessionInactivityTimeout);
+
+        // Run device pre-flight authorization
+        var preFlightResult = await _preFlight.EvaluateAsync(payload, context.CancellationToken);
+
+        // Determine target state
+        var targetState = preFlightResult == PreFlightAuthorizationResult.NotAuthorized
+            ? SessionState.SessionNotAuthorized
+            : SessionState.SessionAllowed;
+
+        // Issue device-session token if not NotAuthorized
+        // (The actual token service is in DeviceGatewayApi — ImagingCoreApi returns the raw session,
+        //  and DeviceGatewayApi issues the bearer token before returning to the device)
+        var finalSession = new DeviceSession
+        {
+            SessionId                     = session.SessionId,
+            State                         = targetState,
+            DeviceSerialNumber            = session.DeviceSerialNumber,
+            DeviceManufacturer            = session.DeviceManufacturer,
+            DeviceModel                   = session.DeviceModel,
+            HardwareMetadata              = session.HardwareMetadata,
+            PreFlightAuthorizationResult  = preFlightResult,
+            Passcode                      = session.Passcode,
+            PasscodeExpiresAt             = session.PasscodeExpiresAt,
+            PasscodeConsumed              = false,
+            OverallProgressPercent        = 0,
+            CreatedAt                     = session.CreatedAt,
+            LastHeartbeatAt               = session.LastHeartbeatAt,
+        };
+
+        await _sessionRepo.CreateAsync(finalSession, context.CancellationToken);
+        LogSessionCreated(_logger, finalSession.SessionId, targetState, preFlightResult);
+
+        // Return session info including the PLAIN passcode (only returned at creation)
+        var responseBody = new
+        {
+            sessionId        = finalSession.SessionId,
+            passcode         = plainPasscode,
+            state            = finalSession.State.ToString(),
+            preFlightResult  = finalSession.PreFlightAuthorizationResult.ToString(),
+        };
+
+        var response = req.CreateResponse(HttpStatusCode.Created);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(JsonSerializer.Serialize(responseBody), context.CancellationToken);
+        return response;
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid device registration payload.")]
+    private static partial void LogInvalidPayload(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Session {SessionId} created with state {State} (pre-flight: {PreFlightResult}).")]
+    private static partial void LogSessionCreated(
+        ILogger logger, Guid sessionId, SessionState state, PreFlightAuthorizationResult preFlightResult);
+}

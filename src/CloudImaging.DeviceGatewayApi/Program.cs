@@ -45,6 +45,9 @@ var host = new HostBuilder()
                 new Azure.Identity.DefaultAzureCredential());
         });
 
+        // Device-session token service (issues + validates opaque session bearer tokens)
+        services.AddSingleton<CloudImaging.DeviceGatewayApi.Security.DeviceSessionTokenService>();
+
         // Boot-media certificate thumbprint cache (60s TTL, FR-069)
         // Loader reads the active thumbprint from Table Storage via the internal API client.
         services.AddSingleton<BootMediaCertificateThumbprintCache>(sp =>

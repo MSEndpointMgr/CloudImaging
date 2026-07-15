@@ -16,7 +16,7 @@ namespace CloudImaging.DeviceGatewayApi.Security;
 /// </summary>
 public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
 {
-    internal static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
+    public static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     private readonly Func<CancellationToken, Task<string?>> _loader;
     private readonly ILogger<BootMediaCertificateThumbprintCache> _logger;

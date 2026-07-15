@@ -7,16 +7,26 @@ namespace CloudImaging.DeviceGatewayApi.Security;
 /// Generates and validates device-session bearer tokens (FR-010, FR-014, June 15 2026 clarification).
 /// The token is an opaque, high-entropy credential bound to a specific session ID.
 /// It is never shown to technicians and is distinct from the one-time pairing passcode.
+/// Registered as a singleton in DI so that Function endpoints can inject it.
 /// </summary>
-public static class DeviceSessionTokenService
+public sealed class DeviceSessionTokenService
 {
     private const int TokenByteLength = 32; // 256-bit token
+
+    /// <summary>Default token lifetime — 24 hours.</summary>
+    private static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// Issues a new opaque device-session token for the given session using the default lifetime.
+    /// Returns the plain token (to return to the device) — the caller must store the hash at rest.
+    /// </summary>
+    public string IssueToken(Guid sessionId) => Issue(sessionId, DefaultLifetime).PlainToken;
 
     /// <summary>
     /// Issues a new opaque device-session token for the given session.
     /// Returns (plainToken, tokenHash, expiry). Only the hash is persisted.
     /// </summary>
-    public static (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) Issue(
+    public (string PlainToken, string TokenHash, DateTimeOffset ExpiresAt) Issue(
         Guid sessionId,
         TimeSpan lifetime)
     {

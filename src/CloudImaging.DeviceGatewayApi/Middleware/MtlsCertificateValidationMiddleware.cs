@@ -27,7 +27,7 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWorkerMiddleware
 {
     private const string ClientCertHeader = "X-ARR-ClientCert";
-    internal const string ExemptFunction  = "CreateSession";
+    public const string ExemptFunction  = "CreateSession";
 
     private readonly BootMediaCertificateThumbprintCache _thumbprintCache;
     private readonly ILogger<MtlsCertificateValidationMiddleware> _logger;

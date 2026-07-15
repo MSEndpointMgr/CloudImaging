@@ -5,6 +5,9 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
+// Local variable for Graph scopes — allocated once, satisfies CA1861
+string[] graphScopes = ["https://graph.microsoft.com/.default"];
+
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication(builder =>
     {
@@ -38,6 +41,17 @@ var host = new HostBuilder()
 
         // Key Vault certificate service (FR-068)
         services.AddSingleton<KeyVaultCertificateService>();
+
+        // Device pre-flight authorization (FR-026) — Microsoft Graph via managed identity
+        // Scopes are read-only at startup — use a static field to avoid CA1861
+        services.AddSingleton(sp =>
+        {
+            var credential = new Azure.Identity.ManagedIdentityCredential();
+            return new Microsoft.Graph.GraphServiceClient(
+                credential,
+                graphScopes);
+        });
+        services.AddSingleton<DevicePreFlightAuthorizationService>();
 
         // Azure Blob Storage (SAS token URL generation, FR-025)
         services.AddSingleton(sp =>

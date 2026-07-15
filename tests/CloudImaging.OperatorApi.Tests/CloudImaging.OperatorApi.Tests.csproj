@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- xunit uses underscore-based naming convention -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
