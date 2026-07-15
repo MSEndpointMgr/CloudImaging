@@ -34,13 +34,13 @@ public sealed class DeviceGatewayApiClient
     /// GET /api/v1/sessions/{sessionId}/status — Poll the current session state.
     /// Requires the device-session token Bearer to be set in <see cref="HttpClient.DefaultRequestHeaders"/>.
     /// </summary>
-    public async Task<DeviceSession?> GetSessionStatusAsync(
+    public async Task<SessionStatusResponse?> GetSessionStatusAsync(
         Guid sessionId,
         CancellationToken ct = default)
     {
         var response = await _http.GetAsync($"/api/v1/sessions/{sessionId}/status", ct);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<DeviceSession>(JsonOptions, ct);
+        return await response.Content.ReadFromJsonAsync<SessionStatusResponse>(JsonOptions, ct);
     }
 
     /// <summary>
@@ -63,4 +63,19 @@ public sealed class CreateSessionResponse
     public string DeviceSessionToken { get; init; } = string.Empty;
     public string Passcode { get; init; } = string.Empty;
     public string State { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Response from the Device Gateway API GET /api/v1/sessions/{sessionId}/status endpoint (T043).
+/// Always includes <see cref="CurrentStep"/> and <see cref="OverallProgressPercent"/> (plan.md constraint).
+/// </summary>
+public sealed class SessionStatusResponse
+{
+    public Guid SessionId { get; init; }
+    public string? State { get; init; }
+    public string? CurrentStep { get; init; }
+    public int OverallProgressPercent { get; init; }
+    public string? SasTokenUrl { get; init; }
+    public string? SasTokenUrlExpiresAt { get; init; }
+    public string? Sha256Hash { get; init; }
 }

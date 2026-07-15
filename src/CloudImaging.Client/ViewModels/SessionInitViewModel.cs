@@ -97,13 +97,16 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
             var session = await _gatewayClient.GetSessionStatusAsync(_sessionId, _cts.Token);
             if (session is null) return;
 
-            switch (session.State)
+            if (!Enum.TryParse<SessionState>(session.State ?? string.Empty, ignoreCase: true, out var state))
+                state = SessionState.SessionInit;
+
+            switch (state)
             {
                 case SessionState.SessionNotAuthorized:
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.NotAuthorized,
-                        session.DeviceSerialNumber,
+                        session.SessionId.ToString(),
                         null);
                     break;
 
@@ -117,7 +120,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                     _navigateToResults(
                         ResultsViewModel.Outcome.Failure,
                         null,
-                        session.SasTokenUrl); // repurposed field carries error detail
+                        null);
                     break;
 
                 default:

@@ -44,9 +44,16 @@ app.use('/api', rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, l
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
 // ── Routes (registered after auth middleware) ────────────────────────────────
-// import { sessionsRouter } from './routes/sessions.js';
-// import { imagesRouter }   from './routes/images.js';
-// etc. — added as each route module is implemented
+import { auth } from './middleware/auth.js';
+import { sessionsRouter } from './routes/sessions.js';
+
+// Apply Entra auth to all /api routes except /api/health
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next();
+  return auth(req, res, next);
+});
+
+app.use('/api/sessions', sessionsRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
