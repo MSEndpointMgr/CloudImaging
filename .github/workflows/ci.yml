@@ -10,6 +10,12 @@ name: CI / Deploy Dev
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual trigger (e.g. force redeploy)'
+        required: false
+        default: 'Manual trigger'
 
 concurrency:
   group: ci-deploy-${{ github.ref }}
