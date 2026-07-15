@@ -32,21 +32,21 @@ jobs:
     name: .NET Build (Release, zero warnings)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore
-        run: dotnet restore CloudImaging.sln
+        run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
       - name: Build — Release, TreatWarningsAsErrors
-        run: dotnet build CloudImaging.sln --configuration Release --no-restore
+        run: dotnet build CloudImaging.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
 
   dotnet-build-wpf:
     name: WPF Apps Build (Client + MediaBuilder, Windows only)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore
@@ -61,17 +61,18 @@ jobs:
     runs-on: ubuntu-latest
     needs: dotnet-build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore
-        run: dotnet restore CloudImaging.sln
+        run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
       - name: Test
         run: >
           dotnet test CloudImaging.sln
           --configuration Release
           --no-restore
+          -p:EnableWindowsTargeting=true
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
       - name: Upload coverage
@@ -85,33 +86,29 @@ jobs:
     runs-on: ubuntu-latest
     needs: dotnet-build
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore
-        run: dotnet restore CloudImaging.sln
+        run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
       - name: Verify format
-        run: dotnet format CloudImaging.sln --verify-no-changes
+        run: dotnet format CloudImaging.sln --verify-no-changes -p:EnableWindowsTargeting=true
 
   portal-ci:
     name: Portal CI (build + lint + test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: |
-            src/cloud-imaging-portal/client/package-lock.json
-            src/cloud-imaging-portal/server/package-lock.json
       - name: Install client deps
         working-directory: src/cloud-imaging-portal/client
-        run: npm ci
+        run: npm install
       - name: Install server deps
         working-directory: src/cloud-imaging-portal/server
-        run: npm ci
+        run: npm install
       - name: Lint client
         working-directory: src/cloud-imaging-portal/client
         run: npm run lint
@@ -136,7 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [dotnet-test, portal-ci]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run leakage scan
         run: |
           if [ -f "src/deploy/scripts/security-log-scan.ps1" ]; then
@@ -156,8 +153,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - uses: azure/login@v2
@@ -202,8 +199,8 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
       - uses: azure/login@v2
@@ -228,3 +225,4 @@ jobs:
           npx @azure/static-web-apps-cli deploy ./dist \
             --deployment-token ${{ secrets.STATIC_WEB_APP_PORTAL_TOKEN }} \
             --env production
+
