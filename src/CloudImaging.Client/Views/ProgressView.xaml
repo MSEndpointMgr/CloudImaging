@@ -1,0 +1,104 @@
+<Page x:Class="CloudImaging.Client.Views.ProgressView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Imaging in Progress"
+      Background="#F8FAFC">
+    <!--
+        FR-007: 3-node horizontal step indicator: Format, Download, Apply.
+        Transitions to ResultsView on Apply complete.
+    -->
+    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="700">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="32" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="24" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="24" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Text="Imaging in Progress"
+                   FontSize="28" FontWeight="Bold" Foreground="#1E3A5F"
+                   HorizontalAlignment="Center" />
+
+        <!-- 3-node step indicator -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Format Disk node -->
+            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
+                         Fill="{Binding FormatStepColor}" />
+                <TextBlock Text="✓" FontSize="20" Foreground="White"
+                           HorizontalAlignment="Center" Margin="0,-36,0,0"
+                           Visibility="{Binding FormatCompleted, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Text="Format" FontSize="13" HorizontalAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+
+            <!-- Connector line -->
+            <Rectangle Grid.Column="1" Height="2" Width="120"
+                       Fill="{Binding DownloadStepColor}" VerticalAlignment="Center" />
+
+            <!-- Download Image node -->
+            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
+                         Fill="{Binding DownloadStepColor}" />
+                <TextBlock Text="✓" FontSize="20" Foreground="White"
+                           HorizontalAlignment="Center" Margin="0,-36,0,0"
+                           Visibility="{Binding DownloadCompleted, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Text="Download" FontSize="13" HorizontalAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+
+            <!-- Connector line -->
+            <Rectangle Grid.Column="3" Height="2" Width="120"
+                       Fill="{Binding ApplyStepColor}" VerticalAlignment="Center" />
+
+            <!-- Apply Image node -->
+            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
+                         Fill="{Binding ApplyStepColor}" />
+                <TextBlock Text="✓" FontSize="20" Foreground="White"
+                           HorizontalAlignment="Center" Margin="0,-36,0,0"
+                           Visibility="{Binding ApplyCompleted, Converter={StaticResource BoolToVisibility}}" />
+                <TextBlock Text="Apply" FontSize="13" HorizontalAlignment="Center" Margin="0,8,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Overall progress bar -->
+        <StackPanel Grid.Row="4">
+            <TextBlock Text="{Binding StatusMessage}"
+                       FontSize="14" Foreground="#64748B"
+                       HorizontalAlignment="Center" Margin="0,0,0,8" />
+            <ProgressBar Value="{Binding OverallPercent}" Minimum="0" Maximum="100"
+                         Height="8" Width="500" />
+            <TextBlock Text="{Binding OverallPercent, StringFormat='{}{0}%'}"
+                       FontSize="12" Foreground="#94A3B8"
+                       HorizontalAlignment="Center" Margin="0,6,0,0" />
+        </StackPanel>
+
+        <!-- Error section -->
+        <Border Grid.Row="6"
+                Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1"
+                CornerRadius="6" Padding="16" MaxWidth="500"
+                Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="Imaging Failed"
+                           FontSize="16" FontWeight="SemiBold" Foreground="#DC2626" />
+                <TextBlock Text="{Binding ErrorMessage}"
+                           FontSize="13" Foreground="#B91C1C" TextWrapping="Wrap"
+                           Margin="0,8,0,0" />
+                <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Support ref: {0}'}"
+                           FontSize="12" FontFamily="Consolas" Foreground="#991B1B"
+                           Margin="0,8,0,0" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Page>

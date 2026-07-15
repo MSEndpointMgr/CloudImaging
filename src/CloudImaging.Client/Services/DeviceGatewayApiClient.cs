@@ -52,6 +52,30 @@ public sealed class DeviceGatewayApiClient
         _http.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
     }
+
+    /// <summary>POST /api/v1/sessions/{sessionId}/progress — Report imaging step progress.</summary>
+    public async Task ReportProgressAsync(
+        Guid sessionId,
+        object payload,
+        CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"/api/v1/sessions/{sessionId}/progress", payload, JsonOptions, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>POST /api/v1/sessions/{sessionId}/sas/refresh — Refresh the SAS token URL.</summary>
+    public async Task<string?> RefreshSasTokenAsync(
+        Guid sessionId,
+        CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync(
+            $"/api/v1/sessions/{sessionId}/sas/refresh", null, ct);
+        response.EnsureSuccessStatusCode();
+        using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+        return doc.RootElement.TryGetProperty("sasTokenUrl", out var p) ? p.GetString() : null;
+    }
 }
 
 /// <summary>
