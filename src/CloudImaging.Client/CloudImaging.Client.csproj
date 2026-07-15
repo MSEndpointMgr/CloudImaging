@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <!-- WMI for hardware metadata collection (FR-001a) -->
+    <PackageReference Include="System.Management" />
     <!-- Serilog rolling file logging: max 10 MB per file, 5 retained (FR-066) -->
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.File" />

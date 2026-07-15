@@ -1,8 +1,18 @@
 <Window x:Class="CloudImaging.Client.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Cloud Imaging Client" Height="600" Width="900">
-    <Grid>
-        <TextBlock Text="Cloud Imaging Client" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24" />
-    </Grid>
+        Title="Cloud Imaging"
+        MinWidth="1024" MinHeight="768"
+        Width="1024"   Height="768"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanMinimize"
+        ScrollViewer.VerticalScrollBarVisibility="Disabled"
+        ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+    <!--
+        Fixed layout: 1024×768 minimum, centered on display, no scroll (FR-002b).
+        Navigation frame hosts all four views without page-level scrolling.
+    -->
+    <Frame x:Name="NavigationFrame"
+           NavigationUIVisibility="Hidden"
+           Focusable="False" />
 </Window>

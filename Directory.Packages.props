@@ -44,6 +44,8 @@
     <PackageVersion Include="Serilog"                             Version="4.1.0" />
     <PackageVersion Include="Serilog.Sinks.File"                  Version="6.0.0" />
     <PackageVersion Include="Serilog.Extensions.Logging"          Version="8.0.0" />
+    <!-- WMI for hardware metadata collection (FR-001a) -->
+    <PackageVersion Include="System.Management"                   Version="9.0.0" />
 
     <!-- Test frameworks -->
     <PackageVersion Include="xunit"                               Version="2.9.0" />
