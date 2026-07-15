@@ -4,15 +4,18 @@ using CloudImaging.DeviceGatewayApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication(builder =>
     {
         // Middleware pipeline — order matters:
         // 1. ProblemDetails (outermost — catches all exceptions)
-        // 2. Token validation (rejects unauthenticated before rate limiting)
-        // 3. Rate limiting (per-session sliding window)
+        // 2. mTLS cert validation (client certificate must match active thumbprint)
+        // 3. Token validation (rejects unauthenticated before rate limiting)
+        // 4. Rate limiting (per-session sliding window)
         builder.UseMiddleware<ProblemDetailsMiddleware>();
+        builder.UseMiddleware<MtlsCertificateValidationMiddleware>();
         builder.UseMiddleware<DeviceSessionTokenValidationMiddleware>();
         builder.UseMiddleware<RateLimitingMiddleware>();
     })
@@ -32,7 +35,7 @@ var host = new HostBuilder()
             client.DefaultRequestHeaders.Add("Accept", "application/json");
         });
 
-        // Table Storage for thumbprint cache (added in T163)
+        // Table Storage for thumbprint cache (T163)
         services.AddSingleton(sp =>
         {
             var connStr = ctx.Configuration["AzureWebJobsStorage__accountName"]
@@ -41,6 +44,32 @@ var host = new HostBuilder()
                 new Uri($"https://{connStr}.table.core.windows.net"),
                 new Azure.Identity.DefaultAzureCredential());
         });
+
+        // Boot-media certificate thumbprint cache (60s TTL, FR-069)
+        // Loader reads the active thumbprint from Table Storage via the internal API client.
+        services.AddSingleton<BootMediaCertificateThumbprintCache>(sp =>
+        {
+            var tableService = sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>();
+            var logger       = sp.GetRequiredService<ILogger<BootMediaCertificateThumbprintCache>>();
+
+            var tableClient  = tableService.GetTableClient("BootMediaCertificate");
+            async Task<string?> Loader(CancellationToken ct)
+            {
+                await foreach (var entity in tableClient.QueryAsync<Azure.Data.Tables.TableEntity>(
+                    e => e.PartitionKey == "cert" && e.GetBoolean("IsActive") == true,
+                    maxPerPage: 1,
+                    cancellationToken: ct))
+                {
+                    return entity.RowKey;
+                }
+                return null;
+            }
+
+            return new BootMediaCertificateThumbprintCache(Loader, logger);
+        });
+
+        // Register the mTLS middleware so it can be resolved from DI
+        services.AddSingleton<MtlsCertificateValidationMiddleware>();
     })
     .Build();
 

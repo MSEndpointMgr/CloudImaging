@@ -10,7 +10,7 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// Catches unhandled exceptions and returns RFC 7807 ProblemDetails responses.
 /// Ensures no stack traces or internal details are exposed to clients (FR-009, FR-002).
 /// </summary>
-public sealed class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
+public sealed partial class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
 {
     private readonly ILogger<ProblemDetailsMiddleware> _logger;
 
@@ -24,7 +24,7 @@ public sealed class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception in {FunctionName}", context.FunctionDefinition.Name);
+            LogUnhandledException(_logger, ex, context.FunctionDefinition.Name);
 
             var request = await context.GetHttpRequestDataAsync();
             if (request is null) return;
@@ -36,4 +36,7 @@ public sealed class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
             context.GetInvocationResult().Value = response;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception in {FunctionName}")]
+    private static partial void LogUnhandledException(ILogger logger, Exception ex, string functionName);
 }

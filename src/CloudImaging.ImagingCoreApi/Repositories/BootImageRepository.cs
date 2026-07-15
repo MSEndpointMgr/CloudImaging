@@ -42,7 +42,18 @@ public sealed class BootImageRepository
             await _table.UpdateEntityAsync(patch, ETag.All, TableUpdateMode.Merge, ct);
         }
 
-        var newImage = image with { IsLatestPublished = true, IsActive = true };
+        var newImage = new BootImage
+        {
+            BootImageId       = image.BootImageId,
+            Version           = image.Version,
+            CreatedAt         = image.CreatedAt == default ? DateTimeOffset.UtcNow : image.CreatedAt,
+            SizeBytes         = image.SizeBytes,
+            StoragePath       = image.StoragePath,
+            ManifestVersion   = image.ManifestVersion,
+            Sha256Hash        = image.Sha256Hash,
+            IsLatestPublished = true,
+            IsActive          = true,
+        };
         await _table.AddEntityAsync(ToEntity(newImage), ct);
         return newImage;
     }

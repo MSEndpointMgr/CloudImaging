@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using CloudImaging.Contracts.Models;
 
 namespace CloudImaging.OperatorApi.Services;
 
@@ -71,6 +72,22 @@ public sealed class ImagingCoreClient
 
     public Task<HttpResponseMessage> UpdateConfigurationAsync(object payload, CancellationToken ct = default) =>
         _http.PatchAsJsonAsync("/api/internal/configuration", payload, JsonOptions, ct);
+
+    /// <summary>Returns the current portal configuration as a typed model.</summary>
+    public async Task<PortalConfiguration> GetPortalConfigurationAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/api/internal/configuration", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PortalConfiguration>(JsonOptions, ct)
+            ?? throw new InvalidOperationException("Null response from ImagingCoreApi portal-configuration endpoint.");
+    }
+
+    /// <summary>Replaces the portal configuration with the supplied model.</summary>
+    public async Task UpsertPortalConfigurationAsync(PortalConfiguration config, CancellationToken ct = default)
+    {
+        var response = await _http.PutAsJsonAsync("/api/internal/portal-configuration", config, JsonOptions, ct);
+        response.EnsureSuccessStatusCode();
+    }
 
     // ── Boot media certificate ────────────────────────────────────────────────
 

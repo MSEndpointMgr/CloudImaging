@@ -12,7 +12,7 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// The public session bootstrap endpoint is exempt (FR-018).
 /// Returns HTTP 429 with Retry-After header when limit is exceeded.
 /// </summary>
-public sealed class RateLimitingMiddleware : IFunctionsWorkerMiddleware
+public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 {
     private const int MaxCallsPerWindow = 10;
     private static readonly TimeSpan WindowDuration = TimeSpan.FromSeconds(30);
@@ -53,12 +53,12 @@ public sealed class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 
         if (!allowed)
         {
-            _logger.LogWarning("Rate limit exceeded for session token (key prefix {Prefix})", keyStr[..8]);
+            LogRateLimitExceeded(_logger, keyStr[..8]);
             var request = await context.GetHttpRequestDataAsync();
             if (request is not null)
             {
                 var response = request.CreateResponse(HttpStatusCode.TooManyRequests);
-                response.Headers.Add("Retry-After", retryAfterSeconds.ToString());
+                response.Headers.Add("Retry-After", retryAfterSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 response.Headers.Add("Content-Type", "application/problem+json");
                 await response.WriteStringAsync(
                     $$"""{"type":"https://cloudimaging.io/errors/rate-limit-exceeded","title":"Too Many Requests","status":429,"detail":"Rate limit of {{MaxCallsPerWindow}} calls per {{(int)WindowDuration.TotalSeconds}} seconds exceeded.","retryAfterSeconds":{{retryAfterSeconds}}}""");
@@ -99,4 +99,7 @@ public sealed class RateLimitingMiddleware : IFunctionsWorkerMiddleware
             }
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Rate limit exceeded for session token (key prefix {Prefix})")]
+    private static partial void LogRateLimitExceeded(ILogger logger, string prefix);
 }

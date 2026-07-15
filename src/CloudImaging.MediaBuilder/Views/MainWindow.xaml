@@ -1,0 +1,8 @@
+<Window x:Class="CloudImaging.MediaBuilder.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Cloud Imaging Media Builder" Height="600" Width="900">
+    <Grid>
+        <TextBlock Text="Cloud Imaging Media Builder" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24" />
+    </Grid>
+</Window>

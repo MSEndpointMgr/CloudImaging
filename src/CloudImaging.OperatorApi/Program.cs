@@ -3,6 +3,7 @@ using CloudImaging.OperatorApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Identity.Web;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication(builder =>
@@ -39,8 +40,10 @@ var host = new HostBuilder()
                 new Azure.Identity.DefaultAzureCredential());
         });
 
-        // Microsoft.Identity.Web for Entra token validation
-        services.AddMicrosoftIdentityWebApiAuthentication(ctx.Configuration, "Entra");
+        // Entra ID JWT authentication — validates tokens for OperatorApi (FR-040)
+        // Identity.Web 4.x uses AddAuthentication().AddMicrosoftIdentityWebApi() pattern
+        services.AddAuthentication()
+            .AddMicrosoftIdentityWebApi(ctx.Configuration, "Entra");
     })
     .Build();
 

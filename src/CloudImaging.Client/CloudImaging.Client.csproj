@@ -11,6 +11,10 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http" />
+    <!-- Serilog rolling file logging: max 10 MB per file, 5 retained (FR-066) -->
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.File" />
+    <PackageReference Include="Serilog.Extensions.Logging" />
     <!-- MSAL for token caching is NOT used — the Client uses mTLS cert auth only -->
   </ItemGroup>
 

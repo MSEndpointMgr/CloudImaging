@@ -1,5 +1,6 @@
 using CloudImaging.ImagingCoreApi.Middleware;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,6 +33,11 @@ var host = new HostBuilder()
         services.AddSingleton<OsImageRepository>();
         services.AddSingleton<BootImageRepository>();
         services.AddSingleton<BrandingRepository>();
+        services.AddSingleton<PortalConfigurationRepository>();
+        services.AddSingleton<BootMediaCertificateRepository>();
+
+        // Key Vault certificate service (FR-068)
+        services.AddSingleton<KeyVaultCertificateService>();
 
         // Azure Blob Storage (SAS token URL generation, FR-025)
         services.AddSingleton(sp =>
@@ -65,6 +71,8 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<OsImageRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<BootImageRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<BrandingRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<PortalConfigurationRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<BootMediaCertificateRepository>().EnsureTableExistsAsync(ct);
 }
 
 host.Run();

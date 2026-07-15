@@ -7,7 +7,7 @@ using System.Net;
 namespace CloudImaging.ImagingCoreApi.Middleware;
 
 /// <summary>RFC 7807 ProblemDetails unhandled-exception middleware for ImagingCoreApi.</summary>
-public sealed class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
+public sealed partial class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
 {
     private readonly ILogger<ProblemDetailsMiddleware> _logger;
 
@@ -21,7 +21,7 @@ public sealed class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unhandled exception in {FunctionName}", context.FunctionDefinition.Name);
+            LogUnhandledException(_logger, ex, context.FunctionDefinition.Name);
 
             var request = await context.GetHttpRequestDataAsync();
             if (request is null) return;
@@ -33,4 +33,7 @@ public sealed class ProblemDetailsMiddleware : IFunctionsWorkerMiddleware
             context.GetInvocationResult().Value = response;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception in {FunctionName}")]
+    private static partial void LogUnhandledException(ILogger logger, Exception ex, string functionName);
 }
