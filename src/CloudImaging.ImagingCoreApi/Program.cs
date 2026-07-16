@@ -55,6 +55,7 @@ var host = new HostBuilder()
         services.AddSingleton<BulkAssignmentService>();
         services.AddSingleton<ImageDeletionGuardService>();
         services.AddSingleton<BootImageValidationService>();
+        services.AddSingleton<DeviceSessionLifecycleService>();
 
         // Azure Blob Storage (SAS token URL generation, FR-025)
         services.AddSingleton(sp =>

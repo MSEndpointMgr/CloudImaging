@@ -176,7 +176,7 @@ public sealed partial class ImageCacheService
         try { File.Delete(path); } catch { /* best-effort */ }
     }
 
-    internal static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
+    public static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
     {
         await using var stream = File.OpenRead(filePath);
         var hash = await SHA256.HashDataAsync(stream, ct);

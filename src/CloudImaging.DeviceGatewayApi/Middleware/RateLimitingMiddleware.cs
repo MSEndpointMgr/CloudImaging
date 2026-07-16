@@ -14,13 +14,13 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// </summary>
 public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 {
-    private const int MaxCallsPerWindow = 10;
-    private static readonly TimeSpan WindowDuration = TimeSpan.FromSeconds(30);
+    public const int MaxCallsPerWindow = 10;
+    public static readonly TimeSpan WindowDuration = TimeSpan.FromSeconds(30);
 
-    // In-memory counter store; keyed by session token hash for memory efficiency.
-    // For multi-instance deployments this should be backed by a distributed cache
-    // (e.g. Azure Cache for Redis) — acceptable for Phase 2 single-instance dev baseline.
     private static readonly ConcurrentDictionary<string, WindowCounter> _counters = new();
+
+    public static readonly IReadOnlyCollection<string> ExemptFunctionNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
 
     private static readonly HashSet<string> ExemptFunctions =
         new(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
