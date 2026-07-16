@@ -50,6 +50,7 @@ import { imagesRouter } from './routes/images.js';
 import { brandingRouter } from './routes/branding.js';
 import { configurationRouter } from './routes/configuration.js';
 import { bootImagesRouter } from './routes/boot-images.js';
+import { certRouter } from './routes/cert.js';
 
 // Apply Entra auth to all /api routes except /api/health
 app.use('/api', (req, res, next) => {
@@ -62,6 +63,7 @@ app.use('/api/images',        imagesRouter);
 app.use('/api/branding',      brandingRouter);
 app.use('/api/configuration', configurationRouter);
 app.use('/api/boot-images',   bootImagesRouter);
+app.use('/api/cert',          certRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

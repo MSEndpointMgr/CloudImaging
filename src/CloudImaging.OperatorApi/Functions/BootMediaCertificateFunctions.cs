@@ -114,4 +114,40 @@ public sealed partial class BootMediaCertificateFunctions
 
     [LoggerMessage(Level = LogLevel.Error, Message = "ImagingCoreApi returned HTTP {StatusCode} for cert request.")]
     private static partial void LogUpstreamError(ILogger logger, int statusCode);
+
+    // ── POST /api/cert/generate (T177) ────────────────────────────────────────
+
+    [Function("GenerateBootMediaCertificate")]
+    public async Task<HttpResponseData> GenerateCertificate(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "cert/generate")] HttpRequestData req,
+        FunctionContext context)
+    {
+        var coreResponse = await _coreClient.GenerateCertAsync(new { }, context.CancellationToken);
+        return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    // ── POST /api/cert/rotate (T177) ──────────────────────────────────────────
+
+    [Function("RotateBootMediaCertificate")]
+    public async Task<HttpResponseData> RotateCertificate(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "cert/rotate")] HttpRequestData req,
+        FunctionContext context)
+    {
+        using var body = await System.Text.Json.JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        var payload    = System.Text.Json.JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
+        var coreResponse = await _coreClient.RotateCertAsync(payload!, context.CancellationToken);
+        return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    private static async Task<HttpResponseData> ProxyJsonAsync(
+        HttpRequestData req, HttpResponseMessage coreResponse, CancellationToken ct)
+    {
+        var response = req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
+        if (coreResponse.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            response.Headers.Add("Content-Type", "application/json");
+            await response.WriteStringAsync(await coreResponse.Content.ReadAsStringAsync(ct), ct);
+        }
+        return response;
+    }
 }
