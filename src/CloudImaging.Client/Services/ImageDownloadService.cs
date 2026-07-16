@@ -1,12 +1,13 @@
 using System.IO;
 using System.Net.Http;
-using CloudImaging.Client.Services;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
 
 /// <summary>
-/// Downloads the OS image blob via the SAS token URL (T052, FR-009).
+/// Downloads the OS image blob via the SAS token URL (T052/T056c, FR-009, FR-009d).
+/// Checks the local <see cref="ImageCacheService"/> first — if the WIM is cached and
+/// the SHA-256 hash matches, the download is skipped (cache hit).
 /// Reports download progress as byte-transfer percentage.
 /// </summary>
 public sealed partial class ImageDownloadService
@@ -14,20 +15,66 @@ public sealed partial class ImageDownloadService
     private const int BufferSize = 81_920; // 80 KB
 
     private readonly HttpClient _httpClient;
+    private readonly ImageCacheService? _cache;
     private readonly ILogger<ImageDownloadService> _logger;
 
     public ImageDownloadService(
         HttpClient httpClient,
-        ILogger<ImageDownloadService> logger)
+        ILogger<ImageDownloadService> logger,
+        ImageCacheService? cache = null)
     {
         _httpClient = httpClient;
+        _cache      = cache;
         _logger     = logger;
     }
 
     /// <summary>
-    /// Downloads the image at <paramref name="sasUrl"/> to <paramref name="destinationPath"/>.
-    /// Calls <paramref name="onProgress"/> with 0–100 as bytes are received.
+    /// Returns a local WIM path either from cache (cache hit) or by downloading from
+    /// <paramref name="sasUrl"/> (cache miss).  On download, the file is written to
+    /// <paramref name="destinationPath"/> and — if a cache is configured — persisted
+    /// to the cache for future use.
     /// </summary>
+    /// <param name="imageId">Catalog image ID used as the cache key.</param>
+    /// <param name="expectedHash">Expected SHA-256 hex hash for integrity verification.</param>
+    public async Task<string> EnsureLocalWimAsync(
+        string imageId,
+        string expectedHash,
+        string sasUrl,
+        string destinationPath,
+        Action<int>? onProgress,
+        CancellationToken ct = default)
+    {
+        // 1. Check cache first (T056c)
+        if (_cache is not null)
+        {
+            var cached = await _cache.TryGetCachedWimAsync(imageId, expectedHash, ct);
+            if (cached is not null)
+            {
+                onProgress?.Invoke(100);
+                return cached;
+            }
+        }
+
+        // 2. Download from SAS URL
+        await DownloadAsync(sasUrl, destinationPath, onProgress, ct);
+
+        // 3. Write to cache if available (T056c: only write if hash verified in DownloadAsync caller)
+        if (_cache is not null)
+        {
+            try
+            {
+                return await _cache.WriteAsync(imageId, destinationPath, expectedHash, ct);
+            }
+            catch (InvalidDataException ex)
+            {
+                // Hash mismatch on cache write — the caller should treat this as a download error
+                LogCacheWriteFailed(_logger, ex, imageId);
+                throw;
+            }
+        }
+
+        return destinationPath;
+    }
     public async Task DownloadAsync(
         string sasUrl,
         string destinationPath,
@@ -68,4 +115,7 @@ public sealed partial class ImageDownloadService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Image download complete: {Bytes} bytes written.")]
     private static partial void LogCompleted(ILogger logger, long bytes);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Cache write failed for image {ImageId} — hash mismatch.")]
+    private static partial void LogCacheWriteFailed(ILogger logger, Exception ex, string imageId);
 }
