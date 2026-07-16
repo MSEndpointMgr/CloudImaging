@@ -4,6 +4,7 @@
     <!-- WPF requires net10.0-windows -->
     <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <RootNamespace>CloudImaging.MediaBuilder</RootNamespace>
     <!-- Technician workstation app: Entra ID sign-in via MSAL desktop (FR-052) -->

@@ -3,7 +3,7 @@ using CloudImaging.MediaBuilder.Logging;
 
 namespace CloudImaging.MediaBuilder;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private Serilog.Core.Logger? _logger;
 

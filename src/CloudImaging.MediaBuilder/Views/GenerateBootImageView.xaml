@@ -1,0 +1,105 @@
+<Page x:Class="CloudImaging.MediaBuilder.Views.GenerateBootImageView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      Title="Generate Boot Image"
+      Background="#F8FAFC">
+    <!--
+        FR-051a, FR-051b: Source selection (GitHub auto-download or local path) and
+        output folder confirmation. No portal upload initiated by this app.
+    -->
+    <Grid Margin="40">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="24" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="24" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="16" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="24" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Generate Boot Image"
+                   FontSize="22" FontWeight="Bold" Foreground="#1E3A5F" />
+
+        <!-- Source selection -->
+        <GroupBox Grid.Row="2" Header="Client Binaries Source" Padding="12">
+            <StackPanel>
+                <!-- GitHub auto-download option -->
+                <RadioButton Content="Auto-download latest from GitHub Releases"
+                             IsChecked="{Binding UseGitHubSource}"
+                             GroupName="SourceType" Margin="0,4,0,4" />
+                <StackPanel Orientation="Horizontal" Margin="20,0,0,8"
+                            Visibility="{Binding UseGitHubSource, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="Status: " FontSize="12" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding GitHubStatus}" FontSize="12"
+                               Foreground="#64748B" VerticalAlignment="Center" />
+                </StackPanel>
+
+                <!-- Custom local path option -->
+                <RadioButton Content="Use local path (pre-downloaded binaries)"
+                             IsChecked="{Binding UseLocalSource}"
+                             GroupName="SourceType" Margin="0,4,0,4" />
+                <StackPanel Orientation="Horizontal" Margin="20,0,0,4"
+                            Visibility="{Binding UseLocalSource, Converter={StaticResource BoolToVisibility}}">
+                    <TextBox Text="{Binding LocalSourcePath, UpdateSourceTrigger=PropertyChanged}"
+                             Width="340" Height="28" FontSize="12"
+                             VerticalContentAlignment="Center" />
+                    <Button Content="Browse…" Margin="8,0,0,0" Height="28"
+                            Command="{Binding BrowseCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Output folder -->
+        <GroupBox Grid.Row="4" Header="Output Folder" Padding="12">
+            <StackPanel Orientation="Horizontal">
+                <TextBox Text="{Binding OutputFolderPath, UpdateSourceTrigger=PropertyChanged}"
+                         Width="340" Height="28" FontSize="12"
+                         VerticalContentAlignment="Center" />
+                <Button Content="Browse…" Margin="8,0,0,0" Height="28"
+                        Command="{Binding BrowseOutputCommand}" />
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Progress -->
+        <ProgressBar Grid.Row="6"
+                     Value="{Binding ProgressPercent}" Minimum="0" Maximum="100"
+                     Height="8"
+                     Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibility}}" />
+        <TextBlock Grid.Row="8"
+                   Text="{Binding ProgressMessage}"
+                   FontSize="13" Foreground="#64748B"
+                   Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibility}}" />
+
+        <!-- Completion notice -->
+        <Border Grid.Row="8" Background="#F0FDF4" BorderBrush="#86EFAC" BorderThickness="1"
+                CornerRadius="6" Padding="12"
+                Visibility="{Binding IsComplete, Converter={StaticResource BoolToVisibility}}">
+            <StackPanel>
+                <TextBlock Text="✅ Boot image generated successfully!" FontSize="15" FontWeight="SemiBold" Foreground="#16A34A" />
+                <TextBlock Text="{Binding OutputWimPath, StringFormat='Output: {0}'}"
+                           FontSize="12" Foreground="#166534" Margin="0,6,0,0" />
+                <TextBlock Text="Upload the WIM to the Cloud Imaging Portal (Boot Images section) to publish it."
+                           FontSize="12" Foreground="#166534" TextWrapping="Wrap" Margin="0,6,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- Error -->
+        <TextBlock Grid.Row="8" Text="{Binding ErrorMessage}"
+                   FontSize="13" Foreground="#DC2626" TextWrapping="Wrap"
+                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+
+        <!-- Generate button -->
+        <Button Grid.Row="10"
+                Content="Generate Boot Image"
+                Width="220" Height="44" FontSize="15"
+                Background="#2563EB" Foreground="White" BorderThickness="0"
+                Command="{Binding GenerateCommand}"
+                IsEnabled="{Binding CanGenerate}"
+                HorizontalAlignment="Left" />
+    </Grid>
+</Page>

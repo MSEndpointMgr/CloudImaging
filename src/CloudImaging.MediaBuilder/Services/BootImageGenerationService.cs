@@ -4,38 +4,45 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
-/// Orchestrates the WinPE boot image generation workflow (T064, FR-051, FR-067, FR-070).
+/// Orchestrates the WinPE boot image generation workflow (T064/T173, FR-051, FR-067, FR-070).
 ///
 /// Workflow steps:
 ///   1. Verify ADK / WinPE add-on is installed.
-///   2. Locate or download Cloud Imaging Client binaries.
-///   3. Copy WinPE base files to working directory.
-///   4. Mount WIM, inject Client binaries + cert + branding.
-///   5. Unmount and commit WIM.
-///   6. Output WIM to the specified output directory.
-///
-/// This service calls OS-level tools (DISM, makewinpemedia) — it is designed to run
-/// on Windows with the ADK installed.  Unit tests mock the tool invocation.
+///   2. Optionally retrieve the active boot media certificate PFX from the Operator API.
+///   3. Locate or download Cloud Imaging Client binaries.
+///   4. Copy WinPE base files to working directory.
+///   5. Mount WIM, inject Client binaries + cert + branding.
+///   6. Unmount and commit WIM.
+///   7. Output WIM to the specified output directory.
 /// </summary>
 public sealed partial class BootImageGenerationService
 {
     private const string WinPeArch = "amd64";
 
     private readonly ILogger<BootImageGenerationService> _logger;
+    private readonly OperatorApiClient? _operatorApiClient;
 
-    /// <summary>Progress callback — receives a message and 0–100 percent.</summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
-    public BootImageGenerationService(ILogger<BootImageGenerationService> logger)
-        => _logger = logger;
+    /// <param name="operatorApiClient">
+    /// Optional. When provided, the service will attempt to retrieve the active boot
+    /// media certificate PFX from the Operator API and embed it in the WIM (T173, FR-070).
+    /// When null, pfxBytes must be supplied by the caller or cert embedding is skipped.
+    /// </param>
+    public BootImageGenerationService(
+        ILogger<BootImageGenerationService> logger,
+        OperatorApiClient? operatorApiClient = null)
+    {
+        _logger             = logger;
+        _operatorApiClient  = operatorApiClient;
+    }
 
-    /// <summary>
-    /// Generation result: output WIM path and computed SHA-256 hash.
-    /// </summary>
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     /// <summary>
     /// Generates a WinPE boot image.
+    /// When <paramref name="pfxBytes"/> is null and <see cref="_operatorApiClient"/> is set,
+    /// the service fetches the active cert PFX from the Operator API (T173, FR-070).
     /// </summary>
     /// <param name="clientBinariesPath">Folder containing the Cloud Imaging Client binaries.</param>
     /// <param name="pfxBytes">PFX bytes to embed as <c>certificates\bootmedia.pfx</c> (FR-070).</param>
@@ -58,6 +65,22 @@ public sealed partial class BootImageGenerationService
                 throw new InvalidOperationException(
                     "Windows ADK with WinPE add-on is not installed. " +
                     "Download it from https://go.microsoft.com/fwlink/?linkid=2243390");
+
+            // Retrieve the active boot media certificate PFX from Operator API (T173, FR-070)
+            if (pfxBytes is null && _operatorApiClient is not null)
+            {
+                ReportProgress("Retrieving active boot media certificate PFX…", 8);
+                try
+                {
+                    pfxBytes = await _operatorApiClient.GetBootMediaCertPfxAsync(ct);
+                    LogCertRetrieved(_logger);
+                }
+                catch (Exception ex)
+                {
+                    LogCertRetrieveFailed(_logger, ex);
+                    // Non-fatal — generation continues without cert embedding
+                }
+            }
 
             ReportProgress("Copying WinPE base files…", 15);
             var winPeRoot = Path.Combine(workDir, "WinPE");
@@ -177,6 +200,12 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "[{Percent}%] {Message}")]
     private static partial void LogProgress(ILogger logger, string message, int percent);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Boot media certificate PFX retrieved for embedding.")]
+    private static partial void LogCertRetrieved(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media cert retrieval failed — generation continues without cert.")]
+    private static partial void LogCertRetrieveFailed(ILogger logger, Exception ex);
 
     private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
     {
