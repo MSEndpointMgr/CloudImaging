@@ -14,6 +14,8 @@
     <PackageReference Include="Microsoft.Identity.Web" />
     <!-- MSAL Desktop (Entra ID interactive sign-in) -->
     <PackageReference Include="Microsoft.Identity.Client" />
+    <!-- WMI for USB disk enumeration (FR-054) -->
+    <PackageReference Include="System.Management" />
     <!-- Serilog rolling file logging: max 10 MB per file, 5 retained (FR-066) -->
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.File" />
