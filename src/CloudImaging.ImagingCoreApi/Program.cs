@@ -52,6 +52,7 @@ var host = new HostBuilder()
                 graphScopes);
         });
         services.AddSingleton<DevicePreFlightAuthorizationService>();
+        services.AddSingleton<BulkAssignmentService>();
 
         // Azure Blob Storage (SAS token URL generation, FR-025)
         services.AddSingleton(sp =>
