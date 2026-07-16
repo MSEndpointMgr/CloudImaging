@@ -84,6 +84,62 @@
       "problemMatcher": [],
       "group": "none",
       "detail": "Publish the Bicep + uiFormDefinition.json as a Template Spec to your dev resource group."
+    },
+    {
+      "label": "Update: Run upgrade script (local archive)",
+      "type": "shell",
+      "command": "pwsh -NonInteractive -Command \".\\src\\deploy\\scripts\\update.ps1 -ResourceGroupName '${input:resourceGroup}' -WhatIf\"",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Dry-run the community upgrade script against the dev resource group. Remove -WhatIf to deploy."
+    },
+    {
+      "label": "Dev: Run portal server (localhost:3000)",
+      "type": "shell",
+      "command": "cd src/cloud-imaging-portal/server && npm run dev",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Start the portal Express server in watch mode. Requires VITE_ENTRA_CLIENT_ID etc. in .env."
+    },
+    {
+      "label": "Dev: Run portal client (Vite, localhost:5173)",
+      "type": "shell",
+      "command": "cd src/cloud-imaging-portal/client && npm run dev",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Start the Vite dev server. Requires VITE_ENTRA_CLIENT_ID / VITE_ENTRA_AUTHORITY in .env."
+    },
+    {
+      "label": "Test: Portal client (vitest)",
+      "type": "shell",
+      "command": "cd src/cloud-imaging-portal/client && npm run test:run",
+      "problemMatcher": [],
+      "group": "test",
+      "detail": "Run portal frontend unit tests via Vitest."
+    },
+    {
+      "label": "Test: Portal server (vitest)",
+      "type": "shell",
+      "command": "cd src/cloud-imaging-portal/server && npm run test:run",
+      "problemMatcher": [],
+      "group": "test",
+      "detail": "Run portal server unit tests via Vitest."
+    },
+    {
+      "label": "Lint: Portal client (ESLint)",
+      "type": "shell",
+      "command": "cd src/cloud-imaging-portal/client && npm run lint",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Run ESLint over the React portal client."
+    },
+    {
+      "label": "Lint: Portal server (ESLint)",
+      "type": "shell",
+      "command": "cd src/cloud-imaging-portal/server && npm run lint",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Run ESLint over the Express portal server."
     }
   ],
   "inputs": [

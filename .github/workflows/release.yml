@@ -1,0 +1,160 @@
+name: GitHub Release — Package & Publish
+
+# Triggered on version tags (e.g. v1.2.0).
+# Builds all components, assembles the release archive, and creates a GitHub Release.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to package (e.g. v1.0.0). Defaults to latest tag if blank.'
+        required: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22.x'
+
+jobs:
+  # ── Build all components ──────────────────────────────────────────────────────
+  build-and-package:
+    name: Build & Package Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # ── .NET component builds ────────────────────────────────────────────────
+
+      - name: Restore .NET solution
+        run: dotnet restore CloudImaging.sln
+
+      - name: Publish DeviceGatewayApi
+        run: |
+          dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj `
+            -c Release -o publish/DeviceGatewayApi --no-restore
+          Compress-Archive publish/DeviceGatewayApi/* release-artifacts/DeviceGatewayApi.zip
+
+      - name: Publish OperatorApi
+        run: |
+          dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj `
+            -c Release -o publish/OperatorApi --no-restore
+          Compress-Archive publish/OperatorApi/* release-artifacts/OperatorApi.zip
+
+      - name: Publish ImagingCoreApi
+        run: |
+          dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj `
+            -c Release -o publish/ImagingCoreApi --no-restore
+          Compress-Archive publish/ImagingCoreApi/* release-artifacts/ImagingCoreApi.zip
+
+      - name: Build CloudImaging.Client (WPF)
+        run: |
+          dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `
+            -c Release -r win-x64 --self-contained -o publish/Client --no-restore
+          Compress-Archive publish/Client/* release-artifacts/CloudImaging.Client.zip
+
+      - name: Build CloudImaging.MediaBuilder (WPF)
+        run: |
+          dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj `
+            -c Release -r win-x64 --self-contained -o publish/MediaBuilder --no-restore
+          Compress-Archive publish/MediaBuilder/* release-artifacts/CloudImaging.MediaBuilder.zip
+
+      # ── Portal builds ────────────────────────────────────────────────────────
+
+      - name: Build portal server
+        working-directory: src/cloud-imaging-portal/server
+        run: |
+          npm ci
+          npm run build
+          Compress-Archive dist/* ../../../release-artifacts/portal-backend.zip
+
+      - name: Build portal client (SWA)
+        working-directory: src/cloud-imaging-portal/client
+        run: |
+          npm ci
+          npm run build
+          Compress-Archive dist/* ../../../release-artifacts/portal-frontend.zip
+
+      # ── Deploy scripts + Bicep ────────────────────────────────────────────────
+
+      - name: Package deploy artifacts
+        run: |
+          New-Item release-artifacts -ItemType Directory -Force | Out-Null
+          Copy-Item src/deploy -Recurse -Destination release-artifacts/deploy
+          Compress-Archive release-artifacts/deploy/* release-artifacts/deploy.zip
+
+      # ── Assemble release bundle ───────────────────────────────────────────────
+
+      - name: Determine version tag
+        id: tag
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 }
+          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Release tag: $tag"
+
+      - name: Assemble full release bundle
+        run: |
+          $version = "${{ steps.tag.outputs.tag }}"
+          $bundleName = "cloud-imaging-$version"
+          $bundleDir  = "release-bundle/$bundleName"
+          New-Item $bundleDir -ItemType Directory -Force | Out-Null
+
+          Copy-Item release-artifacts/DeviceGatewayApi.zip     $bundleDir/
+          Copy-Item release-artifacts/OperatorApi.zip          $bundleDir/
+          Copy-Item release-artifacts/ImagingCoreApi.zip       $bundleDir/
+          Copy-Item release-artifacts/CloudImaging.Client.zip  $bundleDir/
+          Copy-Item release-artifacts/CloudImaging.MediaBuilder.zip $bundleDir/
+          Copy-Item release-artifacts/portal-backend.zip       $bundleDir/
+          Copy-Item release-artifacts/portal-frontend.zip      $bundleDir/
+          Copy-Item release-artifacts/deploy.zip               $bundleDir/
+          Copy-Item src/deploy/scripts/update.ps1              $bundleDir/
+
+          Compress-Archive release-bundle/$bundleName/* release-bundle/$bundleName.zip
+
+      - name: Generate SHA-256 checksum manifest
+        run: |
+          $version = "${{ steps.tag.outputs.tag }}"
+          $zip     = "release-bundle/cloud-imaging-$version.zip"
+          $hash    = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  cloud-imaging-$version.zip" | Out-File "release-bundle/SHA256SUMS"
+          Write-Host "Bundle SHA-256: $hash"
+
+      # ── Publish GitHub Release ────────────────────────────────────────────────
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:  ${{ steps.tag.outputs.tag }}
+          name:      "Cloud Imaging ${{ steps.tag.outputs.tag }}"
+          body:      |
+            ## Cloud Imaging ${{ steps.tag.outputs.tag }}
+
+            ### Release artifacts
+            | File | Description |
+            |------|-------------|
+            | `cloud-imaging-*.zip` | Full release bundle (all 7 components + deploy scripts) |
+            | `SHA256SUMS` | SHA-256 checksums for integrity verification |
+
+            ### Upgrade instructions
+            Run `update.ps1 -ResourceGroupName <your-rg>` from the bundle root.
+            See `deploy/` for Bicep templates and parameter files.
+          files: |
+            release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip
+            release-bundle/SHA256SUMS
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
