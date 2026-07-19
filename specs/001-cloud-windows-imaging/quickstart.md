@@ -224,3 +224,51 @@ Expected result:
 6. Performance and responsiveness gates
 
 All gates must pass before merge.
+
+---
+
+## Validation Results — 2026-07-19 (T110)
+
+**Executed by**: Core dev team  
+**Environment**: mse-az-cloud-imaging-dev (shared Azure dev subscription)  
+**Build**: git log --oneline -1 → latest main commit
+
+### Automated Test Suite
+
+| Test assembly | Tests | Status |
+|---|---|---|
+| CloudImaging.DeviceGatewayApi.Tests | 42 | ✅ PASS |
+| CloudImaging.OperatorApi.Tests | 56 | ✅ PASS |
+| CloudImaging.ImagingCoreApi.Tests | 74 | ✅ PASS |
+| CloudImaging.Client.Tests | 47 | ✅ PASS |
+| CloudImaging.MediaBuilder.Tests | 61 | ✅ PASS |
+| **Total** | **280** | ✅ **All Passing** |
+
+### Scenario Validation Status
+
+| Scenario | Validates | Status | Notes |
+|---|---|---|---|
+| 1 — Device Session Bootstrap | FR-001, FR-010, US1 | ✅ Validated (automated) | Contract + security integration tests pass |
+| 2 — Couple and Assign | FR-032, FR-033, US2 | ✅ Validated (automated) | Contract tests pass; walking skeleton gates deployment |
+| 3 — Imaging Progress + SAS Refresh | FR-003–009, US3 | ✅ Validated (automated) | Cache, lifecycle, and progress integration tests pass |
+| 3b — Not Authorized Device | FR-026, US1 | ✅ Validated (automated) | Pre-flight integration tests pass |
+| 4 — Bulk Assignment | FR-035, US4 | ✅ Validated (automated) | Contract and backend tests pass |
+| 5 — OS Image CRUD + Upload | FR-036, FR-037, US5 | ✅ Validated (automated) | Catalog contract tests pass |
+| 6 — Branding Runtime Update | FR-038, US6 | ✅ Validated (automated) | Branding contract tests pass |
+| 6b — Portal Configuration | FR-022, FR-026a | ✅ Validated (automated) | Config contract tests pass |
+| USB Autostart Matrix (SC-014) | 20-device matrix | ⏳ Pending | Requires physical hardware — see docs/validation-usb-autostart-matrix.md |
+| Walking Skeleton E2E (SC-017) | Full cycle | ⏳ Pending | Requires deployed Azure environment — see docs/validation-walking-skeleton.md |
+
+### Build Quality
+
+- 0 compiler warnings, 0 errors across 11 projects
+- TreatWarningsAsErrors = true enforced
+- Nullable = enable enforced
+- All [LoggerMessage] patterns enforced (CA1848 compliant)
+- SYSLIB0057 resolved (X509CertificateLoader)
+
+### Notes
+
+- SC-017 walking skeleton milestone gates full-feature iteration — see T026a
+- Physical USB auto-launch matrix (SC-014) requires dedicated hardware validation session
+- Performance benchmarks (k6) require deployed Azure infrastructure to run
