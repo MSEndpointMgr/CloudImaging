@@ -8,7 +8,7 @@ namespace CloudImaging.Client.Services;
 /// </summary>
 public sealed partial class SasRefreshCoordinator : IDisposable
 {
-    private static readonly TimeSpan RefreshThreshold = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan RefreshThreshold = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan PollInterval     = TimeSpan.FromMinutes(5);
 
     private readonly DeviceGatewayApiClient _gatewayClient;
