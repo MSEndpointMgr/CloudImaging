@@ -19,7 +19,7 @@ export function SessionFilterTabs({ activeFilter, onFilterChange, counts }: Filt
   return (
     <div className="flex gap-1 border-b border-border">
       {TABS.map((tab) => {
-        const count = counts[tab.key as keyof typeof counts] ?? 0;
+        const count = counts[tab.key] ?? 0;
         const isActive = tab.key === activeFilter;
         return (
           <button

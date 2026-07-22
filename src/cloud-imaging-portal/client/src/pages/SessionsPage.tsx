@@ -95,7 +95,7 @@ function SessionsPageImpl(): React.ReactElement {
 
   const visible  = applyFilter(sessions, filter);
   const counts   = deriveCounts(sessions);
-  const toggleRow    = (id: string) => setChecked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleRow    = (id: string) => setChecked(prev => { const n = new Set(prev); if (n.has(id)) { n.delete(id); } else { n.add(id); } return n; });
   const selectAll    = () => setChecked(new Set(visible.map(s => s.sessionId)));
   const deselectAll  = () => setChecked(new Set());
   const eligibleCount = [...checked].filter(id => sessions.find(s => s.sessionId === id)?.state === 'SessionAssigned').length;
@@ -177,7 +177,7 @@ function SessionsPageImpl(): React.ReactElement {
       <CoupleSessionDialog open={coupleOpen} onClose={() => setCoupleOpen(false)} onCoupled={() => handleRefresh()} />
       <AssignImageDialog
         open={assignOpen}
-        sessionId={assignTarget ?? (checked.size > 0 ? [...checked][0]! : null)}
+        sessionId={assignTarget ?? (checked.size > 0 ? [...checked][0] : null)}
         onClose={() => { setAssignOpen(false); setAssignTarget(null); }}
         onAssigned={() => handleRefresh()}
       />
