@@ -17,7 +17,6 @@ const msalInstance = new PublicClientApplication({
   },
   cache: {
     cacheLocation: 'sessionStorage',
-    storeAuthStateInCookie: false,
   },
 });
 

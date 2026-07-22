@@ -68,3 +68,8 @@ Thumbs.db
 .vscode/settings.json
 .vscode/launch.json
 # tasks.json is committed (FR-046 VS Code deployment tasks)
+
+# Compiled Vite/TS output (not source files)
+src/cloud-imaging-portal/client/src/**/*.js
+src/cloud-imaging-portal/client/vite.config.js
+src/cloud-imaging-portal/client/vite.config.d.ts

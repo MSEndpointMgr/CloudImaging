@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: 37 99 235;   /* blue-600 default — overridden at runtime by brandingContext */
+  --color-accent:  30 64 175;   /* blue-800 default */
+}

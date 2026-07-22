@@ -32,7 +32,8 @@ function stepBadge(status: string): string {
  * Session progress row with inline expandable step detail panel (T079, FR-007).
  */
 export function SessionProgressRow({
-  sessionId, deviceSerial, state, overallPercent, currentStep, steps = [],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  sessionId: _sessionId, deviceSerial, state, overallPercent, currentStep, steps = [],
 }: SessionProgressRowProps): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
 
