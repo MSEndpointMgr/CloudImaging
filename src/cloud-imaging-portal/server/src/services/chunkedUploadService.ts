@@ -1,4 +1,4 @@
-import { BlobServiceClient, BlockBlobClient } from '@azure/storage-blob';
+import { BlobServiceClient } from '@azure/storage-blob';
 
 /**
  * Chunked upload service for large OS images (5–10 GB) via Azure Block Blob (T086a, FR-036).
@@ -29,12 +29,12 @@ const OS_IMAGES_CONTAINER = 'os-images';
  * Creates a staged chunked upload session.
  * Returns a SAS URL the client will use to PUT individual blocks.
  */
-export async function createUploadSession(
+export function createUploadSession(
   blobServiceClient: BlobServiceClient,
   imageName: string,
   version:   string,
   totalBytes: number,
-): Promise<UploadSession> {
+): UploadSession {
   const sessionId = crypto.randomUUID();
   const blobName  = `uploads/${sessionId}/${imageName.replace(/[^a-zA-Z0-9._-]/g, '-')}-${version}.wim`;
   const container = blobServiceClient.getContainerClient(OS_IMAGES_CONTAINER);

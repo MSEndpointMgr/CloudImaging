@@ -28,7 +28,7 @@ router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: 
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);
-    const data = await operatorApiClient.getSession(req.params['sessionId']!);
+    const data = await operatorApiClient.getSession(req.params['sessionId']);
     res.json(data);
   } catch (err) {
     next(err);
@@ -64,7 +64,7 @@ router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), asyn
       res.status(400).json({ error: 'osImageId is required' });
       return;
     }
-    const data = await operatorApiClient.assignSession(req.params['sessionId']!, osImageId);
+    const data = await operatorApiClient.assignSession(req.params['sessionId'], osImageId);
     res.status(201).json(data);
   } catch (err) {
     next(err);

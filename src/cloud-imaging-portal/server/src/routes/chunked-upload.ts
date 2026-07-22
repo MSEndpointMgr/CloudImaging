@@ -13,7 +13,7 @@ const router = Router();
 const sessions = new Map<string, { blobName: string; blockIds: string[]; totalBytes: number }>();
 
 router.post('/start', requireRole('CloudImaging.Administrator'),
-  async (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, res: Response, next: NextFunction) => {
     try {
       const { imageName, version, totalBytes } = req.body as {
         imageName: string; version: string; totalBytes: number;
@@ -37,7 +37,7 @@ router.post('/start', requireRole('CloudImaging.Administrator'),
 router.post('/:sessionId/block', requireRole('CloudImaging.Administrator'),
   (req: Request, res: Response, next: NextFunction) => {
     try {
-      const session = sessions.get(req.params['sessionId']!);
+      const session = sessions.get(req.params['sessionId']);
       if (!session) { res.status(404).json({ error: 'Upload session not found.' }); return; }
       const blockId = req.query['blockId'] as string;
       if (blockId) session.blockIds.push(blockId);
@@ -46,11 +46,11 @@ router.post('/:sessionId/block', requireRole('CloudImaging.Administrator'),
   });
 
 router.post('/:sessionId/finalize', requireRole('CloudImaging.Administrator'),
-  async (req: Request, res: Response, next: NextFunction) => {
+  (req: Request, res: Response, next: NextFunction) => {
     try {
-      const session = sessions.get(req.params['sessionId']!);
+      const session = sessions.get(req.params['sessionId']);
       if (!session) { res.status(404).json({ error: 'Upload session not found.' }); return; }
-      sessions.delete(req.params['sessionId']!);
+      sessions.delete(req.params['sessionId']);
       // In production: call Azure Blob PutBlockList + register image in catalog
       res.status(201).json({
         blobName:   session.blobName,
@@ -62,7 +62,7 @@ router.post('/:sessionId/finalize', requireRole('CloudImaging.Administrator'),
 
 router.delete('/:sessionId', requireRole('CloudImaging.Administrator'),
   (req: Request, res: Response) => {
-    sessions.delete(req.params['sessionId']!);
+    sessions.delete(req.params['sessionId']);
     res.status(204).send();
   });
 

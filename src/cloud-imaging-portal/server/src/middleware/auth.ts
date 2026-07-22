@@ -18,7 +18,7 @@ const client = jwksClient({ jwksUri, cache: true, cacheMaxAge: 600_000 });
 function getSigningKey(header: jwt.JwtHeader): Promise<string> {
   return new Promise((resolve, reject) => {
     client.getSigningKey(header.kid ?? '', (err, key) => {
-      if (err || !key) return reject(err ?? new Error('Signing key not found'));
+      if (err || !key) { reject(err ?? new Error('Signing key not found')); return; }
       resolve(key.getPublicKey());
     });
   });
@@ -53,7 +53,7 @@ export async function auth(req: AuthenticatedRequest, res: Response, next: NextF
 
     req.user = payload;
     next();
-  } catch (err) {
+  } catch {
     res.status(401).json({
       type: 'https://cloudimaging.io/errors/unauthorized',
       title: 'Unauthorized',

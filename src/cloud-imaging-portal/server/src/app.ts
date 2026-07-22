@@ -29,7 +29,7 @@ const allowedOrigins = (process.env['CORS_ALLOWED_ORIGINS'] ?? '')
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.includes(origin)) { callback(null, true); return; }
     callback(new Error(`Origin '${origin}' not allowed.`));
   },
   credentials: true,
@@ -56,7 +56,7 @@ import { chunkedUploadRouter } from './routes/chunked-upload.js';
 
 // Apply Entra auth to all /api routes except /api/health
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health') return next();
+  if (req.path === '/health') { next(); return; }
   return auth(req, res, next);
 });
 
@@ -81,6 +81,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
 });
 
 const port = parseInt(process.env['PORT'] ?? '3000', 10);
-app.listen(port, () => console.log(`Cloud Imaging Portal backend listening on port ${port}`));
+app.listen(port, () => { console.log(`Cloud Imaging Portal backend listening on port ${String(port)}`); });
 
 export default app;

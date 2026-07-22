@@ -17,7 +17,7 @@ router.delete('/:id', requireRole('CloudImaging.Administrator'), async (req: Req
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);
-    await operatorApiClient.deleteImage(req.params['id']!);
+    await operatorApiClient.deleteImage(req.params['id']);
     res.status(204).send();
   } catch (err) { next(err); }
 });
