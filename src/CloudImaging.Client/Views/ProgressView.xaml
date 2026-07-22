@@ -95,13 +95,12 @@
                     Message="{Binding ErrorMessage}"
                     Severity="Error"
                     IsOpen="{Binding HasError}"
-                    IsClosable="False">
-            <ui:InfoBar.Footer>
-                <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Support ref: {0}'}"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           FontFamily="Consolas"
-                           Margin="0,4,0,0" />
-            </ui:InfoBar.Footer>
-        </ui:InfoBar>
+                    IsClosable="False" />
+        <TextBlock Grid.Row="6"
+                   Text="{Binding SupportReferenceCode, StringFormat='Support ref: {0}'}"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   FontFamily="Consolas"
+                   Margin="0,60,0,0"
+                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
     </Grid>
 </Page>

@@ -159,16 +159,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
 
     private void BrowseLocalPath()
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog { Description = "Select Client binaries folder" };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            LocalSourcePath = dialog.SelectedPath;
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select Client binaries folder" };
+        if (dialog.ShowDialog() == true)
+            LocalSourcePath = dialog.FolderName;
     }
 
     private void BrowseOutputFolder()
     {
-        var dialog = new System.Windows.Forms.FolderBrowserDialog { Description = "Select output folder" };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-            OutputFolderPath = dialog.SelectedPath;
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select output folder" };
+        if (dialog.ShowDialog() == true)
+            OutputFolderPath = dialog.FolderName;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
