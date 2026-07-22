@@ -148,7 +148,7 @@ jobs:
     name: Deploy API Function Apps to dev
     runs-on: ubuntu-latest
     needs: [dotnet-build, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
-    environment: dev
+    environment: azure-dev
     permissions:
       id-token: write
       contents: read
@@ -194,7 +194,7 @@ jobs:
     name: Deploy Portal (backend + frontend) to dev
     runs-on: ubuntu-latest
     needs: [dotnet-build, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
-    environment: dev
+    environment: azure-dev
     permissions:
       id-token: write
       contents: read
