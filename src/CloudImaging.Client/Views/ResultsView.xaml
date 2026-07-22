@@ -1,75 +1,80 @@
 <Page x:Class="CloudImaging.Client.Views.ResultsView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      Title="Results"
-      Background="#F8FAFC">
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Results">
     <!-- FR-025, FR-026: Three terminal outcomes — Success, Failure, NotAuthorized -->
-    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="600">
+    <Grid>
+        <ui:Card HorizontalAlignment="Center" VerticalAlignment="Center" Padding="48,40">
+            <StackPanel Width="560">
 
-        <!-- SUCCESS -->
-        <StackPanel Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}"
-                    HorizontalAlignment="Center">
-            <TextBlock Text="✅" FontSize="64" HorizontalAlignment="Center" />
-            <TextBlock Text="Imaging Complete"
-                       FontSize="28" FontWeight="Bold" Foreground="#16A34A"
-                       HorizontalAlignment="Center" Margin="0,16,0,0" />
-            <TextBlock Text="The operating system has been successfully applied."
-                       FontSize="15" Foreground="#64748B"
-                       HorizontalAlignment="Center" Margin="0,12,0,0" />
-        </StackPanel>
-
-        <!-- FAILURE -->
-        <StackPanel Visibility="{Binding IsFailure, Converter={StaticResource BoolToVisibility}}"
-                    HorizontalAlignment="Center">
-            <TextBlock Text="❌" FontSize="64" HorizontalAlignment="Center" />
-            <TextBlock Text="Imaging Failed"
-                       FontSize="28" FontWeight="Bold" Foreground="#DC2626"
-                       HorizontalAlignment="Center" Margin="0,16,0,0" />
-
-            <Border Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1"
-                    CornerRadius="6" Padding="16" Margin="0,16,0,0">
-                <StackPanel>
-                    <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Support Reference: {0}'}"
-                               FontSize="13" FontWeight="SemiBold" Foreground="#B91C1C"
-                               FontFamily="Consolas" />
-                    <TextBlock Text="{Binding ErrorDetail}"
-                               FontSize="13" Foreground="#B91C1C" TextWrapping="Wrap"
-                               Margin="0,8,0,0" />
+                <!-- SUCCESS -->
+                <StackPanel Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}"
+                            HorizontalAlignment="Center">
+                    <TextBlock Text="✓" FontSize="64" FontWeight="Bold"
+                               Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="Imaging Complete"
+                               Style="{StaticResource TitleTextBlockStyle}"
+                               Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                               HorizontalAlignment="Center" Margin="0,16,0,0" />
+                    <TextBlock Text="The operating system has been successfully applied."
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,12,0,0" />
                 </StackPanel>
-            </Border>
 
-            <TextBlock Text="Contact your IT administrator with the support reference code above."
-                       FontSize="13" Foreground="#64748B" TextWrapping="Wrap"
-                       HorizontalAlignment="Center" Margin="0,16,0,0" TextAlignment="Center" />
+                <!-- FAILURE -->
+                <StackPanel Visibility="{Binding IsFailure, Converter={StaticResource BoolToVisibility}}"
+                            HorizontalAlignment="Center">
+                    <TextBlock Text="✕" FontSize="64" FontWeight="Bold"
+                               Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="Imaging Failed"
+                               Style="{StaticResource TitleTextBlockStyle}"
+                               Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                               HorizontalAlignment="Center" Margin="0,16,0,0" />
+                    <ui:InfoBar Title="{Binding SupportReferenceCode, StringFormat='Support Reference: {0}'}"
+                                Message="{Binding ErrorDetail}"
+                                Severity="Error"
+                                IsOpen="True"
+                                IsClosable="False"
+                                Margin="0,16,0,0" />
+                    <TextBlock Text="Contact your IT administrator with the support reference code above."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               HorizontalAlignment="Center" Margin="0,16,0,0" />
+                    <ui:Button Content="Retry"
+                               Appearance="Danger"
+                               Width="160"
+                               Command="{Binding RetryCommand}"
+                               HorizontalAlignment="Center" Margin="0,24,0,0" />
+                </StackPanel>
 
-            <Button Content="↺ Retry"
-                    Width="160" Height="40" FontSize="14"
-                    Background="#DC2626" Foreground="White" BorderThickness="0"
-                    Command="{Binding RetryCommand}"
-                    HorizontalAlignment="Center" Margin="0,24,0,0" />
-        </StackPanel>
+                <!-- NOT AUTHORIZED -->
+                <StackPanel Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}"
+                            HorizontalAlignment="Center">
+                    <TextBlock Text="⊘" FontSize="64" FontWeight="Bold"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="Device Not Authorized"
+                               Style="{StaticResource TitleTextBlockStyle}"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               HorizontalAlignment="Center" Margin="0,16,0,0" />
+                    <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               FontFamily="Consolas"
+                               HorizontalAlignment="Center" Margin="0,12,0,0" />
+                    <ui:InfoBar Title="Enrollment required"
+                                Message="This device is not enrolled in Windows Autopilot or the Intune Corporate Device Identifiers list. Enroll the device in your organization's device management system before imaging."
+                                Severity="Warning"
+                                IsOpen="True"
+                                IsClosable="False"
+                                Margin="0,16,0,0" />
+                </StackPanel>
 
-        <!-- NOT AUTHORIZED -->
-        <StackPanel Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}"
-                    HorizontalAlignment="Center">
-            <TextBlock Text="🚫" FontSize="64" HorizontalAlignment="Center" />
-            <TextBlock Text="Device Not Authorized"
-                       FontSize="28" FontWeight="Bold" Foreground="#D97706"
-                       HorizontalAlignment="Center" Margin="0,16,0,0" />
-
-            <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
-                       FontSize="15" FontFamily="Consolas" Foreground="#92400E"
-                       HorizontalAlignment="Center" Margin="0,12,0,0" />
-
-            <Border Background="#FFFBEB" BorderBrush="#FCD34D" BorderThickness="1"
-                    CornerRadius="6" Padding="16" Margin="0,16,0,0">
-                <TextBlock TextWrapping="Wrap" FontSize="13" Foreground="#78350F">
-                    This device is not enrolled in Windows Autopilot or the Intune Corporate
-                    Device Identifiers list. Please enroll the device in your organization's
-                    device management system before attempting to image it.
-                </TextBlock>
-            </Border>
-        </StackPanel>
-
+            </StackPanel>
+        </ui:Card>
     </Grid>
 </Page>

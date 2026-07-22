@@ -1,6 +1,7 @@
-<Window x:Class="CloudImaging.MediaBuilder.Views.MainWindow"
+<ui:FluentWindow x:Class="CloudImaging.MediaBuilder.Views.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Cloud Imaging Media Builder" Height="600" Width="900"
         MinWidth="900" MinHeight="600"
         WindowStartupLocation="CenterScreen">
@@ -11,4 +12,4 @@
     <Frame x:Name="NavigationFrame"
            NavigationUIVisibility="Hidden"
            Focusable="False" />
-</Window>
+</ui:FluentWindow>

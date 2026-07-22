@@ -1,0 +1,28 @@
+<Project>
+
+  <!--
+    WPF SDK workaround: The XAML markup compiler creates a temporary project (_wpftmp.csproj)
+    whose CoreCompile inherits source files, NuGet packages, and source generators from the parent.
+    When LoggerMessageGenerator (from Microsoft.Extensions.Logging) runs in the temp project, it
+    produces the same code that was already compiled by the parent project's CoreCompile, causing:
+      CS0102 — duplicate definition for generated members (__LogXxxCallback)
+      CS8795 — partial method declaration without implementation (when analyzers are removed)
+
+    The temp project exists solely for XAML type-resolution; its output is never shipped. We
+    therefore suppress these two diagnostic codes so the markup compilation pass can succeed.
+    The main project compilation is unaffected (its project name does not end with '_wpftmp').
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('_wpftmp'))">
+    <!--
+      Suppress ALL error codes produced by LoggerMessageGenerator running a second time in
+      the WPF markup-compilation temp project (none of these affect the actual build output):
+        CS0102 — type already contains a definition (duplicate logger callbacks)
+        CS0111 — type already defines a member with the same parameter types
+        CS0579 — duplicate attribute
+        CS8646 — explicit interface implementation more than once
+        CS8795 — partial method declaration without implementation
+    -->
+    <NoWarn>$(NoWarn);CS0102;CS0111;CS0579;CS8646;CS8795</NoWarn>
+  </PropertyGroup>
+
+</Project>

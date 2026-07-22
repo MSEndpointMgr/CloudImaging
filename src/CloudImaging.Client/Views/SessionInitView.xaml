@@ -1,81 +1,64 @@
 <Page x:Class="CloudImaging.Client.Views.SessionInitView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      Title="Session Initializing"
-      Background="#F8FAFC">
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Session Initializing">
     <!--
         FR-031: Displays session ID and one-time passcode while awaiting operator coupling.
         Transitions immediately to ResultsView on SessionNotAuthorized (FR-026).
         Refresh button triggers immediate poll cycle (FR-031).
     -->
-    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="600">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="24" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="24" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="24" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <Grid>
+        <ui:Card HorizontalAlignment="Center" VerticalAlignment="Center" Padding="48,40">
+            <StackPanel Width="520">
 
-        <!-- Heading -->
-        <TextBlock Grid.Row="0"
-                   Text="Awaiting Operator"
-                   FontSize="28" FontWeight="Bold"
-                   Foreground="#1E3A5F"
-                   HorizontalAlignment="Center" />
+                <!-- Heading -->
+                <TextBlock Text="Awaiting Operator"
+                           Style="{StaticResource TitleTextBlockStyle}"
+                           HorizontalAlignment="Center" Margin="0,0,0,28" />
 
-        <!-- Passcode display -->
-        <StackPanel Grid.Row="2" HorizontalAlignment="Center">
-            <TextBlock Text="Session Passcode"
-                       FontSize="14" Foreground="#64748B"
-                       HorizontalAlignment="Center" />
-            <TextBlock Text="{Binding Passcode}"
-                       FontSize="48" FontWeight="Bold" FontFamily="Consolas"
-                       Foreground="#2563EB"
-                       HorizontalAlignment="Center"
-                       Margin="0,8,0,0" />
-            <TextBlock Text="{Binding SessionId, StringFormat='Session ID: {0}'}"
-                       FontSize="12" Foreground="#94A3B8"
-                       HorizontalAlignment="Center"
-                       Margin="0,8,0,0" />
-        </StackPanel>
+                <!-- Passcode display -->
+                <StackPanel HorizontalAlignment="Center" Margin="0,0,0,24">
+                    <TextBlock Text="Session Passcode"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding Passcode}"
+                               FontSize="52" FontWeight="Bold" FontFamily="Consolas"
+                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding SessionId, StringFormat='Session ID: {0}'}"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,8,0,0" />
+                </StackPanel>
 
-        <!-- Progress -->
-        <StackPanel Grid.Row="4" HorizontalAlignment="Center">
-            <TextBlock Text="{Binding StatusMessage}"
-                       FontSize="14" Foreground="#64748B"
-                       HorizontalAlignment="Center" />
-            <ProgressBar IsIndeterminate="True"
-                         Width="200" Height="4"
-                         Margin="0,12,0,0"
-                         Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
-        </StackPanel>
+                <!-- Polling status -->
+                <StackPanel HorizontalAlignment="Center" Margin="0,0,0,20"
+                            Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="{Binding StatusMessage}"
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Center" />
+                    <ui:ProgressRing IsIndeterminate="True" Width="32" Height="32"
+                                     Margin="0,12,0,0" HorizontalAlignment="Center" />
+                </StackPanel>
 
-        <!-- Error message (cert-error state) -->
-        <Border Grid.Row="4"
-                Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1"
-                CornerRadius="6" Padding="16"
-                Visibility="{Binding HasCertError, Converter={StaticResource BoolToVisibility}}">
-            <StackPanel>
-                <TextBlock Text="Certificate Error"
-                           FontSize="16" FontWeight="SemiBold" Foreground="#DC2626" />
-                <TextBlock Text="{Binding CertErrorMessage}"
-                           FontSize="13" Foreground="#B91C1C" TextWrapping="Wrap"
-                           Margin="0,8,0,0" />
+                <!-- Certificate error -->
+                <ui:InfoBar Title="Certificate Error"
+                            Message="{Binding CertErrorMessage}"
+                            Severity="Error"
+                            IsOpen="{Binding HasCertError}"
+                            IsClosable="False"
+                            Margin="0,0,0,16" />
+
+                <!-- Refresh button -->
+                <ui:Button Content="Refresh Status"
+                           Appearance="Secondary"
+                           Width="180" HorizontalAlignment="Center"
+                           Command="{Binding RefreshCommand}"
+                           Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
-        </Border>
-
-        <!-- Refresh button -->
-        <Button Grid.Row="6"
-                Content="↻ Refresh Status"
-                Width="180" Height="36"
-                FontSize="13"
-                Background="White" Foreground="#2563EB"
-                BorderBrush="#2563EB" BorderThickness="1"
-                Command="{Binding RefreshCommand}"
-                HorizontalAlignment="Center"
-                Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
+        </ui:Card>
     </Grid>
 </Page>

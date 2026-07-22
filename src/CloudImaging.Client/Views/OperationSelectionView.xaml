@@ -1,43 +1,46 @@
 <Page x:Class="CloudImaging.Client.Views.OperationSelectionView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      Title="Select Operation"
-      Background="#F8FAFC">
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Select Operation">
     <!--
         FR-001: Device boot into WinPE, operator selects Imaging or Decommissioning.
         Imaging selection triggers silent hardware metadata collection before registration.
     -->
-    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="700">
+    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="720">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="32" />
+            <RowDefinition Height="28" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="32" />
+            <RowDefinition Height="20" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="20" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Header -->
         <StackPanel Grid.Row="0" HorizontalAlignment="Center">
             <TextBlock Text="Cloud Imaging"
-                       FontSize="32" FontWeight="Bold"
-                       Foreground="#1E3A5F"
+                       Style="{StaticResource TitleLargeTextBlockStyle}"
                        HorizontalAlignment="Center" />
             <TextBlock Text="Select an operation to begin"
-                       FontSize="16" Foreground="#64748B"
-                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+                       Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       HorizontalAlignment="Center" Margin="0,6,0,0" />
         </StackPanel>
 
         <!-- Operation cards -->
-        <UniformGrid Grid.Row="2" Columns="2" HorizontalAlignment="Center">
+        <UniformGrid Grid.Row="2" Columns="2">
             <!-- Imaging card -->
-            <Border Margin="8" Padding="24" CornerRadius="8"
-                    Background="White" BorderBrush="#CBD5E1" BorderThickness="1"
-                    Cursor="Hand">
+            <Border Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                        <Setter Property="BorderThickness" Value="1" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding SelectedOperation}" Value="Imaging">
-                                <Setter Property="BorderBrush" Value="#2563EB" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
                                 <Setter Property="BorderThickness" Value="2" />
                             </DataTrigger>
                         </Style.Triggers>
@@ -49,25 +52,27 @@
                                   CommandParameter="Imaging" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="💿" FontSize="40" HorizontalAlignment="Center" />
-                    <TextBlock Text="Imaging" FontSize="20" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Margin="0,12,0,0" />
+                    <TextBlock Text="💿" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <TextBlock Text="Imaging"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               HorizontalAlignment="Center" Margin="0,0,0,8" />
                     <TextBlock Text="Apply a fresh OS image to this device."
-                               FontSize="13" Foreground="#64748B"
-                               TextWrapping="Wrap" HorizontalAlignment="Center"
-                               Margin="0,8,0,0" TextAlignment="Center" />
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
 
             <!-- Decommissioning card -->
-            <Border Margin="8" Padding="24" CornerRadius="8"
-                    Background="White" BorderBrush="#CBD5E1" BorderThickness="1"
-                    Cursor="Hand">
+            <Border Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                        <Setter Property="BorderThickness" Value="1" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding SelectedOperation}" Value="Decommissioning">
-                                <Setter Property="BorderBrush" Value="#2563EB" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
                                 <Setter Property="BorderThickness" Value="2" />
                             </DataTrigger>
                         </Style.Triggers>
@@ -79,33 +84,33 @@
                                   CommandParameter="Decommissioning" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="🗑️" FontSize="40" HorizontalAlignment="Center" />
-                    <TextBlock Text="Decommissioning" FontSize="20" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" Margin="0,12,0,0" />
+                    <TextBlock Text="🗑" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <TextBlock Text="Decommissioning"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               HorizontalAlignment="Center" Margin="0,0,0,8" />
                     <TextBlock Text="Securely wipe this device for retirement."
-                               FontSize="13" Foreground="#64748B"
-                               TextWrapping="Wrap" HorizontalAlignment="Center"
-                               Margin="0,8,0,0" TextAlignment="Center" />
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
         </UniformGrid>
 
         <!-- Status / error -->
-        <TextBlock Grid.Row="3"
-                   Text="{Binding StatusMessage}"
-                   Foreground="#DC2626"
-                   HorizontalAlignment="Center"
-                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+        <ui:InfoBar Grid.Row="4"
+                    Title="Error"
+                    Message="{Binding StatusMessage}"
+                    Severity="Error"
+                    IsOpen="{Binding HasError}"
+                    IsClosable="False" />
 
         <!-- Continue button -->
-        <Button Grid.Row="4"
-                Content="Continue →"
-                Width="200" Height="44"
-                FontSize="16"
-                Background="#2563EB" Foreground="White"
-                BorderThickness="0"
-                Command="{Binding ContinueCommand}"
-                HorizontalAlignment="Center"
-                IsEnabled="{Binding CanContinue}" />
+        <ui:Button Grid.Row="6"
+                   Content="Continue"
+                   Appearance="Primary"
+                   Width="200" Height="44" FontSize="15"
+                   Command="{Binding ContinueCommand}"
+                   HorizontalAlignment="Center"
+                   IsEnabled="{Binding CanContinue}" />
     </Grid>
 </Page>

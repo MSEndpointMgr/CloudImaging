@@ -46,6 +46,8 @@
     <PackageVersion Include="Serilog.Extensions.Logging"          Version="8.0.0" />
     <!-- WMI for hardware metadata collection (FR-001a) -->
     <PackageVersion Include="System.Management"                   Version="9.0.0" />
+    <!-- Fluent design for WPF desktop apps -->
+    <PackageVersion Include="WPF-UI"                              Version="4.3.0" />
 
     <!-- Test frameworks -->
     <PackageVersion Include="xunit"                               Version="2.9.0" />
