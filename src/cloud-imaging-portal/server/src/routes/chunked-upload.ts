@@ -37,7 +37,7 @@ router.post('/start', requireRole('CloudImaging.Administrator'),
 router.post('/:sessionId/block', requireRole('CloudImaging.Administrator'),
   (req: Request, res: Response, next: NextFunction) => {
     try {
-      const session = sessions.get(req.params['sessionId']);
+      const session = sessions.get(req.params['sessionId'] as string);
       if (!session) { res.status(404).json({ error: 'Upload session not found.' }); return; }
       const blockId = req.query['blockId'] as string;
       if (blockId) session.blockIds.push(blockId);
@@ -48,9 +48,9 @@ router.post('/:sessionId/block', requireRole('CloudImaging.Administrator'),
 router.post('/:sessionId/finalize', requireRole('CloudImaging.Administrator'),
   (req: Request, res: Response, next: NextFunction) => {
     try {
-      const session = sessions.get(req.params['sessionId']);
+      const session = sessions.get(req.params['sessionId'] as string);
       if (!session) { res.status(404).json({ error: 'Upload session not found.' }); return; }
-      sessions.delete(req.params['sessionId']);
+      sessions.delete(req.params['sessionId'] as string);
       // In production: call Azure Blob PutBlockList + register image in catalog
       res.status(201).json({
         blobName:   session.blobName,
@@ -62,7 +62,7 @@ router.post('/:sessionId/finalize', requireRole('CloudImaging.Administrator'),
 
 router.delete('/:sessionId', requireRole('CloudImaging.Administrator'),
   (req: Request, res: Response) => {
-    sessions.delete(req.params['sessionId']);
+    sessions.delete(req.params['sessionId'] as string);
     res.status(204).send();
   });
 

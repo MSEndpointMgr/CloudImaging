@@ -35,7 +35,7 @@ router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req:
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);
-    res.json(await operatorApiClient.updateImage(req.params['imageId'], req.body as unknown));
+    res.json(await operatorApiClient.updateImage(req.params['imageId'] as string, req.body as unknown));
   } catch (err) { next(err); }
 });
 
@@ -45,7 +45,7 @@ router.delete('/:imageId', requireRole('CloudImaging.Administrator'), async (req
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);
-    await operatorApiClient.deleteImage(req.params['imageId']);
+    await operatorApiClient.deleteImage(req.params['imageId'] as string);
     res.status(204).send();
   } catch (err) { next(err); }
 });

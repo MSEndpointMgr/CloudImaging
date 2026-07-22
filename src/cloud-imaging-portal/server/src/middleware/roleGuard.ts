@@ -8,7 +8,7 @@ import { AuthenticatedRequest } from './auth.js';
  * Called after the auth middleware; reads the resolved JWT from req.user.
  */
 
-export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician';
+export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician' | 'CloudImaging.PortalAccess';
 
 /** Returns the set of roles the authenticated user holds. */
 export function getUserRoles(req: AuthenticatedRequest): Set<string> {
