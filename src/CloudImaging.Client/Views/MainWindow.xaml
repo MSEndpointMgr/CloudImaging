@@ -6,12 +6,28 @@
         MinWidth="1024" MinHeight="768"
         Width="1024"   Height="768"
         WindowStartupLocation="CenterScreen"
-        ResizeMode="CanMinimize">
+        ResizeMode="CanMinimize"
+        ExtendsContentIntoTitleBar="True"
+        WindowCornerPreference="Round">
     <!--
         Fixed layout: 1024×768 minimum, centered on display, no scroll (FR-002b).
         Navigation frame hosts all four views without page-level scrolling.
+        Fluent title bar for a consistent look with the Media Builder; backdrop is
+        left at the default so the window renders correctly under WinPE (no DWM Mica).
     -->
-    <Frame x:Name="NavigationFrame"
-           NavigationUIVisibility="Hidden"
-           Focusable="False" />
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0"
+                     Title="Cloud Imaging"
+                     ShowMaximize="False" />
+
+        <Frame x:Name="NavigationFrame"
+               Grid.Row="1"
+               NavigationUIVisibility="Hidden"
+               Focusable="False" />
+    </Grid>
 </ui:FluentWindow>

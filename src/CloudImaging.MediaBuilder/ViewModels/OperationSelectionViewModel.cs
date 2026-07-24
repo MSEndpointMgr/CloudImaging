@@ -17,6 +17,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         _navigate = navigate;
         SelectOperationCommand = new RelayCommand(op => SelectedOperation = op?.ToString());
         ContinueCommand = new RelayCommand(_ => _navigate(_selectedOperation!), _ => CanContinue);
+
+        // Preselect the first operation so Continue is immediately actionable.
+        _selectedOperation = "GenerateBootImage";
     }
 
     public string? SelectedOperation

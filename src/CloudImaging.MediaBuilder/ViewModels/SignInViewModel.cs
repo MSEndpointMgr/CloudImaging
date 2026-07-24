@@ -40,6 +40,8 @@ public sealed class SignInViewModel : INotifyPropertyChanged
 
     public bool CanSignIn => !_isBusy;
 
+    public bool IsBusy => _isBusy;
+
     public ICommand SignInCommand { get; }
 
     // ── Sign-in flow ──────────────────────────────────────────────────────────
@@ -50,6 +52,7 @@ public sealed class SignInViewModel : INotifyPropertyChanged
         HasError = false;
         StatusMessage = "Signing in…";
         OnPropertyChanged(nameof(CanSignIn));
+        OnPropertyChanged(nameof(IsBusy));
 
         try
         {
@@ -74,6 +77,7 @@ public sealed class SignInViewModel : INotifyPropertyChanged
         {
             _isBusy = false;
             OnPropertyChanged(nameof(CanSignIn));
+            OnPropertyChanged(nameof(IsBusy));
         }
     }
 

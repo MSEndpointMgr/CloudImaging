@@ -12,7 +12,12 @@
       "command": "gh workflow run deploy-components.yml --field component=DeviceGatewayApi",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers GitHub Actions deploy-components.yml to redeploy DeviceGatewayApi to the shared dev environment. Requires `gh` CLI authenticated to the repo."
+      "detail": "Triggers GitHub Actions deploy-components.yml to redeploy DeviceGatewayApi to the shared dev environment. Requires `gh` CLI authenticated to the repo.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      },
       // Fallback (offline): az functionapp deployment source config-zip
       //   --resource-group <your-rg> --name <your-prefix>-dev-func-gateway
       //   --src <zip-path>
@@ -23,7 +28,12 @@
       "command": "gh workflow run deploy-components.yml --field component=OperatorApi",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for OperatorApi."
+      "detail": "Triggers deploy-components.yml for OperatorApi.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
       // Fallback: az functionapp deployment source config-zip ... --name <prefix>-dev-func-operator
     },
     {
@@ -32,7 +42,12 @@
       "command": "gh workflow run deploy-components.yml --field component=ImagingCoreApi",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for ImagingCoreApi."
+      "detail": "Triggers deploy-components.yml for ImagingCoreApi.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
       // Fallback: az functionapp deployment source config-zip ... --name <prefix>-dev-func-core
     },
     {
@@ -41,7 +56,12 @@
       "command": "gh workflow run deploy-components.yml --field component=PortalBackend",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for the Portal backend App Service."
+      "detail": "Triggers deploy-components.yml for the Portal backend App Service.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
       // Fallback: az webapp deploy --name <prefix>-dev-app-portal --src-path <zip>
     },
     {
@@ -50,7 +70,12 @@
       "command": "gh workflow run deploy-components.yml --field component=PortalFrontend",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for the Portal frontend Static Web App."
+      "detail": "Triggers deploy-components.yml for the Portal frontend Static Web App.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
       // Fallback: npx @azure/static-web-apps-cli deploy ./dist --deployment-token <token>
     },
     {
@@ -59,7 +84,12 @@
       "command": "gh workflow run deploy-dev.yml --field confirm=deploy",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-dev.yml for a full-stack deployment (Bicep IaC + all components). Use only for initial setup or full environment refresh."
+      "detail": "Triggers deploy-dev.yml for a full-stack deployment (Bicep IaC + all components). Use only for initial setup or full environment refresh.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Build: .NET Solution (Release)",
@@ -67,7 +97,28 @@
       "command": "dotnet build CloudImaging.sln --configuration Release",
       "problemMatcher": ["$msCompile"],
       "group": { "kind": "build", "isDefault": true },
-      "detail": "Build all .NET projects in Release configuration with TreatWarningsAsErrors."
+      "detail": "Build all .NET projects in Release configuration with TreatWarningsAsErrors.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
+    },
+    {
+      "label": "Build: Client WPF (Release)",
+      "type": "shell",
+      "command": "dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj --configuration Release",
+      "problemMatcher": ["$msCompile"],
+      "group": "build",
+      "detail": "Build the CloudImaging.Client WPF app in Release configuration."
+    },
+    {
+      "label": "Build: Media Builder WPF (Release)",
+      "type": "shell",
+      "command": "dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj --configuration Release",
+      "problemMatcher": ["$msCompile"],
+      "group": "build",
+      "detail": "Build the CloudImaging.MediaBuilder WPF app in Release configuration."
     },
     {
       "label": "Test: .NET Solution",
@@ -75,7 +126,12 @@
       "command": "dotnet test CloudImaging.sln --configuration Release",
       "problemMatcher": ["$msCompile"],
       "group": { "kind": "test", "isDefault": true },
-      "detail": "Run all .NET unit and integration tests."
+      "detail": "Run all .NET unit and integration tests.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "IaC: Publish Template Spec to dev",
@@ -83,7 +139,12 @@
       "command": ".\\src\\deploy\\scripts\\publish-template-spec.ps1 -ResourceGroupName '${input:resourceGroup}' -Location '${input:location}' -Version '${input:version}'",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Publish the Bicep + uiFormDefinition.json as a Template Spec to your dev resource group."
+      "detail": "Publish the Bicep + uiFormDefinition.json as a Template Spec to your dev resource group.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Update: Run upgrade script (local archive)",
@@ -91,7 +152,12 @@
       "command": "pwsh -NonInteractive -Command \".\\src\\deploy\\scripts\\update.ps1 -ResourceGroupName '${input:resourceGroup}' -WhatIf\"",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Dry-run the community upgrade script against the dev resource group. Remove -WhatIf to deploy."
+      "detail": "Dry-run the community upgrade script against the dev resource group. Remove -WhatIf to deploy.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Dev: Run portal server (localhost:3000)",
@@ -99,7 +165,12 @@
       "command": "cd src/cloud-imaging-portal/server && npm run dev",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Start the portal Express server in watch mode. Requires VITE_ENTRA_CLIENT_ID etc. in .env."
+      "detail": "Start the portal Express server in watch mode. Requires VITE_ENTRA_CLIENT_ID etc. in .env.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Dev: Run portal client (Vite, localhost:5173)",
@@ -107,7 +178,12 @@
       "command": "cd src/cloud-imaging-portal/client && npm run dev",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Start the Vite dev server. Requires VITE_ENTRA_CLIENT_ID / VITE_ENTRA_AUTHORITY in .env."
+      "detail": "Start the Vite dev server. Requires VITE_ENTRA_CLIENT_ID / VITE_ENTRA_AUTHORITY in .env.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Test: Portal client (vitest)",
@@ -115,7 +191,12 @@
       "command": "cd src/cloud-imaging-portal/client && npm run test:run",
       "problemMatcher": [],
       "group": "test",
-      "detail": "Run portal frontend unit tests via Vitest."
+      "detail": "Run portal frontend unit tests via Vitest.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Test: Portal server (vitest)",
@@ -123,7 +204,12 @@
       "command": "cd src/cloud-imaging-portal/server && npm run test:run",
       "problemMatcher": [],
       "group": "test",
-      "detail": "Run portal server unit tests via Vitest."
+      "detail": "Run portal server unit tests via Vitest.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Lint: Portal client (ESLint)",
@@ -131,7 +217,12 @@
       "command": "cd src/cloud-imaging-portal/client && npm run lint",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Run ESLint over the React portal client."
+      "detail": "Run ESLint over the React portal client.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     },
     {
       "label": "Lint: Portal server (ESLint)",
@@ -139,7 +230,25 @@
       "command": "cd src/cloud-imaging-portal/server && npm run lint",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Run ESLint over the Express portal server."
+      "detail": "Run ESLint over the Express portal server.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
+    },
+    {
+      "label": "Release: Verify no secrets/config committed",
+      "type": "shell",
+      "command": "pwsh -NonInteractive -File src/deploy/scripts/verify-release-secrets.ps1",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Release gate: fails if any committed appsettings.json still contains environment values, or if a *.Local.json / *.Development.json / .env / local.settings.json overlay is tracked by git. Run before publishing a public release.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     }
   ],
   "inputs": [

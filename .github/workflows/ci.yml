@@ -42,7 +42,7 @@ jobs:
         run: dotnet build CloudImaging.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
 
   dotnet-build-wpf:
-    name: WPF Apps Build (Client + MediaBuilder, Windows only)
+    name: WPF Apps Build + Test (Client + MediaBuilder, Windows only)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -55,6 +55,10 @@ jobs:
         run: dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj --configuration Release --no-restore
       - name: Build MediaBuilder
         run: dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj --configuration Release --no-restore
+      - name: Test Client (WPF)
+        run: dotnet test tests/CloudImaging.Client.Tests/CloudImaging.Client.Tests.csproj --configuration Release
+      - name: Test MediaBuilder (WPF)
+        run: dotnet test tests/CloudImaging.MediaBuilder.Tests/CloudImaging.MediaBuilder.Tests.csproj --configuration Release
 
   dotnet-test:
     name: .NET Unit Tests (>= 80% coverage)
@@ -67,9 +71,15 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: Restore
         run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
+      # Client and MediaBuilder tests target net10.0-windows and require the
+      # Windows Desktop runtime, so they run in the dotnet-build-wpf job.
+      # Only the cross-platform (API) test projects run here on Linux.
       - name: Test
         run: >
-          dotnet test CloudImaging.sln
+          dotnet test
+          tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj
+          tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj
+          tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj
           --configuration Release
           --no-restore
           -p:EnableWindowsTargeting=true
@@ -147,7 +157,7 @@ jobs:
   deploy-functions:
     name: Deploy API Function Apps to dev
     runs-on: ubuntu-latest
-    needs: [dotnet-build, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
+    needs: [dotnet-build, dotnet-build-wpf, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
     environment: azure-dev
     permissions:
       id-token: write
@@ -193,7 +203,7 @@ jobs:
   deploy-portal:
     name: Deploy Portal (backend + frontend) to dev
     runs-on: ubuntu-latest
-    needs: [dotnet-build, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
+    needs: [dotnet-build, dotnet-build-wpf, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
     environment: azure-dev
     permissions:
       id-token: write

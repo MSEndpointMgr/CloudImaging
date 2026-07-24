@@ -1,8 +1,7 @@
-<Page x:Class="CloudImaging.MediaBuilder.Views.GenerateBootImageView"
+<UserControl x:Class="CloudImaging.MediaBuilder.Views.GenerateBootImageView"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-      Title="Generate Boot Image">
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <!--
         FR-051a, FR-051b: Source selection (GitHub auto-download or local path) and
         output folder confirmation. No portal upload initiated by this app.
@@ -92,4 +91,4 @@
                        HorizontalAlignment="Left" />
         </StackPanel>
     </ScrollViewer>
-</Page>
+</UserControl>

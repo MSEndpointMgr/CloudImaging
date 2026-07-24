@@ -4,12 +4,30 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Cloud Imaging Media Builder" Height="600" Width="900"
         MinWidth="900" MinHeight="600"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen"
+        WindowBackdropType="Mica"
+        ExtendsContentIntoTitleBar="True"
+        WindowCornerPreference="Round">
     <!--
-        Host Frame for Media Builder navigation.
-        Initial page = SignInView (FR-050: sign-in required before any operation).
+        Content host for Media Builder navigation.
+        Initial view = SignInView (FR-050: sign-in required before any operation).
+        Fluent title bar + Mica backdrop follow the OS theme (SystemThemeWatcher).
     -->
-    <Frame x:Name="NavigationFrame"
-           NavigationUIVisibility="Hidden"
-           Focusable="False" />
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0"
+                     Title="Cloud Imaging Media Builder"
+                     ShowMaximize="False" />
+
+        <ContentControl x:Name="ContentHost"
+                        Grid.Row="1"
+                        Focusable="False"
+                        FocusVisualStyle="{x:Null}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch" />
+    </Grid>
 </ui:FluentWindow>
