@@ -1,8 +1,9 @@
 name: CI / Deploy Dev
 
 # Runs once when a PR is merged to main.
-# CI gates run first. If all pass, the five Azure-hosted components are
-# deployed automatically to the dev environment.
+# CI gates run first. If all pass, only the components whose files (or the
+# shared code they depend on) changed in the merge are deployed to the dev
+# environment. A manual workflow_dispatch run force-deploys every component.
 #
 # Client and MediaBuilder are built for compile validation only —
 # they are never deployed to Azure.
@@ -154,10 +155,51 @@ jobs:
 
 # ── DEPLOY GATES (push to main only, after all CI gates pass) ──────────────────
 
-  deploy-functions:
-    name: Deploy API Function Apps to dev
+  # Detect which components changed so we only redeploy what's affected.
+  # The three API Function Apps all reference CloudImaging.Contracts, so a
+  # change to Contracts (or root build/solution files) triggers all three.
+  # The portal (Node) is fully independent of the .NET code.
+  changes:
+    name: Detect changed components
     runs-on: ubuntu-latest
-    needs: [dotnet-build, dotnet-build-wpf, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
+    outputs:
+      gateway: ${{ steps.filter.outputs.gateway }}
+      operator: ${{ steps.filter.outputs.operator }}
+      core: ${{ steps.filter.outputs.core }}
+      portal-backend: ${{ steps.filter.outputs.portal-backend }}
+      portal-frontend: ${{ steps.filter.outputs.portal-frontend }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - 'CloudImaging.sln'
+              - 'Directory.Build.props'
+              - 'Directory.Build.targets'
+              - 'Directory.Packages.props'
+              - 'global.json'
+              - 'src/CloudImaging.Contracts/**'
+            gateway:
+              - *shared
+              - 'src/CloudImaging.DeviceGatewayApi/**'
+            operator:
+              - *shared
+              - 'src/CloudImaging.OperatorApi/**'
+            core:
+              - *shared
+              - 'src/CloudImaging.ImagingCoreApi/**'
+            portal-backend:
+              - 'src/cloud-imaging-portal/server/**'
+            portal-frontend:
+              - 'src/cloud-imaging-portal/client/**'
+
+  deploy-gateway:
+    name: Deploy DeviceGatewayApi to dev
+    runs-on: ubuntu-latest
+    needs: [changes, dotnet-build, dotnet-test, dotnet-format, security-leakage-scan]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
     environment: azure-dev
     permissions:
       id-token: write
@@ -174,10 +216,6 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish DeviceGatewayApi
         run: dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release -o ./publish/DeviceGatewayApi
-      - name: Publish OperatorApi
-        run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi
-      - name: Publish ImagingCoreApi
-        run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi
       - name: Deploy DeviceGatewayApi
         run: |
           cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip .
@@ -185,6 +223,28 @@ jobs:
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }} \
             --src ../../deploy-gateway.zip
+
+  deploy-operator:
+    name: Deploy OperatorApi to dev
+    runs-on: ubuntu-latest
+    needs: [changes, dotnet-build, dotnet-test, dotnet-format, security-leakage-scan]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.operator == 'true'
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish OperatorApi
+        run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi
       - name: Deploy OperatorApi
         run: |
           cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip .
@@ -192,6 +252,28 @@ jobs:
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.FUNCTION_APP_OPERATOR }} \
             --src ../../deploy-operator.zip
+
+  deploy-core:
+    name: Deploy ImagingCoreApi to dev
+    runs-on: ubuntu-latest
+    needs: [changes, dotnet-build, dotnet-test, dotnet-format, security-leakage-scan]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.core == 'true'
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish ImagingCoreApi
+        run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi
       - name: Deploy ImagingCoreApi
         run: |
           cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip .
@@ -200,10 +282,11 @@ jobs:
             --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
             --src ../../deploy-core.zip
 
-  deploy-portal:
-    name: Deploy Portal (backend + frontend) to dev
+  deploy-portal-backend:
+    name: Deploy Portal backend to dev
     runs-on: ubuntu-latest
-    needs: [dotnet-build, dotnet-build-wpf, dotnet-test, dotnet-format, portal-ci, security-leakage-scan]
+    needs: [changes, portal-ci, security-leakage-scan]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.portal-backend == 'true'
     environment: azure-dev
     permissions:
       id-token: write
@@ -228,6 +311,26 @@ jobs:
             --name ${{ secrets.APP_SERVICE_PORTAL_BACKEND }} \
             --src-path ../../../deploy-portal-backend.zip \
             --type zip
+
+  deploy-portal-frontend:
+    name: Deploy Portal frontend to dev
+    runs-on: ubuntu-latest
+    needs: [changes, portal-ci, security-leakage-scan]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.portal-frontend == 'true'
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Build + deploy portal frontend (Static Web Apps)
         working-directory: src/cloud-imaging-portal/client
         run: |
