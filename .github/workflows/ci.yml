@@ -1,12 +1,12 @@
 name: CI / Deploy Dev
 
-# Runs once when a PR is merged to main.
-# CI gates run first. If all pass, only the components whose files (or the
-# shared code they depend on) changed in the merge are deployed to the dev
-# environment. A manual workflow_dispatch run force-deploys every component.
+# Runs when commits land on main (and on manual dispatch).
+# There is one self-contained job per component: it builds, tests, lints and —
+# for the Azure-hosted components — deploys to the dev environment. Each job only
+# runs when that component's own files, or the shared code it depends on, changed
+# in the push. A manual workflow_dispatch run forces every component to run.
 #
-# Client and MediaBuilder are built for compile validation only —
-# they are never deployed to Azure.
+# Client and MediaBuilder are build + test only — they are never deployed to Azure.
 
 on:
   push:
@@ -26,138 +26,11 @@ env:
   DOTNET_VERSION: '10.0.x'
   NODE_VERSION: '22.x'
 
-# ── CI GATES (always run — PR and push) ────────────────────────────────────────
-
 jobs:
-  dotnet-build:
-    name: .NET Build (Release, zero warnings)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Restore
-        run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
-      - name: Build — Release, TreatWarningsAsErrors
-        run: dotnet build CloudImaging.sln --configuration Release --no-restore -p:EnableWindowsTargeting=true
-
-  dotnet-build-wpf:
-    name: WPF Apps Build + Test (Client + MediaBuilder, Windows only)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Restore
-        run: dotnet restore CloudImaging.sln
-      - name: Build Client
-        run: dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj --configuration Release --no-restore
-      - name: Build MediaBuilder
-        run: dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj --configuration Release --no-restore
-      - name: Test Client (WPF)
-        run: dotnet test tests/CloudImaging.Client.Tests/CloudImaging.Client.Tests.csproj --configuration Release
-      - name: Test MediaBuilder (WPF)
-        run: dotnet test tests/CloudImaging.MediaBuilder.Tests/CloudImaging.MediaBuilder.Tests.csproj --configuration Release
-
-  dotnet-test:
-    name: .NET Unit Tests (>= 80% coverage)
-    runs-on: ubuntu-latest
-    needs: dotnet-build
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Restore
-        run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
-      # Client and MediaBuilder tests target net10.0-windows and require the
-      # Windows Desktop runtime, so they run in the dotnet-build-wpf job.
-      # Only the cross-platform (API) test projects run here on Linux.
-      - name: Test
-        run: >
-          dotnet test
-          tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj
-          tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj
-          tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj
-          --configuration Release
-          --no-restore
-          -p:EnableWindowsTargeting=true
-          --collect:"XPlat Code Coverage"
-          --results-directory ./TestResults
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: dotnet-coverage
-          path: ./TestResults
-
-  dotnet-format:
-    name: .NET Lint (dotnet format)
-    runs-on: ubuntu-latest
-    needs: dotnet-build
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-      - name: Restore
-        run: dotnet restore CloudImaging.sln -p:EnableWindowsTargeting=true
-      - name: Verify format
-        run: dotnet format CloudImaging.sln --verify-no-changes -p:EnableWindowsTargeting=true
-
-  portal-ci:
-    name: Portal CI (build + lint + test)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Install client deps
-        working-directory: src/cloud-imaging-portal/client
-        run: npm install
-      - name: Install server deps
-        working-directory: src/cloud-imaging-portal/server
-        run: npm install
-      - name: Lint client
-        working-directory: src/cloud-imaging-portal/client
-        run: npm run lint
-      - name: Lint server
-        working-directory: src/cloud-imaging-portal/server
-        run: npm run lint
-      - name: Test client
-        working-directory: src/cloud-imaging-portal/client
-        run: npm run test:run
-      - name: Test server
-        working-directory: src/cloud-imaging-portal/server
-        run: npm run test:run
-      - name: Build client
-        working-directory: src/cloud-imaging-portal/client
-        run: npm run build
-      - name: Build server
-        working-directory: src/cloud-imaging-portal/server
-        run: npm run build
-
-  security-leakage-scan:
-    name: Security log leakage scan
-    runs-on: ubuntu-latest
-    needs: [dotnet-test, portal-ci]
-    steps:
-      - uses: actions/checkout@v7
-      - name: Run leakage scan
-        run: |
-          if [ -f "src/deploy/scripts/security-log-scan.ps1" ]; then
-            echo "Security leakage scan script will run here (FR-012)"
-          else
-            echo "security-log-scan.ps1 not yet implemented — placeholder gate"
-          fi
-
-# ── DEPLOY GATES (push to main only, after all CI gates pass) ──────────────────
-
-  # Detect which components changed so we only redeploy what's affected.
-  # The three API Function Apps all reference CloudImaging.Contracts, so a
-  # change to Contracts (or root build/solution files) triggers all three.
+  # Detect which components changed so each component job only runs when its
+  # own files — or the shared code it depends on — changed in the push.
+  # Every .NET project references CloudImaging.Contracts, so a change to
+  # Contracts (or root build/solution files) rebuilds all .NET components.
   # The portal (Node) is fully independent of the .NET code.
   changes:
     name: Detect changed components
@@ -166,6 +39,8 @@ jobs:
       gateway: ${{ steps.filter.outputs.gateway }}
       operator: ${{ steps.filter.outputs.operator }}
       core: ${{ steps.filter.outputs.core }}
+      client: ${{ steps.filter.outputs.client }}
+      media-builder: ${{ steps.filter.outputs.media-builder }}
       portal-backend: ${{ steps.filter.outputs.portal-backend }}
       portal-frontend: ${{ steps.filter.outputs.portal-frontend }}
     steps:
@@ -184,22 +59,50 @@ jobs:
             gateway:
               - *shared
               - 'src/CloudImaging.DeviceGatewayApi/**'
+              - 'tests/CloudImaging.DeviceGatewayApi.Tests/**'
             operator:
               - *shared
               - 'src/CloudImaging.OperatorApi/**'
+              - 'tests/CloudImaging.OperatorApi.Tests/**'
             core:
               - *shared
               - 'src/CloudImaging.ImagingCoreApi/**'
+              - 'tests/CloudImaging.ImagingCoreApi.Tests/**'
+            client:
+              - *shared
+              - 'src/CloudImaging.Client/**'
+              - 'tests/CloudImaging.Client.Tests/**'
+            media-builder:
+              - *shared
+              - 'src/CloudImaging.MediaBuilder/**'
+              - 'tests/CloudImaging.MediaBuilder.Tests/**'
             portal-backend:
               - 'src/cloud-imaging-portal/server/**'
+              - 'tests/cloud-imaging-portal/server/**'
             portal-frontend:
               - 'src/cloud-imaging-portal/client/**'
+              - 'tests/cloud-imaging-portal/client/**'
 
-  deploy-gateway:
-    name: Deploy DeviceGatewayApi to dev
+  # Repo-wide security gate — always runs; every deploy-capable job depends on it.
+  security-leakage-scan:
+    name: Security log leakage scan
     runs-on: ubuntu-latest
-    needs: [changes, dotnet-build, dotnet-test, dotnet-format, security-leakage-scan]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run leakage scan
+        run: |
+          if [ -f "src/deploy/scripts/security-log-scan.ps1" ]; then
+            echo "Security leakage scan script will run here (FR-012)"
+          else
+            echo "security-log-scan.ps1 not yet implemented — placeholder gate"
+          fi
+
+  # ── Component: DeviceGatewayApi (build + test + deploy) ──────────────────────
+  device-gateway:
+    name: DeviceGatewayApi (build + test + deploy)
+    needs: [changes, security-leakage-scan]
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
       id-token: write
@@ -209,14 +112,22 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj
+      - name: Build (Release, warnings as errors)
+        run: dotnet build src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release --no-restore
+      - name: Lint (dotnet format)
+        run: dotnet format src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj --verify-no-changes
+      - name: Test
+        run: dotnet test tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj -c Release --no-restore
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Publish DeviceGatewayApi
-        run: dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release -o ./publish/DeviceGatewayApi
-      - name: Deploy DeviceGatewayApi
+      - name: Publish
+        run: dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release -o ./publish/DeviceGatewayApi --no-restore
+      - name: Deploy
         run: |
           cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip .
           az functionapp deployment source config-zip \
@@ -224,11 +135,12 @@ jobs:
             --name ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }} \
             --src ../../deploy-gateway.zip
 
-  deploy-operator:
-    name: Deploy OperatorApi to dev
-    runs-on: ubuntu-latest
-    needs: [changes, dotnet-build, dotnet-test, dotnet-format, security-leakage-scan]
+  # ── Component: OperatorApi (build + test + deploy) ───────────────────────────
+  operator:
+    name: OperatorApi (build + test + deploy)
+    needs: [changes, security-leakage-scan]
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.operator == 'true'
+    runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
       id-token: write
@@ -238,14 +150,22 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj
+      - name: Build (Release, warnings as errors)
+        run: dotnet build src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release --no-restore
+      - name: Lint (dotnet format)
+        run: dotnet format src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj --verify-no-changes
+      - name: Test
+        run: dotnet test tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj -c Release --no-restore
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Publish OperatorApi
-        run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi
-      - name: Deploy OperatorApi
+      - name: Publish
+        run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi --no-restore
+      - name: Deploy
         run: |
           cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip .
           az functionapp deployment source config-zip \
@@ -253,11 +173,12 @@ jobs:
             --name ${{ secrets.FUNCTION_APP_OPERATOR }} \
             --src ../../deploy-operator.zip
 
-  deploy-core:
-    name: Deploy ImagingCoreApi to dev
-    runs-on: ubuntu-latest
-    needs: [changes, dotnet-build, dotnet-test, dotnet-format, security-leakage-scan]
+  # ── Component: ImagingCoreApi (build + test + deploy) ────────────────────────
+  imaging-core:
+    name: ImagingCoreApi (build + test + deploy)
+    needs: [changes, security-leakage-scan]
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
       id-token: write
@@ -267,14 +188,22 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj
+      - name: Build (Release, warnings as errors)
+        run: dotnet build src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release --no-restore
+      - name: Lint (dotnet format)
+        run: dotnet format src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj --verify-no-changes
+      - name: Test
+        run: dotnet test tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj -c Release --no-restore
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Publish ImagingCoreApi
-        run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi
-      - name: Deploy ImagingCoreApi
+      - name: Publish
+        run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi --no-restore
+      - name: Deploy
         run: |
           cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip .
           az functionapp deployment source config-zip \
@@ -282,11 +211,48 @@ jobs:
             --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
             --src ../../deploy-core.zip
 
-  deploy-portal-backend:
-    name: Deploy Portal backend to dev
-    runs-on: ubuntu-latest
-    needs: [changes, portal-ci, security-leakage-scan]
+  # ── Component: Client (WPF, build + test only — never deployed) ──────────────
+  client:
+    name: Client (WPF, build + test)
+    needs: [changes]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.Client.Tests/CloudImaging.Client.Tests.csproj
+      - name: Build (Release)
+        run: dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/CloudImaging.Client.Tests/CloudImaging.Client.Tests.csproj -c Release --no-restore
+
+  # ── Component: MediaBuilder (WPF, build + test only — never deployed) ────────
+  media-builder:
+    name: MediaBuilder (WPF, build + test)
+    needs: [changes]
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.media-builder == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.MediaBuilder.Tests/CloudImaging.MediaBuilder.Tests.csproj
+      - name: Build (Release)
+        run: dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/CloudImaging.MediaBuilder.Tests/CloudImaging.MediaBuilder.Tests.csproj -c Release --no-restore
+
+  # ── Component: Portal backend (build + lint + test + deploy) ─────────────────
+  portal-backend:
+    name: Portal backend (build + lint + test + deploy)
+    needs: [changes, security-leakage-scan]
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.portal-backend == 'true'
+    runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
       id-token: write
@@ -296,15 +262,26 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        working-directory: src/cloud-imaging-portal/server
+        run: npm ci
+      - name: Lint
+        working-directory: src/cloud-imaging-portal/server
+        run: npm run lint
+      - name: Test
+        working-directory: src/cloud-imaging-portal/server
+        run: npm run test:run
+      - name: Build
+        working-directory: src/cloud-imaging-portal/server
+        run: npm run build
       - uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Build + deploy portal backend
+      - name: Deploy
         working-directory: src/cloud-imaging-portal/server
         run: |
-          npm ci && npm run build
           cd dist && zip -r ../../../deploy-portal-backend.zip .
           az webapp deploy \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
@@ -312,11 +289,12 @@ jobs:
             --src-path ../../../deploy-portal-backend.zip \
             --type zip
 
-  deploy-portal-frontend:
-    name: Deploy Portal frontend to dev
-    runs-on: ubuntu-latest
-    needs: [changes, portal-ci, security-leakage-scan]
+  # ── Component: Portal frontend (build + lint + test + deploy) ────────────────
+  portal-frontend:
+    name: Portal frontend (build + lint + test + deploy)
+    needs: [changes, security-leakage-scan]
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.portal-frontend == 'true'
+    runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
       id-token: write
@@ -326,15 +304,21 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Build + deploy portal frontend (Static Web Apps)
+      - name: Install
+        working-directory: src/cloud-imaging-portal/client
+        run: npm ci
+      - name: Lint
+        working-directory: src/cloud-imaging-portal/client
+        run: npm run lint
+      - name: Test
+        working-directory: src/cloud-imaging-portal/client
+        run: npm run test:run
+      - name: Build
+        working-directory: src/cloud-imaging-portal/client
+        run: npm run build
+      - name: Deploy (Static Web Apps)
         working-directory: src/cloud-imaging-portal/client
         run: |
-          npm ci && npm run build
           npx @azure/static-web-apps-cli deploy ./dist \
             --deployment-token ${{ secrets.STATIC_WEB_APP_PORTAL_TOKEN }} \
             --env production
