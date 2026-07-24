@@ -56,8 +56,11 @@ public sealed partial class EntraAuthenticationService
                 enableDefaultPlatformLogging: true)
             .Build();
 
-        // Persist the token cache across sessions so silent sign-in works after restart.
-        MsalTokenCache.Enable(_msal.UserTokenCache);
+        // Do NOT persist the token cache to disk: the technician must sign in on every
+        // launch. MSAL keeps an in-memory cache for the lifetime of this process (so token
+        // refresh works while the app runs), but nothing survives a restart. Remove any
+        // cache file written by earlier builds so stale tokens can't silently sign in.
+        MsalTokenCache.PurgeLegacyCache();
     }
 
     /// <summary>Sign-in result returned to the view model.</summary>
@@ -257,8 +260,9 @@ internal static class BrandedRedirectPages
 }
 
 /// <summary>
-/// File-backed MSAL token cache so silent token acquisition survives app restarts.
-/// The cache is stored under the user's LocalApplicationData folder (per-user, roamed by OS).
+/// The Media Builder deliberately does NOT persist MSAL tokens to disk: the technician
+/// must sign in on every launch. This helper removes any token cache file written by
+/// earlier builds so previously stored tokens can no longer silently sign in.
 /// </summary>
 internal static class MsalTokenCache
 {
@@ -268,48 +272,20 @@ internal static class MsalTokenCache
         "MediaBuilder",
         "msalcache.bin3");
 
-    private static readonly object FileLock = new();
-
-    public static void Enable(ITokenCache tokenCache)
+    public static void PurgeLegacyCache()
     {
-        tokenCache.SetBeforeAccess(BeforeAccess);
-        tokenCache.SetAfterAccess(AfterAccess);
-    }
-
-    private static void BeforeAccess(TokenCacheNotificationArgs args)
-    {
-        lock (FileLock)
+        try
         {
-            if (!File.Exists(CacheFilePath)) return;
-            try
-            {
-                args.TokenCache.DeserializeMsalV3(File.ReadAllBytes(CacheFilePath));
-            }
-            catch (IOException)
-            {
-                // Corrupt/locked cache: fall back to interactive sign-in.
-            }
+            if (File.Exists(CacheFilePath))
+                File.Delete(CacheFilePath);
         }
-    }
-
-    private static void AfterAccess(TokenCacheNotificationArgs args)
-    {
-        if (!args.HasStateChanged) return;
-
-        lock (FileLock)
+        catch (IOException)
         {
-            try
-            {
-                var directory = Path.GetDirectoryName(CacheFilePath);
-                if (!string.IsNullOrEmpty(directory))
-                    Directory.CreateDirectory(directory);
-
-                File.WriteAllBytes(CacheFilePath, args.TokenCache.SerializeMsalV3());
-            }
-            catch (IOException)
-            {
-                // Non-fatal: token cache simply won't persist this session.
-            }
+            // Non-fatal: a locked cache file just can't be removed right now.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Non-fatal: insufficient permissions to delete the stale cache file.
         }
     }
 }

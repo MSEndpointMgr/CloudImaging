@@ -63,7 +63,7 @@
                            Style="{StaticResource CaptionTextBlockStyle}"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            Margin="0,0,0,8" />
-                <ProgressBar Value="{Binding ProgressPercent}" Minimum="0" Maximum="100" Height="6" />
+                <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" />
             </StackPanel>
 
             <!-- Success -->
