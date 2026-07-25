@@ -7,8 +7,12 @@
     App Registration so that GitHub Actions CI/CD pipelines can authenticate to Azure
     without long-lived secrets (OIDC passwordless auth).
 
-    The subject claim matches GitHub Actions workflows targeting the 'dev' environment:
-        repo:MSEndpointMgr/CloudImaging:environment:dev
+    The subject claim matches GitHub Actions workflows targeting the 'azure-dev' environment:
+        repo:MSEndpointMgr/CloudImaging:environment:azure-dev
+
+    NOTE: The subject's environment segment must match the 'environment:' value used by
+    the deploy workflows (.github/workflows/deploy-dev.yml uses 'azure-dev'). If they differ,
+    azure/login fails with AADSTS700213 (no matching federated identity record).
 
 .PARAMETER TenantId
     Your Entra ID tenant ID.
@@ -37,7 +41,7 @@ param (
     [string] $AppDisplayName = 'Cloud Imaging GitHub Actions',
     [string] $GitHubOrg      = 'MSEndpointMgr',
     [string] $GitHubRepo     = 'CloudImaging',
-    [string] $Environment    = 'dev'
+    [string] $Environment    = 'azure-dev'
 )
 
 $ErrorActionPreference = 'Stop'
