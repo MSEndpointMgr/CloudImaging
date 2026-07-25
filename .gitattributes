@@ -1,0 +1,12 @@
+# Line-ending normalization.
+#
+# .editorconfig sets `end_of_line = crlf`, and the CI `dotnet format --verify-no-changes`
+# gate enforces it. Without an explicit attribute, git stores C# sources as LF and the
+# Linux CI runner checks them out as LF, failing the ENDOFLINE rule (Windows working
+# trees pass only because core.autocrlf converts to CRLF locally).
+#
+# Forcing `eol=crlf` guarantees CRLF in the working tree on every platform, including CI.
+*.cs      text eol=crlf
+
+# Files that must remain LF for cross-platform / Linux tooling.
+*.sh      text eol=lf
