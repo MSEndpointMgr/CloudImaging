@@ -165,6 +165,19 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi --no-restore
+      # ImagingCoreApi is private (publicNetworkAccess=Disabled, Private Link only — FR-020),
+      # so its SCM/Kudu endpoint is unreachable from the public GitHub-hosted runner. Briefly
+      # enable public access for the zip-deploy, then always restore the private posture below.
+      - name: Enable public access for deploy (temporary)
+        run: |
+          az resource update \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
+            --resource-type Microsoft.Web/sites \
+            --set properties.publicNetworkAccess=Enabled \
+            --output none
+          # Allow the SCM site a moment to pick up the new access setting.
+          sleep 45
       - name: Deploy
         run: |
           cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip .
@@ -172,6 +185,15 @@ jobs:
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
             --src ../../deploy-core.zip
+      - name: Restore private access (always)
+        if: always()
+        run: |
+          az resource update \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
+            --resource-type Microsoft.Web/sites \
+            --set properties.publicNetworkAccess=Disabled \
+            --output none
 
   # ── Portal backend (App Service) ─────────────────────────────────────────────
   portal-backend:
