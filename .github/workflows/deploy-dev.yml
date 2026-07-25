@@ -282,6 +282,11 @@ jobs:
         run: npm run test:run
       - name: Build
         working-directory: src/cloud-imaging-portal/client
+        env:
+          VITE_ENTRA_CLIENT_ID: ${{ vars.VITE_ENTRA_CLIENT_ID }}
+          VITE_ENTRA_TENANT_ID: ${{ vars.VITE_ENTRA_TENANT_ID }}
+          VITE_ENTRA_AUTHORITY: https://login.microsoftonline.com/${{ vars.VITE_ENTRA_TENANT_ID }}
+          VITE_API_BASE_URL: https://${{ secrets.APP_SERVICE_PORTAL_BACKEND }}.azurewebsites.net
         run: npm run build
       - name: Deploy (Static Web Apps)
         working-directory: src/cloud-imaging-portal/client
