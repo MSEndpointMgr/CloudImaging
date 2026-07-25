@@ -226,11 +226,20 @@ jobs:
       - name: Deploy
         working-directory: src/cloud-imaging-portal/server
         run: |
-          cd dist && zip -r ../../../deploy-portal-backend.zip .
+          # Assemble a self-contained bundle: compiled dist + manifest + production
+          # node_modules. Zipping dist alone omits package.json/node_modules, so the
+          # Node worker cannot resolve its runtime deps and the site fails to start.
+          rm -rf deploy-pkg
+          mkdir -p deploy-pkg/dist
+          cp -r dist/. deploy-pkg/dist/
+          cp package.json package-lock.json deploy-pkg/
+          cd deploy-pkg
+          npm ci --omit=dev
+          zip -r ../deploy-portal-backend.zip . > /dev/null
           az webapp deploy \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.APP_SERVICE_PORTAL_BACKEND }} \
-            --src-path ../../../deploy-portal-backend.zip \
+            --src-path ../deploy-portal-backend.zip \
             --type zip
 
   # ── Portal frontend (Static Web App) ─────────────────────────────────────────
