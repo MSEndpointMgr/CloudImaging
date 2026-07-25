@@ -71,9 +71,9 @@ router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), asyn
   }
 });
 
-// ── POST /api/sessions/bulk-assign — bulk assign (Administrator only) ─────
+// ── POST /api/sessions/bulk-assign — bulk assign (Technician + Administrator) ─────
 
-router.post('/bulk-assign', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);

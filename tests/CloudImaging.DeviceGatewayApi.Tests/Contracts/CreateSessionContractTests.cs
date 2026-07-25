@@ -11,12 +11,17 @@ namespace CloudImaging.DeviceGatewayApi.Tests.Contracts;
 public sealed class CreateSessionContractTests
 {
     [Fact]
-    public void CreateSession_Endpoint_IsExemptFromMtlsValidation()
+    public void CreateSession_IsExemptFromTokenValidation_ButRequiresMtls()
     {
-        // The session bootstrap endpoint must be exempt so devices can register
-        // before they have a valid device-session token.
-        MtlsCertificateValidationMiddleware.ExemptFunction.Should().Be("CreateSession",
-            "CreateSession must be exempt from mTLS validation (FR-001)");
+        // The boot-media mTLS certificate is embedded in the WIM and loaded by the client
+        // at WinPE startup, so it IS available on the very first request. Per FR-069 /
+        // spec.md, mTLS authenticates ALL client requests to the Device Gateway API —
+        // including session creation. CreateSession is therefore NOT exempt from mTLS.
+        // It is exempt ONLY from device-session *token* validation, because the opaque
+        // token is issued by this very call (FR-014, FR-018).
+        DeviceSessionTokenValidationMiddleware.ExemptFunctionNames.Should().Contain(
+            "CreateSession",
+            "CreateSession has no device-session token yet and must be token-exempt");
     }
 
     [Fact]

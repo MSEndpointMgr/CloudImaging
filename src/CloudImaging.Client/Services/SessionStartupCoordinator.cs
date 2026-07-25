@@ -28,7 +28,13 @@ public sealed partial class SessionStartupCoordinator
     /// <summary>
     /// Result of the startup certificate check.
     /// </summary>
-    public sealed record StartupResult(bool Success, string? ErrorMessage);
+    /// <param name="Success">Whether the boot-media certificate was loaded successfully.</param>
+    /// <param name="ErrorMessage">User-facing error message when <paramref name="Success"/> is false.</param>
+    /// <param name="Certificate">
+    /// The loaded boot-media certificate (with private key) on success; used to sign the
+    /// session-bootstrap proof-of-possession (FR-069). Null on failure.
+    /// </param>
+    public sealed record StartupResult(bool Success, string? ErrorMessage, X509Certificate2? Certificate = null);
 
     /// <summary>
     /// Attempts to load the boot-media certificate PFX and configure it on the
@@ -54,7 +60,7 @@ public sealed partial class SessionStartupCoordinator
             var cert = X509CertificateLoader.LoadPkcs12FromFile(pfxPath, password: null);
             handler.ClientCertificates.Add(cert);
             LogPfxLoaded(_logger, cert.Thumbprint);
-            return new StartupResult(true, null);
+            return new StartupResult(true, null, cert);
         }
         catch (Exception ex)
         {

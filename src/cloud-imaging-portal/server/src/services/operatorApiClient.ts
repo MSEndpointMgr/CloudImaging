@@ -69,6 +69,27 @@ export class OperatorApiClient {
     await this.http.delete<unknown>(`/api/images/${imageId}`);
   }
 
+  // ── Boot image operations ────────────────────────────────────────────────────
+
+  async getBootImages(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/boot-images');
+    return data;
+  }
+
+  async startBootImageUpload(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/boot-images/upload/start', payload);
+    return data;
+  }
+
+  async publishBootImageUpload(token: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/boot-images/upload/${token}/publish`, payload);
+    return data;
+  }
+
+  async deleteBootImage(bootImageId: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/boot-images/${bootImageId}`);
+  }
+
   // ── Configuration ─────────────────────────────────────────────────────────
 
   async getConfiguration(): Promise<unknown> {
@@ -78,6 +99,27 @@ export class OperatorApiClient {
 
   async putConfiguration(payload: unknown): Promise<void> {
     await this.http.put<unknown>('/api/configuration', payload);
+  }
+
+  // ── Branding ────────────────────────────────────────────────────────────────
+
+  async getBranding(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/branding');
+    return data;
+  }
+
+  async putBranding(payload: unknown): Promise<void> {
+    await this.http.put<unknown>('/api/branding', payload);
+  }
+
+  async getBrandingLogoSas(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/branding/logo/sas');
+    return data;
+  }
+
+  async uploadBrandingLogo(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>('/api/branding/logo', payload);
+    return data;
   }
 }
 

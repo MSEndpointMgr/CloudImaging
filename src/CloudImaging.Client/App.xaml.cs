@@ -26,13 +26,13 @@ public partial class App : Application
         var handler = new HttpClientHandler();
         var coordinator = new SessionStartupCoordinator(
             loggerFactory.CreateLogger<SessionStartupCoordinator>());
-        coordinator.ConfigureMtlsCertificate(handler);
+        var startupResult = coordinator.ConfigureMtlsCertificate(handler);
 
         var httpClient = new HttpClient(handler);
         if (!string.IsNullOrEmpty(config.DeviceGatewayBaseUrl))
             httpClient.BaseAddress = new Uri(config.DeviceGatewayBaseUrl);
 
-        var gatewayClient = new DeviceGatewayApiClient(httpClient);
+        var gatewayClient = new DeviceGatewayApiClient(httpClient, startupResult.Certificate);
 
         var mainWindow = new MainWindow();
         mainWindow.NavigateTo(BuildOperationSelectionView(mainWindow, gatewayClient, loggerFactory));

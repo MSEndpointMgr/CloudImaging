@@ -10,12 +10,29 @@ import { AuthenticatedRequest } from './auth.js';
 
 export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician' | 'CloudImaging.PortalAccess';
 
-/** Returns the set of roles the authenticated user holds. */
+/**
+ * Implied-role hierarchy. Portal SPA user tokens only ever carry
+ * `CloudImaging.Administrator` or `CloudImaging.Technician`; `CloudImaging.PortalAccess`
+ * is a service role on the portal backend managed identity and never appears in a user
+ * token. Any signed-in user (Administrator or Technician) is granted PortalAccess so the
+ * portal's read routes remain reachable, while Administrator-only writes stay restricted.
+ */
+const ROLE_IMPLICATIONS: Record<string, readonly PortalRole[]> = {
+  'CloudImaging.Administrator': ['CloudImaging.Technician', 'CloudImaging.PortalAccess'],
+  'CloudImaging.Technician': ['CloudImaging.PortalAccess'],
+};
+
+/** Returns the set of roles the authenticated user holds, expanded with implied roles. */
 export function getUserRoles(req: AuthenticatedRequest): Set<string> {
-  const roles: unknown = req.user?.['roles'];
-  if (Array.isArray(roles)) return new Set<string>(roles as string[]);
-  if (typeof roles === 'string') return new Set<string>([roles]);
-  return new Set<string>();
+  const claim: unknown = req.user?.['roles'];
+  const granted = new Set<string>();
+  if (Array.isArray(claim)) for (const r of claim as string[]) granted.add(r);
+  else if (typeof claim === 'string') granted.add(claim);
+
+  for (const role of [...granted]) {
+    for (const implied of ROLE_IMPLICATIONS[role] ?? []) granted.add(implied);
+  }
+  return granted;
 }
 
 /** Returns true if the user holds the Administrator role. */

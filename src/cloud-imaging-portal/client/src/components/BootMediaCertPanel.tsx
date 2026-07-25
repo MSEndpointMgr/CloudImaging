@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { UploadProgressBar } from './UploadProgressBar.tsx';
+import { apiFetch } from '../lib/apiClient.ts';
+import { Button } from './ui/button.tsx';
 
 interface CertMetadata {
   thumbprintDisplay?: string;
@@ -33,7 +35,7 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
 
     setBusy(true); setError(null); setSuccess(null); setProgress(10);
     try {
-      const res = await fetch(`/api/cert/${action}`, {
+      const res = await apiFetch(`/api/cert/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -86,21 +88,18 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
       {error && progress === 0 && <p className="text-xs text-destructive">{error}</p>}
 
       <div className="flex gap-2">
-        <button
-          onClick={() => void doAction('generate')}
-          disabled={busy}
-          className="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50"
-        >
+        <Button onClick={() => void doAction('generate')} disabled={busy}>
           {certMeta ? 'Regenerate' : 'Generate'} Certificate
-        </button>
+        </Button>
         {certMeta?.isActive && (
-          <button
+          <Button
+            variant="outline"
             onClick={() => void doAction('rotate')}
             disabled={busy}
-            className="px-3 py-1.5 text-xs border border-destructive text-destructive rounded hover:bg-destructive/10 disabled:opacity-50"
+            className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
             Rotate Certificate…
-          </button>
+          </Button>
         )}
       </div>
     </div>

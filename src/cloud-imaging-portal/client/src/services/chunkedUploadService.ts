@@ -3,6 +3,8 @@
  * Splits a File into blocks and uploads them sequentially with resume support.
  */
 
+import { apiFetch } from '../lib/apiClient.ts';
+
 export interface ChunkedUploadSession {
   sessionId:  string;
   blobName:   string;
@@ -20,7 +22,7 @@ export async function startChunkedUpload(
   version:   string,
   totalBytes: number,
 ): Promise<ChunkedUploadSession> {
-  const res = await fetch('/api/chunked-upload/start', {
+  const res = await apiFetch('/api/chunked-upload/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -47,7 +49,7 @@ export async function uploadBlocks(
     const chunk   = file.slice(offset, offset + BLOCK_SIZE);
     const blockId = btoa(String(blockIndex).padStart(6, '0'));
 
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/chunked-upload/${session.sessionId}/block?blockId=${encodeURIComponent(blockId)}`,
       {
         method: 'POST',
@@ -73,7 +75,7 @@ export async function finalizeChunkedUpload(
   sessionId: string,
   blockIds:  string[],
 ): Promise<unknown> {
-  const res = await fetch(`/api/chunked-upload/${sessionId}/finalize`, {
+  const res = await apiFetch(`/api/chunked-upload/${sessionId}/finalize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -85,7 +87,7 @@ export async function finalizeChunkedUpload(
 
 /** Cancels an in-progress upload. */
 export async function cancelChunkedUpload(sessionId: string): Promise<void> {
-  await fetch(`/api/chunked-upload/${sessionId}`, {
+  await apiFetch(`/api/chunked-upload/${sessionId}`, {
     method: 'DELETE',
     credentials: 'include',
   });

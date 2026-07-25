@@ -16,7 +16,7 @@ const PORTAL_URL = process.env['PORTAL_URL'] ?? 'http://localhost:5173';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function gotoSessions(page: Page): Promise<void> {
-  await page.goto(`${PORTAL_URL}/`);
+  await page.goto(`${PORTAL_URL}/sessions`);
   await page.waitForLoadState('networkidle');
 }
 
@@ -76,18 +76,19 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
   test('sessions page — filter tabs are visible and functional', async ({ page }) => {
     await gotoSessions(page);
 
-    // All four filter tabs should be present
-    for (const label of ['Active', 'Completed', 'Failed', 'All']) {
+    // Both primary tabs should be present
+    for (const label of ['Pending', 'Monitor']) {
       await expect(page.getByRole('tab', { name: label }).or(
         page.getByText(label, { exact: true })
       )).toBeVisible();
     }
   });
 
-  test('sessions page — Select All and Deselect All controls are present', async ({ page }) => {
+  test('sessions page — select-all checkbox is present in the table header', async ({ page }) => {
     await gotoSessions(page);
-    await expect(page.getByText(/select all/i)).toBeVisible();
-    await expect(page.getByText(/deselect all/i)).toBeVisible();
+    await expect(
+      page.getByRole('checkbox', { name: /select all sessions|deselect all sessions/i }),
+    ).toBeVisible();
   });
 
   test('sessions page — Refresh button is always visible', async ({ page }) => {
@@ -134,7 +135,7 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
     await page.goto(`${PORTAL_URL}/`);
     await page.waitForLoadState('networkidle');
 
-    const nav = ['Sessions', 'OS Images', 'Boot Images', 'Branding', 'Configuration'];
+    const nav = ['Devices', 'OS Images', 'Boot Images', 'Branding', 'Configuration'];
     for (const label of nav) {
       const link = page.getByRole('link', { name: label }).or(
         page.getByText(label, { exact: true })

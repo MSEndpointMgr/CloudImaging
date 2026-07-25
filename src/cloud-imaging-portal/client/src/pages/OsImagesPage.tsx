@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Pencil, Plus } from 'lucide-react';
+import { useAuth } from '../context/authContext.tsx';
+import { apiFetch } from '../lib/apiClient.ts';
+import { Button } from '../components/ui/button.tsx';
+import { Skeleton } from '../components/ui/skeleton.tsx';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 
 interface OsImage {
   imageId: string;
@@ -18,91 +23,176 @@ function fmtSize(bytes: number): string {
 
 /** OS Images management page (T087, FR-036, FR-037). */
 export default function OsImagesPage(): React.ReactElement {
+  const { isAdministrator } = useAuth();
   const [images, setImages]   = useState<OsImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
 
   const loadImages = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const res = await fetch('/api/images', { credentials: 'include' });
+      const res = await apiFetch('/api/images', { credentials: 'include' });
       if (res.ok) setImages(await res.json() as OsImage[]);
-      else setError('Failed to load images.');
-    } catch { setError('Network error.'); }
+      else setImages([]);
+    } catch { setImages([]); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { void loadImages(); }, []);
 
+  // Only images that are not in use can be removed / selected for removal.
+  const removable = images.filter(img => !img.isInUse);
+  const allSelected  = removable.length > 0 && removable.every(img => checked.has(img.imageId));
+  const someSelected = removable.some(img => checked.has(img.imageId));
+
+  const toggleRow   = (id: string) => setChecked(prev => { const n = new Set(prev); if (n.has(id)) { n.delete(id); } else { n.add(id); } return n; });
+  const selectAll   = () => setChecked(new Set(removable.map(img => img.imageId)));
+  const deselectAll = () => setChecked(new Set());
+
   const handleDelete = async (imageId: string) => {
-    if (!confirm('Delete this OS image? This cannot be undone.')) return;
-    const res = await fetch(`/api/images/${imageId}`, { method: 'DELETE', credentials: 'include' });
+    if (!confirm('Remove this OS image from the catalog? This cannot be undone.')) return;
+    const res = await apiFetch(`/api/images/${imageId}`, { method: 'DELETE', credentials: 'include' });
     if (res.status === 409) { alert('Image is in use by an active session.'); return; }
-    if (res.ok) void loadImages();
+    if (res.ok) { setChecked(prev => { const n = new Set(prev); n.delete(imageId); return n; }); void loadImages(); }
   };
+
+  const handleRemoveSelected = async () => {
+    const ids = [...checked];
+    if (ids.length === 0) return;
+    if (!confirm(`Remove ${ids.length} image${ids.length !== 1 ? 's' : ''} from the catalog? This cannot be undone.`)) return;
+    setRemoving(true);
+    try {
+      await Promise.all(ids.map(id => apiFetch(`/api/images/${id}`, { method: 'DELETE', credentials: 'include' })));
+    } finally {
+      setRemoving(false);
+      setChecked(new Set());
+      void loadImages();
+    }
+  };
+
+  const columnCount = isAdministrator ? 8 : 7;
+  const selectedCount = checked.size;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">OS Images</h1>
-        <button className="flex items-center gap-2 px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
-          <Plus size={14} /> Upload Image
-        </button>
+      <div className="flex items-center justify-end">
+        {isAdministrator && (
+          <Button>
+            <Plus size={14} /> Upload Image
+          </Button>
+        )}
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {isAdministrator && selectedCount > 0 && (
+        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm">
+          <span className="font-medium">{selectedCount} image{selectedCount !== 1 ? 's' : ''} selected</span>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => void handleRemoveSelected()}
+            disabled={removing}
+          >
+            <Trash2 size={14} /> {removing ? 'Removing…' : 'Remove Selected'}
+          </Button>
+        </div>
+      )}
 
-      <div className="rounded-md border border-border overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50">
-            <tr>
-              <th className="px-3 py-2 text-left font-medium">Name</th>
-              <th className="px-3 py-2 text-left font-medium">Version</th>
-              <th className="px-3 py-2 text-left font-medium">Size</th>
-              <th className="px-3 py-2 text-left font-medium">SHA-256</th>
-              <th className="px-3 py-2 text-left font-medium">Uploaded</th>
-              <th className="px-3 py-2 text-left font-medium">Status</th>
-              <th className="px-3 py-2 text-left font-medium">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="rounded-md border border-border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              {isAdministrator && (
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    role="checkbox"
+                    aria-label={allSelected ? 'Deselect all images' : 'Select all images'}
+                    checked={allSelected}
+                    ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    onChange={() => (allSelected ? deselectAll() : selectAll())}
+                    disabled={removable.length === 0}
+                    className="h-4 w-4 rounded border-input align-middle accent-primary disabled:opacity-40"
+                  />
+                </TableHead>
+              )}
+              <TableHead>Name</TableHead>
+              <TableHead>Version</TableHead>
+              <TableHead>Size</TableHead>
+              <TableHead>SHA-256</TableHead>
+              <TableHead>Uploaded</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {loading ? (
-              <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">Loading…</td></tr>
+              Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={`skeleton-${i}`} className="hover:bg-transparent">
+                  {Array.from({ length: columnCount }).map((__, j) => (
+                    <TableCell key={j}><Skeleton className="h-4 w-full max-w-[8rem]" /></TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : images.length === 0 ? (
-              <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No images in catalog.</td></tr>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={columnCount} className="py-8 text-center text-muted-foreground">No images found in the catalog.</TableCell>
+              </TableRow>
             ) : images.map(img => (
-              <tr key={img.imageId} className="border-t border-border hover:bg-muted/30">
-                <td className="px-3 py-2 font-medium">{img.name}</td>
-                <td className="px-3 py-2">{img.version}</td>
-                <td className="px-3 py-2">{fmtSize(img.sizeBytes)}</td>
-                <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</td>
-                <td className="px-3 py-2 text-xs text-muted-foreground">
+              <TableRow
+                key={img.imageId}
+                data-state={checked.has(img.imageId) ? 'selected' : undefined}
+              >
+                {isAdministrator && (
+                  <TableCell className="w-10">
+                    <input
+                      type="checkbox"
+                      role="checkbox"
+                      aria-label={`Select ${img.name}`}
+                      checked={checked.has(img.imageId)}
+                      onChange={() => toggleRow(img.imageId)}
+                      disabled={img.isInUse}
+                      title={img.isInUse ? 'Image is in use by an active session' : undefined}
+                      className="h-4 w-4 rounded border-input align-middle accent-primary disabled:opacity-40"
+                    />
+                  </TableCell>
+                )}
+                <TableCell className="font-medium">{img.name}</TableCell>
+                <TableCell>{img.version}</TableCell>
+                <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
+                <TableCell className="text-xs text-muted-foreground">
                   {new Date(img.uploadedAt).toLocaleDateString()}
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   {img.isInUse ? (
                     <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">In Use</span>
                   ) : (
                     <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">Available</span>
                   )}
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   <div className="flex items-center gap-2">
-                    <button className="p-1 hover:text-primary" title="Edit">
-                      <Pencil size={14} />
-                    </button>
-                    {!img.isInUse && (
-                      <button onClick={() => void handleDelete(img.imageId)} className="p-1 hover:text-destructive" title="Delete">
-                        <Trash2 size={14} />
-                      </button>
+                    {isAdministrator ? (
+                      <>
+                        <button className="p-1 hover:text-primary" title="Edit">
+                          <Pencil size={14} />
+                        </button>
+                        {!img.isInUse && (
+                          <button onClick={() => void handleDelete(img.imageId)} className="p-1 hover:text-destructive" title="Remove">
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

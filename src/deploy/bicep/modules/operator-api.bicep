@@ -10,9 +10,9 @@ param appInsightsConnectionString string
 param msiId string
 param msiClientId string
 param imagingCoreApiBaseUrl string
-// userAuthClientId: Application (client) ID of the shared user-facing registration.
+// sharedEntraClientId: Application (client) ID of the Cloud Imaging Media Builder registration.
 // Used as the Entra__SharedClientId app setting so the Operator API can validate
-// tokens issued to users via the shared registration (e.g. Media Builder user flows).
+// tokens issued to users via the Media Builder (native public client) sign-in flow.
 param sharedEntraClientId string
 // Application (client) ID of the Operator API's own Entra app registration (FR-040b).
 // This is the audience the Operator API validates incoming tokens against.

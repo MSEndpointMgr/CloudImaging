@@ -48,6 +48,43 @@ var host = new HostBuilder()
         // Device-session token service (issues + validates opaque session bearer tokens)
         services.AddSingleton<CloudImaging.DeviceGatewayApi.Security.DeviceSessionTokenService>();
 
+        // Single-use nonce store for proof-of-possession replay prevention (FR-069).
+        // Backed by an atomic Table Storage insert: AddEntity throws HTTP 409 on a duplicate row,
+        // which we treat as a replay. The table is created lazily on first use (404 → create + retry).
+        services.AddSingleton<DeviceSessionNonceStore>(sp =>
+        {
+            var tableService = sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>();
+            var logger       = sp.GetRequiredService<ILogger<DeviceSessionNonceStore>>();
+            var tableClient  = tableService.GetTableClient("DeviceSessionNonce");
+
+            async Task<bool> Register(string nonceKey, DateTimeOffset expiresAt, CancellationToken ct)
+            {
+                var entity = new Azure.Data.Tables.TableEntity("nonce", nonceKey)
+                {
+                    ["ExpiresAt"] = expiresAt.UtcDateTime,
+                };
+
+                try
+                {
+                    await tableClient.AddEntityAsync(entity, ct);
+                    return true; // first use
+                }
+                catch (Azure.RequestFailedException ex) when (ex.Status == 409)
+                {
+                    return false; // duplicate row → replay
+                }
+                catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+                {
+                    // Table not created yet — create once and retry.
+                    await tableClient.CreateIfNotExistsAsync(ct);
+                    await tableClient.AddEntityAsync(entity, ct);
+                    return true;
+                }
+            }
+
+            return new DeviceSessionNonceStore(Register, logger);
+        });
+
         // Boot-media certificate thumbprint cache (60s TTL, FR-069)
         // Loader reads the active thumbprint from Table Storage via the internal API client.
         services.AddSingleton<BootMediaCertificateThumbprintCache>(sp =>

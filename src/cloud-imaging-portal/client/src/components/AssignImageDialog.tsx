@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/apiClient.ts';
+import { Button } from './ui/button.tsx';
+import { Input } from './ui/input.tsx';
 
 interface OsImage {
   imageId: string;
@@ -29,7 +32,7 @@ export function AssignImageDialog({ open, sessionId, onClose, onAssigned }: Assi
     if (!open) return;
     void (async () => {
       try {
-        const res = await fetch('/api/images', { credentials: 'include' });
+        const res = await apiFetch('/api/images', { credentials: 'include' });
         if (res.ok) {
           const data = await res.json() as OsImage[];
           setImages(data.filter(i => i.isActive));
@@ -52,7 +55,7 @@ export function AssignImageDialog({ open, sessionId, onClose, onAssigned }: Assi
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/sessions/${sessionId}/assign`, {
+      const res = await apiFetch(`/api/sessions/${sessionId}/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -86,12 +89,12 @@ export function AssignImageDialog({ open, sessionId, onClose, onAssigned }: Assi
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-lg">
         <h2 className="text-lg font-semibold mb-4">Select OS Image</h2>
-        <input
+        <Input
           type="search"
           placeholder="Search images…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full border border-input rounded-md px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-primary"
+          className="mb-3"
         />
         <div className="max-h-60 overflow-y-auto border border-border rounded-md mb-4">
           {filtered.length === 0 ? (
@@ -121,16 +124,12 @@ export function AssignImageDialog({ open, sessionId, onClose, onAssigned }: Assi
         </div>
         {error && <p className="text-sm text-destructive mb-3">{error}</p>}
         <div className="flex gap-3 justify-end">
-          <button onClick={handleClose} disabled={busy} className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted">
+          <Button variant="outline" onClick={handleClose} disabled={busy}>
             Cancel
-          </button>
-          <button
-            onClick={handleAssign}
-            disabled={busy || !selectedImageId}
-            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-          >
+          </Button>
+          <Button onClick={handleAssign} disabled={busy || !selectedImageId}>
             {busy ? 'Assigning…' : 'Assign Image'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

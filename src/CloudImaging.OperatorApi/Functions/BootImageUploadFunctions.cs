@@ -30,7 +30,7 @@ public sealed partial class BootImageUploadFunctions
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
-        var core      = await _coreClient.CreateImageAsync(payload!, context.CancellationToken);
+        var core      = await _coreClient.StartBootImageUploadAsync(payload!, context.CancellationToken);
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 
@@ -42,8 +42,7 @@ public sealed partial class BootImageUploadFunctions
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
-        // Proxy to ImagingCore using the publish route
-        var core = await _coreClient.GetBootImagesAsync(context.CancellationToken);
+        var core      = await _coreClient.PublishBootImageUploadAsync(token, payload!, context.CancellationToken);
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 

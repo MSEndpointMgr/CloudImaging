@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using Azure;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
@@ -21,6 +23,8 @@ public sealed partial class BrandingFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const int LogoSasMinutes = 60;
+    private const string LogoContainer = "branding";
+    private const int MaxLogoBytes = 1024 * 1024; // 1 MB decoded
 
     private readonly BrandingRepository _brandingRepo;
     private readonly BlobServiceClient _blobClient;
@@ -86,6 +90,115 @@ public sealed partial class BrandingFunctions
         return response;
     }
 
+    [Function("UploadBrandingLogo")]
+    public async Task<HttpResponseData> UploadBrandingLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/branding/logo")] HttpRequestData req,
+        FunctionContext context)
+    {
+        var ct = context.CancellationToken;
+
+        LogoUploadRequest? payload;
+        try { payload = await JsonSerializer.DeserializeAsync<LogoUploadRequest>(req.Body, JsonOptions, ct); }
+        catch (JsonException) { return await Text(req, HttpStatusCode.BadRequest, "Request body is not valid JSON.", ct); }
+
+        if (payload is null || string.IsNullOrWhiteSpace(payload.DataBase64))
+            return await Text(req, HttpStatusCode.BadRequest, "A base64-encoded logo image is required.", ct);
+
+        var contentType = string.IsNullOrWhiteSpace(payload.ContentType) ? "image/png" : payload.ContentType.Trim();
+        if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            return await Text(req, HttpStatusCode.BadRequest, "Only image content types are accepted for the logo.", ct);
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(StripDataUriPrefix(payload.DataBase64)); }
+        catch (FormatException) { return await Text(req, HttpStatusCode.BadRequest, "Logo data is not valid base64.", ct); }
+
+        if (bytes.Length == 0)
+            return await Text(req, HttpStatusCode.BadRequest, "Logo image is empty.", ct);
+        if (bytes.Length > MaxLogoBytes)
+            return await Text(req, HttpStatusCode.RequestEntityTooLarge, "Logo image exceeds the 1 MB limit.", ct);
+
+        var branding  = await _brandingRepo.GetAsync(ct);
+        var extension = ResolveExtension(contentType, payload.FileName);
+        var blobName  = $"logo/{Guid.NewGuid():N}.{extension}";
+        var container = _blobClient.GetBlobContainerClient(LogoContainer);
+        var blob      = container.GetBlobClient(blobName);
+
+        using (var stream = new MemoryStream(bytes, writable: false))
+        {
+            await blob.UploadAsync(
+                stream,
+                new BlobUploadOptions { HttpHeaders = new BlobHttpHeaders { ContentType = contentType } },
+                ct);
+        }
+
+        // Best-effort removal of the previously configured logo blob.
+        await TryDeleteBlobAsync(branding.LogoBlobPath, ct);
+
+        var updated = new BrandingConfiguration
+        {
+            LogoBlobPath    = $"{LogoContainer}/{blobName}",
+            PrimaryColor    = branding.PrimaryColor,
+            AccentColor     = branding.AccentColor,
+            ApplicationName = branding.ApplicationName,
+        };
+        await _brandingRepo.UpsertAsync(updated, ct);
+        LogBrandingUpdated(_logger);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(JsonSerializer.Serialize(updated, JsonOptions), ct);
+        return response;
+    }
+
+    private async Task TryDeleteBlobAsync(string? storagePath, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(storagePath)) return;
+        var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
+        if (slash < 0) return;
+        try
+        {
+            var container = _blobClient.GetBlobContainerClient(storagePath[..slash]);
+            await container.GetBlobClient(storagePath[(slash + 1)..]).DeleteIfExistsAsync(cancellationToken: ct);
+        }
+        catch (RequestFailedException)
+        {
+            // Ignore cleanup failures — the new logo is already committed.
+        }
+    }
+
+    private static string StripDataUriPrefix(string data)
+    {
+        var comma = data.IndexOf(',', StringComparison.Ordinal);
+        return data.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma >= 0
+            ? data[(comma + 1)..]
+            : data;
+    }
+
+    private static string ResolveExtension(string contentType, string? fileName)
+    {
+        var ext = contentType.ToLowerInvariant() switch
+        {
+            "image/png"                    => "png",
+            "image/jpeg" or "image/jpg"    => "jpg",
+            "image/gif"                    => "gif",
+            "image/webp"                   => "webp",
+            "image/svg+xml"                => "svg",
+            "image/x-icon" or "image/vnd.microsoft.icon" => "ico",
+            _                              => string.Empty,
+        };
+        if (!string.IsNullOrEmpty(ext)) return ext;
+
+        var fromName = Path.GetExtension(fileName ?? string.Empty).TrimStart('.').ToLowerInvariant();
+        return string.IsNullOrEmpty(fromName) ? "png" : fromName;
+    }
+
+    private static async Task<HttpResponseData> Text(HttpRequestData req, HttpStatusCode status, string message, CancellationToken ct)
+    {
+        var response = req.CreateResponse(status);
+        await response.WriteStringAsync(message, ct);
+        return response;
+    }
+
     private string GenerateSasUrl(string storagePath, TimeSpan expiry)
     {
         var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
@@ -102,3 +215,6 @@ public sealed partial class BrandingFunctions
     [LoggerMessage(Level = LogLevel.Information, Message = "Branding configuration updated.")]
     private static partial void LogBrandingUpdated(ILogger logger);
 }
+
+/// <summary>Payload for a branding logo upload (base64-encoded image).</summary>
+public sealed record LogoUploadRequest(string? FileName, string? ContentType, string DataBase64);

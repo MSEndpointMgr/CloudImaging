@@ -13,7 +13,11 @@ describe('Portal backend — role enforcement', () => {
     'POST /api/boot-images/publish',
     'DELETE /api/boot-images/:id',
     'PUT /api/branding',
+    'GET /api/configuration',
+    'PUT /api/configuration',
+    'GET /api/portal-config',
     'PUT /api/portal-config',
+    'GET /api/cert/active',
     'POST /api/cert/generate',
     'POST /api/cert/rotate',
   ] as const;
@@ -24,7 +28,7 @@ describe('Portal backend — role enforcement', () => {
     });
   });
 
-  // ── PortalAccess operations ───────────────────────────────────────────────
+  // ── PortalAccess operations (any signed-in Administrator or Technician) ────
 
   const portalAccessOperations = [
     'GET /api/sessions',
@@ -32,8 +36,8 @@ describe('Portal backend — role enforcement', () => {
     'POST /api/sessions/:id/assign',
     'POST /api/sessions/bulk-assign',
     'GET /api/images',
+    'GET /api/boot-images',
     'GET /api/branding',
-    'GET /api/portal-config',
   ] as const;
 
   portalAccessOperations.forEach(op => {

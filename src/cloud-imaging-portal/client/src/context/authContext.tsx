@@ -2,9 +2,18 @@ import { createContext, useContext } from 'react';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import type { AccountInfo } from '@azure/msal-browser';
 
+/** Portal application roles carried in a signed-in user's token. */
+export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician';
+
 interface AuthContextValue {
   account: AccountInfo | null;
   isAuthenticated: boolean;
+  /** App roles from the user's token (e.g. CloudImaging.Administrator). */
+  roles: string[];
+  /** True when the user holds the CloudImaging.Administrator role. */
+  isAdministrator: boolean;
+  /** True when the user holds any portal role (Administrator or Technician). */
+  hasPortalAccess: boolean;
   /** Acquires a silent token for the portal backend API scope. */
   getAccessToken: () => Promise<string>;
   signOut: () => void;
@@ -12,12 +21,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const API_SCOPE = `api://${import.meta.env.VITE_ENTRA_CLIENT_ID}/access_as_user`;
+const API_SCOPE = `api://${import.meta.env.VITE_ENTRA_CLIENT_ID}/user_impersonation`;
+
+/** Extracts the app-role claim from an MSAL account's ID token. */
+function rolesFromAccount(account: AccountInfo | null): string[] {
+  const claim: unknown = account?.idTokenClaims?.['roles'];
+  if (Array.isArray(claim)) return claim as string[];
+  if (typeof claim === 'string') return [claim];
+  return [];
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
   const account = accounts[0] ?? null;
+
+  const roles = rolesFromAccount(account);
+  const isAdministrator = roles.includes('CloudImaging.Administrator');
+  const hasPortalAccess = isAdministrator || roles.includes('CloudImaging.Technician');
 
   const getAccessToken = async (): Promise<string> => {
     if (!account) throw new Error('Not authenticated');
@@ -33,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   };
 
   return (
-    <AuthContext.Provider value={{ account, isAuthenticated, getAccessToken, signOut }}>
+    <AuthContext.Provider value={{ account, isAuthenticated, roles, isAdministrator, hasPortalAccess, getAccessToken, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -4,6 +4,7 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
+import axios from 'axios';
 
 // Application Insights — must be set up before importing any other modules (FR-065, FR-067)
 const aiConnectionString = process.env['APPLICATIONINSIGHTS_CONNECTION_STRING'];
@@ -72,6 +73,40 @@ app.use('/api/chunked-upload', chunkedUploadRouter);
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error', err);
+
+  // Translate downstream Operator API failures into meaningful responses so the
+  // portal can distinguish "backend unreachable" from an authorization/validation
+  // error instead of always surfacing a generic 500.
+  if (axios.isAxiosError(err)) {
+    // No response received — the Operator API is unreachable (down, wrong URL,
+    // connection refused, DNS failure, or timed out).
+    if (!err.response) {
+      const unreachable = err.code === 'ECONNABORTED';
+      res.status(504).json({
+        type: 'https://cloudimaging.io/errors/backend-unavailable',
+        title: 'Backend API unavailable.',
+        status: 504,
+        detail: unreachable
+          ? 'The Operator API did not respond in time. Confirm it is running and reachable.'
+          : `The Operator API could not be reached (${err.code ?? 'connection error'}). Confirm it is running and reachable.`,
+      });
+      return;
+    }
+
+    // Upstream responded with an error status — forward it (and its problem
+    // details when present) so the client sees the real cause (e.g. 403, 400).
+    const status = err.response.status;
+    const upstream = err.response.data as Record<string, unknown> | undefined;
+    res.status(status).json({
+      type: (upstream?.['type'] as string | undefined) ?? 'https://cloudimaging.io/errors/upstream-error',
+      title: (upstream?.['title'] as string | undefined) ?? 'The backend API returned an error.',
+      status,
+      detail: (upstream?.['detail'] as string | undefined) ??
+        `The Operator API responded with status ${String(status)}.`,
+    });
+    return;
+  }
+
   res.status(500).json({
     type: 'https://cloudimaging.io/errors/internal-error',
     title: 'An unexpected error occurred.',

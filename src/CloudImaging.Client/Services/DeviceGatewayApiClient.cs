@@ -1,5 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
 
@@ -13,9 +15,20 @@ namespace CloudImaging.Client.Services;
 public sealed class DeviceGatewayApiClient
 {
     private readonly HttpClient _http;
+    private readonly X509Certificate2? _signingCertificate;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public DeviceGatewayApiClient(HttpClient http) => _http = http;
+    /// <param name="http">The mTLS-configured HTTP client.</param>
+    /// <param name="signingCertificate">
+    /// The boot-media certificate (with private key) used to sign the session-bootstrap
+    /// proof-of-possession (FR-069). When null, no proof is attached (the Device Gateway will
+    /// reject the request — this is intended only for tests/tools that provide their own payload).
+    /// </param>
+    public DeviceGatewayApiClient(HttpClient http, X509Certificate2? signingCertificate = null)
+    {
+        _http = http;
+        _signingCertificate = signingCertificate;
+    }
 
     /// <summary>
     /// POST /api/v1/sessions — Register a new imaging session.
@@ -25,9 +38,43 @@ public sealed class DeviceGatewayApiClient
         DeviceRegistrationPayload payload,
         CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync("/api/v1/sessions", payload, JsonOptions, ct);
+        var signedPayload = SignPayload(payload);
+        var response = await _http.PostAsJsonAsync("/api/v1/sessions", signedPayload, JsonOptions, ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<CreateSessionResponse>(JsonOptions, ct);
+    }
+
+    /// <summary>
+    /// Attaches an application-layer proof-of-possession to the registration payload by signing a
+    /// fresh challenge (serial + UTC timestamp + nonce) with the boot-media private key (FR-069).
+    /// </summary>
+    private DeviceRegistrationPayload SignPayload(DeviceRegistrationPayload payload)
+    {
+        if (_signingCertificate is null)
+            return payload;
+
+        using var rsa = _signingCertificate.GetRSAPrivateKey()
+            ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
+
+        var timestampUtc = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var challenge = DevicePayloadSignature.BuildChallenge(payload.SerialNumber, timestampUtc, nonce);
+        var signature = rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        return new DeviceRegistrationPayload
+        {
+            SerialNumber = payload.SerialNumber,
+            Manufacturer = payload.Manufacturer,
+            Model        = payload.Model,
+            MacAddress   = payload.MacAddress,
+            Hardware     = payload.Hardware,
+            ProofOfPossession = new DeviceProofOfPossession
+            {
+                Nonce        = nonce,
+                TimestampUtc = timestampUtc,
+                Signature    = Convert.ToBase64String(signature),
+            },
+        };
     }
 
     /// <summary>

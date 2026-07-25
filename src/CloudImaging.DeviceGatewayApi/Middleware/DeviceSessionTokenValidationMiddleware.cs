@@ -16,14 +16,14 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
     public const string SessionIdKey = "DeviceSessionId";
 
     /// <summary>Function names exempt from token validation (the public bootstrap endpoint).</summary>
-    private static readonly HashSet<string> ExemptFunctions =
-        new(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
+    public static readonly IReadOnlySet<string> ExemptFunctionNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var functionName = context.FunctionDefinition.Name;
 
-        if (ExemptFunctions.Contains(functionName))
+        if (ExemptFunctionNames.Contains(functionName))
         {
             await next(context);
             return;

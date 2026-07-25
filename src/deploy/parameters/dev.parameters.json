@@ -4,7 +4,8 @@
   "parameters": {
     "resourcePrefix": { "value": "mse" },
     "environment": { "value": "dev" },
-    "userAuthClientId": { "value": "0095f085-6166-4154-ace4-f268fd58a500" },
+    "portalClientId": { "value": "d6ff0541-00bd-4615-84df-da2a54b604c5" },
+    "mediaBuilderClientId": { "value": "0095f085-6166-4154-ace4-f268fd58a500" },
     "operatorApiClientId": { "value": "beb5c8c0-e7f0-4f67-9b00-5e011bc71d10" },
     "tenantId": { "value": "cec1aa3f-dff2-48dd-8ddb-7c83e39f4547" },
     "deployApplicationGateway": { "value": false },

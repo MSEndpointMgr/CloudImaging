@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react';
 import { UploadProgressBar } from './UploadProgressBar.tsx';
+import { Button } from './ui/button.tsx';
+import { Input } from './ui/input.tsx';
 import {
   startChunkedUpload,
   uploadBlocks,
@@ -85,15 +87,14 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Version</label>
-              <input value={version} onChange={e => setVersion(e.target.value)}
-                placeholder="e.g. Windows 11 24H2"
-                className="w-full border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              <Input value={version} onChange={e => setVersion(e.target.value)}
+                placeholder="e.g. Windows 11 24H2" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">SHA-256 Hash</label>
-              <input value={sha256} onChange={e => setSha256(e.target.value)}
+              <Input value={sha256} onChange={e => setSha256(e.target.value)}
                 placeholder="64-character hex string"
-                className="w-full border border-input rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary" />
+                className="font-mono" />
               {sha256 && sha256.length !== 64 && (
                 <p className="text-xs text-destructive mt-1">SHA-256 must be exactly 64 hex characters.</p>
               )}
@@ -136,19 +137,18 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
 
         <div className="flex gap-3 justify-end mt-5">
           {(state === 'uploading' || state === 'finalizing') ? (
-            <button onClick={handleCancel} className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted">
+            <Button variant="outline" onClick={handleCancel}>
               Cancel Upload
-            </button>
+            </Button>
           ) : (
             <>
-              <button onClick={handleClose} className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted">
+              <Button variant="outline" onClick={handleClose}>
                 {state === 'done' ? 'Close' : 'Cancel'}
-              </button>
+              </Button>
               {state === 'idle' && (
-                <button onClick={handleUpload} disabled={!canUpload}
-                  className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50">
+                <Button onClick={handleUpload} disabled={!canUpload}>
                   Upload
-                </button>
+                </Button>
               )}
             </>
           )}

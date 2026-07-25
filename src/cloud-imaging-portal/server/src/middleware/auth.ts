@@ -4,8 +4,8 @@ import jwksClient from 'jwks-rsa';
 
 /**
  * Entra ID token validation middleware for the Cloud Imaging Portal backend (FR-030, FR-040).
- * Validates the access token from the Authorization header against the shared enterprise
- * app registration (userAuthClientId / Entra:ClientId).
+ * Validates the access token from the Authorization header against the Cloud Imaging Portal
+ * SPA app registration (portalClientId / ENTRA_CLIENT_ID).
  */
 
 const tenantId      = process.env['ENTRA_TENANT_ID']    ?? '';

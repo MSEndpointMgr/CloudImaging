@@ -2,10 +2,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
-/** Configuration router (US6). */
+/** Configuration router (US6). Administrator-only — deployment/security settings. */
 const router = Router();
 
-router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);

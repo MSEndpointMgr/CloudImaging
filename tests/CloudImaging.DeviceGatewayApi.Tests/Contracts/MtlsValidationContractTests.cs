@@ -16,7 +16,7 @@ namespace CloudImaging.DeviceGatewayApi.Tests.Contracts;
 ///   - Thumbprint comparison: case-insensitive match
 ///   - Cache behavior: thumbprint cache respects 60-second TTL and returns updated
 ///     thumbprint immediately after rotation is committed + cache invalidated
-///   - Exempt function: CreateSession is not subject to mTLS validation
+///   - No mTLS exemptions: every endpoint (including CreateSession) is validated
 ///
 /// Full middleware invocation tests (missing header → 401, mismatched thumbprint → 401)
 /// require Azure Functions isolated worker test infrastructure (IFunctionBindingsFeature)
@@ -129,16 +129,18 @@ public sealed class MtlsValidationContractTests : IDisposable
         loadCount.Should().Be(1, "exactly one backing-store read after invalidation");
     }
 
-    // ── Exempt function constant ──────────────────────────────────────────────
+    // ── mTLS applies to every endpoint (including CreateSession) ─────────────
 
     [Fact]
-    public void MtlsMiddleware_ExemptFunctionNameIsCreateSession()
+    public void MtlsMiddleware_AppliesToCreateSession_OnlyTokenIsExempt()
     {
-        // The CreateSession function MUST be exempt from mTLS validation because
-        // the device does not yet have a token at registration time.
-        MtlsCertificateValidationMiddleware.ExemptFunction
-            .Should().Be("CreateSession",
-                "FR-069: CreateSession is the bootstrap endpoint and must not require a client cert");
+        // FR-069 / spec.md: mTLS authenticates ALL client requests to the Device Gateway
+        // API. The boot-media certificate is loaded by the client at WinPE startup, so it
+        // is available even for the CreateSession bootstrap call. Only the separate
+        // device-session *token* is exempted for CreateSession.
+        DeviceSessionTokenValidationMiddleware.ExemptFunctionNames
+            .Should().Contain("CreateSession",
+                "CreateSession is exempt from token validation only — not from mTLS");
     }
 
     // ── Expired certificate is rejected ──────────────────────────────────────

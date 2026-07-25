@@ -54,6 +54,18 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> GetBootImageSasAsync(Guid bootImageId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/boot-images/{bootImageId}/sas", null, ct);
 
+    public Task<HttpResponseMessage> StartBootImageUploadAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/boot-images/upload/start", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> PublishBootImageUploadAsync(string token, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/boot-images/upload/{token}/publish", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> PublishBootImageAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/boot-images/publish", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> DeleteBootImageAsync(Guid bootImageId, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/boot-images/{bootImageId}", ct);
+
     // ── Branding ──────────────────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetBrandingAsync(CancellationToken ct = default) =>
@@ -64,6 +76,9 @@ public sealed class ImagingCoreClient
 
     public Task<HttpResponseMessage> GetBrandingLogoSasAsync(CancellationToken ct = default) =>
         _http.GetAsync("/api/internal/branding/logo/sas", ct);
+
+    public Task<HttpResponseMessage> UploadBrandingLogoAsync(object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync("/api/internal/branding/logo", payload, JsonOptions, ct);
 
     // ── Portal configuration ───────────────────────────────────────────────────
 

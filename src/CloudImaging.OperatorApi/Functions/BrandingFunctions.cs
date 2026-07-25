@@ -44,6 +44,16 @@ public sealed partial class BrandingFunctions
         FunctionContext context)
         => await Proxy(req, await _coreClient.GetBrandingLogoSasAsync(context.CancellationToken), context.CancellationToken);
 
+    [Function("UploadBrandingLogo")]
+    public async Task<HttpResponseData> UploadBrandingLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "branding/logo")] HttpRequestData req,
+        FunctionContext context)
+    {
+        using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        return await Proxy(req, await _coreClient.UploadBrandingLogoAsync(payload!, context.CancellationToken), context.CancellationToken);
+    }
+
     private static async Task<HttpResponseData> Proxy(
         HttpRequestData req, HttpResponseMessage coreResponse, CancellationToken ct)
     {

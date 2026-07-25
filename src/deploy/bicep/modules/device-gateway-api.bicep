@@ -61,7 +61,8 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
           name: 'DenyAll'
           description: 'Deny all other inbound traffic'
         }
-      ] : []      appSettings: [
+      ] : []
+      appSettings: [
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'AzureWebJobsStorage__accountName', value: storageAccountName }

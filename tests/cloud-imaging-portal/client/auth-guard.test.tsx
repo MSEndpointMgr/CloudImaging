@@ -27,7 +27,7 @@ describe('Portal frontend — auth guard', () => {
   });
 
   it('API scope is derived from VITE_ENTRA_CLIENT_ID env var', () => {
-    const scope = `api://\${import.meta.env.VITE_ENTRA_CLIENT_ID}/access_as_user`;
-    expect(scope).toContain('access_as_user');
+    const scope = `api://\${import.meta.env.VITE_ENTRA_CLIENT_ID}/user_impersonation`;
+    expect(scope).toContain('user_impersonation');
   });
 });

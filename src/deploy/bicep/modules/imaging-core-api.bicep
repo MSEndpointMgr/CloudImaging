@@ -13,8 +13,8 @@ param vnetSubnetId string
 param pepSubnetId string
 param pepName string
 param keyVaultName string
-// userAuthClientId passed in as sharedEntraClientId — the shared user-facing app registration
-// client ID used for Entra token validation context in the Imaging Core API.
+// sharedEntraClientId: Application (client) ID of the Cloud Imaging Portal registration,
+// carried for Entra token validation context in the Imaging Core API (private, Private Link only).
 param sharedEntraClientId string
 param tenantId string
 param passcodeTtlMinutes int

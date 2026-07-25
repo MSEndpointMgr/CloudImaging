@@ -9,7 +9,7 @@ import { operatorApiClient } from '../services/operatorApiClient.js';
 const router = Router();
 
 // GET /api/cert/active
-router.get('/active', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/active', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);

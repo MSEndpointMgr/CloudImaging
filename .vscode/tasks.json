@@ -162,10 +162,10 @@
     {
       "label": "Dev: Run portal server (localhost:3000)",
       "type": "shell",
-      "command": "cd src/cloud-imaging-portal/server && npm run dev",
+      "command": "Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; cd src/cloud-imaging-portal/server; npm run dev",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Start the portal Express server in watch mode. Requires VITE_ENTRA_CLIENT_ID etc. in .env.",
+      "detail": "Kill any process already listening on port 3000, then start the portal Express server in watch mode. Requires VITE_ENTRA_CLIENT_ID etc. in .env.",
       "options": {
         "statusbar": {
           "hide" : true
@@ -175,13 +175,13 @@
     {
       "label": "Dev: Run portal client (Vite, localhost:5173)",
       "type": "shell",
-      "command": "cd src/cloud-imaging-portal/client && npm run dev",
+      "command": "Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }; cd src/cloud-imaging-portal/client; npm run dev",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Start the Vite dev server. Requires VITE_ENTRA_CLIENT_ID / VITE_ENTRA_AUTHORITY in .env.",
+      "detail": "Kill any process already listening on port 5173 (avoids Vite falling back to 5174, which breaks the registered SPA redirect URI), then start the Vite dev server. Requires VITE_ENTRA_CLIENT_ID / VITE_ENTRA_AUTHORITY in .env.",
       "options": {
         "statusbar": {
-          "hide" : true
+          "hide" : false
         }
       }
     },
@@ -249,6 +249,19 @@
           "hide" : true
         }
       }
+    },
+    {
+      "label": "Dev: Simulate device session",
+      "type": "shell",
+      "command": "pwsh -NonInteractive -File src/deploy/scripts/simulate-device-session.ps1 -DeviceGatewayBaseUrl '${input:deviceGatewayBaseUrl}' -PfxPath '${input:bootMediaPfxPath}' -PollStatus",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Simulates a Cloud Imaging Client CreateSession request against the Device Gateway API using the boot-media PFX (mTLS + proof-of-possession), without building/running the WPF client. Add -SimulateEdgeHeader in the script to hit a Function host directly.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
     }
   ],
   "inputs": [
@@ -269,6 +282,18 @@
       "type": "promptString",
       "description": "Template Spec version",
       "default": "1.0.0"
+    },
+    {
+      "id": "deviceGatewayBaseUrl",
+      "type": "promptString",
+      "description": "Device Gateway API base URL",
+      "default": "https://localhost:7071"
+    },
+    {
+      "id": "bootMediaPfxPath",
+      "type": "promptString",
+      "description": "Path to the boot-media PFX (exported without password)",
+      "default": "./bootmedia.pfx"
     }
   ]
 }

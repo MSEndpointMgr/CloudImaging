@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useState } from 'react';
+import { apiFetch } from '../lib/apiClient.ts';
 
 interface BrandingConfig {
   primaryColor?: string;
@@ -9,12 +10,18 @@ interface BrandingConfig {
 
 interface BrandingContextValue {
   branding: BrandingConfig;
+  /** Time-limited SAS URL for the configured logo, or null when none is set. */
+  logoUrl: string | null;
   isLoaded: boolean;
+  /** Re-fetches branding (and the logo SAS URL) from the backend. */
+  refresh: () => Promise<void>;
 }
 
 const BrandingContext = createContext<BrandingContextValue>({
   branding: {},
+  logoUrl: null,
   isLoaded: false,
+  refresh: async () => { /* no-op default */ },
 });
 
 /**
@@ -23,27 +30,44 @@ const BrandingContext = createContext<BrandingContextValue>({
  */
 export function BrandingProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [branding, setBranding] = useState<BrandingConfig>({});
+  const [logoUrl, setLogoUrl]   = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch('/api/branding', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json() as BrandingConfig;
-          setBranding(data);
-          applyBrandingCssVariables(data);
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/branding', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json() as BrandingConfig;
+        setBranding(data);
+        applyBrandingCssVariables(data);
+
+        if (data.logoBlobPath) {
+          try {
+            const sasRes = await apiFetch('/api/branding/logo/sas', { credentials: 'include' });
+            if (sasRes.ok) {
+              const sas = await sasRes.json() as { sasTokenUrl?: string };
+              setLogoUrl(sas.sasTokenUrl ?? null);
+            } else {
+              setLogoUrl(null);
+            }
+          } catch {
+            setLogoUrl(null);
+          }
+        } else {
+          setLogoUrl(null);
         }
-      } catch {
-        // Use default CSS variables (set in index.css)
-      } finally {
-        setIsLoaded(true);
       }
-    })();
+    } catch {
+      // Use default CSS variables (set in index.css)
+    } finally {
+      setIsLoaded(true);
+    }
   }, []);
 
+  useEffect(() => { void load(); }, [load]);
+
   return (
-    <BrandingContext.Provider value={{ branding, isLoaded }}>
+    <BrandingContext.Provider value={{ branding, logoUrl, isLoaded, refresh: load }}>
       {children}
     </BrandingContext.Provider>
   );

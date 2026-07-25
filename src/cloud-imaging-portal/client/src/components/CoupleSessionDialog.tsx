@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { apiFetch } from '../lib/apiClient.ts';
+import { Button } from './ui/button.tsx';
+import { Input } from './ui/input.tsx';
 
 interface CoupleSessionDialogProps {
   open: boolean;
@@ -24,7 +27,7 @@ export function CoupleSessionDialog({ open, onClose, onCoupled }: CoupleSessionD
     setError(null);
 
     try {
-      const res = await fetch('/api/sessions/couple', {
+      const res = await apiFetch('/api/sessions/couple', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -67,13 +70,13 @@ export function CoupleSessionDialog({ open, onClose, onCoupled }: CoupleSessionD
           Enter the 6-character passcode displayed on the Cloud Imaging Client.
         </p>
         <form onSubmit={handleSubmit}>
-          <input
+          <Input
             type="text"
             maxLength={6}
             placeholder="e.g. ABC123"
             value={passcode}
             onChange={e => setPasscode(e.target.value.toUpperCase())}
-            className="w-full border border-input rounded-md px-3 py-2 text-xl font-mono tracking-widest text-center mb-3 focus:outline-none focus:ring-2 focus:ring-primary"
+            className="mb-3 h-12 text-center text-xl font-mono tracking-widest"
             autoFocus
             disabled={busy}
           />
@@ -81,21 +84,12 @@ export function CoupleSessionDialog({ open, onClose, onCoupled }: CoupleSessionD
             <p className="text-sm text-destructive mb-3">{error}</p>
           )}
           <div className="flex gap-3 justify-end">
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={busy}
-              className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted"
-            >
+            <Button type="button" variant="outline" onClick={handleClose} disabled={busy}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={busy || passcode.length < 6}
-              className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={busy || passcode.length < 6}>
               {busy ? 'Coupling…' : 'Couple Device'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>

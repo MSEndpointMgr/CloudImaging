@@ -37,7 +37,7 @@ public sealed partial class BootImageLifecycleFunctions
         using var body = await System.Text.Json.JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         var payload = JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
 
-        var coreResponse = await _coreClient.CreateImageAsync(payload!, context.CancellationToken);
+        var coreResponse = await _coreClient.PublishBootImageAsync(payload!, context.CancellationToken);
 
         LogPublishProxied(_logger, (int)coreResponse.StatusCode);
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
@@ -54,7 +54,7 @@ public sealed partial class BootImageLifecycleFunctions
         if (!Guid.TryParse(id, out var bootImageId))
             return req.CreateResponse(HttpStatusCode.BadRequest);
 
-        var coreResponse = await _coreClient.DeleteImageAsync(bootImageId, context.CancellationToken);
+        var coreResponse = await _coreClient.DeleteBootImageAsync(bootImageId, context.CancellationToken);
         LogDeleteProxied(_logger, bootImageId, (int)coreResponse.StatusCode);
         return req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
     }

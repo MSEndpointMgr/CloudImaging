@@ -4,7 +4,8 @@
   "parameters": {
     "resourcePrefix": { "value": "mse" },
     "environment": { "value": "test" },
-    "userAuthClientId": { "value": "" },
+    "portalClientId": { "value": "" },
+    "mediaBuilderClientId": { "value": "" },
     "operatorApiClientId": { "value": "" },
     "tenantId": { "value": "" },
     "deployApplicationGateway": { "value": false },

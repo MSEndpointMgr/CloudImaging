@@ -10,7 +10,7 @@
     1. Assigns CloudImaging.PortalAccess to the Portal backend managed
        identity so the Portal backend can call the Operator API.
 
-    2. Assigns CloudImaging.MediaBuilderAccess to the shared user-auth
+    2. Assigns CloudImaging.MediaBuilderAccess to the Media Builder
        app registration service principal so the Media Builder can call
        the Operator API on behalf of signed-in users.
 
@@ -21,12 +21,11 @@
     The Azure resource group containing the deployed resources.
 
 .PARAMETER OperatorApiClientId
-    Application (client) ID of the Operator API app registration
-    (Registration B from the prerequisites guide).
+    Application (client) ID of the Cloud Imaging Operator API app registration.
 
-.PARAMETER UserAuthClientId
-    Application (client) ID of the shared user-facing app registration
-    (Registration A from the prerequisites guide).
+.PARAMETER MediaBuilderClientId
+    Application (client) ID of the Cloud Imaging Media Builder app registration
+    (native/public client). Its service principal receives CloudImaging.MediaBuilderAccess.
 
 .PARAMETER ResourcePrefix
     Resource prefix used when the environment was deployed (e.g. 'mse').
@@ -42,7 +41,7 @@
     .\assign-service-roles.ps1 `
         -ResourceGroupName  "mse-az-cloud-imaging" `
         -OperatorApiClientId "beb5c8c0-e7f0-4f67-9b00-5e011bc71d10" `
-        -UserAuthClientId    "0095f085-6166-4154-ace4-f268fd58a500" `
+        -MediaBuilderClientId "0095f085-6166-4154-ace4-f268fd58a500" `
         -ResourcePrefix      "mse" `
         -Environment         "dev"
 #>
@@ -55,7 +54,7 @@ param(
     [string] $OperatorApiClientId,
 
     [Parameter(Mandatory)]
-    [string] $UserAuthClientId,
+    [string] $MediaBuilderClientId,
 
     [string] $ResourcePrefix = '',
     [string] $Environment    = 'dev'
@@ -119,14 +118,14 @@ if (-not $operatorApiSp) {
 }
 Write-Host "  → Object ID: $($operatorApiSp.Id)"
 
-# ── 5. Resolve shared user-auth service principal ─────────────────────────────
+# ── 5. Resolve Media Builder service principal ────────────────────────────
 
-Write-Host "Looking up shared user-auth service principal (appId: $UserAuthClientId)..."
-$sharedSp = Get-MgServicePrincipal -Filter "appId eq '$UserAuthClientId'"
-if (-not $sharedSp) {
-    throw "Shared user-auth service principal not found. Verify the app registration exists in this tenant and the client ID is correct."
+Write-Host "Looking up Media Builder service principal (appId: $MediaBuilderClientId)..."
+$mediaBuilderSp = Get-MgServicePrincipal -Filter "appId eq '$MediaBuilderClientId'"
+if (-not $mediaBuilderSp) {
+    throw "Media Builder service principal not found. Verify the app registration exists in this tenant and the client ID is correct."
 }
-Write-Host "  → Object ID: $($sharedSp.Id)"
+Write-Host "  → Object ID: $($mediaBuilderSp.Id)"
 
 # ── 6. Resolve role definitions ───────────────────────────────────────────────
 
@@ -157,14 +156,14 @@ try {
     }
 }
 
-# ── 8. Assign CloudImaging.MediaBuilderAccess → shared app service principal ─
+# ── 8. Assign CloudImaging.MediaBuilderAccess → Media Builder service principal ─
 
-Write-Host "Assigning CloudImaging.MediaBuilderAccess to shared user-auth service principal..."
+Write-Host "Assigning CloudImaging.MediaBuilderAccess to Media Builder service principal..."
 try {
     New-MgServicePrincipalAppRoleAssignment `
-        -ServicePrincipalId $sharedSp.Id `
+        -ServicePrincipalId $mediaBuilderSp.Id `
         -BodyParameter @{
-            principalId = $sharedSp.Id
+            principalId = $mediaBuilderSp.Id
             resourceId  = $operatorApiSp.Id
             appRoleId   = $mbRole.Id
         } | Out-Null

@@ -4,6 +4,8 @@
  * to Azure Blob Storage, and finally call the publish endpoint.
  */
 
+import { apiFetch } from '../lib/apiClient.ts';
+
 export interface UploadSession {
   uploadId: string;
   blobName: string;
@@ -27,7 +29,7 @@ export async function startBootImageUpload(
   version: string,
   sha256Hash: string,
 ): Promise<UploadSession> {
-  const res = await fetch('/api/boot-images/upload/start', {
+  const res = await apiFetch('/api/boot-images/upload/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -75,7 +77,7 @@ export async function publishBootImageUpload(
   sizeBytes: number,
   version: string,
 ): Promise<unknown> {
-  const res = await fetch(`/api/boot-images/upload/${session.uploadId}/publish`, {
+  const res = await apiFetch(`/api/boot-images/upload/${session.uploadId}/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',

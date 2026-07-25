@@ -17,42 +17,71 @@
 
 ---
 
-## Step 1 — Create Two App Registrations
+## Step 1 — Create Three App Registrations
 
-Cloud Imaging requires two separate Entra ID App Registrations:
+Cloud Imaging uses three separate Entra ID App Registrations, each with a single, clear purpose:
 
-### Registration A: User Authentication (portal + Media Builder)
+| Registration | Client type | Purpose |
+|---|---|---|
+| **Cloud Imaging Portal** | Single-page application (SPA) | Browser portal sign-in (technicians & administrators) |
+| **Cloud Imaging Media Builder** | Mobile & desktop (public client) | Media Builder desktop app sign-in |
+| **Cloud Imaging Operator API** | Web API (service-to-service) | Token audience for the Operator API |
+
+> **Why three?** The browser portal is a Single-Page Application and the Media Builder is a native
+> public client. Entra classifies these client types differently, and mixing an SPA platform with a
+> *Mobile and desktop* platform in the **same** registration causes the SPA's cross-origin token
+> redemption to be rejected with **AADSTS9002326**. Keeping them in separate registrations avoids
+> this entirely.
+
+### Registration 1: Cloud Imaging Portal (browser SPA)
 
 1. In Entra ID → App Registrations → **New registration**
-2. Name: `Cloud Imaging` (or your branding)
+2. Name: `Cloud Imaging Portal` (or your branding)
 3. Supported account types: **Single tenant**
-4. Redirect URI: platform **Mobile and desktop applications** (public client), URI `http://localhost`
-5. Under **Authentication** → **Advanced settings**, set **Allow public client flows** = **Yes**. The portal and the Media Builder are MSAL *public clients* (no client secret), so the desktop interactive sign-in flow requires this.
-6. Under **App roles**, add:
+4. Under **Authentication** → **Add a platform** → **Single-page application**, add your deployed Static Web App URL (e.g. `https://<swa-name>.azurestaticapps.net`). You can add a placeholder now and update it with the real hostname from the deployment outputs (Step 3). Do **not** add a *Mobile and desktop* platform to this registration — that reclassifies the app and breaks SPA sign-in with **AADSTS9002326**.
+5. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No**. Setting it to **Yes** breaks the browser portal: the SPA's cross-origin token redemption is then rejected with **AADSTS9002326** (*cross-origin token redemption is permitted only for the 'Single-Page Application' client-type*).
+6. Under **Expose an API**:
+   - Set the **Application ID URI** to `api://<portalClientId>` (accept the default).
+   - **Add a scope**: name `user_impersonation`, **Who can consent** = **Admins and users**, state **Enabled**. Fill in the consent display names/descriptions. The browser portal (an MSAL SPA) requests `api://<portalClientId>/user_impersonation` to obtain an access token for the portal backend — without it, sign-in fails with **AADSTS500011 (invalid_resource)** and the portal renders a blank page after sign-in.
+7. Under **App roles**, add:
    - `CloudImaging.Administrator` (value: `CloudImaging.Administrator`, allowed for: Users/Groups)
    - `CloudImaging.Technician` (value: `CloudImaging.Technician`, allowed for: Users/Groups)
-7. Record the **Application (client) ID** → this is `userAuthClientId`
+8. *(Optional)* Under **API permissions**, add Microsoft Graph → **Delegated** → `User.Read` and grant admin consent — lets the portal display the signed-in user's name.
+9. Record the **Application (client) ID** → this is `portalClientId`
 
-### Registration B: Operator API (service-to-service)
+> The portal backend calls the Operator API using its **managed identity** (the `CloudImaging.PortalAccess` app role, assigned automatically in Step 4). The Portal registration therefore needs **no** API permission to the Operator API.
+
+### Registration 2: Cloud Imaging Media Builder (desktop public client)
+
+1. New registration — Name: `Cloud Imaging Media Builder`
+2. Supported account types: **Single tenant**
+3. Under **Authentication** → **Add a platform** → **Mobile and desktop applications**, add the redirect URI `http://localhost`. The Media Builder signs in with the interactive loopback (authorization code + PKCE) flow.
+4. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No** — the loopback flow is already identified as a public client by its `http://localhost` redirect and does not need this flag.
+5. Under **App roles**, add the same two user roles:
+   - `CloudImaging.Administrator` (value: `CloudImaging.Administrator`, allowed for: Users/Groups)
+   - `CloudImaging.Technician` (value: `CloudImaging.Technician`, allowed for: Users/Groups)
+6. Record the **Application (client) ID** → this is `mediaBuilderClientId`
+
+### Registration 3: Cloud Imaging Operator API (service-to-service)
 
 1. New registration — Name: `Cloud Imaging Operator API`
 2. Under **Expose an API**:
    - Set the **Application ID URI** to `api://<operatorApiClientId>` (accept the default).
-   - **Add a scope**: name `access_as_user`, **Who can consent** = **Admins and users**, state **Enabled**. Fill in the consent display names/descriptions. This delegated scope lets the Media Builder (an interactive user-facing public client) obtain an access token for the Operator API — without it, sign-in fails with **AADSTS650057 (Invalid resource)**.
+   - **Add a scope**: name `user_impersonation`, **Who can consent** = **Admins and users**, state **Enabled**. Fill in the consent display names/descriptions. This delegated scope lets the Media Builder (an interactive user-facing public client) obtain an access token for the Operator API — without it, sign-in fails with **AADSTS650057 (Invalid resource)**.
 3. Under **App roles**, add:
    - `CloudImaging.PortalAccess` (allowed for: **Applications**) — used by the portal backend managed identity.
    - `CloudImaging.MediaBuilderAccess` (allowed for: **Both (Users/Groups + Applications)**) — assigned to the technicians who run the Media Builder. It **must** allow *Users/Groups*, otherwise the technician's interactive token never carries the role and API calls return `403`.
 4. Record the **Application (client) ID** → this is `operatorApiClientId`
 
-### Registration A → grant access to the Operator API
+### Media Builder → grant access to the Operator API
 
-Back in **Registration A** → **API permissions** → **Add a permission** → **My APIs**
+In **Cloud Imaging Media Builder** → **API permissions** → **Add a permission** → **My APIs**
 → select **Cloud Imaging Operator API** → **Delegated permissions** → check
-`access_as_user` → **Add permissions**. Then click **Grant admin consent for &lt;your tenant&gt;**.
+`user_impersonation` → **Add permissions**. Then click **Grant admin consent for &lt;your tenant&gt;**.
 
 This pre-configured, consented permission is mandatory: the Media Builder requests the
-`api://<operatorApiClientId>/.default` scope, which only succeeds when Registration A already
-holds a consented permission to the Operator API. Skipping it produces **AADSTS650057**.
+`api://<operatorApiClientId>/.default` scope, which only succeeds when the Media Builder registration
+already holds a consented permission to the Operator API. Skipping it produces **AADSTS650057**.
 
 ---
 
@@ -87,8 +116,9 @@ Fill in the wizard:
 
 - **Resource prefix**: 2–4 alphanumeric characters (e.g. `corp`)
 - **Environment**: `prod` (or `dev` for testing)
-- **User Auth Client ID**: from Registration A
-- **Operator API Client ID**: from Registration B
+- **Cloud Imaging Portal - Application (client) ID**: from Registration 1 (`portalClientId`)
+- **Cloud Imaging Media Builder - Application (client) ID**: from Registration 2 (`mediaBuilderClientId`)
+- **Operator API Client ID**: from Registration 3 (`operatorApiClientId`)
 - **Tenant ID**: your Entra directory ID (auto-populated)
 - **Azure region**: choose closest to your users
 - **Deployment tier**: Standard (WAF_v2 adds Application Gateway — Enterprise only)
@@ -105,8 +135,11 @@ $rg = "corp-prod-rg"   # your resource group
 # 1. Grant Microsoft Graph permission to the ImagingCore managed identity
 .\scripts\grant-graph-permissions.ps1 -ResourceGroupName $rg
 
-# 2. Assign Entra app roles to the portal managed identity
-.\scripts\assign-service-roles.ps1 -ResourceGroupName $rg
+# 2. Assign Entra app roles to the portal managed identity and Media Builder SP
+.\scripts\assign-service-roles.ps1 `
+  -ResourceGroupName $rg `
+  -OperatorApiClientId "<operatorApiClientId>" `
+  -MediaBuilderClientId "<mediaBuilderClientId>"
 ```
 
 ---
@@ -137,7 +170,7 @@ Create or edit `appsettings.json`:
 ```json
 {
   "EntraId": {
-    "ClientId": "<userAuthClientId>",
+    "ClientId": "<mediaBuilderClientId>",
     "TenantId": "<your-tenant-id>",
     "OperatorApiScope": "api://<operatorApiClientId>/.default"
   },
@@ -149,12 +182,12 @@ Create or edit `appsettings.json`:
 
 | Key | Value / where it comes from |
 |---|---|
-| `EntraId:ClientId` | **Registration A** Application (client) ID — `userAuthClientId` from Step 1 |
+| `EntraId:ClientId` | **Cloud Imaging Media Builder** Application (client) ID — `mediaBuilderClientId` from Step 1 |
 | `EntraId:TenantId` | Your Entra **Directory (tenant) ID** (single-tenant sign-in) |
-| `EntraId:OperatorApiScope` | `api://` + **Registration B** client ID (`operatorApiClientId`) + `/.default` |
+| `EntraId:OperatorApiScope` | `api://` + **Operator API** client ID (`operatorApiClientId`) + `/.default` |
 | `OperatorApi:BaseUrl` | The Operator API Function App URL from the deployment outputs |
 
-**Why single-tenant + `appsettings.json`:** Registration A is a **single-tenant** app
+**Why single-tenant + `appsettings.json`:** the Media Builder registration is a **single-tenant** app
 (Step 1), and the access token the Media Builder requests is audience-scoped to *your*
 Operator API (`api://<operatorApiClientId>`) and calls *your* Operator API URL. Those are
 per-deployment values, so a universal "sign in to any tenant" build is not possible — the
@@ -164,11 +197,11 @@ configuration must ship with the build.
 `CloudImaging.MediaBuilderAccess` app role. In **Entra ID → Enterprise applications →
 Cloud Imaging Operator API → Users and groups → Add user/group**, assign each technician (or
 a group) to the **CloudImaging.MediaBuilderAccess** role. Because the role allows *Users/Groups*
-(Step 1, Registration B), Entra includes it in the `.default` token's `roles` claim. Without
+(Step 1, Registration 3), Entra includes it in the `.default` token's `roles` claim. Without
 this assignment, sign-in succeeds but API calls return `403`.
 
 > **Two things are needed for a working Media Builder sign-in — don't skip either:**
-> 1. The **`access_as_user` delegated permission** on Registration A (granted + admin-consented) —
+> 1. The **`user_impersonation` delegated permission** on the Media Builder registration (granted + admin-consented) —
 >    prevents `AADSTS650057` at sign-in.
 > 2. The **`CloudImaging.MediaBuilderAccess` role assignment** to the user/group on the Operator
 >    API enterprise app — prevents `403` on API calls.

@@ -83,10 +83,22 @@
               "label": "Entra ID App Registrations",
               "elements": [
                 {
-                  "name": "userAuthClientId",
+                  "name": "portalClientId",
                   "type": "Microsoft.Common.TextBox",
-                  "label": "Shared User Auth - Application (client) ID",
-                  "toolTip": "Client ID of the shared enterprise app registration (Registration A). Contains CloudImaging.Administrator and CloudImaging.Technician user roles. Used by the Portal and Media Builder for user sign-in.",
+                  "label": "Cloud Imaging Portal - Application (client) ID",
+                  "toolTip": "Client ID of the Cloud Imaging Portal SPA app registration. Exposes user_impersonation and the CloudImaging.Administrator / CloudImaging.Technician user roles. Used by the portal frontend (MSAL) and validated by the portal backend.",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "validationMessage": "Must be a valid GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "mediaBuilderClientId",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Cloud Imaging Media Builder - Application (client) ID",
+                  "toolTip": "Client ID of the Cloud Imaging Media Builder native (public client) app registration. Used by the Media Builder desktop app for user sign-in; its tokens are validated by the Operator API.",
                   "constraints": {
                     "required": true,
                     "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -278,7 +290,8 @@
       "parameters": {
         "resourcePrefix": "[steps('configuration').namingSection.resourcePrefix]",
         "environment": "[steps('basics').environment]",
-        "userAuthClientId": "[steps('configuration').entraSection.userAuthClientId]",
+        "portalClientId": "[steps('configuration').entraSection.portalClientId]",
+        "mediaBuilderClientId": "[steps('configuration').entraSection.mediaBuilderClientId]",
         "operatorApiClientId": "[steps('configuration').entraSection.operatorApiClientId]",
         "tenantId": "[steps('basics').resourceScope.subscription.tenantId]",
         "deployApplicationGateway": "[steps('configuration').tierSection.deployApplicationGateway]",

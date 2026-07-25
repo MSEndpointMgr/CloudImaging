@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { AssignImageDialog } from './AssignImageDialog.tsx';
+import { apiFetch } from '../lib/apiClient.ts';
+import { Button } from './ui/button.tsx';
 
 interface BulkAssignPanelProps {
   /** IDs of sessions that are in SessionAssigned state and currently checked. */
@@ -21,7 +23,7 @@ export function BulkAssignPanel({ eligibleSessionIds, onBulkAssigned }: BulkAssi
 
   const handleAssigned = async (_: string, imageId: string) => {
     // Bulk assign: POST with all eligible session IDs
-    await fetch('/api/sessions/bulk-assign', {
+    await apiFetch('/api/sessions/bulk-assign', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -35,12 +37,9 @@ export function BulkAssignPanel({ eligibleSessionIds, onBulkAssigned }: BulkAssi
       <span>
         <strong>{n}</strong> Assigned session{n !== 1 ? 's' : ''} selected
       </span>
-      <button
-        onClick={() => setOpen(true)}
-        className="px-3 py-1 bg-primary text-primary-foreground rounded text-xs hover:bg-primary/90"
-      >
+      <Button onClick={() => setOpen(true)}>
         Assign Image to {n} Session{n !== 1 ? 's' : ''}
-      </button>
+      </Button>
 
       {/* Reuse the existing AssignImageDialog with the first eligible session as nominal target */}
       <AssignImageDialog

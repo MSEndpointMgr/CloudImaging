@@ -15,8 +15,11 @@ param resourcePrefix string
 @description('Deployment environment label (dev, prod, or custom abbreviation).')
 param environment string = 'dev'
 
-@description('Application (client) ID of the shared user-facing Entra ID enterprise app registration used by the Cloud Imaging Portal and Media Builder for user authentication (Registration A in the prerequisites guide).')
-param userAuthClientId string
+@description('Application (client) ID of the Cloud Imaging Portal SPA Entra ID app registration. This is the audience the Portal backend validates browser sign-in tokens against.')
+param portalClientId string
+
+@description('Application (client) ID of the Cloud Imaging Media Builder (native public client) Entra ID app registration. Used by the Operator API to validate user tokens originating from the Media Builder.')
+param mediaBuilderClientId string
 
 @description('Entra ID tenant ID (auto-populated from portal session).')
 param tenantId string = tenant().tenantId
@@ -149,6 +152,7 @@ module storage 'modules/storage.bicep' = {
     location: location
     storageAppName: names.storageApp
     storageCoreApiName: names.storageCoreApi
+    deviceGatewayMsiPrincipalId: identities.outputs.deviceGatewayPrincipalId
   }
 }
 
@@ -186,7 +190,7 @@ module imagingCoreApi 'modules/imaging-core-api.bicep' = {
     pepSubnetId: networking.outputs.privateEndpointSubnetId
     pepName: names.pepImagingCore
     keyVaultName: names.keyVault
-    sharedEntraClientId: userAuthClientId
+    sharedEntraClientId: portalClientId
     tenantId: tenantId
     passcodeTtlMinutes: passcodeTtlMinutes
     sasTokenExpiryMinutes: sasTokenExpiryMinutes
@@ -226,7 +230,7 @@ module operatorApi 'modules/operator-api.bicep' = {
     msiId: identities.outputs.operatorApiMsiId
     msiClientId: identities.outputs.operatorApiMsiClientId
     imagingCoreApiBaseUrl: imagingCoreApi.outputs.internalBaseUrl
-    sharedEntraClientId: userAuthClientId
+    sharedEntraClientId: mediaBuilderClientId
     operatorApiClientId: operatorApiClientId
     tenantId: tenantId
     functionAppSku: functionAppSku
@@ -244,7 +248,7 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
     msiId: identities.outputs.portalBackendMsiId
     msiClientId: identities.outputs.portalBackendMsiClientId
     operatorApiBaseUrl: operatorApi.outputs.baseUrl
-    sharedEntraClientId: userAuthClientId
+    sharedEntraClientId: portalClientId
     tenantId: tenantId
     appServiceSku: appServiceSku
   }

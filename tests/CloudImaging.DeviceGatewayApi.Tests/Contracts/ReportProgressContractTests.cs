@@ -73,11 +73,12 @@ public sealed class ReportProgressContractTests
     [Fact]
     public void ProgressEndpoint_IsNotExemptFromSessionTokenValidation()
     {
-        // Progress reporting requires an active session — it is NOT an exempt bootstrap endpoint
-        var exemptFunction = MtlsCertificateValidationMiddleware.ExemptFunction;
-        exemptFunction.Should().NotBe("ReportProgress",
-            "only CreateSession is exempt from mTLS/token validation");
-        exemptFunction.Should().Be("CreateSession");
+        // Progress reporting requires an active session — it is NOT the exempt bootstrap endpoint.
+        var tokenExempt = DeviceSessionTokenValidationMiddleware.ExemptFunctionNames;
+        tokenExempt.Should().NotContain("ReportProgress",
+            "progress reporting requires a valid device-session token");
+        tokenExempt.Should().Contain("CreateSession",
+            "only CreateSession is exempt from device-session token validation");
     }
 
     // ── GetSessionStatus includes sha256Hash when available ───────────────────

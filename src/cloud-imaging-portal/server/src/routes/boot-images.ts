@@ -9,7 +9,24 @@ router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, r
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);
-    res.json(await operatorApiClient.getSessions()); // placeholder until getBootImages added to operatorApiClient
+    res.json(await operatorApiClient.getBootImages());
+  } catch (err) { next(err); }
+});
+
+router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
+    operatorApiClient.setToken(token);
+    res.json(await operatorApiClient.startBootImageUpload(req.body as unknown));
+  } catch (err) { next(err); }
+});
+
+router.post('/upload/:token/publish', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
+    operatorApiClient.setToken(token);
+    const published = await operatorApiClient.publishBootImageUpload(req.params['token'] as string, req.body as unknown);
+    res.status(201).json(published);
   } catch (err) { next(err); }
 });
 
@@ -17,7 +34,7 @@ router.delete('/:id', requireRole('CloudImaging.Administrator'), async (req: Req
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);
-    await operatorApiClient.deleteImage(req.params['id'] as string);
+    await operatorApiClient.deleteBootImage(req.params['id'] as string);
     res.status(204).send();
   } catch (err) { next(err); }
 });

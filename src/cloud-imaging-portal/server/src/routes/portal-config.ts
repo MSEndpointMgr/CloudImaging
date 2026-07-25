@@ -4,11 +4,11 @@ import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
  * Portal configuration route (T146, FR-026).
- * GET/PUT proxied to Operator API /api/configuration.
+ * GET/PUT proxied to Operator API /api/configuration. Administrator-only.
  */
 const router = Router();
 
-router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
     operatorApiClient.setToken(token);

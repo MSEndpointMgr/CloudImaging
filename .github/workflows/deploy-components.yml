@@ -1,0 +1,208 @@
+# Deploy a single component to the shared Azure dev environment (FR-046, FR-047, T158).
+#
+# On-demand, per-component deployment triggered from the VS Code "Deploy: <component>"
+# tasks (.vscode/tasks.json) via `gh workflow run deploy-components.yml --field component=<name>`.
+# Only the selected component is built, tested and deployed. Authentication uses OIDC-based
+# Azure Workload Identity Federation (no long-lived secrets). All environment-specific values
+# are read from the GitHub `azure-dev` environment secrets.
+#
+# This workflow is for internal core-developer use only and is NOT included in community
+# release bundles.
+
+name: Deploy Component (dev)
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to deploy to the shared dev environment'
+        required: true
+        type: choice
+        options:
+          - DeviceGatewayApi
+          - OperatorApi
+          - ImagingCoreApi
+          - PortalBackend
+          - PortalFrontend
+
+concurrency:
+  group: deploy-component-${{ github.event.inputs.component }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22.x'
+
+jobs:
+  # ── DeviceGatewayApi (Function App) ──────────────────────────────────────────
+  device-gateway:
+    name: Deploy DeviceGatewayApi
+    if: ${{ inputs.component == 'DeviceGatewayApi' }}
+    runs-on: ubuntu-latest
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj
+      - name: Build (Release, warnings as errors)
+        run: dotnet build src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj -c Release --no-restore
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish
+        run: dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release -o ./publish/DeviceGatewayApi --no-restore
+      - name: Deploy
+        run: |
+          cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip .
+          az functionapp deployment source config-zip \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }} \
+            --src ../../deploy-gateway.zip
+
+  # ── OperatorApi (Function App) ───────────────────────────────────────────────
+  operator:
+    name: Deploy OperatorApi
+    if: ${{ inputs.component == 'OperatorApi' }}
+    runs-on: ubuntu-latest
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj
+      - name: Build (Release, warnings as errors)
+        run: dotnet build src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj -c Release --no-restore
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish
+        run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi --no-restore
+      - name: Deploy
+        run: |
+          cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip .
+          az functionapp deployment source config-zip \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.FUNCTION_APP_OPERATOR }} \
+            --src ../../deploy-operator.zip
+
+  # ── ImagingCoreApi (Function App) ────────────────────────────────────────────
+  imaging-core:
+    name: Deploy ImagingCoreApi
+    if: ${{ inputs.component == 'ImagingCoreApi' }}
+    runs-on: ubuntu-latest
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: Restore
+        run: dotnet restore tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj
+      - name: Build (Release, warnings as errors)
+        run: dotnet build src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj -c Release --no-restore
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Publish
+        run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi --no-restore
+      - name: Deploy
+        run: |
+          cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip .
+          az functionapp deployment source config-zip \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
+            --src ../../deploy-core.zip
+
+  # ── Portal backend (App Service) ─────────────────────────────────────────────
+  portal-backend:
+    name: Deploy PortalBackend
+    if: ${{ inputs.component == 'PortalBackend' }}
+    runs-on: ubuntu-latest
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        working-directory: src/cloud-imaging-portal/server
+        run: npm ci
+      - name: Test
+        working-directory: src/cloud-imaging-portal/server
+        run: npm run test:run
+      - name: Build
+        working-directory: src/cloud-imaging-portal/server
+        run: npm run build
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy
+        working-directory: src/cloud-imaging-portal/server
+        run: |
+          cd dist && zip -r ../../../deploy-portal-backend.zip .
+          az webapp deploy \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --name ${{ secrets.APP_SERVICE_PORTAL_BACKEND }} \
+            --src-path ../../../deploy-portal-backend.zip \
+            --type zip
+
+  # ── Portal frontend (Static Web App) ─────────────────────────────────────────
+  portal-frontend:
+    name: Deploy PortalFrontend
+    if: ${{ inputs.component == 'PortalFrontend' }}
+    runs-on: ubuntu-latest
+    environment: azure-dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        working-directory: src/cloud-imaging-portal/client
+        run: npm ci
+      - name: Test
+        working-directory: src/cloud-imaging-portal/client
+        run: npm run test:run
+      - name: Build
+        working-directory: src/cloud-imaging-portal/client
+        run: npm run build
+      - name: Deploy (Static Web Apps)
+        working-directory: src/cloud-imaging-portal/client
+        run: |
+          npx @azure/static-web-apps-cli deploy ./dist \
+            --deployment-token ${{ secrets.STATIC_WEB_APP_PORTAL_TOKEN }} \
+            --env production

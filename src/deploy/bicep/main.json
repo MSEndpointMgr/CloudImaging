@@ -4,8 +4,8 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.45.15.27210",
-      "templateHash": "6581701940401127620"
+      "version": "0.44.1.10279",
+      "templateHash": "16921914928978709134"
     }
   },
   "parameters": {
@@ -24,10 +24,16 @@
         "description": "Deployment environment label (dev, prod, or custom abbreviation)."
       }
     },
-    "userAuthClientId": {
+    "portalClientId": {
       "type": "string",
       "metadata": {
-        "description": "Application (client) ID of the shared user-facing Entra ID enterprise app registration used by the Cloud Imaging Portal and Media Builder for user authentication (Registration A in the prerequisites guide)."
+        "description": "Application (client) ID of the Cloud Imaging Portal SPA Entra ID app registration. This is the audience the Portal backend validates browser sign-in tokens against."
+      }
+    },
+    "mediaBuilderClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Application (client) ID of the Cloud Imaging Media Builder (native public client) Entra ID app registration. Used by the Operator API to validate user tokens originating from the Media Builder."
       }
     },
     "tenantId": {
@@ -195,8 +201,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "16072966250666274187"
+              "version": "0.44.1.10279",
+              "templateHash": "10106186670538943663"
             }
           },
           "parameters": {
@@ -292,8 +298,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "10408038546387580145"
+              "version": "0.44.1.10279",
+              "templateHash": "17938153358506386114"
             }
           },
           "parameters": {
@@ -425,6 +431,9 @@
           },
           "storageCoreApiName": {
             "value": "[variables('names').storageCoreApi]"
+          },
+          "deviceGatewayMsiPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.deviceGatewayPrincipalId.value]"
           }
         },
         "template": {
@@ -433,8 +442,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "7918570013246384978"
+              "version": "0.44.1.10279",
+              "templateHash": "12013133895057360378"
             }
           },
           "parameters": {
@@ -446,7 +455,16 @@
             },
             "storageCoreApiName": {
               "type": "string"
+            },
+            "deviceGatewayMsiPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the Device Gateway API managed identity. Granted Storage Table Data Contributor on the app storage account for the device-session token store, boot-media thumbprint cache, and single-use proof-of-possession nonce store (FR-069)."
+              }
             }
+          },
+          "variables": {
+            "storageTableDataContributorRoleId": "0a9a7e1f-b9d5-46cf-96f0-c7631a708d20"
           },
           "resources": [
             {
@@ -519,6 +537,20 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
               ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName')), parameters('deviceGatewayMsiPrincipalId'), variables('storageTableDataContributorRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributorRoleId'))]",
+                "principalId": "[parameters('deviceGatewayMsiPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -536,7 +568,10 @@
             }
           }
         }
-      }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]"
+      ]
     },
     {
       "type": "Microsoft.Resources/deployments",
@@ -564,8 +599,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "5033432696489984808"
+              "version": "0.44.1.10279",
+              "templateHash": "3322231024361098148"
             }
           },
           "parameters": {
@@ -669,8 +704,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "6181982036001541377"
+              "version": "0.44.1.10279",
+              "templateHash": "1294641077926339285"
             }
           },
           "parameters": {
@@ -724,6 +759,10 @@
             "deviceGatewayMsiClientId": {
               "type": "string",
               "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiDeviceGatewayName')), '2023-01-31').clientId]"
+            },
+            "deviceGatewayPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiDeviceGatewayName')), '2023-01-31').principalId]"
             },
             "operatorApiMsiId": {
               "type": "string",
@@ -801,7 +840,7 @@
             "value": "[variables('names').keyVault]"
           },
           "sharedEntraClientId": {
-            "value": "[parameters('userAuthClientId')]"
+            "value": "[parameters('portalClientId')]"
           },
           "tenantId": {
             "value": "[parameters('tenantId')]"
@@ -831,8 +870,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "919505934983180962"
+              "version": "0.44.1.10279",
+              "templateHash": "8021603594983661321"
             }
           },
           "parameters": {
@@ -1090,8 +1129,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "11816012433615232577"
+              "version": "0.44.1.10279",
+              "templateHash": "1664498261363433339"
             }
           },
           "parameters": {
@@ -1127,6 +1166,10 @@
             },
             "agwName": {
               "type": "string"
+            },
+            "agwSubnetPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.3.0/24"
             },
             "functionAppSku": {
               "type": "string",
@@ -1170,6 +1213,7 @@
                 "clientCertMode": "Required",
                 "siteConfig": {
                   "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "ipSecurityRestrictions": "[if(parameters('deployApplicationGateway'), createArray(createObject('ipAddress', parameters('agwSubnetPrefix'), 'action', 'Allow', 'priority', 100, 'name', 'AllowApplicationGatewaySubnet', 'description', 'Allow traffic from Application Gateway subnet only (FR-042)'), createObject('ipAddress', 'Any', 'action', 'Deny', 'priority', 65000, 'name', 'DenyAll', 'description', 'Deny all other inbound traffic')), createArray())]",
                   "appSettings": [
                     {
                       "name": "FUNCTIONS_WORKER_RUNTIME",
@@ -1237,8 +1281,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.45.15.27210",
-                      "templateHash": "13150711444865311648"
+                      "version": "0.44.1.10279",
+                      "templateHash": "13823829760470150816"
                     }
                   },
                   "parameters": {
@@ -1361,7 +1405,7 @@
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'imaging-core-api'), '2025-04-01').outputs.internalBaseUrl.value]"
           },
           "sharedEntraClientId": {
-            "value": "[parameters('userAuthClientId')]"
+            "value": "[parameters('mediaBuilderClientId')]"
           },
           "operatorApiClientId": {
             "value": "[parameters('operatorApiClientId')]"
@@ -1379,8 +1423,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "2493961313607648725"
+              "version": "0.44.1.10279",
+              "templateHash": "2772856967154179538"
             }
           },
           "parameters": {
@@ -1555,7 +1599,7 @@
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'operator-api'), '2025-04-01').outputs.baseUrl.value]"
           },
           "sharedEntraClientId": {
-            "value": "[parameters('userAuthClientId')]"
+            "value": "[parameters('portalClientId')]"
           },
           "tenantId": {
             "value": "[parameters('tenantId')]"
@@ -1570,8 +1614,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.45.15.27210",
-              "templateHash": "1832656093605723143"
+              "version": "0.44.1.10279",
+              "templateHash": "11078964344228704554"
             }
           },
           "parameters": {

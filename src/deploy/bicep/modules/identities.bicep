@@ -28,6 +28,7 @@ resource msiPortalBackend 'Microsoft.ManagedIdentity/userAssignedIdentities@2023
 
 output deviceGatewayMsiId string = msiDeviceGateway.id
 output deviceGatewayMsiClientId string = msiDeviceGateway.properties.clientId
+output deviceGatewayPrincipalId string = msiDeviceGateway.properties.principalId
 output operatorApiMsiId string = msiOperatorApi.id
 output operatorApiMsiClientId string = msiOperatorApi.properties.clientId
 output imagingCoreMsiId string = msiImagingCore.id

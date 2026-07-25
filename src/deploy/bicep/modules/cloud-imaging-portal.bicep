@@ -8,8 +8,8 @@ param appInsightsConnectionString string
 param msiId string
 param msiClientId string
 param operatorApiBaseUrl string
-// userAuthClientId: Application (client) ID of the shared user-facing registration.
-// Used by portal frontend (MSAL) and portal backend (token validation) for user login.
+// sharedEntraClientId: Application (client) ID of the Cloud Imaging Portal SPA registration.
+// Used by the portal backend (ENTRA_CLIENT_ID) to validate browser sign-in tokens.
 param sharedEntraClientId string
 param tenantId string
 // App Service plan SKU for the Portal backend.

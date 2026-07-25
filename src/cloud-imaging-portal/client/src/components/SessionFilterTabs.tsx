@@ -1,3 +1,4 @@
+import { cn } from '../lib/utils.ts';
 
 interface FilterTabsProps {
   activeFilter: string;
@@ -14,10 +15,11 @@ const TABS = [
 
 /**
  * Session filter tabs with real-time count badges (T042, FR-031).
+ * Styled as a shadcn segmented control.
  */
 export function SessionFilterTabs({ activeFilter, onFilterChange, counts }: FilterTabsProps): React.ReactElement {
   return (
-    <div className="flex gap-1 border-b border-border">
+    <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
       {TABS.map((tab) => {
         const count = counts[tab.key] ?? 0;
         const isActive = tab.key === activeFilter;
@@ -25,18 +27,20 @@ export function SessionFilterTabs({ activeFilter, onFilterChange, counts }: Filt
           <button
             key={tab.key}
             onClick={() => onFilterChange(tab.key)}
-            className={[
-              'flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
-            ].join(' ')}
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
           >
             {tab.label}
-            <span className={[
-              'inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold',
-              isActive ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-            ].join(' ')}>
+            <span
+              className={cn(
+                'inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold',
+                isActive ? 'bg-primary text-primary-foreground' : 'bg-background/70 text-muted-foreground',
+              )}
+            >
               {count}
             </span>
           </button>

@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/apiClient.ts';
+import { Button } from './ui/button.tsx';
+import { Input } from './ui/input.tsx';
 
 interface OsImage {
   imageId: string;
@@ -38,7 +41,7 @@ export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialog
   const handleSave = async () => {
     setSaving(true); setError(null);
     try {
-      const res = await fetch(`/api/images/${image.imageId}`, {
+      const res = await apiFetch(`/api/images/${image.imageId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -58,31 +61,28 @@ export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialog
         <div className="space-y-3">
           <div>
             <label className="block text-sm font-medium mb-1">Name</label>
-            <input value={name} onChange={e => setName(e.target.value)}
-              className="w-full border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <Input value={name} onChange={e => setName(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Version</label>
-            <input value={version} onChange={e => setVersion(e.target.value)}
-              className="w-full border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+            <Input value={version} onChange={e => setVersion(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
             <textarea value={description} onChange={e => setDesc(e.target.value)} rows={3}
-              className="w-full border border-input rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background" />
           </div>
         </div>
 
         {error && <p className="text-sm text-destructive mt-3">{error}</p>}
 
         <div className="flex gap-3 justify-end mt-4">
-          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm border border-border rounded-md hover:bg-muted">
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving || !name.trim()}
-            className="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50">
+          </Button>
+          <Button onClick={handleSave} disabled={saving || !name.trim()}>
             {saving ? 'Saving…' : 'Save Changes'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -20,14 +20,23 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 ///   4. The certificate must not be expired at the time of the request.
 ///
 /// On failure the middleware short-circuits with HTTP 401.
-/// The function named "CreateSession" is exempted — that function creates the
-/// session from which the device-session token is issued, and it does not yet
-/// have a cert to present.
+///
+/// Every Device Gateway function is validated, including the session bootstrap
+/// endpoint (CreateSession). The boot-media certificate is embedded in the WIM and
+/// loaded by the Cloud Imaging Client at WinPE startup, so it is presented on the
+/// very first request; per FR-069 mTLS authenticates ALL client requests to the
+/// Device Gateway API. The device-session *token* is a separate credential — that,
+/// and only that, is exempted for CreateSession (see DeviceSessionTokenValidationMiddleware).
 /// </summary>
 public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWorkerMiddleware
 {
     private const string ClientCertHeader = "X-ARR-ClientCert";
-    public const string ExemptFunction  = "CreateSession";
+
+    /// <summary>
+    /// <see cref="FunctionContext.Items"/> key under which the validated client certificate is
+    /// stored for downstream functions (e.g. CreateSession proof-of-possession verification).
+    /// </summary>
+    public const string ClientCertificateItemKey = "ClientCertificate";
 
     private readonly BootMediaCertificateThumbprintCache _thumbprintCache;
     private readonly ILogger<MtlsCertificateValidationMiddleware> _logger;
@@ -42,13 +51,6 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
-        // Exempt CreateSession — no cert available at registration time
-        if (context.FunctionDefinition.Name.Equals(ExemptFunction, StringComparison.OrdinalIgnoreCase))
-        {
-            await next(context);
-            return;
-        }
-
         var httpContext = await context.GetHttpRequestDataAsync();
         if (httpContext is null)
         {
@@ -129,8 +131,11 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
             return;
         }
 
-        // Store thumbprint for downstream functions
+        // Store thumbprint and the parsed certificate for downstream functions. The certificate's
+        // public key is used by CreateSession to verify the application-layer proof-of-possession
+        // signature (FR-069), so it must survive to the function invocation.
         context.Items["ClientCertThumbprint"] = cert.Thumbprint;
+        context.Items[ClientCertificateItemKey] = cert;
 
         await next(context);
     }
