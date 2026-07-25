@@ -44,6 +44,25 @@ app.use('/api', rateLimit({ windowMs: 60_000, max: 300, standardHeaders: true, l
 // ── Health probe ────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
+// ── Public runtime configuration ─────────────────────────────────────
+// Serves the Entra ID settings the browser SPA needs to initialise MSAL at
+// runtime, sourced from the App Service app settings that Bicep populates from the
+// deployment's portalClientId/tenantId parameters. This lets a single prebuilt SPA
+// bundle work for any tenant without a build-time rebuild (FR-041/FR-042). These
+// values are NOT secrets — the client ID, tenant ID, and authority are all public
+// and already embedded in every issued token and sign-in redirect.
+app.get('/api/config', (_req, res) => {
+  const clientId = process.env['ENTRA_CLIENT_ID'] ?? '';
+  const tenantId = process.env['ENTRA_TENANT_ID'] ?? '';
+  const authority = process.env['ENTRA_AUTHORITY'] ?? '';
+  res.json({
+    clientId,
+    tenantId,
+    authority,
+    apiScope: clientId ? `api://${clientId}/user_impersonation` : '',
+  });
+});
+
 // ── Routes (registered after auth middleware) ────────────────────────────────
 import { auth } from './middleware/auth.js';
 import { sessionsRouter } from './routes/sessions.js';
@@ -55,9 +74,9 @@ import { certRouter } from './routes/cert.js';
 import { portalConfigRouter } from './routes/portal-config.js';
 import { chunkedUploadRouter } from './routes/chunked-upload.js';
 
-// Apply Entra auth to all /api routes except /api/health
+// Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
-  if (req.path === '/health') { next(); return; }
+  if (req.path === '/health' || req.path === '/config') { next(); return; }
   return auth(req, res, next);
 });
 

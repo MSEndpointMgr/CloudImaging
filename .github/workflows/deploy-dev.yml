@@ -282,11 +282,10 @@ jobs:
         run: npm run test:run
       - name: Build
         working-directory: src/cloud-imaging-portal/client
-        env:
-          VITE_ENTRA_CLIENT_ID: ${{ vars.VITE_ENTRA_CLIENT_ID }}
-          VITE_ENTRA_TENANT_ID: ${{ vars.VITE_ENTRA_TENANT_ID }}
-          VITE_ENTRA_AUTHORITY: https://login.microsoftonline.com/${{ vars.VITE_ENTRA_TENANT_ID }}
-          VITE_API_BASE_URL: https://${{ secrets.APP_SERVICE_PORTAL_BACKEND }}.azurewebsites.net
+        # No VITE_ENTRA_* build args: the SPA is tenant-agnostic and loads its Entra
+        # configuration at runtime from the backend's /api/config endpoint (proxied
+        # via the SWA linked backend). This keeps one prebuilt bundle valid for any
+        # tenant. VITE_ENTRA_* remains only a local-dev fallback (see .env.example).
         run: npm run build
       - name: Deploy (Static Web Apps)
         working-directory: src/cloud-imaging-portal/client

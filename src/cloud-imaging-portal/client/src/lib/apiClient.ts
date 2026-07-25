@@ -1,5 +1,5 @@
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
-import { msalInstance, API_SCOPE } from './msal.ts';
+import { getMsalInstance, getApiScope } from './msal.ts';
 
 /**
  * Silently acquires an access token for the portal backend API. Falls back to a
@@ -8,15 +8,17 @@ import { msalInstance, API_SCOPE } from './msal.ts';
  * (the server responds 401 and the UI surfaces the failure).
  */
 async function acquireApiToken(): Promise<string | null> {
+  const msalInstance = getMsalInstance();
+  const apiScope = getApiScope();
   const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0] ?? null;
   if (!account) return null;
 
   try {
-    const result = await msalInstance.acquireTokenSilent({ account, scopes: [API_SCOPE] });
+    const result = await msalInstance.acquireTokenSilent({ account, scopes: [apiScope] });
     return result.accessToken;
   } catch (error) {
     if (error instanceof InteractionRequiredAuthError) {
-      await msalInstance.acquireTokenRedirect({ account, scopes: [API_SCOPE] });
+      await msalInstance.acquireTokenRedirect({ account, scopes: [apiScope] });
     }
     return null;
   }

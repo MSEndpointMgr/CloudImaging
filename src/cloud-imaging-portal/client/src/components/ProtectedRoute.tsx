@@ -1,6 +1,7 @@
 import { useIsAuthenticated, useMsalAuthentication } from '@azure/msal-react';
 import { InteractionType } from '@azure/msal-browser';
 import { useAuth } from '../context/authContext.tsx';
+import { getApiScope } from '../lib/msal.ts';
 import { AccessDenied } from './AccessDenied.tsx';
 
 interface Props {
@@ -18,7 +19,7 @@ export function ProtectedRoute({ children }: Props): React.ReactElement | null {
 
   // Trigger interactive redirect login if not authenticated
   const { error } = useMsalAuthentication(InteractionType.Redirect, {
-    scopes: [`api://${import.meta.env.VITE_ENTRA_CLIENT_ID}/user_impersonation`],
+    scopes: [getApiScope()],
   });
 
   if (!isAuthenticated) {

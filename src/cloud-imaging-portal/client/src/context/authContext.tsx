@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import type { AccountInfo } from '@azure/msal-browser';
+import { getApiScope } from '../lib/msal.ts';
 
 /** Portal application roles carried in a signed-in user's token. */
 export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician';
@@ -20,8 +21,6 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-const API_SCOPE = `api://${import.meta.env.VITE_ENTRA_CLIENT_ID}/user_impersonation`;
 
 /** Extracts the app-role claim from an MSAL account's ID token. */
 function rolesFromAccount(account: AccountInfo | null): string[] {
@@ -44,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     if (!account) throw new Error('Not authenticated');
     const result = await instance.acquireTokenSilent({
       account,
-      scopes: [API_SCOPE],
+      scopes: [getApiScope()],
     });
     return result.accessToken;
   };

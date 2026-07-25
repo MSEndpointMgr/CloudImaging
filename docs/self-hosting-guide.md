@@ -125,6 +125,15 @@ Fill in the wizard:
 
 Click **Create** and wait ~15 minutes.
 
+> **No SPA rebuild required.** The browser portal is a single prebuilt bundle that is
+> **tenant-agnostic**. On startup it fetches its Entra ID settings (client ID, tenant,
+> authority) at runtime from the portal backend's public `/api/config` endpoint, which
+> the deployment populates from the **Portal Application (client) ID** and **Tenant ID**
+> you entered above. The Template Spec also provisions a Static Web App **linked backend**,
+> so the portal serves the UI and proxies `/api/*` to the backend from a **single origin** —
+> the same origin you registered as the SPA redirect URI (Registration 1, step 4). You never
+> edit or rebuild the frontend for your tenant.
+
 ---
 
 ## Step 4 — Post-Deployment Setup

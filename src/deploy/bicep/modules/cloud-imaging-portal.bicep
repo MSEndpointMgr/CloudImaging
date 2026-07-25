@@ -74,6 +74,19 @@ resource stapp 'Microsoft.Web/staticSites@2024-04-01' = {
   }
 }
 
+// Link the App Service backend to the Static Web App. Requests to the portal
+// origin's /api/* routes are proxied to the Node backend, giving the SPA a single
+// origin (no CORS, no build-time API base URL) and letting it fetch its Entra
+// runtime configuration from /api/config. Requires the SWA Standard plan.
+resource stappBackend 'Microsoft.Web/staticSites/linkedBackends@2024-04-01' = {
+  parent: stapp
+  name: 'portal-backend'
+  properties: {
+    backendResourceId: appService.id
+    region: location
+  }
+}
+
 output portalUrl string = 'https://${stapp.properties.defaultHostname}'
 output backendUrl string = 'https://${appService.properties.defaultHostName}'
 output staticWebAppName string = stapp.name

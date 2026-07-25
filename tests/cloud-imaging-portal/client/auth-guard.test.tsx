@@ -26,8 +26,9 @@ describe('Portal frontend — auth guard', () => {
     expect(interactionType).toBe('Redirect');
   });
 
-  it('API scope is derived from VITE_ENTRA_CLIENT_ID env var', () => {
-    const scope = `api://\${import.meta.env.VITE_ENTRA_CLIENT_ID}/user_impersonation`;
+  it('API scope is derived from the runtime portal config client ID', () => {
+    const clientId = 'd6ff0541-00bd-4615-84df-da2a54b604c5';
+    const scope = `api://${clientId}/user_impersonation`;
     expect(scope).toContain('user_impersonation');
   });
 });

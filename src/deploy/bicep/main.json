@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "6728131295186114243"
+      "templateHash": "15331021173172041439"
     }
   },
   "parameters": {
@@ -1622,7 +1622,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "15596803703798706408"
+              "templateHash": "1265906483019326385"
             }
           },
           "parameters": {
@@ -1759,6 +1759,19 @@
                   "outputLocation": "dist"
                 }
               }
+            },
+            {
+              "type": "Microsoft.Web/staticSites/linkedBackends",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('stappName'), 'portal-backend')]",
+              "properties": {
+                "backendResourceId": "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]",
+                "region": "[parameters('location')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]",
+                "[resourceId('Microsoft.Web/staticSites', parameters('stappName'))]"
+              ]
             }
           ],
           "outputs": {
