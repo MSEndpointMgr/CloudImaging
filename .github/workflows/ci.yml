@@ -1,4 +1,4 @@
-name: CI / Deploy Dev
+name: CI / CD (Azure)
 
 # Runs when commits land on main (and on manual dispatch).
 # There is one self-contained job per component: it builds, tests, lints and —

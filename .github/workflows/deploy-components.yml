@@ -9,7 +9,7 @@
 # This workflow is for internal core-developer use only and is NOT included in community
 # release bundles.
 
-name: Deploy Component (dev)
+name: Deploy Components (Azure)
 
 on:
   workflow_dispatch:

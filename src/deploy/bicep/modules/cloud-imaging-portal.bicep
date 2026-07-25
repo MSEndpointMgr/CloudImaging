@@ -35,9 +35,18 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
   properties: {
     serverFarmId: plan.id
     siteConfig: {
-      linuxFxVersion: 'NODE|22'
+      linuxFxVersion: 'NODE|22-lts'
+      // Explicit ESM entry point. Without this, Oryx guesses `node app.js`, which fails
+      // with "Cannot use import statement outside a module" because the backend is ESM
+      // ("type": "module"). The deploy bundle places package.json + node_modules + dist/
+      // at wwwroot root, so `node dist/index.js` resolves runtime deps correctly.
+      appCommandLine: 'node dist/index.js'
       appSettings: [
         { name: 'NODE_ENV', value: 'production' }
+        // Mount the deploy zip read-only instead of extracting it. The backend bundle
+        // ships node_modules (thousands of files); extracting it exceeds Kudu's SCM
+        // timeout (HTTP 499). Run-From-Package mounts the package so deploys are fast.
+        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'AZURE_CLIENT_ID', value: msiClientId }
         { name: 'OPERATOR_API_BASE_URL', value: operatorApiBaseUrl }

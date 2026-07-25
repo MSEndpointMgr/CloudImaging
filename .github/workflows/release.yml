@@ -1,4 +1,4 @@
-name: GitHub Release — Package & Publish
+name: GitHub Release - Package & Publish
 
 # Triggered on version tags (e.g. v1.2.0).
 # Builds all components, assembles the release archive, and creates a GitHub Release.

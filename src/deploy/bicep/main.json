@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "6621354513600893419"
+      "templateHash": "6728131295186114243"
     }
   },
   "parameters": {
@@ -1622,7 +1622,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "11078964344228704554"
+              "templateHash": "15596803703798706408"
             }
           },
           "parameters": {
@@ -1695,11 +1695,16 @@
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
                 "siteConfig": {
-                  "linuxFxVersion": "NODE|22",
+                  "linuxFxVersion": "NODE|22-lts",
+                  "appCommandLine": "node dist/index.js",
                   "appSettings": [
                     {
                       "name": "NODE_ENV",
                       "value": "production"
+                    },
+                    {
+                      "name": "WEBSITE_RUN_FROM_PACKAGE",
+                      "value": "1"
                     },
                     {
                       "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",

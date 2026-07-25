@@ -13,7 +13,7 @@
 # This workflow is for internal core-developer use only and is NOT included in community
 # release bundles.
 
-name: Deploy Full Stack (dev)
+name: Deploy Full Stack (Azure)
 
 on:
   workflow_dispatch:

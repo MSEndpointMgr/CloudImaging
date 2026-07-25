@@ -63,6 +63,12 @@ Thumbs.db
 *.iml
 
 # -------
+# Downloaded Azure App Service logs
+# -------
+portal-logs/
+portal-logs.zip
+
+# -------
 # VS Code workspace-specific (developer-local only)
 # -------
 .vscode/settings.json
