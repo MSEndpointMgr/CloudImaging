@@ -23,7 +23,7 @@ public sealed partial class KeyVaultCertificateService
         ILogger<KeyVaultCertificateService> logger)
     {
         _kvClient = kvClient;
-        _logger   = logger;
+        _logger = logger;
     }
 
     /// <summary>
@@ -36,7 +36,7 @@ public sealed partial class KeyVaultCertificateService
     public async Task<string> StorePfxAsync(string thumbprint, byte[] pfxBytes, CancellationToken ct = default)
     {
         string secretName = BuildSecretName(thumbprint);
-        string pfxBase64  = Convert.ToBase64String(pfxBytes);
+        string pfxBase64 = Convert.ToBase64String(pfxBytes);
 
         var secret = new KeyVaultSecret(secretName, pfxBase64)
         {

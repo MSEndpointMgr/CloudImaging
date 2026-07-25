@@ -1,9 +1,9 @@
+using System.Collections.Concurrent;
+using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
-using System.Net;
 
 namespace CloudImaging.DeviceGatewayApi.Middleware;
 

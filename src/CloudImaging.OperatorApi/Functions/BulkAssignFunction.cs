@@ -22,7 +22,7 @@ public sealed partial class BulkAssignFunction
         ILogger<BulkAssignFunction> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function(nameof(BulkAssignFunction))]
@@ -31,7 +31,7 @@ public sealed partial class BulkAssignFunction
         FunctionContext context)
     {
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload    = JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
+        var payload = JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
 
         var coreResponse = await _coreClient.BulkAssignAsync(payload!, context.CancellationToken);
         LogBulkResult(_logger, (int)coreResponse.StatusCode);

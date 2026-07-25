@@ -54,8 +54,8 @@ var host = new HostBuilder()
         services.AddSingleton<DeviceSessionNonceStore>(sp =>
         {
             var tableService = sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>();
-            var logger       = sp.GetRequiredService<ILogger<DeviceSessionNonceStore>>();
-            var tableClient  = tableService.GetTableClient("DeviceSessionNonce");
+            var logger = sp.GetRequiredService<ILogger<DeviceSessionNonceStore>>();
+            var tableClient = tableService.GetTableClient("DeviceSessionNonce");
 
             async Task<bool> Register(string nonceKey, DateTimeOffset expiresAt, CancellationToken ct)
             {
@@ -90,9 +90,9 @@ var host = new HostBuilder()
         services.AddSingleton<BootMediaCertificateThumbprintCache>(sp =>
         {
             var tableService = sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>();
-            var logger       = sp.GetRequiredService<ILogger<BootMediaCertificateThumbprintCache>>();
+            var logger = sp.GetRequiredService<ILogger<BootMediaCertificateThumbprintCache>>();
 
-            var tableClient  = tableService.GetTableClient("BootMediaCertificate");
+            var tableClient = tableService.GetTableClient("BootMediaCertificate");
             async Task<string?> Loader(CancellationToken ct)
             {
                 await foreach (var entity in tableClient.QueryAsync<Azure.Data.Tables.TableEntity>(

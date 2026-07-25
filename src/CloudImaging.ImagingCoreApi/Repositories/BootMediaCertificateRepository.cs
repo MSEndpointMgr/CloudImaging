@@ -18,7 +18,7 @@ namespace CloudImaging.ImagingCoreApi.Repositories;
 /// </summary>
 public sealed partial class BootMediaCertificateRepository
 {
-    private const string TableName    = "BootMediaCertificate";
+    private const string TableName = "BootMediaCertificate";
     private const string PartitionKey = "cert";
 
     private readonly TableClient _table;
@@ -28,7 +28,7 @@ public sealed partial class BootMediaCertificateRepository
         TableServiceClient tableService,
         ILogger<BootMediaCertificateRepository> logger)
     {
-        _table  = tableService.GetTableClient(TableName);
+        _table = tableService.GetTableClient(TableName);
         _logger = logger;
     }
 
@@ -69,10 +69,10 @@ public sealed partial class BootMediaCertificateRepository
         // Insert (or replace) the new active cert
         var activeCert = new BootMediaCertificate
         {
-            Thumbprint         = newCert.Thumbprint,
-            NotBefore          = newCert.NotBefore,
-            NotAfter           = newCert.NotAfter,
-            IsActive           = true,
+            Thumbprint = newCert.Thumbprint,
+            NotBefore = newCert.NotBefore,
+            NotAfter = newCert.NotAfter,
+            IsActive = true,
             KeyVaultSecretName = newCert.KeyVaultSecretName,
         };
         var newEntity = MapToEntity(activeCert);
@@ -100,19 +100,19 @@ public sealed partial class BootMediaCertificateRepository
     private static BootMediaCertificate MapFromEntity(TableEntity e) =>
         new()
         {
-            Thumbprint         = e.RowKey,
-            NotBefore          = e.GetDateTimeOffset("NotBefore") ?? DateTimeOffset.MinValue,
-            NotAfter           = e.GetDateTimeOffset("NotAfter")  ?? DateTimeOffset.MinValue,
-            IsActive           = e.GetBoolean("IsActive")         ?? false,
+            Thumbprint = e.RowKey,
+            NotBefore = e.GetDateTimeOffset("NotBefore") ?? DateTimeOffset.MinValue,
+            NotAfter = e.GetDateTimeOffset("NotAfter") ?? DateTimeOffset.MinValue,
+            IsActive = e.GetBoolean("IsActive") ?? false,
             KeyVaultSecretName = e.GetString("KeyVaultSecretName") ?? string.Empty,
         };
 
     private static TableEntity MapToEntity(BootMediaCertificate cert)
     {
         var e = new TableEntity(PartitionKey, cert.Thumbprint);
-        e["NotBefore"]          = cert.NotBefore;
-        e["NotAfter"]           = cert.NotAfter;
-        e["IsActive"]           = cert.IsActive;
+        e["NotBefore"] = cert.NotBefore;
+        e["NotAfter"] = cert.NotAfter;
+        e["IsActive"] = cert.IsActive;
         e["KeyVaultSecretName"] = cert.KeyVaultSecretName;
         return e;
     }

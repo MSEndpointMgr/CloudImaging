@@ -24,9 +24,9 @@ public sealed partial class BulkAssignmentService
         ILogger<BulkAssignmentService> logger)
     {
         _sessionRepo = sessionRepo;
-        _imageRepo   = imageRepo;
-        _configRepo  = configRepo;
-        _logger      = logger;
+        _imageRepo = imageRepo;
+        _configRepo = configRepo;
+        _logger = logger;
     }
 
     public sealed record BulkAssignResult(
@@ -47,14 +47,16 @@ public sealed partial class BulkAssignmentService
     {
         var image = await _imageRepo.GetByIdAsync(osImageId, ct);
         if (image is null)
+        {
             throw new InvalidOperationException($"OS image {osImageId} not found in active catalog.");
+        }
 
-        var config    = await _configRepo.GetAsync(ct);
+        var config = await _configRepo.GetAsync(ct);
         var sasExpiry = TimeSpan.FromMinutes(
             config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
 
         var assigned = new List<Guid>();
-        var skipped  = new List<Guid>();
+        var skipped = new List<Guid>();
 
         foreach (var sessionId in sessionIds)
         {
@@ -71,23 +73,23 @@ public sealed partial class BulkAssignmentService
 
             var updated = new DeviceSession
             {
-                SessionId                    = session.SessionId,
-                State                        = SessionState.SessionStarted,
-                DeviceSerialNumber           = session.DeviceSerialNumber,
-                DeviceManufacturer           = session.DeviceManufacturer,
-                DeviceModel                  = session.DeviceModel,
-                HardwareMetadata             = session.HardwareMetadata,
+                SessionId = session.SessionId,
+                State = SessionState.SessionStarted,
+                DeviceSerialNumber = session.DeviceSerialNumber,
+                DeviceManufacturer = session.DeviceManufacturer,
+                DeviceModel = session.DeviceModel,
+                HardwareMetadata = session.HardwareMetadata,
                 PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-                Passcode                     = session.Passcode,
-                PasscodeExpiresAt            = session.PasscodeExpiresAt,
-                PasscodeConsumed             = session.PasscodeConsumed,
-                DeviceSessionToken           = session.DeviceSessionToken,
-                DeviceSessionTokenExpiresAt  = session.DeviceSessionTokenExpiresAt,
-                AssignedOsImageId            = osImageId,
-                SasTokenUrlExpiresAt         = DateTimeOffset.UtcNow + sasExpiry,
-                OverallProgressPercent       = 0,
-                CreatedAt                    = session.CreatedAt,
-                LastHeartbeatAt              = DateTimeOffset.UtcNow,
+                Passcode = session.Passcode,
+                PasscodeExpiresAt = session.PasscodeExpiresAt,
+                PasscodeConsumed = session.PasscodeConsumed,
+                DeviceSessionToken = session.DeviceSessionToken,
+                DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
+                AssignedOsImageId = osImageId,
+                SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
+                OverallProgressPercent = 0,
+                CreatedAt = session.CreatedAt,
+                LastHeartbeatAt = DateTimeOffset.UtcNow,
             };
 
             await _sessionRepo.UpdateAsync(updated, ct);

@@ -36,8 +36,8 @@ public sealed partial class BrandingFunctions
         ILogger<BrandingFunctions> logger)
     {
         _brandingRepo = brandingRepo;
-        _blobClient   = blobClient;
-        _logger       = logger;
+        _blobClient = blobClient;
+        _logger = logger;
     }
 
     [Function("GetBranding")]
@@ -61,7 +61,10 @@ public sealed partial class BrandingFunctions
         try { payload = await JsonSerializer.DeserializeAsync<BrandingConfiguration>(req.Body, JsonOptions, context.CancellationToken); }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
-        if (payload is null) return req.CreateResponse(HttpStatusCode.BadRequest);
+        if (payload is null)
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         await _brandingRepo.UpsertAsync(payload, context.CancellationToken);
         LogBrandingUpdated(_logger);
@@ -81,7 +84,7 @@ public sealed partial class BrandingFunctions
             return notFound;
         }
 
-        var sasUrl   = GenerateSasUrl(branding.LogoBlobPath, TimeSpan.FromMinutes(LogoSasMinutes));
+        var sasUrl = GenerateSasUrl(branding.LogoBlobPath, TimeSpan.FromMinutes(LogoSasMinutes));
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(
@@ -102,26 +105,35 @@ public sealed partial class BrandingFunctions
         catch (JsonException) { return await Text(req, HttpStatusCode.BadRequest, "Request body is not valid JSON.", ct); }
 
         if (payload is null || string.IsNullOrWhiteSpace(payload.DataBase64))
+        {
             return await Text(req, HttpStatusCode.BadRequest, "A base64-encoded logo image is required.", ct);
+        }
 
         var contentType = string.IsNullOrWhiteSpace(payload.ContentType) ? "image/png" : payload.ContentType.Trim();
         if (!contentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
             return await Text(req, HttpStatusCode.BadRequest, "Only image content types are accepted for the logo.", ct);
+        }
 
         byte[] bytes;
         try { bytes = Convert.FromBase64String(StripDataUriPrefix(payload.DataBase64)); }
         catch (FormatException) { return await Text(req, HttpStatusCode.BadRequest, "Logo data is not valid base64.", ct); }
 
         if (bytes.Length == 0)
+        {
             return await Text(req, HttpStatusCode.BadRequest, "Logo image is empty.", ct);
-        if (bytes.Length > MaxLogoBytes)
-            return await Text(req, HttpStatusCode.RequestEntityTooLarge, "Logo image exceeds the 1 MB limit.", ct);
+        }
 
-        var branding  = await _brandingRepo.GetAsync(ct);
+        if (bytes.Length > MaxLogoBytes)
+        {
+            return await Text(req, HttpStatusCode.RequestEntityTooLarge, "Logo image exceeds the 1 MB limit.", ct);
+        }
+
+        var branding = await _brandingRepo.GetAsync(ct);
         var extension = ResolveExtension(contentType, payload.FileName);
-        var blobName  = $"logo/{Guid.NewGuid():N}.{extension}";
+        var blobName = $"logo/{Guid.NewGuid():N}.{extension}";
         var container = _blobClient.GetBlobContainerClient(LogoContainer);
-        var blob      = container.GetBlobClient(blobName);
+        var blob = container.GetBlobClient(blobName);
 
         using (var stream = new MemoryStream(bytes, writable: false))
         {
@@ -136,9 +148,9 @@ public sealed partial class BrandingFunctions
 
         var updated = new BrandingConfiguration
         {
-            LogoBlobPath    = $"{LogoContainer}/{blobName}",
-            PrimaryColor    = branding.PrimaryColor,
-            AccentColor     = branding.AccentColor,
+            LogoBlobPath = $"{LogoContainer}/{blobName}",
+            PrimaryColor = branding.PrimaryColor,
+            AccentColor = branding.AccentColor,
             ApplicationName = branding.ApplicationName,
         };
         await _brandingRepo.UpsertAsync(updated, ct);
@@ -152,9 +164,17 @@ public sealed partial class BrandingFunctions
 
     private async Task TryDeleteBlobAsync(string? storagePath, CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(storagePath)) return;
+        if (string.IsNullOrEmpty(storagePath))
+        {
+            return;
+        }
+
         var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
-        if (slash < 0) return;
+        if (slash < 0)
+        {
+            return;
+        }
+
         try
         {
             var container = _blobClient.GetBlobContainerClient(storagePath[..slash]);
@@ -178,15 +198,18 @@ public sealed partial class BrandingFunctions
     {
         var ext = contentType.ToLowerInvariant() switch
         {
-            "image/png"                    => "png",
-            "image/jpeg" or "image/jpg"    => "jpg",
-            "image/gif"                    => "gif",
-            "image/webp"                   => "webp",
-            "image/svg+xml"                => "svg",
+            "image/png" => "png",
+            "image/jpeg" or "image/jpg" => "jpg",
+            "image/gif" => "gif",
+            "image/webp" => "webp",
+            "image/svg+xml" => "svg",
             "image/x-icon" or "image/vnd.microsoft.icon" => "ico",
-            _                              => string.Empty,
+            _ => string.Empty,
         };
-        if (!string.IsNullOrEmpty(ext)) return ext;
+        if (!string.IsNullOrEmpty(ext))
+        {
+            return ext;
+        }
 
         var fromName = Path.GetExtension(fileName ?? string.Empty).TrimStart('.').ToLowerInvariant();
         return string.IsNullOrEmpty(fromName) ? "png" : fromName;
@@ -202,12 +225,20 @@ public sealed partial class BrandingFunctions
     private string GenerateSasUrl(string storagePath, TimeSpan expiry)
     {
         var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
-        if (slash < 0) return storagePath;
-        var container  = storagePath[..slash];
-        var blobName   = storagePath[(slash + 1)..];
+        if (slash < 0)
+        {
+            return storagePath;
+        }
+
+        var container = storagePath[..slash];
+        var blobName = storagePath[(slash + 1)..];
         var blobClient = _blobClient.GetBlobContainerClient(container).GetBlobClient(blobName);
-        if (!blobClient.CanGenerateSasUri) return blobClient.Uri.ToString();
-        var builder    = new BlobSasBuilder { BlobContainerName = container, BlobName = blobName, Resource = "b", ExpiresOn = DateTimeOffset.UtcNow + expiry };
+        if (!blobClient.CanGenerateSasUri)
+        {
+            return blobClient.Uri.ToString();
+        }
+
+        var builder = new BlobSasBuilder { BlobContainerName = container, BlobName = blobName, Resource = "b", ExpiresOn = DateTimeOffset.UtcNow + expiry };
         builder.SetPermissions(BlobSasPermissions.Read);
         return blobClient.GenerateSasUri(builder).ToString();
     }

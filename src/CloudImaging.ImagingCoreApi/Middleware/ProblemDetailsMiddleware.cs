@@ -1,8 +1,8 @@
+using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Extensions.Logging;
-using System.Net;
 
 namespace CloudImaging.ImagingCoreApi.Middleware;
 
@@ -24,7 +24,10 @@ public sealed partial class ProblemDetailsMiddleware : IFunctionsWorkerMiddlewar
             LogUnhandledException(_logger, ex, context.FunctionDefinition.Name);
 
             var request = await context.GetHttpRequestDataAsync();
-            if (request is null) return;
+            if (request is null)
+            {
+                return;
+            }
 
             var response = request.CreateResponse(HttpStatusCode.InternalServerError);
             response.Headers.Add("Content-Type", "application/problem+json");

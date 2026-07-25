@@ -24,7 +24,7 @@ public sealed partial class BootImageLifecycleFunctions
         ILogger<BootImageLifecycleFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     // ── POST /api/boot-images/publish ─────────────────────────────────────────
@@ -52,7 +52,9 @@ public sealed partial class BootImageLifecycleFunctions
         FunctionContext context)
     {
         if (!Guid.TryParse(id, out var bootImageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var coreResponse = await _coreClient.DeleteBootImageAsync(bootImageId, context.CancellationToken);
         LogDeleteProxied(_logger, bootImageId, (int)coreResponse.StatusCode);

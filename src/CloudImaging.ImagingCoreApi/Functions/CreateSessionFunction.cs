@@ -41,10 +41,10 @@ public sealed partial class CreateSessionFunction
         ILogger<CreateSessionFunction> logger)
     {
         _sessionRepo = sessionRepo;
-        _preFlight   = preFlight;
-        _configRepo  = configRepo;
-        _config      = config;
-        _logger      = logger;
+        _preFlight = preFlight;
+        _configRepo = configRepo;
+        _config = config;
+        _logger = logger;
     }
 
     [Function(nameof(CreateSessionFunction))]
@@ -78,7 +78,7 @@ public sealed partial class CreateSessionFunction
         int passcodeTtlMinutes = _config.GetValue<int>("Security__PasscodeTtlMinutes", 10);
         int sessionInactivityMinutes = _config.GetValue<int>("Security__SessionInactivityMinutes", 30);
 
-        var passcodeTtl           = TimeSpan.FromMinutes(passcodeTtlMinutes);
+        var passcodeTtl = TimeSpan.FromMinutes(passcodeTtlMinutes);
         var sessionInactivityTimeout = TimeSpan.FromMinutes(sessionInactivityMinutes);
 
         // Create session with passcode
@@ -98,19 +98,19 @@ public sealed partial class CreateSessionFunction
         //  and DeviceGatewayApi issues the bearer token before returning to the device)
         var finalSession = new DeviceSession
         {
-            SessionId                     = session.SessionId,
-            State                         = targetState,
-            DeviceSerialNumber            = session.DeviceSerialNumber,
-            DeviceManufacturer            = session.DeviceManufacturer,
-            DeviceModel                   = session.DeviceModel,
-            HardwareMetadata              = session.HardwareMetadata,
-            PreFlightAuthorizationResult  = preFlightResult,
-            Passcode                      = session.Passcode,
-            PasscodeExpiresAt             = session.PasscodeExpiresAt,
-            PasscodeConsumed              = false,
-            OverallProgressPercent        = 0,
-            CreatedAt                     = session.CreatedAt,
-            LastHeartbeatAt               = session.LastHeartbeatAt,
+            SessionId = session.SessionId,
+            State = targetState,
+            DeviceSerialNumber = session.DeviceSerialNumber,
+            DeviceManufacturer = session.DeviceManufacturer,
+            DeviceModel = session.DeviceModel,
+            HardwareMetadata = session.HardwareMetadata,
+            PreFlightAuthorizationResult = preFlightResult,
+            Passcode = session.Passcode,
+            PasscodeExpiresAt = session.PasscodeExpiresAt,
+            PasscodeConsumed = false,
+            OverallProgressPercent = 0,
+            CreatedAt = session.CreatedAt,
+            LastHeartbeatAt = session.LastHeartbeatAt,
         };
 
         await _sessionRepo.CreateAsync(finalSession, context.CancellationToken);
@@ -119,10 +119,10 @@ public sealed partial class CreateSessionFunction
         // Return session info including the PLAIN passcode (only returned at creation)
         var responseBody = new
         {
-            sessionId        = finalSession.SessionId,
-            passcode         = plainPasscode,
-            state            = finalSession.State.ToString(),
-            preFlightResult  = finalSession.PreFlightAuthorizationResult.ToString(),
+            sessionId = finalSession.SessionId,
+            passcode = plainPasscode,
+            state = finalSession.State.ToString(),
+            preFlightResult = finalSession.PreFlightAuthorizationResult.ToString(),
         };
 
         var response = req.CreateResponse(HttpStatusCode.Created);

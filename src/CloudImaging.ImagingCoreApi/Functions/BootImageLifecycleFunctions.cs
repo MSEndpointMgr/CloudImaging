@@ -28,7 +28,7 @@ public sealed partial class BootImageLifecycleFunctions
         BootImageRepository repo,
         ILogger<BootImageLifecycleFunctions> logger)
     {
-        _repo   = repo;
+        _repo = repo;
         _logger = logger;
     }
 
@@ -49,19 +49,22 @@ public sealed partial class BootImageLifecycleFunctions
         }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
-        if (payload is null) return req.CreateResponse(HttpStatusCode.BadRequest);
+        if (payload is null)
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var toPublish = payload.BootImageId == Guid.Empty
             ? new BootImage
-              {
-                  BootImageId     = Guid.NewGuid(),
-                  Version         = payload.Version,
-                  CreatedAt       = payload.CreatedAt == default ? DateTimeOffset.UtcNow : payload.CreatedAt,
-                  SizeBytes       = payload.SizeBytes,
-                  StoragePath     = payload.StoragePath,
-                  ManifestVersion = payload.ManifestVersion,
-                  Sha256Hash      = payload.Sha256Hash,
-              }
+            {
+                BootImageId = Guid.NewGuid(),
+                Version = payload.Version,
+                CreatedAt = payload.CreatedAt == default ? DateTimeOffset.UtcNow : payload.CreatedAt,
+                SizeBytes = payload.SizeBytes,
+                StoragePath = payload.StoragePath,
+                ManifestVersion = payload.ManifestVersion,
+                Sha256Hash = payload.Sha256Hash,
+            }
             : payload;
 
         var published = await _repo.PublishAsync(toPublish, context.CancellationToken);
@@ -85,7 +88,9 @@ public sealed partial class BootImageLifecycleFunctions
         FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         await _repo.DeleteAsync(imageId, context.CancellationToken);
         LogDeleted(_logger, imageId);

@@ -47,27 +47,27 @@ public sealed class OsImageRepository
 
     private static TableEntity ToEntity(OsImage i) => new(Partition, i.ImageId.ToString())
     {
-        ["Name"]          = i.Name,
-        ["Version"]       = i.Version,
-        ["Description"]   = i.Description,
-        ["StoragePath"]   = i.StoragePath,
-        ["SizeBytes"]     = i.SizeBytes,
-        ["Sha256Hash"]    = i.Sha256Hash,
-        ["IsInUse"]       = i.IsInUse,
-        ["IsActive"]      = true,
-        ["UploadedAt"]    = i.UploadedAt,
+        ["Name"] = i.Name,
+        ["Version"] = i.Version,
+        ["Description"] = i.Description,
+        ["StoragePath"] = i.StoragePath,
+        ["SizeBytes"] = i.SizeBytes,
+        ["Sha256Hash"] = i.Sha256Hash,
+        ["IsInUse"] = i.IsInUse,
+        ["IsActive"] = true,
+        ["UploadedAt"] = i.UploadedAt,
     };
 
     private static OsImage FromEntity(TableEntity e) => new()
     {
-        ImageId       = Guid.Parse(e.RowKey),
-        Name          = e.GetString("Name") ?? string.Empty,
-        Version       = e.GetString("Version") ?? string.Empty,
-        Description   = e.GetString("Description"),
-        StoragePath   = e.GetString("StoragePath") ?? string.Empty,
-        SizeBytes     = e.GetInt64("SizeBytes") ?? 0L,
-        Sha256Hash    = e.GetString("Sha256Hash") ?? string.Empty,
-        IsInUse       = e.GetBoolean("IsInUse") ?? false,
-        UploadedAt    = e.GetDateTimeOffset("UploadedAt") ?? DateTimeOffset.UtcNow,
+        ImageId = Guid.Parse(e.RowKey),
+        Name = e.GetString("Name") ?? string.Empty,
+        Version = e.GetString("Version") ?? string.Empty,
+        Description = e.GetString("Description"),
+        StoragePath = e.GetString("StoragePath") ?? string.Empty,
+        SizeBytes = e.GetInt64("SizeBytes") ?? 0L,
+        Sha256Hash = e.GetString("Sha256Hash") ?? string.Empty,
+        IsInUse = e.GetBoolean("IsInUse") ?? false,
+        UploadedAt = e.GetDateTimeOffset("UploadedAt") ?? DateTimeOffset.UtcNow,
     };
 }

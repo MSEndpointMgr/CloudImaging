@@ -35,7 +35,7 @@ public sealed partial class CoupleSessionFunction
         ILogger<CoupleSessionFunction> logger)
     {
         _sessionRepo = sessionRepo;
-        _logger      = logger;
+        _logger = logger;
     }
 
     [Function(nameof(CoupleSessionFunction))]
@@ -54,7 +54,7 @@ public sealed partial class CoupleSessionFunction
         }
 
         var submittedPasscode = passcodeProp.GetString()!;
-        var passcodeHash      = PasscodeSecurityPolicy.HashPasscode(submittedPasscode);
+        var passcodeHash = PasscodeSecurityPolicy.HashPasscode(submittedPasscode);
 
         var session = await _sessionRepo.FindByPasscodeHashAsync(passcodeHash, context.CancellationToken);
 
@@ -82,21 +82,21 @@ public sealed partial class CoupleSessionFunction
         // Transition session: SessionAllowed → SessionAssigned, mark passcode consumed
         var coupled = new DeviceSession
         {
-            SessionId                    = session.SessionId,
-            State                        = SessionState.SessionAssigned,
-            DeviceSerialNumber           = session.DeviceSerialNumber,
-            DeviceManufacturer           = session.DeviceManufacturer,
-            DeviceModel                  = session.DeviceModel,
-            HardwareMetadata             = session.HardwareMetadata,
+            SessionId = session.SessionId,
+            State = SessionState.SessionAssigned,
+            DeviceSerialNumber = session.DeviceSerialNumber,
+            DeviceManufacturer = session.DeviceManufacturer,
+            DeviceModel = session.DeviceModel,
+            HardwareMetadata = session.HardwareMetadata,
             PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-            Passcode                     = session.Passcode,
-            PasscodeExpiresAt            = session.PasscodeExpiresAt,
-            PasscodeConsumed             = true,             // Invalidate passcode on success
-            DeviceSessionToken           = session.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt  = session.DeviceSessionTokenExpiresAt,
-            OverallProgressPercent       = session.OverallProgressPercent,
-            CreatedAt                    = session.CreatedAt,
-            LastHeartbeatAt              = DateTimeOffset.UtcNow,
+            Passcode = session.Passcode,
+            PasscodeExpiresAt = session.PasscodeExpiresAt,
+            PasscodeConsumed = true,             // Invalidate passcode on success
+            DeviceSessionToken = session.DeviceSessionToken,
+            DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
+            OverallProgressPercent = session.OverallProgressPercent,
+            CreatedAt = session.CreatedAt,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
         };
 
         await _sessionRepo.UpdateAsync(coupled, context.CancellationToken);
@@ -107,7 +107,7 @@ public sealed partial class CoupleSessionFunction
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
             sessionId = coupled.SessionId,
-            state     = coupled.State.ToString(),
+            state = coupled.State.ToString(),
         }), context.CancellationToken);
         return response;
     }

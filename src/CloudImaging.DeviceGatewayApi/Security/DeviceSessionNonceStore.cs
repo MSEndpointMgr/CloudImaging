@@ -34,7 +34,7 @@ public sealed partial class DeviceSessionNonceStore
     public DeviceSessionNonceStore(NonceRegistrar register, ILogger<DeviceSessionNonceStore> logger)
     {
         _register = register;
-        _logger   = logger;
+        _logger = logger;
     }
 
     /// <summary>

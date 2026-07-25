@@ -52,7 +52,9 @@ public static class PasscodeSecurityPolicy
     public static bool VerifyPasscode(string submitted, string storedHash)
     {
         if (string.IsNullOrWhiteSpace(submitted) || string.IsNullOrWhiteSpace(storedHash))
+        {
             return false;
+        }
 
         var candidateHash = HashPasscode(submitted);
         return CryptographicOperations.FixedTimeEquals(

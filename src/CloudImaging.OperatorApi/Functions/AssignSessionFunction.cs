@@ -22,7 +22,7 @@ public sealed partial class AssignSessionFunction
         ILogger<AssignSessionFunction> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function(nameof(AssignSessionFunction))]
@@ -32,7 +32,9 @@ public sealed partial class AssignSessionFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         var payload = JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());

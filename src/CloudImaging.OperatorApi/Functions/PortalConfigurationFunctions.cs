@@ -23,7 +23,7 @@ public sealed partial class PortalConfigurationFunctions
         ILogger<PortalConfigurationFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     /// <summary>Returns the current portal configuration (PortalAccess required).</summary>
@@ -32,7 +32,7 @@ public sealed partial class PortalConfigurationFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "configuration")] HttpRequestData req,
         FunctionContext context)
     {
-        var config   = await _coreClient.GetPortalConfigurationAsync(context.CancellationToken);
+        var config = await _coreClient.GetPortalConfigurationAsync(context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(config), context.CancellationToken);

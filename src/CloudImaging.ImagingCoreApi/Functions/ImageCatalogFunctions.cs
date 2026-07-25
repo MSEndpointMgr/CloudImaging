@@ -30,9 +30,9 @@ public sealed partial class ImageCatalogFunctions
         DeviceSessionRepository sessionRepo,
         ILogger<ImageCatalogFunctions> logger)
     {
-        _imageRepo  = imageRepo;
+        _imageRepo = imageRepo;
         _sessionRepo = sessionRepo;
-        _logger     = logger;
+        _logger = logger;
     }
 
     // ── GET /api/internal/images ─────────────────────────────────────────────
@@ -57,10 +57,15 @@ public sealed partial class ImageCatalogFunctions
         string id, FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var image = await _imageRepo.GetByIdAsync(imageId, context.CancellationToken);
-        if (image is null) return req.CreateResponse(HttpStatusCode.NotFound);
+        if (image is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
@@ -79,18 +84,21 @@ public sealed partial class ImageCatalogFunctions
         try { image = await JsonSerializer.DeserializeAsync<OsImage>(req.Body, JsonOptions, context.CancellationToken); }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
-        if (image is null) return req.CreateResponse(HttpStatusCode.BadRequest);
+        if (image is null)
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var newImage = new OsImage
         {
-            ImageId     = image.ImageId == Guid.Empty ? Guid.NewGuid() : image.ImageId,
-            Name        = image.Name,
-            Version     = image.Version,
+            ImageId = image.ImageId == Guid.Empty ? Guid.NewGuid() : image.ImageId,
+            Name = image.Name,
+            Version = image.Version,
             Description = image.Description,
-            SizeBytes   = image.SizeBytes,
+            SizeBytes = image.SizeBytes,
             StoragePath = image.StoragePath,
-            Sha256Hash  = image.Sha256Hash,
-            UploadedAt  = image.UploadedAt == default ? DateTimeOffset.UtcNow : image.UploadedAt,
+            Sha256Hash = image.Sha256Hash,
+            UploadedAt = image.UploadedAt == default ? DateTimeOffset.UtcNow : image.UploadedAt,
         };
 
         await _imageRepo.CreateAsync(newImage, context.CancellationToken);
@@ -110,24 +118,29 @@ public sealed partial class ImageCatalogFunctions
         string id, FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var existing = await _imageRepo.GetByIdAsync(imageId, context.CancellationToken);
-        if (existing is null) return req.CreateResponse(HttpStatusCode.NotFound);
+        if (existing is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
 
         var updated = new OsImage
         {
-            ImageId     = existing.ImageId,
-            Name        = body.RootElement.TryGetProperty("name",        out var n)  ? n.GetString()! : existing.Name,
-            Version     = body.RootElement.TryGetProperty("version",     out var v)  ? v.GetString()! : existing.Version,
-            Description = body.RootElement.TryGetProperty("description", out var d)  ? d.GetString()  : existing.Description,
-            SizeBytes   = existing.SizeBytes,
+            ImageId = existing.ImageId,
+            Name = body.RootElement.TryGetProperty("name", out var n) ? n.GetString()! : existing.Name,
+            Version = body.RootElement.TryGetProperty("version", out var v) ? v.GetString()! : existing.Version,
+            Description = body.RootElement.TryGetProperty("description", out var d) ? d.GetString() : existing.Description,
+            SizeBytes = existing.SizeBytes,
             StoragePath = existing.StoragePath,
-            Sha256Hash  = existing.Sha256Hash,
-            UploadedAt  = existing.UploadedAt,
-            IsInUse     = existing.IsInUse,
+            Sha256Hash = existing.Sha256Hash,
+            UploadedAt = existing.UploadedAt,
+            IsInUse = existing.IsInUse,
         };
 
         await _imageRepo.UpdateAsync(updated, context.CancellationToken);
@@ -146,10 +159,15 @@ public sealed partial class ImageCatalogFunctions
         string id, FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var image = await _imageRepo.GetByIdAsync(imageId, context.CancellationToken);
-        if (image is null) return req.CreateResponse(HttpStatusCode.NotFound);
+        if (image is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         if (image.IsInUse)
         {

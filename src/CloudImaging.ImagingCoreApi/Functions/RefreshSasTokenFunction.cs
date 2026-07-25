@@ -34,10 +34,10 @@ public sealed partial class RefreshSasTokenFunction
         ILogger<RefreshSasTokenFunction> logger)
     {
         _sessionRepo = sessionRepo;
-        _configRepo  = configRepo;
-        _imageRepo   = imageRepo;
-        _blobClient  = blobClient;
-        _logger      = logger;
+        _configRepo = configRepo;
+        _imageRepo = imageRepo;
+        _blobClient = blobClient;
+        _logger = logger;
     }
 
     [Function(nameof(RefreshSasTokenFunction))]
@@ -47,11 +47,20 @@ public sealed partial class RefreshSasTokenFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
-        if (session is null) return req.CreateResponse(HttpStatusCode.NotFound);
-        if (!session.AssignedOsImageId.HasValue) return req.CreateResponse(HttpStatusCode.Conflict);
+        if (session is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+
+        if (!session.AssignedOsImageId.HasValue)
+        {
+            return req.CreateResponse(HttpStatusCode.Conflict);
+        }
 
         var config = await _configRepo.GetAsync(context.CancellationToken);
         var sasExpiry = TimeSpan.FromMinutes(config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
@@ -72,25 +81,25 @@ public sealed partial class RefreshSasTokenFunction
 
             var updated = new CloudImaging.Contracts.Models.DeviceSession
             {
-                SessionId                    = session.SessionId,
-                State                        = session.State,
-                DeviceSerialNumber           = session.DeviceSerialNumber,
-                DeviceManufacturer           = session.DeviceManufacturer,
-                DeviceModel                  = session.DeviceModel,
-                HardwareMetadata             = session.HardwareMetadata,
+                SessionId = session.SessionId,
+                State = session.State,
+                DeviceSerialNumber = session.DeviceSerialNumber,
+                DeviceManufacturer = session.DeviceManufacturer,
+                DeviceModel = session.DeviceModel,
+                HardwareMetadata = session.HardwareMetadata,
                 PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-                Passcode                     = session.Passcode,
-                PasscodeExpiresAt            = session.PasscodeExpiresAt,
-                PasscodeConsumed             = session.PasscodeConsumed,
-                DeviceSessionToken           = session.DeviceSessionToken,
-                DeviceSessionTokenExpiresAt  = session.DeviceSessionTokenExpiresAt,
-                AssignedOsImageId            = session.AssignedOsImageId,
-                SasTokenUrl                  = sasUrl,
-                SasTokenUrlExpiresAt         = DateTimeOffset.UtcNow + sasExpiry,
-                OverallProgressPercent       = session.OverallProgressPercent,
-                CurrentStep                  = session.CurrentStep,
-                CreatedAt                    = session.CreatedAt,
-                LastHeartbeatAt              = DateTimeOffset.UtcNow,
+                Passcode = session.Passcode,
+                PasscodeExpiresAt = session.PasscodeExpiresAt,
+                PasscodeConsumed = session.PasscodeConsumed,
+                DeviceSessionToken = session.DeviceSessionToken,
+                DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
+                AssignedOsImageId = session.AssignedOsImageId,
+                SasTokenUrl = sasUrl,
+                SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
+                OverallProgressPercent = session.OverallProgressPercent,
+                CurrentStep = session.CurrentStep,
+                CreatedAt = session.CreatedAt,
+                LastHeartbeatAt = DateTimeOffset.UtcNow,
             };
 
             await _sessionRepo.UpdateAsync(updated, context.CancellationToken);
@@ -107,12 +116,20 @@ public sealed partial class RefreshSasTokenFunction
     private static string GenerateSasUrl(BlobServiceClient blobClient, string storagePath, TimeSpan expiry)
     {
         var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
-        if (slash < 0) return storagePath;
-        var container   = storagePath[..slash];
-        var blobName    = storagePath[(slash + 1)..];
-        var blobRef     = blobClient.GetBlobContainerClient(container).GetBlobClient(blobName);
-        if (!blobRef.CanGenerateSasUri) return blobRef.Uri.ToString();
-        var builder     = new BlobSasBuilder { BlobContainerName = container, BlobName = blobName, Resource = "b", ExpiresOn = DateTimeOffset.UtcNow + expiry };
+        if (slash < 0)
+        {
+            return storagePath;
+        }
+
+        var container = storagePath[..slash];
+        var blobName = storagePath[(slash + 1)..];
+        var blobRef = blobClient.GetBlobContainerClient(container).GetBlobClient(blobName);
+        if (!blobRef.CanGenerateSasUri)
+        {
+            return blobRef.Uri.ToString();
+        }
+
+        var builder = new BlobSasBuilder { BlobContainerName = container, BlobName = blobName, Resource = "b", ExpiresOn = DateTimeOffset.UtcNow + expiry };
         builder.SetPermissions(BlobSasPermissions.Read);
         return blobRef.GenerateSasUri(builder).ToString();
     }

@@ -29,8 +29,8 @@ public sealed partial class DevicePreFlightAuthorizationService
         ILogger<DevicePreFlightAuthorizationService> logger)
     {
         _graphClient = graphClient;
-        _configRepo  = configRepo;
-        _logger      = logger;
+        _configRepo = configRepo;
+        _logger = logger;
     }
 
     /// <summary>
@@ -52,7 +52,7 @@ public sealed partial class DevicePreFlightAuthorizationService
         LogPreFlightStarted(_logger, registration.SerialNumber);
 
         // Run both Graph queries in parallel for efficiency
-        var autopilotTask      = CheckAutopilotAsync(registration.SerialNumber, ct);
+        var autopilotTask = CheckAutopilotAsync(registration.SerialNumber, ct);
         var corpIdentifierTask = CheckCorporateIdentifiersAsync(
             registration.SerialNumber, registration.Manufacturer, registration.Model, ct);
 
@@ -85,7 +85,7 @@ public sealed partial class DevicePreFlightAuthorizationService
                 .GetAsync(req =>
                 {
                     req.QueryParameters.Filter = $"contains(serialNumber,'{EscapeFilter(serialNumber)}')";
-                    req.QueryParameters.Top    = 1;
+                    req.QueryParameters.Top = 1;
                 }, ct);
 
             return result?.Value?.Count > 0;
@@ -109,7 +109,7 @@ public sealed partial class DevicePreFlightAuthorizationService
                 .GetAsync(req =>
                 {
                     req.QueryParameters.Filter = $"contains(serialNumber,'{EscapeFilter(serialNumber)}')";
-                    req.QueryParameters.Top    = 1;
+                    req.QueryParameters.Top = 1;
                 }, ct);
 
             return result?.Value?.Count > 0;

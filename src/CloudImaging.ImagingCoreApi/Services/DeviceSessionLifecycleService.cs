@@ -41,7 +41,7 @@ public sealed partial class DeviceSessionLifecycleService
         ILogger<DeviceSessionLifecycleService> logger)
     {
         _sessionRepo = sessionRepo;
-        _logger      = logger;
+        _logger = logger;
     }
 
     /// <summary>
@@ -50,13 +50,15 @@ public sealed partial class DeviceSessionLifecycleService
     /// </summary>
     public async Task<int> ExpireInactiveSessionsAsync(CancellationToken ct = default)
     {
-        var cutoff   = DateTimeOffset.UtcNow - InactivityTimeout;
-        int expired  = 0;
+        var cutoff = DateTimeOffset.UtcNow - InactivityTimeout;
+        int expired = 0;
 
         await foreach (var session in _sessionRepo.QueryActiveAsync(ct))
         {
             if (!ActiveNonTerminalStates.Contains(session.State))
+            {
                 continue;
+            }
 
             var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
             if (lastHeartbeat < cutoff)
@@ -98,27 +100,27 @@ public sealed partial class DeviceSessionLifecycleService
     private static DeviceSession BuildTransition(DeviceSession s, SessionState newState) =>
         new()
         {
-            SessionId                    = s.SessionId,
-            State                        = newState,
-            DeviceSerialNumber           = s.DeviceSerialNumber,
-            DeviceManufacturer           = s.DeviceManufacturer,
-            DeviceModel                  = s.DeviceModel,
-            HardwareMetadata             = s.HardwareMetadata,
+            SessionId = s.SessionId,
+            State = newState,
+            DeviceSerialNumber = s.DeviceSerialNumber,
+            DeviceManufacturer = s.DeviceManufacturer,
+            DeviceModel = s.DeviceModel,
+            HardwareMetadata = s.HardwareMetadata,
             PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
-            Passcode                     = s.Passcode,
-            PasscodeExpiresAt            = s.PasscodeExpiresAt,
-            PasscodeConsumed             = s.PasscodeConsumed,
-            DeviceSessionToken           = s.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt  = s.DeviceSessionTokenExpiresAt,
-            AssignedOsImageId            = s.AssignedOsImageId,
-            SasTokenUrl                  = s.SasTokenUrl,
-            SasTokenUrlExpiresAt         = s.SasTokenUrlExpiresAt,
-            OverallProgressPercent       = s.OverallProgressPercent,
-            CurrentStep                  = s.CurrentStep,
-            CreatedAt                    = s.CreatedAt,
-            LastHeartbeatAt              = s.LastHeartbeatAt,
-            TerminalAt                   = DateTimeOffset.UtcNow,
-            PurgeAt                      = DateTimeOffset.UtcNow + TerminalPurgeTtl,
+            Passcode = s.Passcode,
+            PasscodeExpiresAt = s.PasscodeExpiresAt,
+            PasscodeConsumed = s.PasscodeConsumed,
+            DeviceSessionToken = s.DeviceSessionToken,
+            DeviceSessionTokenExpiresAt = s.DeviceSessionTokenExpiresAt,
+            AssignedOsImageId = s.AssignedOsImageId,
+            SasTokenUrl = s.SasTokenUrl,
+            SasTokenUrlExpiresAt = s.SasTokenUrlExpiresAt,
+            OverallProgressPercent = s.OverallProgressPercent,
+            CurrentStep = s.CurrentStep,
+            CreatedAt = s.CreatedAt,
+            LastHeartbeatAt = s.LastHeartbeatAt,
+            TerminalAt = DateTimeOffset.UtcNow,
+            PurgeAt = DateTimeOffset.UtcNow + TerminalPurgeTtl,
         };
 
     // ── Logging ───────────────────────────────────────────────────────────────

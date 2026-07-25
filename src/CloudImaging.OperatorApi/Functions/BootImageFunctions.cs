@@ -24,7 +24,7 @@ public sealed partial class BootImageFunctions
         ILogger<BootImageFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     // ── GET /api/boot-images ──────────────────────────────────────────────────
@@ -47,7 +47,9 @@ public sealed partial class BootImageFunctions
         FunctionContext context)
     {
         if (!Guid.TryParse(id, out var bootImageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var coreResponse = await _coreClient.GetBootImagesAsync(context.CancellationToken);
         // For simplicity, list all and filter — a GetById method can be added later
@@ -63,7 +65,9 @@ public sealed partial class BootImageFunctions
         FunctionContext context)
     {
         if (!Guid.TryParse(id, out var bootImageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         // Response MUST include sha256Hash (FR-056 — Media Builder verifies WIM before USB deploy)
         var coreResponse = await _coreClient.GetBootImageSasAsync(bootImageId, context.CancellationToken);

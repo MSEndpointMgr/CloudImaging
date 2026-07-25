@@ -26,9 +26,9 @@ public sealed partial class BootMediaCertificateFunctions
         KeyVaultCertificateService kvService,
         ILogger<BootMediaCertificateFunctions> logger)
     {
-        _certRepo  = certRepo;
+        _certRepo = certRepo;
         _kvService = kvService;
-        _logger    = logger;
+        _logger = logger;
     }
 
     // ── GET /api/internal/cert/active ────────────────────────────────────────
@@ -51,10 +51,10 @@ public sealed partial class BootMediaCertificateFunctions
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
-            thumbprint         = cert.Thumbprint,
-            notBefore          = cert.NotBefore,
-            notAfter           = cert.NotAfter,
-            isActive           = cert.IsActive,
+            thumbprint = cert.Thumbprint,
+            notBefore = cert.NotBefore,
+            notAfter = cert.NotAfter,
+            isActive = cert.IsActive,
             keyVaultSecretName = cert.KeyVaultSecretName,
         }), context.CancellationToken);
         return response;

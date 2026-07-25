@@ -31,9 +31,9 @@ public sealed partial class BootImageFunctions
         ILogger<BootImageFunctions> logger)
     {
         _bootImageRepo = bootImageRepo;
-        _configRepo    = configRepo;
-        _blobClient    = blobClient;
-        _logger        = logger;
+        _configRepo = configRepo;
+        _blobClient = blobClient;
+        _logger = logger;
     }
 
     // ── GET /api/internal/boot-images ────────────────────────────────────────
@@ -62,10 +62,15 @@ public sealed partial class BootImageFunctions
         FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var image = await _bootImageRepo.GetByIdAsync(imageId, context.CancellationToken);
-        if (image is null) return req.CreateResponse(HttpStatusCode.NotFound);
+        if (image is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
@@ -82,12 +87,17 @@ public sealed partial class BootImageFunctions
         FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var image = await _bootImageRepo.GetByIdAsync(imageId, context.CancellationToken);
-        if (image is null) return req.CreateResponse(HttpStatusCode.NotFound);
+        if (image is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
-        var config    = await _configRepo.GetAsync(context.CancellationToken);
+        var config = await _configRepo.GetAsync(context.CancellationToken);
         var sasExpiry = TimeSpan.FromMinutes(
             config.BootImageSasExpiryMinutes > 0 ? config.BootImageSasExpiryMinutes : 60);
 
@@ -100,8 +110,8 @@ public sealed partial class BootImageFunctions
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
             sasTokenUrl = sasUrl,
-            expiresAt   = DateTimeOffset.UtcNow + sasExpiry,
-            sha256Hash  = image.Sha256Hash,
+            expiresAt = DateTimeOffset.UtcNow + sasExpiry,
+            sha256Hash = image.Sha256Hash,
         }), context.CancellationToken);
         return response;
     }
@@ -112,18 +122,26 @@ public sealed partial class BootImageFunctions
     {
         try
         {
-            var slash  = storagePath.IndexOf('/', StringComparison.Ordinal);
-            if (slash < 0) return storagePath;
-            var container  = storagePath[..slash];
-            var blobName   = storagePath[(slash + 1)..];
+            var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
+            if (slash < 0)
+            {
+                return storagePath;
+            }
+
+            var container = storagePath[..slash];
+            var blobName = storagePath[(slash + 1)..];
             var blobClient = _blobClient.GetBlobContainerClient(container).GetBlobClient(blobName);
-            if (!blobClient.CanGenerateSasUri) return blobClient.Uri.ToString();
+            if (!blobClient.CanGenerateSasUri)
+            {
+                return blobClient.Uri.ToString();
+            }
+
             var builder = new BlobSasBuilder
             {
                 BlobContainerName = container,
-                BlobName          = blobName,
-                Resource          = "b",
-                ExpiresOn         = DateTimeOffset.UtcNow + expiry,
+                BlobName = blobName,
+                Resource = "b",
+                ExpiresOn = DateTimeOffset.UtcNow + expiry,
             };
             builder.SetPermissions(BlobSasPermissions.Read);
             return blobClient.GenerateSasUri(builder).ToString();
@@ -133,15 +151,15 @@ public sealed partial class BootImageFunctions
 
     private static object MapToDto(BootImage b) => new
     {
-        bootImageId      = b.BootImageId,
-        version          = b.Version,
-        createdAt        = b.CreatedAt,
-        sizeBytes        = b.SizeBytes,
-        storagePath      = b.StoragePath,
-        manifestVersion  = b.ManifestVersion,
-        sha256Hash       = b.Sha256Hash,
-        isLatestPublished= b.IsLatestPublished,
-        isActive         = b.IsActive,
+        bootImageId = b.BootImageId,
+        version = b.Version,
+        createdAt = b.CreatedAt,
+        sizeBytes = b.SizeBytes,
+        storagePath = b.StoragePath,
+        manifestVersion = b.ManifestVersion,
+        sha256Hash = b.Sha256Hash,
+        isLatestPublished = b.IsLatestPublished,
+        isActive = b.IsActive,
     };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image SAS issued for {BootImageId}.")]

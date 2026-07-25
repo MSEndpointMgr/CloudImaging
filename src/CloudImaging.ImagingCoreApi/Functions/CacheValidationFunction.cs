@@ -25,8 +25,8 @@ public sealed partial class CacheValidationFunction
         ILogger<CacheValidationFunction> logger)
     {
         _sessionRepo = sessionRepo;
-        _imageRepo   = imageRepo;
-        _logger      = logger;
+        _imageRepo = imageRepo;
+        _logger = logger;
     }
 
     [Function(nameof(CacheValidationFunction))]
@@ -36,11 +36,15 @@ public sealed partial class CacheValidationFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         if (!body.RootElement.TryGetProperty("sha256Hash", out var hashProp))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var clientHash = hashProp.GetString() ?? string.Empty;
 

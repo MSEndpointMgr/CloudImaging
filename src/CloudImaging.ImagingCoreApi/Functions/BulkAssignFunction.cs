@@ -22,7 +22,7 @@ public sealed partial class BulkAssignFunction
         ILogger<BulkAssignFunction> logger)
     {
         _bulkService = bulkService;
-        _logger      = logger;
+        _logger = logger;
     }
 
     [Function(nameof(BulkAssignFunction))]
@@ -63,10 +63,10 @@ public sealed partial class BulkAssignFunction
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
-            assigned    = result.Assigned,
-            skipped     = result.Skipped,
+            assigned = result.Assigned,
+            skipped = result.Skipped,
             assignedIds = result.AssignedIds,
-            skippedIds  = result.SkippedIds,
+            skippedIds = result.SkippedIds,
         }), context.CancellationToken);
         return response;
     }

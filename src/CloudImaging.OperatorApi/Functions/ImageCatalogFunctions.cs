@@ -22,7 +22,7 @@ public sealed partial class ImageCatalogFunctions
         ILogger<ImageCatalogFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function("GetImages")]
@@ -37,7 +37,10 @@ public sealed partial class ImageCatalogFunctions
         string id, FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
         return await Proxy(req, await _coreClient.GetImagesAsync(context.CancellationToken), context.CancellationToken);
     }
 
@@ -47,7 +50,7 @@ public sealed partial class ImageCatalogFunctions
         FunctionContext context)
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
         return await Proxy(req, await _coreClient.CreateImageAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
@@ -57,9 +60,12 @@ public sealed partial class ImageCatalogFunctions
         string id, FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
         return await Proxy(req, await _coreClient.UpdateImageAsync(imageId, payload!, context.CancellationToken), context.CancellationToken);
     }
 
@@ -69,7 +75,10 @@ public sealed partial class ImageCatalogFunctions
         string id, FunctionContext context)
     {
         if (!Guid.TryParse(id, out var imageId))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
         return await Proxy(req, await _coreClient.DeleteImageAsync(imageId, context.CancellationToken), context.CancellationToken);
     }
 

@@ -22,7 +22,7 @@ public sealed partial class CoupleSessionFunction
         ILogger<CoupleSessionFunction> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function(nameof(CoupleSessionFunction))]

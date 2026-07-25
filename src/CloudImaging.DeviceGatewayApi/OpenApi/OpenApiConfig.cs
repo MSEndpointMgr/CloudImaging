@@ -1,6 +1,6 @@
+using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
-using System.Net;
 
 namespace CloudImaging.DeviceGatewayApi.OpenApi;
 

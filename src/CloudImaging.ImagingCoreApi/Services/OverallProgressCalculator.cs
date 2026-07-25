@@ -25,19 +25,25 @@ public static class OverallProgressCalculator
     /// </summary>
     public static int Calculate(IReadOnlyList<ImagingStep>? steps)
     {
-        if (steps is null || steps.Count == 0) return 0;
+        if (steps is null || steps.Count == 0)
+        {
+            return 0;
+        }
 
         double total = 0;
         foreach (var stepName in Steps)
         {
             var step = steps.FirstOrDefault(s => s.StepName == stepName);
-            if (step is null) continue;
+            if (step is null)
+            {
+                continue;
+            }
 
             total += step.Status switch
             {
-                ImagingStepStatus.Completed  => SharePerStep,
+                ImagingStepStatus.Completed => SharePerStep,
                 ImagingStepStatus.InProgress => SharePerStep * ((step.StepProgressPercent ?? 0) / 100.0),
-                _                            => 0,
+                _ => 0,
             };
         }
 
@@ -49,7 +55,11 @@ public static class OverallProgressCalculator
     /// </summary>
     public static string? ActiveStepName(IReadOnlyList<ImagingStep>? steps)
     {
-        if (steps is null) return null;
+        if (steps is null)
+        {
+            return null;
+        }
+
         return steps.FirstOrDefault(s => s.Status == ImagingStepStatus.InProgress)?.StepName.ToString();
     }
 }

@@ -18,7 +18,7 @@ public sealed partial class ImageDeletionGuardService
         ILogger<ImageDeletionGuardService> logger)
     {
         _sessionRepo = sessionRepo;
-        _logger      = logger;
+        _logger = logger;
     }
 
     /// <summary>

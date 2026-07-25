@@ -58,10 +58,10 @@ public sealed partial class CreateSessionFunction
         IConfiguration configuration,
         ILogger<CreateSessionFunction> logger)
     {
-        _coreClient        = coreClient;
-        _tokenService      = tokenService;
-        _nonceStore        = nonceStore;
-        _logger            = logger;
+        _coreClient = coreClient;
+        _tokenService = tokenService;
+        _nonceStore = nonceStore;
+        _logger = logger;
 
         var skewSeconds = configuration.GetValue<int?>("MtlsProofOfPossession:MaxSkewSeconds")
             ?? DefaultMaxSkewSeconds;
@@ -174,9 +174,9 @@ public sealed partial class CreateSessionFunction
         using var doc = await JsonDocument.ParseAsync(coreJson, cancellationToken: context.CancellationToken);
         var root = doc.RootElement;
 
-        var sessionId    = root.GetProperty("sessionId").GetGuid();
-        var passcode     = root.GetProperty("passcode").GetString()!;
-        var state        = root.GetProperty("state").GetString()!;
+        var sessionId = root.GetProperty("sessionId").GetGuid();
+        var passcode = root.GetProperty("passcode").GetString()!;
+        var state = root.GetProperty("state").GetString()!;
         var preFlightResult = root.GetProperty("preFlightResult").GetString()!;
 
         // Issue device-session token (opaque 256-bit bearer)

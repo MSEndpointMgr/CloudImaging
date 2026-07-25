@@ -44,15 +44,15 @@ public sealed class BootImageRepository
 
         var newImage = new BootImage
         {
-            BootImageId       = image.BootImageId,
-            Version           = image.Version,
-            CreatedAt         = image.CreatedAt == default ? DateTimeOffset.UtcNow : image.CreatedAt,
-            SizeBytes         = image.SizeBytes,
-            StoragePath       = image.StoragePath,
-            ManifestVersion   = image.ManifestVersion,
-            Sha256Hash        = image.Sha256Hash,
+            BootImageId = image.BootImageId,
+            Version = image.Version,
+            CreatedAt = image.CreatedAt == default ? DateTimeOffset.UtcNow : image.CreatedAt,
+            SizeBytes = image.SizeBytes,
+            StoragePath = image.StoragePath,
+            ManifestVersion = image.ManifestVersion,
+            Sha256Hash = image.Sha256Hash,
             IsLatestPublished = true,
-            IsActive          = true,
+            IsActive = true,
         };
         await _table.AddEntityAsync(ToEntity(newImage), ct);
         return newImage;
@@ -79,26 +79,26 @@ public sealed class BootImageRepository
 
     private static TableEntity ToEntity(BootImage b) => new(Partition, b.BootImageId.ToString())
     {
-        ["Version"]           = b.Version,
-        ["SizeBytes"]         = b.SizeBytes,
-        ["StoragePath"]       = b.StoragePath,
-        ["ManifestVersion"]   = b.ManifestVersion,
-        ["Sha256Hash"]        = b.Sha256Hash,
+        ["Version"] = b.Version,
+        ["SizeBytes"] = b.SizeBytes,
+        ["StoragePath"] = b.StoragePath,
+        ["ManifestVersion"] = b.ManifestVersion,
+        ["Sha256Hash"] = b.Sha256Hash,
         ["IsLatestPublished"] = b.IsLatestPublished,
-        ["IsActive"]          = b.IsActive,
-        ["CreatedAt"]         = b.CreatedAt,
+        ["IsActive"] = b.IsActive,
+        ["CreatedAt"] = b.CreatedAt,
     };
 
     private static BootImage FromEntity(TableEntity e) => new()
     {
-        BootImageId       = Guid.Parse(e.RowKey),
-        Version           = e.GetString("Version") ?? string.Empty,
-        SizeBytes         = e.GetInt64("SizeBytes") ?? 0L,
-        StoragePath       = e.GetString("StoragePath") ?? string.Empty,
-        ManifestVersion   = e.GetString("ManifestVersion") ?? string.Empty,
-        Sha256Hash        = e.GetString("Sha256Hash") ?? string.Empty,
+        BootImageId = Guid.Parse(e.RowKey),
+        Version = e.GetString("Version") ?? string.Empty,
+        SizeBytes = e.GetInt64("SizeBytes") ?? 0L,
+        StoragePath = e.GetString("StoragePath") ?? string.Empty,
+        ManifestVersion = e.GetString("ManifestVersion") ?? string.Empty,
+        Sha256Hash = e.GetString("Sha256Hash") ?? string.Empty,
         IsLatestPublished = e.GetBoolean("IsLatestPublished") ?? false,
-        IsActive          = e.GetBoolean("IsActive") ?? false,
-        CreatedAt         = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
+        IsActive = e.GetBoolean("IsActive") ?? false,
+        CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
     };
 }

@@ -18,7 +18,7 @@ public sealed partial class SessionLifecycleTimerFunction
         ILogger<SessionLifecycleTimerFunction> logger)
     {
         _lifecycle = lifecycle;
-        _logger    = logger;
+        _logger = logger;
     }
 
     [Function("SessionLifecycleTimer")]
@@ -27,7 +27,7 @@ public sealed partial class SessionLifecycleTimerFunction
         FunctionContext context)
     {
         var expired = await _lifecycle.ExpireInactiveSessionsAsync(context.CancellationToken);
-        var purged  = await _lifecycle.PurgeTerminalSessionsAsync(context.CancellationToken);
+        var purged = await _lifecycle.PurgeTerminalSessionsAsync(context.CancellationToken);
         LogLifecycleTick(_logger, expired, purged);
     }
 

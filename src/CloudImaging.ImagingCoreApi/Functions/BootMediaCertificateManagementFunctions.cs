@@ -33,10 +33,10 @@ public sealed partial class BootMediaCertificateManagementFunctions
         PortalConfigurationRepository configRepo,
         ILogger<BootMediaCertificateManagementFunctions> logger)
     {
-        _certRepo  = certRepo;
+        _certRepo = certRepo;
         _kvService = kvService;
-        _configRepo= configRepo;
-        _logger    = logger;
+        _configRepo = configRepo;
+        _logger = logger;
     }
 
     // ── POST /api/internal/cert/generate ──────────────────────────────────────
@@ -50,14 +50,14 @@ public sealed partial class BootMediaCertificateManagementFunctions
         var validityDays = config.CertValidityPeriodDays > 0 ? config.CertValidityPeriodDays : 365;
 
         var (cert, pfxBytes) = CreateSelfSignedCertificate(validityDays);
-        var secretName       = await _kvService.StorePfxAsync(cert.Thumbprint, pfxBytes, context.CancellationToken);
+        var secretName = await _kvService.StorePfxAsync(cert.Thumbprint, pfxBytes, context.CancellationToken);
 
         var metadata = new BootMediaCertificate
         {
-            Thumbprint         = cert.Thumbprint,
-            NotBefore          = cert.NotBefore,
-            NotAfter           = cert.NotAfter,
-            IsActive           = false,       // Not yet active — caller must POST /rotate or activate separately
+            Thumbprint = cert.Thumbprint,
+            NotBefore = cert.NotBefore,
+            NotAfter = cert.NotAfter,
+            IsActive = false,       // Not yet active — caller must POST /rotate or activate separately
             KeyVaultSecretName = secretName,
         };
 
@@ -71,9 +71,9 @@ public sealed partial class BootMediaCertificateManagementFunctions
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
             thumbprint = cert.Thumbprint,
-            notBefore  = cert.NotBefore,
-            notAfter   = cert.NotAfter,
-            isActive   = true,
+            notBefore = cert.NotBefore,
+            notAfter = cert.NotAfter,
+            isActive = true,
         }, JsonOptions), context.CancellationToken);
         return response;
     }
@@ -100,14 +100,14 @@ public sealed partial class BootMediaCertificateManagementFunctions
         var validityDays = config.CertValidityPeriodDays > 0 ? config.CertValidityPeriodDays : 365;
 
         var (cert, pfxBytes) = CreateSelfSignedCertificate(validityDays);
-        var secretName       = await _kvService.StorePfxAsync(cert.Thumbprint, pfxBytes, context.CancellationToken);
+        var secretName = await _kvService.StorePfxAsync(cert.Thumbprint, pfxBytes, context.CancellationToken);
 
         var newCert = new BootMediaCertificate
         {
-            Thumbprint         = cert.Thumbprint,
-            NotBefore          = cert.NotBefore,
-            NotAfter           = cert.NotAfter,
-            IsActive           = true,
+            Thumbprint = cert.Thumbprint,
+            NotBefore = cert.NotBefore,
+            NotAfter = cert.NotAfter,
+            IsActive = true,
             KeyVaultSecretName = secretName,
         };
 
@@ -120,9 +120,9 @@ public sealed partial class BootMediaCertificateManagementFunctions
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
             thumbprint = cert.Thumbprint,
-            notBefore  = cert.NotBefore,
-            notAfter   = cert.NotAfter,
-            isActive   = true,
+            notBefore = cert.NotBefore,
+            notAfter = cert.NotAfter,
+            isActive = true,
         }, JsonOptions), context.CancellationToken);
         return response;
     }
@@ -132,15 +132,15 @@ public sealed partial class BootMediaCertificateManagementFunctions
     private static (X509Certificate2 Cert, byte[] PfxBytes) CreateSelfSignedCertificate(int validityDays)
     {
         using var rsa = RSA.Create(2048);
-        var subject  = new X500DistinguishedName("CN=CloudImaging-BootMedia");
-        var req      = new CertificateRequest(subject, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var subject = new X500DistinguishedName("CN=CloudImaging-BootMedia");
+        var req = new CertificateRequest(subject, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
         req.CertificateExtensions.Add(
             new X509EnhancedKeyUsageExtension(
                 new OidCollection { new Oid("1.3.6.1.5.5.7.3.2") /* ClientAuth */ },
                 critical: true));
 
-        var cert     = req.CreateSelfSigned(
+        var cert = req.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddMinutes(-5),
             DateTimeOffset.UtcNow.AddDays(validityDays));
 

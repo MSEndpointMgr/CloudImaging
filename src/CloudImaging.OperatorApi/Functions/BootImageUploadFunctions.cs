@@ -20,7 +20,7 @@ public sealed partial class BootImageUploadFunctions
     public BootImageUploadFunctions(ImagingCoreClient coreClient, ILogger<BootImageUploadFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function("StartBootImageUpload")]
@@ -29,8 +29,8 @@ public sealed partial class BootImageUploadFunctions
         FunctionContext context)
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
-        var core      = await _coreClient.StartBootImageUploadAsync(payload!, context.CancellationToken);
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var core = await _coreClient.StartBootImageUploadAsync(payload!, context.CancellationToken);
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 
@@ -41,8 +41,8 @@ public sealed partial class BootImageUploadFunctions
         FunctionContext context)
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
-        var core      = await _coreClient.PublishBootImageUploadAsync(token, payload!, context.CancellationToken);
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var core = await _coreClient.PublishBootImageUploadAsync(token, payload!, context.CancellationToken);
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 

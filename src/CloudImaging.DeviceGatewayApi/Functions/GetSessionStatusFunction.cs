@@ -31,7 +31,7 @@ public sealed partial class GetSessionStatusFunction
         ILogger<GetSessionStatusFunction> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function("GetSessionStatus")]
@@ -41,7 +41,9 @@ public sealed partial class GetSessionStatusFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         // Validate that the requested session ID matches the token's embedded session ID
         if (context.Items.TryGetValue("SessionIdKey", out var tokenSessionIdObj)
@@ -55,7 +57,9 @@ public sealed partial class GetSessionStatusFunction
         var coreResponse = await _coreClient.GetSessionStatusAsync(sessionGuid, context.CancellationToken);
 
         if (coreResponse.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
             return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         if (!coreResponse.IsSuccessStatusCode)
         {
@@ -70,13 +74,13 @@ public sealed partial class GetSessionStatusFunction
         // Map to contract response — always include currentStep and overallProgressPercent (plan.md)
         var responseBody = new
         {
-            sessionId             = root.TryGetProperty("sessionId",             out var sid) ? sid.GetGuid()    : sessionGuid,
-            state                 = root.TryGetProperty("state",                 out var st)  ? st.GetString()   : "Unknown",
-            currentStep           = root.TryGetProperty("currentStep",           out var cs)  ? cs.GetString()   : null,
-            overallProgressPercent= root.TryGetProperty("overallProgressPercent",out var op)  ? op.GetInt32()    : 0,
-            sasTokenUrl           = root.TryGetProperty("sasTokenUrl",           out var su)  ? su.GetString()   : null,
-            sasTokenUrlExpiresAt  = root.TryGetProperty("sasTokenUrlExpiresAt",  out var se)  ? se.GetString()   : null,
-            sha256Hash            = root.TryGetProperty("sha256Hash",            out var sh)  ? sh.GetString()   : null,
+            sessionId = root.TryGetProperty("sessionId", out var sid) ? sid.GetGuid() : sessionGuid,
+            state = root.TryGetProperty("state", out var st) ? st.GetString() : "Unknown",
+            currentStep = root.TryGetProperty("currentStep", out var cs) ? cs.GetString() : null,
+            overallProgressPercent = root.TryGetProperty("overallProgressPercent", out var op) ? op.GetInt32() : 0,
+            sasTokenUrl = root.TryGetProperty("sasTokenUrl", out var su) ? su.GetString() : null,
+            sasTokenUrlExpiresAt = root.TryGetProperty("sasTokenUrlExpiresAt", out var se) ? se.GetString() : null,
+            sha256Hash = root.TryGetProperty("sha256Hash", out var sh) ? sh.GetString() : null,
         };
 
         var response = req.CreateResponse(HttpStatusCode.OK);

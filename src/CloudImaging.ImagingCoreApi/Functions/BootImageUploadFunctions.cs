@@ -33,9 +33,9 @@ public sealed partial class BootImageUploadFunctions
         ILogger<BootImageUploadFunctions> logger)
     {
         _bootImageRepo = bootImageRepo;
-        _validator     = validator;
-        _blobClient    = blobClient;
-        _logger        = logger;
+        _validator = validator;
+        _blobClient = blobClient;
+        _logger = logger;
     }
 
     // ── POST /api/internal/boot-images/upload/start ───────────────────────────
@@ -52,14 +52,14 @@ public sealed partial class BootImageUploadFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var version    = versionProp.GetString() ?? string.Empty;
-        var sha256Hash = hashProp.GetString()    ?? string.Empty;
-        var uploadId   = Guid.NewGuid().ToString("N");
-        var blobName   = $"uploads/{uploadId}/{version.Replace(' ', '-')}.wim";
+        var version = versionProp.GetString() ?? string.Empty;
+        var sha256Hash = hashProp.GetString() ?? string.Empty;
+        var uploadId = Guid.NewGuid().ToString("N");
+        var blobName = $"uploads/{uploadId}/{version.Replace(' ', '-')}.wim";
 
         // Generate a SAS URL with Write permission for the client to upload directly to Blob Storage
         var containerClient = _blobClient.GetBlobContainerClient(UploadContainer);
-        var blobClient      = containerClient.GetBlobClient(blobName);
+        var blobClient = containerClient.GetBlobClient(blobName);
 
         string uploadUrl;
         if (blobClient.CanGenerateSasUri)
@@ -67,9 +67,9 @@ public sealed partial class BootImageUploadFunctions
             var builder = new Azure.Storage.Sas.BlobSasBuilder
             {
                 BlobContainerName = UploadContainer,
-                BlobName          = blobName,
-                Resource          = "b",
-                ExpiresOn         = DateTimeOffset.UtcNow.AddHours(4),
+                BlobName = blobName,
+                Resource = "b",
+                ExpiresOn = DateTimeOffset.UtcNow.AddHours(4),
             };
             builder.SetPermissions(Azure.Storage.Sas.BlobSasPermissions.Create | Azure.Storage.Sas.BlobSasPermissions.Write);
             uploadUrl = blobClient.GenerateSasUri(builder).ToString();
@@ -103,22 +103,22 @@ public sealed partial class BootImageUploadFunctions
         FunctionContext context)
     {
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        if (!body.RootElement.TryGetProperty("blobName",    out var blobNameProp)
-            || !body.RootElement.TryGetProperty("sha256Hash",  out var hashProp)
-            || !body.RootElement.TryGetProperty("version",     out var versionProp)
-            || !body.RootElement.TryGetProperty("sizeBytes",   out var sizeProp))
+        if (!body.RootElement.TryGetProperty("blobName", out var blobNameProp)
+            || !body.RootElement.TryGetProperty("sha256Hash", out var hashProp)
+            || !body.RootElement.TryGetProperty("version", out var versionProp)
+            || !body.RootElement.TryGetProperty("sizeBytes", out var sizeProp))
         {
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var blobName   = blobNameProp.GetString()!;
+        var blobName = blobNameProp.GetString()!;
         var sha256Hash = hashProp.GetString()!;
-        var version    = versionProp.GetString()!;
-        var sizeBytes  = sizeProp.GetInt64();
+        var version = versionProp.GetString()!;
+        var sizeBytes = sizeProp.GetInt64();
 
         // Download blob and validate SHA-256 (T125a)
         var blobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(blobName);
-        var download   = await blobClient.OpenReadAsync(cancellationToken: context.CancellationToken);
+        var download = await blobClient.OpenReadAsync(cancellationToken: context.CancellationToken);
         var validation = await _validator.ValidateAsync(download, sha256Hash, context.CancellationToken);
 
         if (!validation.Valid)
@@ -133,19 +133,19 @@ public sealed partial class BootImageUploadFunctions
 
         // Atomically publish: move blob to final path and create catalog entry
         var finalBlobName = $"published/{Guid.NewGuid():N}/{version.Replace(' ', '-')}.wim";
-        var finalBlob     = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
+        var finalBlob = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
         await finalBlob.StartCopyFromUriAsync(blobClient.Uri, cancellationToken: context.CancellationToken);
         await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
 
         var image = new BootImage
         {
-            BootImageId     = Guid.NewGuid(),
-            Version         = version,
-            CreatedAt       = DateTimeOffset.UtcNow,
-            SizeBytes       = sizeBytes,
-            StoragePath     = $"{UploadContainer}/{finalBlobName}",
+            BootImageId = Guid.NewGuid(),
+            Version = version,
+            CreatedAt = DateTimeOffset.UtcNow,
+            SizeBytes = sizeBytes,
+            StoragePath = $"{UploadContainer}/{finalBlobName}",
             ManifestVersion = "1.0",
-            Sha256Hash      = validation.ActualHash!,
+            Sha256Hash = validation.ActualHash!,
         };
 
         var published = await _bootImageRepo.PublishAsync(image, context.CancellationToken);

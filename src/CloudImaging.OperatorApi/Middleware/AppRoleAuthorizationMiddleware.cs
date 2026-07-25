@@ -1,8 +1,8 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
-using System.IdentityModel.Tokens.Jwt;
-using System.Net;
 
 namespace CloudImaging.OperatorApi.Middleware;
 
@@ -15,8 +15,8 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
 {
     public const string ResolvedRoleKey = "OperatorApiRole";
 
-    public const string PortalAccessRole        = "CloudImaging.PortalAccess";
-    public const string MediaBuilderAccessRole  = "CloudImaging.MediaBuilderAccess";
+    public const string PortalAccessRole = "CloudImaging.PortalAccess";
+    public const string MediaBuilderAccessRole = "CloudImaging.MediaBuilderAccess";
 
     // Endpoints accessible by MediaBuilderAccess (read-only subset) — all others require PortalAccess
     private static readonly HashSet<string> MediaBuilderAllowedFunctions =
@@ -46,7 +46,7 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var functionName = context.FunctionDefinition.Name;
-        bool hasPortalAccess       = roles.Contains(PortalAccessRole);
+        bool hasPortalAccess = roles.Contains(PortalAccessRole);
         bool hasMediaBuilderAccess = roles.Contains(MediaBuilderAccessRole);
 
         if (!hasPortalAccess && !hasMediaBuilderAccess)
@@ -69,7 +69,10 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
     private static async Task WriteForbiddenAsync(FunctionContext context, string detail)
     {
         var request = await context.GetHttpRequestDataAsync();
-        if (request is null) return;
+        if (request is null)
+        {
+            return;
+        }
 
         var response = request.CreateResponse(HttpStatusCode.Forbidden);
         response.Headers.Add("Content-Type", "application/problem+json");

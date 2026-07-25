@@ -27,7 +27,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 public sealed partial class ReportProgressFunction
 {
     private readonly DeviceSessionRepository _sessionRepo;
-    private readonly ImagingStepRepository  _stepRepo;
+    private readonly ImagingStepRepository _stepRepo;
     private readonly ILogger<ReportProgressFunction> _logger;
 
     public ReportProgressFunction(
@@ -36,8 +36,8 @@ public sealed partial class ReportProgressFunction
         ILogger<ReportProgressFunction> logger)
     {
         _sessionRepo = sessionRepo;
-        _stepRepo    = stepRepo;
-        _logger      = logger;
+        _stepRepo = stepRepo;
+        _logger = logger;
     }
 
     [Function(nameof(ReportProgressFunction))]
@@ -47,7 +47,9 @@ public sealed partial class ReportProgressFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         ProgressPayload? payload;
         try
@@ -57,20 +59,26 @@ public sealed partial class ReportProgressFunction
         }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
-        if (payload is null) return req.CreateResponse(HttpStatusCode.BadRequest);
+        if (payload is null)
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
-        if (session is null) return req.CreateResponse(HttpStatusCode.NotFound);
+        if (session is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         // Persist the step record
         var step = new ImagingStep
         {
-            StepName            = payload.StepName,
-            Status              = payload.Status,
+            StepName = payload.StepName,
+            Status = payload.Status,
             StepProgressPercent = payload.StepProgressPercent,
-            ErrorDetail         = payload.ErrorDetail,
-            StartedAt           = payload.Status == ImagingStepStatus.InProgress ? DateTimeOffset.UtcNow : null,
-            CompletedAt         = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed
+            ErrorDetail = payload.ErrorDetail,
+            StartedAt = payload.Status == ImagingStepStatus.InProgress ? DateTimeOffset.UtcNow : null,
+            CompletedAt = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed
                                   ? DateTimeOffset.UtcNow : null,
         };
 
@@ -79,10 +87,10 @@ public sealed partial class ReportProgressFunction
         // Reload all steps to recalculate overall progress
         var allSteps = await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken);
         var overallPercent = OverallProgressCalculator.Calculate(allSteps);
-        var activeStep     = OverallProgressCalculator.ActiveStepName(allSteps);
+        var activeStep = OverallProgressCalculator.ActiveStepName(allSteps);
 
         // Determine new session state
-        bool anyFailed    = allSteps.Any(s => s.Status == ImagingStepStatus.Failed);
+        bool anyFailed = allSteps.Any(s => s.Status == ImagingStepStatus.Failed);
         bool allCompleted = allSteps.Count == 3 && allSteps.All(s => s.Status == ImagingStepStatus.Completed);
 
         var newState = anyFailed ? SessionState.SessionFailed
@@ -92,26 +100,26 @@ public sealed partial class ReportProgressFunction
 
         var updated = new DeviceSession
         {
-            SessionId                    = session.SessionId,
-            State                        = newState,
-            DeviceSerialNumber           = session.DeviceSerialNumber,
-            DeviceManufacturer           = session.DeviceManufacturer,
-            DeviceModel                  = session.DeviceModel,
-            HardwareMetadata             = session.HardwareMetadata,
+            SessionId = session.SessionId,
+            State = newState,
+            DeviceSerialNumber = session.DeviceSerialNumber,
+            DeviceManufacturer = session.DeviceManufacturer,
+            DeviceModel = session.DeviceModel,
+            HardwareMetadata = session.HardwareMetadata,
             PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-            Passcode                     = session.Passcode,
-            PasscodeExpiresAt            = session.PasscodeExpiresAt,
-            PasscodeConsumed             = session.PasscodeConsumed,
-            DeviceSessionToken           = session.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt  = session.DeviceSessionTokenExpiresAt,
-            AssignedOsImageId            = session.AssignedOsImageId,
-            SasTokenUrl                  = session.SasTokenUrl,
-            SasTokenUrlExpiresAt         = session.SasTokenUrlExpiresAt,
-            OverallProgressPercent       = overallPercent,
-            CurrentStep                  = activeStep,
-            CreatedAt                    = session.CreatedAt,
-            LastHeartbeatAt              = DateTimeOffset.UtcNow,
-            TerminalAt                   = anyFailed || allCompleted ? DateTimeOffset.UtcNow : null,
+            Passcode = session.Passcode,
+            PasscodeExpiresAt = session.PasscodeExpiresAt,
+            PasscodeConsumed = session.PasscodeConsumed,
+            DeviceSessionToken = session.DeviceSessionToken,
+            DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
+            AssignedOsImageId = session.AssignedOsImageId,
+            SasTokenUrl = session.SasTokenUrl,
+            SasTokenUrlExpiresAt = session.SasTokenUrlExpiresAt,
+            OverallProgressPercent = overallPercent,
+            CurrentStep = activeStep,
+            CreatedAt = session.CreatedAt,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
+            TerminalAt = anyFailed || allCompleted ? DateTimeOffset.UtcNow : null,
         };
 
         await _sessionRepo.UpdateAsync(updated, context.CancellationToken);
@@ -123,10 +131,10 @@ public sealed partial class ReportProgressFunction
 
     private sealed class ProgressPayload
     {
-        public ImagingStepName   StepName            { get; init; }
-        public ImagingStepStatus Status              { get; init; }
-        public int?              StepProgressPercent { get; init; }
-        public string?           ErrorDetail         { get; init; }
+        public ImagingStepName StepName { get; init; }
+        public ImagingStepStatus Status { get; init; }
+        public int? StepProgressPercent { get; init; }
+        public string? ErrorDetail { get; init; }
     }
 
     [LoggerMessage(Level = LogLevel.Information,

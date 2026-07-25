@@ -24,11 +24,11 @@ public sealed class ImagingStepRepository
     {
         var entity = new TableEntity(sessionId.ToString(), step.StepName.ToString())
         {
-            ["Status"]          = step.Status.ToString(),
-            ["StartedAt"]       = step.StartedAt,
-            ["CompletedAt"]     = step.CompletedAt,
-            ["ErrorDetail"]     = step.ErrorDetail,
-            ["StepProgress"]    = step.StepProgressPercent,
+            ["Status"] = step.Status.ToString(),
+            ["StartedAt"] = step.StartedAt,
+            ["CompletedAt"] = step.CompletedAt,
+            ["ErrorDetail"] = step.ErrorDetail,
+            ["StepProgress"] = step.StepProgressPercent,
         };
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
     }
@@ -41,11 +41,11 @@ public sealed class ImagingStepRepository
         {
             steps.Add(new ImagingStep
             {
-                StepName            = Enum.Parse<ImagingStepName>(entity.RowKey),
-                Status              = Enum.Parse<ImagingStepStatus>(entity.GetString("Status") ?? nameof(ImagingStepStatus.Pending)),
-                StartedAt           = entity.GetDateTimeOffset("StartedAt"),
-                CompletedAt         = entity.GetDateTimeOffset("CompletedAt"),
-                ErrorDetail         = entity.GetString("ErrorDetail"),
+                StepName = Enum.Parse<ImagingStepName>(entity.RowKey),
+                Status = Enum.Parse<ImagingStepStatus>(entity.GetString("Status") ?? nameof(ImagingStepStatus.Pending)),
+                StartedAt = entity.GetDateTimeOffset("StartedAt"),
+                CompletedAt = entity.GetDateTimeOffset("CompletedAt"),
+                ErrorDetail = entity.GetString("ErrorDetail"),
                 StepProgressPercent = entity.GetInt32("StepProgress"),
             });
         }

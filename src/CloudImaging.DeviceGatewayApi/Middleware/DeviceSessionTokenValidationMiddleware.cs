@@ -1,7 +1,7 @@
+using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
-using System.Net;
 
 namespace CloudImaging.DeviceGatewayApi.Middleware;
 
@@ -67,8 +67,8 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
         }
 
         // Store raw token and session hint for downstream handlers to validate against ImagingCoreApi
-        context.Items[SessionIdKey]   = sessionId.Value;
-        context.Items["BearerToken"]  = token;
+        context.Items[SessionIdKey] = sessionId.Value;
+        context.Items["BearerToken"] = token;
 
         await next(context);
     }

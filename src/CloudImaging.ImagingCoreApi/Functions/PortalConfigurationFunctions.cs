@@ -21,7 +21,7 @@ public sealed partial class PortalConfigurationFunctions
         PortalConfigurationRepository repo,
         ILogger<PortalConfigurationFunctions> logger)
     {
-        _repo   = repo;
+        _repo = repo;
         _logger = logger;
     }
 
@@ -31,7 +31,7 @@ public sealed partial class PortalConfigurationFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "portal-configuration")] HttpRequestData req,
         FunctionContext context)
     {
-        var config   = await _repo.GetAsync(context.CancellationToken);
+        var config = await _repo.GetAsync(context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(config), context.CancellationToken);

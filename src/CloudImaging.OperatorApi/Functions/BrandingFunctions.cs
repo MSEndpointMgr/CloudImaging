@@ -19,7 +19,7 @@ public sealed partial class BrandingFunctions
     public BrandingFunctions(ImagingCoreClient coreClient, ILogger<BrandingFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function("GetBranding")]
@@ -34,7 +34,7 @@ public sealed partial class BrandingFunctions
         FunctionContext context)
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
         return await Proxy(req, await _coreClient.UpdateBrandingAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
@@ -50,7 +50,7 @@ public sealed partial class BrandingFunctions
         FunctionContext context)
     {
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload   = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
         return await Proxy(req, await _coreClient.UploadBrandingLogoAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 

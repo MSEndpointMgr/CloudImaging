@@ -11,9 +11,9 @@ namespace CloudImaging.ImagingCoreApi.Repositories;
 /// </summary>
 public sealed partial class PortalConfigurationRepository
 {
-    private const string TableName    = "PortalConfiguration";
+    private const string TableName = "PortalConfiguration";
     private const string PartitionKey = "config";
-    private const string RowKey       = "default";
+    private const string RowKey = "default";
 
     private readonly TableClient _table;
     private readonly ILogger<PortalConfigurationRepository> _logger;
@@ -22,7 +22,7 @@ public sealed partial class PortalConfigurationRepository
         TableServiceClient tableService,
         ILogger<PortalConfigurationRepository> logger)
     {
-        _table  = tableService.GetTableClient(TableName);
+        _table = tableService.GetTableClient(TableName);
         _logger = logger;
     }
 
@@ -54,10 +54,10 @@ public sealed partial class PortalConfigurationRepository
         var entity = new TableEntity(PartitionKey, RowKey)
         {
             [nameof(PortalConfiguration.DevicePreFlightAuthorizationEnabled)] = config.DevicePreFlightAuthorizationEnabled,
-            [nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)]            = config.SasTokenUrlExpiryMinutes,
-            [nameof(PortalConfiguration.BootImageSasExpiryMinutes)]           = config.BootImageSasExpiryMinutes,
-            [nameof(PortalConfiguration.CertValidityPeriodDays)]              = config.CertValidityPeriodDays,
-            [nameof(PortalConfiguration.ClockSkewToleranceSeconds)]           = config.ClockSkewToleranceSeconds,
+            [nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)] = config.SasTokenUrlExpiryMinutes,
+            [nameof(PortalConfiguration.BootImageSasExpiryMinutes)] = config.BootImageSasExpiryMinutes,
+            [nameof(PortalConfiguration.CertValidityPeriodDays)] = config.CertValidityPeriodDays,
+            [nameof(PortalConfiguration.ClockSkewToleranceSeconds)] = config.ClockSkewToleranceSeconds,
         };
 
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -70,20 +70,20 @@ public sealed partial class PortalConfigurationRepository
         new()
         {
             DevicePreFlightAuthorizationEnabled = e.GetBoolean(nameof(PortalConfiguration.DevicePreFlightAuthorizationEnabled)) ?? false,
-            SasTokenUrlExpiryMinutes            = e.GetInt32(nameof(PortalConfiguration.SasTokenUrlExpiryMinutes))            ?? 60,
-            BootImageSasExpiryMinutes           = e.GetInt32(nameof(PortalConfiguration.BootImageSasExpiryMinutes))           ?? 60,
-            CertValidityPeriodDays              = e.GetInt32(nameof(PortalConfiguration.CertValidityPeriodDays))              ?? 365,
-            ClockSkewToleranceSeconds           = e.GetInt32(nameof(PortalConfiguration.ClockSkewToleranceSeconds))           ?? 30,
+            SasTokenUrlExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)) ?? 60,
+            BootImageSasExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.BootImageSasExpiryMinutes)) ?? 60,
+            CertValidityPeriodDays = e.GetInt32(nameof(PortalConfiguration.CertValidityPeriodDays)) ?? 365,
+            ClockSkewToleranceSeconds = e.GetInt32(nameof(PortalConfiguration.ClockSkewToleranceSeconds)) ?? 30,
         };
 
     private static PortalConfiguration PortalConfigurationDefaults() =>
         new()
         {
             DevicePreFlightAuthorizationEnabled = false,
-            SasTokenUrlExpiryMinutes            = 60,
-            BootImageSasExpiryMinutes           = 60,
-            CertValidityPeriodDays              = 365,
-            ClockSkewToleranceSeconds           = 30,
+            SasTokenUrlExpiryMinutes = 60,
+            BootImageSasExpiryMinutes = 60,
+            CertValidityPeriodDays = 365,
+            ClockSkewToleranceSeconds = 30,
         };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No PortalConfiguration row found — returning defaults.")]

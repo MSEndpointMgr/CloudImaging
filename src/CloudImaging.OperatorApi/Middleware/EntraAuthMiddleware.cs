@@ -1,9 +1,9 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
 using Microsoft.Identity.Web;
-using System.IdentityModel.Tokens.Jwt;
-using System.Net;
 
 namespace CloudImaging.OperatorApi.Middleware;
 
@@ -57,7 +57,7 @@ public sealed class EntraAuthMiddleware : IFunctionsWorkerMiddleware
 
             var jwtToken = handler.ReadJwtToken(token);
             context.Items[ClaimsPrincipalKey] = jwtToken;
-            context.Items["RawBearerToken"]   = token;
+            context.Items["RawBearerToken"] = token;
         }
         catch (Exception)
         {

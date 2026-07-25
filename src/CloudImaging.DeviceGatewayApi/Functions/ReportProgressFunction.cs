@@ -21,7 +21,7 @@ public sealed partial class ReportProgressFunction
         ILogger<ReportProgressFunction> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function("ReportProgress")]
@@ -31,7 +31,9 @@ public sealed partial class ReportProgressFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         var payload = JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());

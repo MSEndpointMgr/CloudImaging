@@ -38,9 +38,9 @@ public sealed class BrandingRepository
     {
         var entity = new TableEntity(Partition, Key)
         {
-            ["LogoBlobPath"]    = branding.LogoBlobPath,
-            ["PrimaryColor"]    = branding.PrimaryColor,
-            ["AccentColor"]     = branding.AccentColor,
+            ["LogoBlobPath"] = branding.LogoBlobPath,
+            ["PrimaryColor"] = branding.PrimaryColor,
+            ["AccentColor"] = branding.AccentColor,
             ["ApplicationName"] = branding.ApplicationName,
         };
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -48,9 +48,9 @@ public sealed class BrandingRepository
 
     private static BrandingConfiguration FromEntity(TableEntity e) => new()
     {
-        LogoBlobPath    = e.GetString("LogoBlobPath"),
-        PrimaryColor    = e.GetString("PrimaryColor") ?? "#0078d4",
-        AccentColor     = e.GetString("AccentColor") ?? "#005a9e",
+        LogoBlobPath = e.GetString("LogoBlobPath"),
+        PrimaryColor = e.GetString("PrimaryColor") ?? "#0078d4",
+        AccentColor = e.GetString("AccentColor") ?? "#005a9e",
         ApplicationName = e.GetString("ApplicationName") ?? "Cloud Imaging",
     };
 }

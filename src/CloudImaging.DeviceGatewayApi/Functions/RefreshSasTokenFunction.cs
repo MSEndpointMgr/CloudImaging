@@ -20,7 +20,7 @@ public sealed partial class RefreshSasTokenFunction
         ILogger<RefreshSasTokenFunction> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     [Function("RefreshSasToken")]
@@ -30,7 +30,9 @@ public sealed partial class RefreshSasTokenFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         var coreResponse = await _coreClient.RefreshSasTokenAsync(sessionGuid, context.CancellationToken);
 

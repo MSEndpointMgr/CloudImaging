@@ -73,7 +73,7 @@ public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
             LogRefreshing(_logger);
             string? thumbprint = await _loader(ct);
             _cachedThumbprint = thumbprint;
-            _lastRefreshed    = DateTimeOffset.UtcNow;
+            _lastRefreshed = DateTimeOffset.UtcNow;
             return _cachedThumbprint;
         }
         catch (Exception ex)
@@ -94,7 +94,7 @@ public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
     /// </summary>
     public void Invalidate()
     {
-        _lastRefreshed    = DateTimeOffset.MinValue;
+        _lastRefreshed = DateTimeOffset.MinValue;
         _cachedThumbprint = null;
         LogInvalidated(_logger);
     }

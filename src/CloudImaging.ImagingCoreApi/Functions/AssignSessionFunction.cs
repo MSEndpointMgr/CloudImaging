@@ -43,10 +43,10 @@ public sealed partial class AssignSessionFunction
         ILogger<AssignSessionFunction> logger)
     {
         _sessionRepo = sessionRepo;
-        _imageRepo   = imageRepo;
-        _configRepo  = configRepo;
-        _blobClient  = blobClient;
-        _logger      = logger;
+        _imageRepo = imageRepo;
+        _configRepo = configRepo;
+        _blobClient = blobClient;
+        _logger = logger;
     }
 
     [Function(nameof(AssignSessionFunction))]
@@ -56,7 +56,9 @@ public sealed partial class AssignSessionFunction
         FunctionContext context)
     {
         if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
             return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
 
         // Deserialize request body: { "osImageId": "..." }
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
@@ -70,7 +72,9 @@ public sealed partial class AssignSessionFunction
 
         var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
         if (session is null)
+        {
             return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         // 409 if session not in assignable state
         if (session.State != SessionState.SessionAssigned || session.AssignedOsImageId.HasValue)
@@ -100,24 +104,24 @@ public sealed partial class AssignSessionFunction
         // Transition: SessionAssigned → SessionStarted
         var assigned = new DeviceSession
         {
-            SessionId                    = session.SessionId,
-            State                        = SessionState.SessionStarted,
-            DeviceSerialNumber           = session.DeviceSerialNumber,
-            DeviceManufacturer           = session.DeviceManufacturer,
-            DeviceModel                  = session.DeviceModel,
-            HardwareMetadata             = session.HardwareMetadata,
+            SessionId = session.SessionId,
+            State = SessionState.SessionStarted,
+            DeviceSerialNumber = session.DeviceSerialNumber,
+            DeviceManufacturer = session.DeviceManufacturer,
+            DeviceModel = session.DeviceModel,
+            HardwareMetadata = session.HardwareMetadata,
             PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-            Passcode                     = session.Passcode,
-            PasscodeExpiresAt            = session.PasscodeExpiresAt,
-            PasscodeConsumed             = session.PasscodeConsumed,
-            DeviceSessionToken           = session.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt  = session.DeviceSessionTokenExpiresAt,
-            AssignedOsImageId            = imageId,
-            SasTokenUrl                  = sasUrl,
-            SasTokenUrlExpiresAt         = DateTimeOffset.UtcNow + sasExpiry,
-            OverallProgressPercent       = 0,
-            CreatedAt                    = session.CreatedAt,
-            LastHeartbeatAt              = DateTimeOffset.UtcNow,
+            Passcode = session.Passcode,
+            PasscodeExpiresAt = session.PasscodeExpiresAt,
+            PasscodeConsumed = session.PasscodeConsumed,
+            DeviceSessionToken = session.DeviceSessionToken,
+            DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
+            AssignedOsImageId = imageId,
+            SasTokenUrl = sasUrl,
+            SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
+            OverallProgressPercent = 0,
+            CreatedAt = session.CreatedAt,
+            LastHeartbeatAt = DateTimeOffset.UtcNow,
         };
 
         await _sessionRepo.UpdateAsync(assigned, context.CancellationToken);
@@ -127,12 +131,12 @@ public sealed partial class AssignSessionFunction
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(new
         {
-            sessionId    = assigned.SessionId,
-            state        = assigned.State.ToString(),
-            osImageId    = imageId,
-            sasTokenUrl  = sasUrl,
-            expiresAt    = assigned.SasTokenUrlExpiresAt,
-            sha256Hash   = image.Sha256Hash,
+            sessionId = assigned.SessionId,
+            state = assigned.State.ToString(),
+            osImageId = imageId,
+            sasTokenUrl = sasUrl,
+            expiresAt = assigned.SasTokenUrlExpiresAt,
+            sha256Hash = image.Sha256Hash,
         }), context.CancellationToken);
         return response;
     }
@@ -143,13 +147,16 @@ public sealed partial class AssignSessionFunction
         {
             // storagePath format: {container}/{blobName}
             var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
-            if (slash < 0) return storagePath;
+            if (slash < 0)
+            {
+                return storagePath;
+            }
 
             var container = storagePath[..slash];
-            var blobName  = storagePath[(slash + 1)..];
+            var blobName = storagePath[(slash + 1)..];
 
             var containerClient = _blobClient.GetBlobContainerClient(container);
-            var blobClient      = containerClient.GetBlobClient(blobName);
+            var blobClient = containerClient.GetBlobClient(blobName);
 
             if (!blobClient.CanGenerateSasUri)
             {
@@ -161,9 +168,9 @@ public sealed partial class AssignSessionFunction
             var sasBuilder = new BlobSasBuilder
             {
                 BlobContainerName = container,
-                BlobName          = blobName,
-                Resource          = "b",
-                ExpiresOn         = DateTimeOffset.UtcNow + expiry,
+                BlobName = blobName,
+                Resource = "b",
+                ExpiresOn = DateTimeOffset.UtcNow + expiry,
             };
             sasBuilder.SetPermissions(BlobSasPermissions.Read);
 

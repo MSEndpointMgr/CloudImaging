@@ -27,7 +27,7 @@ public sealed partial class BootMediaCertificateFunctions
         ILogger<BootMediaCertificateFunctions> logger)
     {
         _coreClient = coreClient;
-        _logger     = logger;
+        _logger = logger;
     }
 
     // ── GET /api/bootmedia/certificate/metadata ────────────────────────────
@@ -64,10 +64,10 @@ public sealed partial class BootMediaCertificateFunctions
             thumbprintDisplay = GetStringOrNull(root, "thumbprint") is string t && t.Length >= 8
                 ? t[^8..].ToUpperInvariant() + "…"
                 : GetStringOrNull(root, "thumbprint"),
-            subject           = GetStringOrNull(root, "keyVaultSecretName") ?? "Unknown",
-            issuedAt          = root.TryGetProperty("notBefore",  out var nb) ? nb.GetString() : null,
-            expiresAt         = root.TryGetProperty("notAfter",   out var na) ? na.GetString() : null,
-            isActive          = root.TryGetProperty("isActive",   out var ia) ? ia.GetBoolean() : false,
+            subject = GetStringOrNull(root, "keyVaultSecretName") ?? "Unknown",
+            issuedAt = root.TryGetProperty("notBefore", out var nb) ? nb.GetString() : null,
+            expiresAt = root.TryGetProperty("notAfter", out var na) ? na.GetString() : null,
+            isActive = root.TryGetProperty("isActive", out var ia) ? ia.GetBoolean() : false,
         };
 
         LogMetadataReturned(_logger);
@@ -88,7 +88,9 @@ public sealed partial class BootMediaCertificateFunctions
         var coreResponse = await _coreClient.GetActiveBootCertPfxAsync(context.CancellationToken);
 
         if (coreResponse.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
             return req.CreateResponse(HttpStatusCode.NotFound);
+        }
 
         if (!coreResponse.IsSuccessStatusCode)
         {
@@ -134,7 +136,7 @@ public sealed partial class BootMediaCertificateFunctions
         FunctionContext context)
     {
         using var body = await System.Text.Json.JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload    = System.Text.Json.JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
+        var payload = System.Text.Json.JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
         var coreResponse = await _coreClient.RotateCertAsync(payload!, context.CancellationToken);
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }

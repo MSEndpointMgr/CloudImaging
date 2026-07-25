@@ -46,7 +46,7 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
         ILogger<MtlsCertificateValidationMiddleware> logger)
     {
         _thumbprintCache = thumbprintCache;
-        _logger          = logger;
+        _logger = logger;
     }
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)

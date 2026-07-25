@@ -55,7 +55,9 @@ public sealed class DeviceSessionTokenService
     public static bool TryValidate(string plainToken, string storedHash)
     {
         if (string.IsNullOrWhiteSpace(plainToken) || string.IsNullOrWhiteSpace(storedHash))
+        {
             return false;
+        }
 
         var candidateHash = HashToken(plainToken);
         return CryptographicOperations.FixedTimeEquals(
@@ -73,9 +75,17 @@ public sealed class DeviceSessionTokenService
         {
             var padded = plainToken.Replace('-', '+').Replace('_', '/');
             var mod4 = padded.Length % 4;
-            if (mod4 > 0) padded += new string('=', 4 - mod4);
+            if (mod4 > 0)
+            {
+                padded += new string('=', 4 - mod4);
+            }
+
             var bytes = Convert.FromBase64String(padded);
-            if (bytes.Length < 16) return null;
+            if (bytes.Length < 16)
+            {
+                return null;
+            }
+
             return new Guid(bytes[..16]);
         }
         catch { return null; }
