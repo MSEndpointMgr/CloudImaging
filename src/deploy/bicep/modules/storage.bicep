@@ -63,7 +63,7 @@ resource containerBranding 'Microsoft.Storage/storageAccounts/blobServices/conta
 // Without this grant those table operations return HTTP 403, and session
 // bootstrap fails closed. Provisioned here so every deployment configures it
 // automatically. The deterministic guid() name makes the assignment idempotent.
-var storageTableDataContributorRoleId = '0a9a7e1f-b9d5-46cf-96f0-c7631a708d20'
+var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 
 resource deviceGatewayTableAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(storageApp.id, deviceGatewayMsiPrincipalId, storageTableDataContributorRoleId)

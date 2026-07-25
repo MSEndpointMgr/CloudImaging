@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "16921914928978709134"
+      "templateHash": "6621354513600893419"
     }
   },
   "parameters": {
@@ -299,7 +299,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "17938153358506386114"
+              "templateHash": "12600980596036244414"
             }
           },
           "parameters": {
@@ -362,37 +362,44 @@
                   "addressPrefixes": [
                     "[parameters('vnetAddressPrefix')]"
                   ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', parameters('vnetName'), parameters('apiFunctionSubnetName'))]",
+              "properties": {
+                "addressPrefix": "[parameters('apiFunctionSubnetPrefix')]",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
                 },
-                "subnets": [
+                "delegations": [
                   {
-                    "name": "[parameters('apiFunctionSubnetName')]",
+                    "name": "delegation",
                     "properties": {
-                      "addressPrefix": "[parameters('apiFunctionSubnetPrefix')]",
-                      "networkSecurityGroup": {
-                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
-                      },
-                      "delegations": [
-                        {
-                          "name": "delegation",
-                          "properties": {
-                            "serviceName": "Microsoft.Web/serverFarms"
-                          }
-                        }
-                      ],
-                      "privateEndpointNetworkPolicies": "Disabled"
-                    }
-                  },
-                  {
-                    "name": "[parameters('privateEndpointSubnetName')]",
-                    "properties": {
-                      "addressPrefix": "[parameters('privateEndpointSubnetPrefix')]",
-                      "privateEndpointNetworkPolicies": "Disabled"
+                      "serviceName": "Microsoft.Web/serverFarms"
                     }
                   }
-                ]
+                ],
+                "privateEndpointNetworkPolicies": "Disabled"
               },
               "dependsOn": [
-                "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
+                "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', parameters('vnetName'), parameters('privateEndpointSubnetName'))]",
+              "properties": {
+                "addressPrefix": "[parameters('privateEndpointSubnetPrefix')]",
+                "privateEndpointNetworkPolicies": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('apiFunctionSubnetName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
               ]
             }
           ],
@@ -403,11 +410,11 @@
             },
             "apiFunctionSubnetId": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName')), '2024-01-01').subnets[0].id]"
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('apiFunctionSubnetName'))]"
             },
             "privateEndpointSubnetId": {
               "type": "string",
-              "value": "[reference(resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName')), '2024-01-01').subnets[1].id]"
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('privateEndpointSubnetName'))]"
             }
           }
         }
@@ -443,7 +450,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "12013133895057360378"
+              "templateHash": "3724880092875918293"
             }
           },
           "parameters": {
@@ -464,7 +471,7 @@
             }
           },
           "variables": {
-            "storageTableDataContributorRoleId": "0a9a7e1f-b9d5-46cf-96f0-c7631a708d20"
+            "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3"
           },
           "resources": [
             {

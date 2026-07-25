@@ -31,6 +31,14 @@ resource nsgFunctions 'Microsoft.Network/networkSecurityGroups@2024-01-01' = {
   }
 }
 
+// Subnets are declared as standalone child resources (not inline) so that
+// redeploys do not reconcile the subnets array on the VNet resource. The
+// functions subnet carries a system-managed serviceAssociationLink from the
+// Function App's regional VNet integration (Microsoft.Web/serverFarms); an
+// inline VNet PUT tries to drop that link and fails with
+// InUseSubnetCannotBeUpdated. Omitting subnets from the VNet body preserves
+// existing subnets, and standalone subnet PUTs are idempotent no-ops when the
+// configuration is unchanged.
 resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
   name: vnetName
   location: location
@@ -38,32 +46,37 @@ resource vnet 'Microsoft.Network/virtualNetworks@2024-01-01' = {
     addressSpace: {
       addressPrefixes: [vnetAddressPrefix]
     }
-    subnets: [
-      {
-        name: apiFunctionSubnetName
-        properties: {
-          addressPrefix: apiFunctionSubnetPrefix
-          networkSecurityGroup: { id: nsgFunctions.id }
-          delegations: [
-            {
-              name: 'delegation'
-              properties: { serviceName: 'Microsoft.Web/serverFarms' }
-            }
-          ]
-          privateEndpointNetworkPolicies: 'Disabled'
-        }
-      }
-      {
-        name: privateEndpointSubnetName
-        properties: {
-          addressPrefix: privateEndpointSubnetPrefix
-          privateEndpointNetworkPolicies: 'Disabled'
-        }
-      }
-    ]
   }
 }
 
+resource apiFunctionSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-01-01' = {
+  parent: vnet
+  name: apiFunctionSubnetName
+  properties: {
+    addressPrefix: apiFunctionSubnetPrefix
+    networkSecurityGroup: { id: nsgFunctions.id }
+    delegations: [
+      {
+        name: 'delegation'
+        properties: { serviceName: 'Microsoft.Web/serverFarms' }
+      }
+    ]
+    privateEndpointNetworkPolicies: 'Disabled'
+  }
+}
+
+// Subnets on the same VNet cannot be created/updated in parallel, so chain the
+// private-endpoint subnet after the functions subnet.
+resource privateEndpointSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-01-01' = {
+  parent: vnet
+  name: privateEndpointSubnetName
+  properties: {
+    addressPrefix: privateEndpointSubnetPrefix
+    privateEndpointNetworkPolicies: 'Disabled'
+  }
+  dependsOn: [apiFunctionSubnet]
+}
+
 output vnetId string = vnet.id
-output apiFunctionSubnetId string = vnet.properties.subnets[0].id
-output privateEndpointSubnetId string = vnet.properties.subnets[1].id
+output apiFunctionSubnetId string = apiFunctionSubnet.id
+output privateEndpointSubnetId string = privateEndpointSubnet.id
