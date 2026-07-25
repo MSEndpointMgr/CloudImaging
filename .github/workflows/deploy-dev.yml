@@ -229,6 +229,9 @@ jobs:
           # Assemble a self-contained bundle: compiled dist + manifest + production
           # node_modules. Zipping dist alone omits package.json/node_modules, so the
           # Node worker cannot resolve its runtime deps and the site fails to start.
+          # The App Service uses WEBSITE_RUN_FROM_PACKAGE=1 (set by IaC) so this zip is
+          # mounted read-only instead of extracted — extracting thousands of node_modules
+          # files otherwise exceeds Kudu's SCM timeout (HTTP 499).
           rm -rf deploy-pkg
           mkdir -p deploy-pkg/dist
           cp -r dist/. deploy-pkg/dist/
@@ -236,11 +239,26 @@ jobs:
           cd deploy-pkg
           npm ci --omit=dev
           zip -r ../deploy-portal-backend.zip . > /dev/null
+          # --track-status false: skip az CLI's built-in warm-up probe. A cold start on a
+          # freshly mounted Run-From-Package can exceed its 10-min window and report a false
+          # failure even though the site comes up. We verify readiness explicitly below.
           az webapp deploy \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.APP_SERVICE_PORTAL_BACKEND }} \
             --src-path ../deploy-portal-backend.zip \
-            --type zip
+            --type zip \
+            --track-status false
+      - name: Verify backend health
+        run: |
+          url="https://${{ secrets.APP_SERVICE_PORTAL_BACKEND }}.azurewebsites.net/api/health"
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url" || echo 000)
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then echo "Portal backend is healthy."; exit 0; fi
+            sleep 15
+          done
+          echo "::error::Portal backend did not return HTTP 200 within the timeout."
+          exit 1
 
   # ── Portal frontend (Static Web App) ─────────────────────────────────────────
   portal-frontend:
