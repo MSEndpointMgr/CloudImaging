@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "15331021173172041439"
+      "templateHash": "13123331593119982684"
     }
   },
   "parameters": {
@@ -1622,7 +1622,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "1265906483019326385"
+              "templateHash": "6513687645552757885"
             }
           },
           "parameters": {
@@ -1703,8 +1703,8 @@
                       "value": "production"
                     },
                     {
-                      "name": "WEBSITE_RUN_FROM_PACKAGE",
-                      "value": "1"
+                      "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+                      "value": "false"
                     },
                     {
                       "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
@@ -1740,6 +1740,23 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
                 "[resourceId('Microsoft.Web/staticSites', parameters('stappName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/config",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('appServiceName'), 'authsettingsV2')]",
+              "properties": {
+                "globalValidation": {
+                  "requireAuthentication": false,
+                  "unauthenticatedClientAction": "AllowAnonymous"
+                },
+                "platform": {
+                  "enabled": false
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]"
               ]
             },
             {

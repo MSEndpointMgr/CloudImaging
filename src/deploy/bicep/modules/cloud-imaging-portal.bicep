@@ -43,10 +43,15 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
       appCommandLine: 'node dist/index.js'
       appSettings: [
         { name: 'NODE_ENV', value: 'production' }
-        // Mount the deploy zip read-only instead of extracting it. The backend bundle
-        // ships node_modules (thousands of files); extracting it exceeds Kudu's SCM
-        // timeout (HTTP 499). Run-From-Package mounts the package so deploys are fast.
-        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
+        // Do NOT use WEBSITE_RUN_FROM_PACKAGE=1 here: the value `1` is a Windows-only
+        // feature. On Linux App Service the container leaves wwwroot mounted empty on a
+        // cold restart, so `dist/index.js` disappears and the app crash-loops with
+        // MODULE_NOT_FOUND (works right after deploy, breaks on the first platform
+        // restart). Instead the deploy zip is extracted to the persistent /home/site/wwwroot
+        // Azure Files share, which survives restarts. SCM_DO_BUILD_DURING_DEPLOYMENT is
+        // pinned false because the bundle already ships prebuilt dist + node_modules, so
+        // Oryx must extract only (never run a server-side npm build).
+        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT', value: 'false' }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'AZURE_CLIENT_ID', value: msiClientId }
         { name: 'OPERATOR_API_BASE_URL', value: operatorApiBaseUrl }
@@ -56,6 +61,25 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
         // CORS configured to allow Static Web App origin
         { name: 'CORS_ALLOWED_ORIGINS', value: 'https://${stapp.properties.defaultHostname}' }
       ]
+    }
+  }
+}
+
+// Explicitly keep App Service Authentication (EasyAuth) disabled. The backend validates
+// Entra JWTs itself in Express middleware (and serves /api/config + /api/health
+// anonymously). If EasyAuth is ever toggled on without a fully configured identity
+// provider, its middleware returns a blanket HTTP 400 for every request, so we pin it
+// off here to keep deployments deterministic.
+resource appServiceAuth 'Microsoft.Web/sites/config@2024-04-01' = {
+  parent: appService
+  name: 'authsettingsV2'
+  properties: {
+    globalValidation: {
+      requireAuthentication: false
+      unauthenticatedClientAction: 'AllowAnonymous'
+    }
+    platform: {
+      enabled: false
     }
   }
 }

@@ -229,9 +229,10 @@ jobs:
           # Assemble a self-contained bundle: compiled dist + manifest + production
           # node_modules. Zipping dist alone omits package.json/node_modules, so the
           # Node worker cannot resolve its runtime deps and the site fails to start.
-          # The App Service uses WEBSITE_RUN_FROM_PACKAGE=1 (set by IaC) so this zip is
-          # mounted read-only instead of extracted — extracting thousands of node_modules
-          # files otherwise exceeds Kudu's SCM timeout (HTTP 499).
+          # The zip is extracted to the persistent /home/site/wwwroot Azure Files share,
+          # so the files survive platform cold restarts. Do NOT set WEBSITE_RUN_FROM_PACKAGE=1
+          # on Linux App Service: that value is Windows-only and leaves wwwroot empty after a
+          # restart, crash-looping the worker with MODULE_NOT_FOUND on dist/index.js.
           rm -rf deploy-pkg
           mkdir -p deploy-pkg/dist
           cp -r dist/. deploy-pkg/dist/
@@ -239,9 +240,9 @@ jobs:
           cd deploy-pkg
           npm ci --omit=dev
           zip -r ../deploy-portal-backend.zip . > /dev/null
-          # --track-status false: skip az CLI's built-in warm-up probe. A cold start on a
-          # freshly mounted Run-From-Package can exceed its 10-min window and report a false
-          # failure even though the site comes up. We verify readiness explicitly below.
+          # --track-status false: skip az CLI's built-in warm-up probe. A cold start after
+          # extraction can exceed its 10-min window and report a false failure even though the
+          # site comes up. We verify readiness explicitly below.
           az webapp deploy \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.APP_SERVICE_PORTAL_BACKEND }} \
