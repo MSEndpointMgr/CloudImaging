@@ -3,7 +3,6 @@ using System.Net;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
-using Microsoft.Identity.Web;
 
 namespace CloudImaging.OperatorApi.Middleware;
 
@@ -14,11 +13,6 @@ namespace CloudImaging.OperatorApi.Middleware;
 public sealed class EntraAuthMiddleware : IFunctionsWorkerMiddleware
 {
     public const string ClaimsPrincipalKey = "ClaimsPrincipal";
-
-    private readonly ITokenAcquisition _tokenAcquisition;
-
-    public EntraAuthMiddleware(ITokenAcquisition tokenAcquisition) =>
-        _tokenAcquisition = tokenAcquisition;
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
