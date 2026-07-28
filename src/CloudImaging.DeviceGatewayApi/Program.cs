@@ -29,7 +29,8 @@ var host = new HostBuilder()
         // Credentials: managed identity via DefaultAzureCredential
         services.AddHttpClient<ImagingCoreClient>(client =>
         {
-            var baseUrl = ctx.Configuration["ImagingCoreApi__BaseUrl"]
+            var baseUrl = ctx.Configuration["ImagingCoreApi:BaseUrl"]
+                ?? ctx.Configuration["ImagingCoreApi__BaseUrl"]
                 ?? throw new InvalidOperationException("ImagingCoreApi__BaseUrl is not configured.");
             client.BaseAddress = new Uri(baseUrl);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
@@ -38,7 +39,8 @@ var host = new HostBuilder()
         // Table Storage for thumbprint cache (T163)
         services.AddSingleton(sp =>
         {
-            var connStr = ctx.Configuration["AzureWebJobsStorage__accountName"]
+            var connStr = ctx.Configuration["AzureWebJobsStorage:accountName"]
+                ?? ctx.Configuration["AzureWebJobsStorage__accountName"]
                 ?? throw new InvalidOperationException("Storage account not configured.");
             return new Azure.Data.Tables.TableServiceClient(
                 new Uri($"https://{connStr}.table.core.windows.net"),

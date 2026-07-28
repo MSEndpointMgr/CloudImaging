@@ -23,7 +23,8 @@ var host = new HostBuilder()
         // Table Storage — all repositories share one TableServiceClient
         services.AddSingleton(sp =>
         {
-            var accountName = ctx.Configuration["AzureWebJobsStorage__accountName"]
+            var accountName = ctx.Configuration["AzureWebJobsStorage:accountName"]
+                ?? ctx.Configuration["AzureWebJobsStorage__accountName"]
                 ?? throw new InvalidOperationException("Storage account name is not configured.");
             return new Azure.Data.Tables.TableServiceClient(
                 new Uri($"https://{accountName}.table.core.windows.net"),
@@ -60,7 +61,8 @@ var host = new HostBuilder()
         // Azure Blob Storage (SAS token URL generation, FR-025)
         services.AddSingleton(sp =>
         {
-            var accountName = ctx.Configuration["AzureWebJobsStorage__accountName"]
+            var accountName = ctx.Configuration["AzureWebJobsStorage:accountName"]
+                ?? ctx.Configuration["AzureWebJobsStorage__accountName"]
                 ?? throw new InvalidOperationException("Storage account name is not configured.");
             return new Azure.Storage.Blobs.BlobServiceClient(
                 new Uri($"https://{accountName}.blob.core.windows.net"),
@@ -70,7 +72,8 @@ var host = new HostBuilder()
         // Azure Key Vault (boot media certificate PFX, FR-068)
         services.AddSingleton(sp =>
         {
-            var kvUri = ctx.Configuration["KeyVault__VaultUri"]
+            var kvUri = ctx.Configuration["KeyVault:VaultUri"]
+                ?? ctx.Configuration["KeyVault__VaultUri"]
                 ?? throw new InvalidOperationException("KeyVault__VaultUri is not configured.");
             return new Azure.Security.KeyVault.Secrets.SecretClient(
                 new Uri(kvUri),
