@@ -35,7 +35,8 @@ public sealed class ImagingStepRepository
 
     public async Task<IReadOnlyList<ImagingStep>> GetBySessionAsync(Guid sessionId, CancellationToken ct = default)
     {
-        var filter = TableClient.CreateQueryFilter($"PartitionKey eq '{sessionId}'");
+        var partitionKey = sessionId.ToString();
+        var filter = TableClient.CreateQueryFilter($"PartitionKey eq {partitionKey}");
         var steps = new List<ImagingStep>();
         await foreach (var entity in _table.QueryAsync<TableEntity>(filter, cancellationToken: ct))
         {

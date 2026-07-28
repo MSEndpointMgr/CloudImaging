@@ -41,7 +41,7 @@ public sealed class OsImageRepository
 
     public IAsyncEnumerable<OsImage> ListActiveAsync(CancellationToken ct = default)
     {
-        var filter = TableClient.CreateQueryFilter($"PartitionKey eq '{Partition}' and IsActive eq true");
+        var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition} and IsActive eq true");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
     }
 

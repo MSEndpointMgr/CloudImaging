@@ -90,7 +90,7 @@ public sealed class DeviceSessionRepository
     public async Task<DeviceSession?> FindByPasscodeHashAsync(string passcodeHash, CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter(
-            $"PartitionKey eq '{ActivePartition}' and PasscodeHash eq '{passcodeHash}' and PasscodeConsumed eq false");
+            $"PartitionKey eq {ActivePartition} and PasscodeHash eq {passcodeHash} and PasscodeConsumed eq false");
 
         await foreach (var entity in _table.QueryAsync<TableEntity>(filter, cancellationToken: ct))
         {
@@ -102,7 +102,7 @@ public sealed class DeviceSessionRepository
     /// <summary>List all active sessions for portal dashboard (FR-031).</summary>
     public IAsyncEnumerable<DeviceSession> QueryActiveAsync(CancellationToken ct = default)
     {
-        var filter = TableClient.CreateQueryFilter($"PartitionKey eq '{ActivePartition}'");
+        var filter = TableClient.CreateQueryFilter($"PartitionKey eq {ActivePartition}");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct)
             .Select(FromEntity);
     }
