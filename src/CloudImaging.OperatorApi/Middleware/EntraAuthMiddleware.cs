@@ -1,18 +1,25 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using CloudImaging.OperatorApi.Security;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
+using Microsoft.IdentityModel.Tokens;
 
 namespace CloudImaging.OperatorApi.Middleware;
 
 /// <summary>
 /// Validates Entra ID bearer tokens on all Operator API endpoints.
-/// Tokens are validated against the Operator API's own app registration audience (FR-061).
+/// Tokens are validated against the Operator API's own app registration audience (FR-061):
+/// cryptographic signature, issuer, audience and lifetime are all verified via
+/// <see cref="EntraTokenValidator"/>.
 /// </summary>
 public sealed class EntraAuthMiddleware : IFunctionsWorkerMiddleware
 {
     public const string ClaimsPrincipalKey = "ClaimsPrincipal";
+
+    private readonly EntraTokenValidator _tokenValidator;
+
+    public EntraAuthMiddleware(EntraTokenValidator tokenValidator) => _tokenValidator = tokenValidator;
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
@@ -40,22 +47,19 @@ public sealed class EntraAuthMiddleware : IFunctionsWorkerMiddleware
 
         try
         {
-            // Parse without full validation here; Microsoft.Identity.Web validates in the pipeline.
-            // For Azure Functions isolated worker, we perform manual JWT validation via the handler below.
-            var handler = new JwtSecurityTokenHandler();
-            if (!handler.CanReadToken(token))
-            {
-                await WriteUnauthorizedAsync(context, request, "Token is malformed.");
-                return;
-            }
-
-            var jwtToken = handler.ReadJwtToken(token);
-            context.Items[ClaimsPrincipalKey] = jwtToken;
+            // Full validation: signature (tenant JWKS), issuer, audience and lifetime.
+            var principal = await _tokenValidator.ValidateAsync(token, context.CancellationToken);
+            context.Items[ClaimsPrincipalKey] = principal;
             context.Items["RawBearerToken"] = token;
+        }
+        catch (SecurityTokenException)
+        {
+            await WriteUnauthorizedAsync(context, request, "Token validation failed.");
+            return;
         }
         catch (Exception)
         {
-            await WriteUnauthorizedAsync(context, request, "Token could not be parsed.");
+            await WriteUnauthorizedAsync(context, request, "Token could not be validated.");
             return;
         }
 

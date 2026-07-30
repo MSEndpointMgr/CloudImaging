@@ -1,6 +1,8 @@
 using CloudImaging.OperatorApi.Middleware;
+using CloudImaging.OperatorApi.Security;
 using CloudImaging.OperatorApi.Services;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Identity.Web;
@@ -46,6 +48,27 @@ var host = new HostBuilder()
         // Identity.Web 4.x uses AddAuthentication().AddMicrosoftIdentityWebApi() pattern
         services.AddAuthentication()
             .AddMicrosoftIdentityWebApi(ctx.Configuration, "Entra");
+
+        // Full bearer-token validator (signature/issuer/audience/lifetime) used by
+        // EntraAuthMiddleware in the isolated-worker pipeline (FR-061).
+        services.AddSingleton(_ =>
+        {
+            var tenantId = ctx.Configuration["Entra:TenantId"]
+                ?? ctx.Configuration["Entra__TenantId"]
+                ?? throw new InvalidOperationException("Entra__TenantId is not configured.");
+            var operatorApiClientId = ctx.Configuration["Entra:ClientId"]
+                ?? ctx.Configuration["Entra__ClientId"]
+                ?? throw new InvalidOperationException("Entra__ClientId is not configured.");
+            var instance = ctx.Configuration["Entra:Instance"]
+                ?? ctx.Configuration["Entra__Instance"];
+
+            return new EntraTokenValidator(new EntraValidationOptions
+            {
+                TenantId = tenantId,
+                Instance = instance,
+                ValidAudiences = [operatorApiClientId],
+            });
+        });
     })
     .Build();
 

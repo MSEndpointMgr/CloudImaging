@@ -1,5 +1,5 @@
-using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Security.Claims;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Azure.Functions.Worker.Middleware;
@@ -31,17 +31,17 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
-        if (!context.Items.TryGetValue(EntraAuthMiddleware.ClaimsPrincipalKey, out var tokenObj)
-            || tokenObj is not JwtSecurityToken jwt)
+        if (!context.Items.TryGetValue(EntraAuthMiddleware.ClaimsPrincipalKey, out var principalObj)
+            || principalObj is not ClaimsPrincipal principal)
         {
             // EntraAuthMiddleware already rejected the request; this shouldn't be reached
             await next(context);
             return;
         }
 
-        // Extract roles from the JWT 'roles' claim
-        var roles = jwt.Claims
-            .Where(c => c.Type == "roles")
+        // Extract roles from the validated 'roles' claim
+        var roles = principal
+            .FindAll("roles")
             .Select(c => c.Value)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
