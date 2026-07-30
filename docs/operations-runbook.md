@@ -159,7 +159,8 @@ All components are stateless (state in Table Storage + Blob Storage + Key Vault)
 
 ```powershell
 # Back up the boot media certificate PFX
-$secret = Get-AzKeyVaultSecret -VaultName mse-prod-kv -Name boot-media-cert-<thumbprint>
+# Key Vault name follows the naming convention {prefix}-{env}-kv (e.g. corp-prod-kv)
+$secret = Get-AzKeyVaultSecret -VaultName <prefix>-<env>-kv -Name boot-media-cert-<thumbprint>
 $secret | ConvertTo-Json | Out-File cert-backup.json
 ```
 

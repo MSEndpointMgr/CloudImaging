@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "394804262461513936"
+      "templateHash": "9942516323032569588"
     }
   },
   "parameters": {
@@ -159,8 +159,8 @@
     }
   },
   "variables": {
-    "prefix": "[format('{0}-{1}', parameters('resourcePrefix'), parameters('environment'))]",
-    "storagePrefix": "[format('{0}{1}', parameters('resourcePrefix'), parameters('environment'))]",
+    "prefix": "[format('{0}-{1}-ci', parameters('resourcePrefix'), parameters('environment'))]",
+    "storagePrefix": "[format('{0}{1}ci', parameters('resourcePrefix'), parameters('environment'))]",
     "names": {
       "vnet": "[format('{0}-vnet', variables('prefix'))]",
       "apiFunctionSubnet": "[format('{0}-snet-functions', variables('prefix'))]",

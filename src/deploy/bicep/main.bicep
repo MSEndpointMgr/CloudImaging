@@ -72,11 +72,13 @@ param functionAppSku string = 'EP1'
 param appServiceSku string = 'P1v3'
 
 // ── Naming convention helpers ─────────────────────────────────────────────────
-// Pattern: {prefix}-{env}-{type}[-{name}] for all resources
-// Storage Accounts: {prefix}{env}st{purpose} (no hyphens, max 24 chars)
+// Pattern: {org}-{env}-ci-{type}[-{name}] for all resources
+// Storage Accounts: {org}{env}cist{purpose} (no hyphens, max 24 chars)
+// The 'ci' segment (Cloud Imaging) identifies every resource as belonging to this
+// solution, so a technician can distinguish them from other workloads in the subscription.
 
-var prefix = '${resourcePrefix}-${environment}'
-var storagePrefix = '${resourcePrefix}${environment}'
+var prefix = '${resourcePrefix}-${environment}-ci'
+var storagePrefix = '${resourcePrefix}${environment}ci'
 
 // Resource names
 var names = {

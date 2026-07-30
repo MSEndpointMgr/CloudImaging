@@ -72,7 +72,7 @@
                   "visible": true,
                   "options": {
                     "style": "Info",
-                    "text": "[concat('Example names: ', steps('configuration').namingSection.resourcePrefix, '-', steps('basics').environment, '-func-gateway  |  ', steps('configuration').namingSection.resourcePrefix, steps('basics').environment, 'stcore')]"
+                    "text": "[concat('All resources include a ci (Cloud Imaging) segment. Example names: ', steps('configuration').namingSection.resourcePrefix, '-', steps('basics').environment, '-ci-func-gateway  |  ', steps('configuration').namingSection.resourcePrefix, steps('basics').environment, 'cistcore')]"
                   }
                 }
               ]

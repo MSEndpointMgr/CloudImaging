@@ -2,17 +2,17 @@
   "version": "2.0.0",
   // VS Code workspace deployment tasks for the core development team (FR-046, FR-047).
   // These tasks are for INTERNAL DEVELOPER USE ONLY and MUST NOT be included in community release bundles.
-  // Each task triggers the deploy-components.yml workflow via `gh workflow run`,
+  // Each task triggers the ci.yml workflow via `gh workflow run` with a component input,
   // which uses OIDC-based federated identity (no long-lived credentials).
   // Fallback az CLI commands are documented as comments for offline scenarios.
   "tasks": [
     {
       "label": "Deploy: Device Gateway API",
       "type": "shell",
-      "command": "gh workflow run deploy-components.yml --field component=DeviceGatewayApi",
+      "command": "gh workflow run ci.yml --field component=DeviceGatewayApi",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers GitHub Actions deploy-components.yml to redeploy DeviceGatewayApi to the shared dev environment. Requires `gh` CLI authenticated to the repo.",
+      "detail": "Triggers GitHub Actions ci.yml to redeploy DeviceGatewayApi to the shared dev environment. Requires `gh` CLI authenticated to the repo.",
       "options": {
         "statusbar": {
           "hide" : true
@@ -25,10 +25,10 @@
     {
       "label": "Deploy: Operator API",
       "type": "shell",
-      "command": "gh workflow run deploy-components.yml --field component=OperatorApi",
+      "command": "gh workflow run ci.yml --field component=OperatorApi",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for OperatorApi.",
+      "detail": "Triggers ci.yml for OperatorApi.",
       "options": {
         "statusbar": {
           "hide" : true
@@ -39,10 +39,10 @@
     {
       "label": "Deploy: Imaging Core API",
       "type": "shell",
-      "command": "gh workflow run deploy-components.yml --field component=ImagingCoreApi",
+      "command": "gh workflow run ci.yml --field component=ImagingCoreApi",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for ImagingCoreApi.",
+      "detail": "Triggers ci.yml for ImagingCoreApi.",
       "options": {
         "statusbar": {
           "hide" : true
@@ -53,10 +53,10 @@
     {
       "label": "Deploy: Portal Backend",
       "type": "shell",
-      "command": "gh workflow run deploy-components.yml --field component=PortalBackend",
+      "command": "gh workflow run ci.yml --field component=PortalBackend",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for the Portal backend App Service.",
+      "detail": "Triggers ci.yml for the Portal backend App Service.",
       "options": {
         "statusbar": {
           "hide" : true
@@ -67,10 +67,10 @@
     {
       "label": "Deploy: Portal Frontend",
       "type": "shell",
-      "command": "gh workflow run deploy-components.yml --field component=PortalFrontend",
+      "command": "gh workflow run ci.yml --field component=PortalFrontend",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-components.yml for the Portal frontend Static Web App.",
+      "detail": "Triggers ci.yml for the Portal frontend Static Web App.",
       "options": {
         "statusbar": {
           "hide" : true
@@ -79,12 +79,12 @@
       // Fallback: npx @azure/static-web-apps-cli deploy ./dist --deployment-token <token>
     },
     {
-      "label": "Deploy: Full Stack (IaC + all components)",
+      "label": "Deploy: All components",
       "type": "shell",
-      "command": "gh workflow run deploy-dev.yml --field confirm=deploy",
+      "command": "gh workflow run ci.yml --field component=all",
       "problemMatcher": [],
       "group": "none",
-      "detail": "Triggers deploy-dev.yml for a full-stack deployment (Bicep IaC + all components). Use only for initial setup or full environment refresh.",
+      "detail": "Triggers ci.yml to build/test/deploy ALL components to the shared dev environment. Infrastructure (Bicep) is deployed separately via the 'IaC: Publish Template Spec' task.",
       "options": {
         "statusbar": {
           "hide" : true

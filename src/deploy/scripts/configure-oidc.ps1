@@ -11,7 +11,7 @@
         repo:MSEndpointMgr/CloudImaging:environment:azure-dev
 
     NOTE: The subject's environment segment must match the 'environment:' value used by
-    the deploy workflows (.github/workflows/deploy-dev.yml uses 'azure-dev'). If they differ,
+    the deploy workflow (.github/workflows/ci.yml uses 'azure-dev'). If they differ,
     azure/login fails with AADSTS700213 (no matching federated identity record).
 
 .PARAMETER TenantId

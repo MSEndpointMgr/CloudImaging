@@ -3,15 +3,16 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="Cloud Imaging"
-        MinWidth="1024" MinHeight="768"
-        Width="1024"   Height="768"
+        MinWidth="800" MinHeight="600"
+        Width="800"   Height="600"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
         ExtendsContentIntoTitleBar="True"
         WindowCornerPreference="Round">
     <!--
-        Fixed layout: 1024×768 minimum, centered on display, no scroll (FR-002b).
-        Navigation frame hosts all four views without page-level scrolling.
+        Fixed layout sized to fit the smallest default WinPE screen resolution:
+        800×600 (also fits 1024×768 and larger, centered on display). No page-level
+        scrolling — every view is laid out to fit within 800×600 (FR-002b).
         Fluent title bar for a consistent look with the Media Builder; backdrop is
         left at the default so the window renders correctly under WinPE (no DWM Mica).
     -->

@@ -38,7 +38,7 @@ if (-not $ImagingCoreMsiName) {
     if (-not $ResourcePrefix) {
         $ResourcePrefix = ($ResourceGroupName -split '-')[1]
     }
-    $ImagingCoreMsiName = "$ResourcePrefix-$Environment-msi-core"
+    $ImagingCoreMsiName = "$ResourcePrefix-$Environment-ci-msi-core"
 }
 
 Write-Host "Resolving Imaging Core API managed identity: $ImagingCoreMsiName"

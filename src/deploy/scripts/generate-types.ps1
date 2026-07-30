@@ -7,7 +7,7 @@
     TypeScript type definitions for use by the portal frontend and backend.
 
 .PARAMETER DeviceGatewayUrl
-    Base URL of the Device Gateway API (e.g. https://mse-dev-func-gateway.azurewebsites.net).
+    Base URL of the Device Gateway API (e.g. https://mse-dev-ci-func-gateway.azurewebsites.net).
 
 .PARAMETER OperatorApiUrl
     Base URL of the Operator API.

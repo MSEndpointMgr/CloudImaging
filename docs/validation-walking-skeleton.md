@@ -19,15 +19,18 @@ Validate the minimum end-to-end path across all six deployed components:
 
 ## Prerequisites
 
-All six Azure-hosted components deployed to the shared dev environment (`mse-az-cloud-imaging-dev`):
+All six Azure-hosted components deployed to a resource group. Resource names follow the
+naming convention `{prefix}-{env}-{type}[-{name}]` (Storage Accounts use `{prefix}{env}st{purpose}`),
+where `{prefix}` and `{env}` are the values entered during deployment. Substitute your own
+prefix/environment for the placeholders below:
 
 | Component | URL / Resource |
 |---|---|
-| Device Gateway API | `mse-dev-func-gateway.azurewebsites.net` |
-| Operator API | `mse-dev-func-operator.azurewebsites.net` |
+| Device Gateway API | `<prefix>-<env>-func-gateway.azurewebsites.net` |
+| Operator API | `<prefix>-<env>-func-operator.azurewebsites.net` |
 | Imaging Core API | Private Link (via Device Gateway and Operator API) |
-| Portal Backend | `mse-dev-app-portal.azurewebsites.net` |
-| Portal Frontend | `mse-dev-swa-portal.azurestaticapps.net` |
+| Portal Backend | `<prefix>-<env>-app-portal.azurewebsites.net` |
+| Portal Frontend | `<prefix>-<env>-swa-portal.azurestaticapps.net` |
 
 **Required also**:
 - At least one OS image registered in the catalog

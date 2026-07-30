@@ -1,11 +1,17 @@
 name: CI / CD (Azure)
 
-# Runs when commits land on main (and on manual dispatch).
+# The single build/test/deploy pipeline for the shared dev environment.
+# Runs automatically when commits land on main, and on manual dispatch.
 # There is one self-contained job per component: it builds, tests, lints and —
-# for the Azure-hosted components — deploys to the dev environment. Each job only
-# runs when that component's own files, or the shared code it depends on, changed
-# in the push. A manual workflow_dispatch run forces every component to run.
+# for the Azure-hosted components — deploys to the dev environment.
 #
+# - On push: each job only runs when that component's own files, or the shared
+#   code it depends on, changed in the push (path-based change detection).
+# - On manual dispatch: pick a single component to redeploy, or "all" to run
+#   every job (replaces the former deploy-components.yml / deploy-dev.yml).
+#
+# Infrastructure (Bicep) is deployed separately via the Azure Template Spec
+# (see the "IaC: Publish Template Spec" task), not from this workflow.
 # Client and MediaBuilder are build + test only — they are never deployed to Azure.
 
 on:
@@ -13,10 +19,20 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
-      reason:
-        description: 'Reason for manual trigger (e.g. force redeploy)'
-        required: false
-        default: 'Manual trigger'
+      component:
+        description: 'Component to build/deploy on this manual run'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - DeviceGatewayApi
+          - OperatorApi
+          - ImagingCoreApi
+          - PortalBackend
+          - PortalFrontend
+          - Client
+          - MediaBuilder
 
 concurrency:
   group: ci-deploy-${{ github.ref }}
@@ -101,7 +117,9 @@ jobs:
   device-gateway:
     name: DeviceGatewayApi (build + test + deploy)
     needs: [changes, security-leakage-scan]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.gateway == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.gateway == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'DeviceGatewayApi'))
     runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
@@ -138,6 +156,17 @@ jobs:
           FUNCTION_APP: ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }}
         run: |
           set -euo pipefail
+          # Resolve the app package storage account. Prefer the STORAGE_ACCOUNT_APP secret
+          # when set; otherwise discover the '*stapp' account in the resource group so the
+          # deploy works without extra secrets.
+          if [ -z "${STORAGE_ACCOUNT:-}" ]; then
+            STORAGE_ACCOUNT=$(az storage account list --resource-group "$RESOURCE_GROUP" \
+              --query "[?ends_with(name, 'stapp')].name | [0]" -o tsv)
+          fi
+          if [ -z "${STORAGE_ACCOUNT:-}" ]; then
+            echo "::error::Could not resolve the app package storage account. Set the STORAGE_ACCOUNT_APP secret or ensure a '*stapp' account exists in $RESOURCE_GROUP."
+            exit 1
+          fi
           (cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip . > /dev/null)
           PKG="devicegatewayapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
           az storage blob upload \
@@ -158,7 +187,9 @@ jobs:
   operator:
     name: OperatorApi (build + test + deploy)
     needs: [changes, security-leakage-scan]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.operator == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.operator == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'OperatorApi'))
     runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
@@ -191,6 +222,17 @@ jobs:
           FUNCTION_APP: ${{ secrets.FUNCTION_APP_OPERATOR }}
         run: |
           set -euo pipefail
+          # Resolve the app package storage account. Prefer the STORAGE_ACCOUNT_APP secret
+          # when set; otherwise discover the '*stapp' account in the resource group so the
+          # deploy works without extra secrets.
+          if [ -z "${STORAGE_ACCOUNT:-}" ]; then
+            STORAGE_ACCOUNT=$(az storage account list --resource-group "$RESOURCE_GROUP" \
+              --query "[?ends_with(name, 'stapp')].name | [0]" -o tsv)
+          fi
+          if [ -z "${STORAGE_ACCOUNT:-}" ]; then
+            echo "::error::Could not resolve the app package storage account. Set the STORAGE_ACCOUNT_APP secret or ensure a '*stapp' account exists in $RESOURCE_GROUP."
+            exit 1
+          fi
           (cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip . > /dev/null)
           PKG="operatorapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
           az storage blob upload \
@@ -211,7 +253,9 @@ jobs:
   imaging-core:
     name: ImagingCoreApi (build + test + deploy)
     needs: [changes, security-leakage-scan]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.core == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.core == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'ImagingCoreApi'))
     runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
@@ -247,6 +291,17 @@ jobs:
           FUNCTION_APP: ${{ secrets.FUNCTION_APP_IMAGING_CORE }}
         run: |
           set -euo pipefail
+          # Resolve the Core package storage account. Prefer the STORAGE_ACCOUNT_CORE secret
+          # when set; otherwise discover the '*stcore' account in the resource group so the
+          # deploy works without extra secrets.
+          if [ -z "${STORAGE_ACCOUNT:-}" ]; then
+            STORAGE_ACCOUNT=$(az storage account list --resource-group "$RESOURCE_GROUP" \
+              --query "[?ends_with(name, 'stcore')].name | [0]" -o tsv)
+          fi
+          if [ -z "${STORAGE_ACCOUNT:-}" ]; then
+            echo "::error::Could not resolve the Core package storage account. Set the STORAGE_ACCOUNT_CORE secret or ensure a '*stcore' account exists in $RESOURCE_GROUP."
+            exit 1
+          fi
           (cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip . > /dev/null)
           PKG="imagingcoreapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
           az storage blob upload \
@@ -267,7 +322,9 @@ jobs:
   client:
     name: Client (WPF, build + test)
     needs: [changes]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.client == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'Client'))
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -285,7 +342,9 @@ jobs:
   media-builder:
     name: MediaBuilder (WPF, build + test)
     needs: [changes]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.media-builder == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.media-builder == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'MediaBuilder'))
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -303,7 +362,9 @@ jobs:
   portal-backend:
     name: Portal backend (build + lint + test + deploy)
     needs: [changes, security-leakage-scan]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.portal-backend == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.portal-backend == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'PortalBackend'))
     runs-on: ubuntu-latest
     environment: azure-dev
     permissions:
@@ -373,7 +434,9 @@ jobs:
   portal-frontend:
     name: Portal frontend (build + lint + test + deploy)
     needs: [changes, security-leakage-scan]
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.portal-frontend == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.changes.outputs.portal-frontend == 'true') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'PortalFrontend'))
     runs-on: ubuntu-latest
     environment: azure-dev
     permissions:

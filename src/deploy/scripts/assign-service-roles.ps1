@@ -101,7 +101,7 @@ if (-not $ResourcePrefix) {
     Write-Host "ResourcePrefix not provided; derived '$ResourcePrefix' from resource group name."
 }
 
-$portalMsiName = "$ResourcePrefix-$Environment-msi-portal"
+$portalMsiName = "$ResourcePrefix-$Environment-ci-msi-portal"
 Write-Host ""
 Write-Host "Looking up Portal backend managed identity: $portalMsiName"
 
