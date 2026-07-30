@@ -9,11 +9,13 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
 
-        // Follow the OS light/dark theme. Matches the working reference app, which
-        // calls this in the constructor. Guarded so a failure (e.g. under elevation)
-        // never blocks startup — theme following is cosmetic.
+        // Follow the OS light/dark theme. Apply the current system theme up front so
+        // the app adheres to the OS setting at launch (SystemThemeWatcher only reacts
+        // to later *changes*, not the initial state). Guarded so a failure (e.g. under
+        // elevation) never blocks startup — theme following is cosmetic.
         try
         {
+            Wpf.Ui.Appearance.ApplicationThemeManager.ApplySystemTheme();
             Wpf.Ui.Appearance.SystemThemeWatcher.Watch(this);
         }
         catch (Exception)

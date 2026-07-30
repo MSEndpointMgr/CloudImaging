@@ -1,4 +1,5 @@
 using System.IO;
+using System.Management;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -44,6 +45,32 @@ public sealed partial class UsbPartitionProvisioningService
         {
             try { File.Delete(scriptPath); } catch { /* best-effort */ }
         }
+    }
+
+    /// <summary>
+    /// Returns the drive letter (e.g. <c>"E:"</c>) of the FAT32 volume labelled <c>BOOT</c>
+    /// created by <see cref="ProvisionAsync"/>, or <c>null</c> if it cannot be located.
+    /// Used to hand the boot partition off to the deployment step.
+    /// </summary>
+    public string? FindBootVolumeDriveLetter()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='BOOT'");
+            using var results = searcher.Get();
+            foreach (ManagementObject volume in results)
+            {
+                var letter = volume["DriveLetter"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(letter))
+                    return letter;   // e.g. "E:"
+            }
+        }
+        catch (ManagementException ex)
+        {
+            LogBootVolumeLookupFailed(_logger, ex);
+        }
+        return null;
     }
 
     private static string BuildDiskpartScript(uint diskNumber) =>
@@ -92,4 +119,7 @@ public sealed partial class UsbPartitionProvisioningService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "USB disk {DiskNumber} partitioned successfully.")]
     private static partial void LogComplete(ILogger logger, uint diskNumber);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not locate the BOOT volume drive letter after provisioning.")]
+    private static partial void LogBootVolumeLookupFailed(ILogger logger, Exception ex);
 }

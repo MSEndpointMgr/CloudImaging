@@ -55,9 +55,28 @@ public partial class App : System.Windows.Application
             var genService = new BootImageGenerationService(
                 loggerFactory.CreateLogger<BootImageGenerationService>(), operatorApiClient);
 
+            // A dedicated HttpClient for large boot-image downloads (no Operator API base address).
+            var downloadHttpClient = new HttpClient();
+
+            var services = new AppServices(
+                authService,
+                operatorApiClient,
+                genService,
+                new UsbSafetyValidationService(loggerFactory.CreateLogger<UsbSafetyValidationService>()),
+                new BootImageDownloadService(downloadHttpClient, loggerFactory.CreateLogger<BootImageDownloadService>()),
+                new UsbPartitionProvisioningService(loggerFactory.CreateLogger<UsbPartitionProvisioningService>()),
+                new BootImageDeploymentService(loggerFactory.CreateLogger<BootImageDeploymentService>()),
+                loggerFactory);
+
             var mainWindow = new MainWindow();
-            mainWindow.NavigateTo(BuildSignInView(mainWindow, authService, genService, loggerFactory));
+            mainWindow.NavigateTo(BuildSignInView(mainWindow, services));
             mainWindow.Show();
+
+#if DEV_SIMULATION
+            // DEV-ONLY: floating navigator to step through every view without a real
+            // Entra ID sign-in. Compiled only in Debug (DEV_SIMULATION); never shipped.
+            ShowDevSimulationLauncher(mainWindow, services);
+#endif
         }
         catch (Exception ex)
         {
@@ -99,47 +118,71 @@ public partial class App : System.Windows.Application
     }
 
     // ── Navigation factories ──────────────────────────────────────────────────
-
-    private static SignInView BuildSignInView(
-        MainWindow window,
-        EntraAuthenticationService auth,
-        BootImageGenerationService gen,
-        ILoggerFactory lf)
+#if DEV_SIMULATION
+    /// <summary>
+    /// DEV-ONLY: shows the simulation launcher that lets a developer jump directly to any
+    /// view and bypass the Entra ID sign-in gate. Compiled only when DEV_SIMULATION is
+    /// defined (Debug builds &mdash; see the &lt;DefineConstants&gt; condition in the .csproj), so
+    /// it can never appear in a released build.
+    ///
+    /// MANDATORY: every navigable view MUST be reachable here. When a new view is added to
+    /// the app, add an onXxxView action below (and a NavButton in DevSimulationLauncher) in
+    /// the SAME change so the navigator always covers every view.
+    /// </summary>
+    private static void ShowDevSimulationLauncher(MainWindow window, AppServices svc)
+    {
+        var launcher = new DevMode.DevSimulationLauncher(
+            window,
+            onSignInView:             () => window.NavigateTo(BuildSignInView(window, svc)),
+            onOperationSelectionView: () => window.NavigateTo(BuildOperationSelectionView(window, svc)),
+            onGenerateBootImageView:  () => window.NavigateTo(BuildGenerateBootImageView(window, svc)),
+            onPrepareUsbView:         () => window.NavigateTo(BuildPrepareStorageDeviceView(window, svc)));
+        launcher.Show();
+    }
+#endif
+    private static SignInView BuildSignInView(MainWindow window, AppServices svc)
     {
         var view = new SignInView();
         view.DataContext = new SignInViewModel(
-            auth,
-            () => window.NavigateTo(BuildOperationSelectionView(window, auth, gen, lf)));
+            svc.Auth,
+            () => window.NavigateTo(BuildOperationSelectionView(window, svc)));
         return view;
     }
 
-    private static OperationSelectionView BuildOperationSelectionView(
-        MainWindow window,
-        EntraAuthenticationService auth,
-        BootImageGenerationService gen,
-        ILoggerFactory lf)
+    private static OperationSelectionView BuildOperationSelectionView(MainWindow window, AppServices svc)
     {
         var view = new OperationSelectionView();
         view.DataContext = new OperationSelectionViewModel(op =>
         {
             if (op == "GenerateBootImage")
-                window.NavigateTo(BuildGenerateBootImageView(window, auth, gen, lf));
-            // PrepareUSB reserved for a future sprint
+                window.NavigateTo(BuildGenerateBootImageView(window, svc));
+            else if (op == "PrepareUSB")
+                window.NavigateTo(BuildPrepareStorageDeviceView(window, svc));
         });
         return view;
     }
 
-    private static GenerateBootImageView BuildGenerateBootImageView(
-        MainWindow window,
-        EntraAuthenticationService auth,
-        BootImageGenerationService gen,
-        ILoggerFactory lf)
+    private static GenerateBootImageView BuildGenerateBootImageView(MainWindow window, AppServices svc)
     {
         var view = new GenerateBootImageView();
         view.DataContext = new GenerateBootImageViewModel(
-            gen,
-            auth,
-            () => window.NavigateTo(BuildOperationSelectionView(window, auth, gen, lf)));
+            svc.Gen,
+            svc.Auth,
+            () => window.NavigateTo(BuildOperationSelectionView(window, svc)));
+        return view;
+    }
+
+    private static PrepareStorageDeviceView BuildPrepareStorageDeviceView(MainWindow window, AppServices svc)
+    {
+        var view = new PrepareStorageDeviceView();
+        view.DataContext = new PrepareStorageDeviceViewModel(
+            svc.OperatorApi,
+            svc.Auth,
+            svc.UsbValidator,
+            svc.Downloader,
+            svc.Provisioner,
+            svc.Deployer,
+            () => window.NavigateTo(BuildOperationSelectionView(window, svc)));
         return view;
     }
 
@@ -202,4 +245,15 @@ public partial class App : System.Windows.Application
         string TenantId,
         string OperatorApiScope,
         string OperatorApiBaseUrl);
+
+    /// <summary>Shared services threaded through the navigation factories.</summary>
+    private sealed record AppServices(
+        EntraAuthenticationService Auth,
+        OperatorApiClient OperatorApi,
+        BootImageGenerationService Gen,
+        UsbSafetyValidationService UsbValidator,
+        BootImageDownloadService Downloader,
+        UsbPartitionProvisioningService Provisioner,
+        BootImageDeploymentService Deployer,
+        ILoggerFactory LoggerFactory);
 }

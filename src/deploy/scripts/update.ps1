@@ -12,6 +12,9 @@
         - Authenticated Azure session (Connect-AzAccount or az login)
         - Owner or Contributor role on the target resource group
         - User Access Administrator role (for role assignment updates)
+        - Storage Blob Data Contributor on the app-package storage accounts
+          (the *stapp and *stcore accounts) so the release ZIPs can be uploaded
+          for Run-From-Package deployment
 
 .PARAMETER ResourceGroupName
     Required. The Azure resource group that hosts the Cloud Imaging deployment.
@@ -119,27 +122,74 @@ if ($null -eq $functionApps) {
     throw "No Function Apps found in resource group '$ResourceGroupName'. Verify the resource group name and your Azure login."
 }
 
+# Resolve the package storage accounts. Function Apps deploy via Run-From-Package: the
+# release ZIP is uploaded to the 'app-packages' container and WEBSITE_RUN_FROM_PACKAGE is
+# pointed at the blob URL (read back with each app's managed identity). Operator + Gateway
+# share the '*stapp' account; Core (private) uses its own '*stcore' account.
+$storageAccounts   = Get-AzStorageAccount -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+$storageAppName     = ($storageAccounts | Where-Object { $_.StorageAccountName -like '*stapp'  } | Select-Object -First 1).StorageAccountName
+$storageCoreName    = ($storageAccounts | Where-Object { $_.StorageAccountName -like '*stcore' } | Select-Object -First 1).StorageAccountName
+
+# Blob-name label for traceability. $resolvedVersion is set when downloading from GitHub;
+# for a local -ArchivePath it is unset, so fall back to 'local'. Sanitize for blob naming.
+$packageLabel = if ($resolvedVersion) { $resolvedVersion -replace '[^A-Za-z0-9._-]', '-' } else { 'local' }
+
 # ── Step 5: Deploy each component ─────────────────────────────────────────────────
 
 function Deploy-FunctionApp {
-    param([string]$Name, [string]$ZipPath)
+    param(
+        [string]$Name,
+        [string]$ZipPath,
+        [string]$StorageAccount,
+        [string]$Component
+    )
     if (-not (Test-Path $ZipPath)) { Write-Warning "Skipping $Name — ZIP not found at $ZipPath"; return }
     $app = $functionApps | Where-Object { $_.Name -eq $Name } | Select-Object -First 1
     if ($null -eq $app) { Write-Warning "Function App '$Name' not found in $ResourceGroupName — skipping"; return }
+    if ([string]::IsNullOrWhiteSpace($StorageAccount)) {
+        Write-Warning "No package storage account resolved for $Name — skipping"; return
+    }
 
-    if ($PSCmdlet.ShouldProcess($app.Name, "Deploy Function App from $ZipPath")) {
-        Write-Host "Deploying $($app.Name)…"
-        az functionapp deployment source config-zip `
+    if ($PSCmdlet.ShouldProcess($app.Name, "Deploy Function App from $ZipPath via Run-From-Package")) {
+        # Deploy over the storage data plane only (upload blob + set app setting + restart).
+        # This never touches Kudu/SCM, so a private Function App (Core, publicNetworkAccess
+        # Disabled) deploys without any temporary public-access toggle.
+        $blobName = "$Component-$packageLabel-$(Get-Date -Format 'yyyyMMddHHmmss').zip"
+        $blobUrl  = "https://$StorageAccount.blob.core.windows.net/app-packages/$blobName"
+
+        # Ensure the container exists (idempotent — no-op if IaC already created it).
+        az storage container create `
+            --account-name $StorageAccount `
+            --auth-mode login `
+            --name app-packages `
+            --output none
+
+        Write-Host "Uploading package for $($app.Name) → $StorageAccount/app-packages/$blobName…"
+        az storage blob upload `
+            --account-name $StorageAccount `
+            --auth-mode login `
+            --container-name app-packages `
+            --name $blobName `
+            --file $ZipPath `
+            --overwrite true `
+            --output none
+
+        Write-Host "Pointing $($app.Name) at the package and restarting…"
+        az functionapp config appsettings set `
             --resource-group $ResourceGroupName `
             --name $app.Name `
-            --src $ZipPath `
+            --settings "WEBSITE_RUN_FROM_PACKAGE=$blobUrl" `
             --output none
-        Write-Host "✓ $($app.Name) deployed."
+        az functionapp restart `
+            --resource-group $ResourceGroupName `
+            --name $app.Name `
+            --output none
+        Write-Host "✓ $($app.Name) deployed (Run-From-Package)."
     }
 }
 
 function Deploy-WebApp {
-    param([string]$NamePattern, [string]$ZipPath]
+    param([string]$NamePattern, [string]$ZipPath)
     if (-not (Test-Path $ZipPath)) { Write-Warning "Skipping Web App — ZIP not found at $ZipPath"; return }
     $app = $webApps | Where-Object { $_.Name -like "*$NamePattern*" } | Select-Object -First 1
     if ($null -eq $app) { Write-Warning "Web App matching '*$NamePattern*' not found — skipping"; return }
@@ -157,13 +207,16 @@ function Deploy-WebApp {
 }
 
 Deploy-FunctionApp -Name (($functionApps | Where-Object { $_.Name -like '*gateway*' }).Name)   `
-                   -ZipPath (Join-Path $extractDir 'DeviceGatewayApi.zip')
+                   -ZipPath (Join-Path $extractDir 'DeviceGatewayApi.zip')  `
+                   -StorageAccount $storageAppName -Component 'gateway'
 
 Deploy-FunctionApp -Name (($functionApps | Where-Object { $_.Name -like '*operator*' }).Name)  `
-                   -ZipPath (Join-Path $extractDir 'OperatorApi.zip')
+                   -ZipPath (Join-Path $extractDir 'OperatorApi.zip')  `
+                   -StorageAccount $storageAppName -Component 'operator'
 
 Deploy-FunctionApp -Name (($functionApps | Where-Object { $_.Name -like '*core*' }).Name)      `
-                   -ZipPath (Join-Path $extractDir 'ImagingCoreApi.zip')
+                   -ZipPath (Join-Path $extractDir 'ImagingCoreApi.zip')  `
+                   -StorageAccount $storageCoreName -Component 'core'
 
 Deploy-WebApp -NamePattern 'portal'   -ZipPath (Join-Path $extractDir 'portal-backend.zip')
 

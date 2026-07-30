@@ -19,6 +19,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
     private bool _useGitHubSource = true;
     private string _localSourcePath = string.Empty;
     private string _outputFolderPath = string.Empty;
+    private string _driverRootPath = string.Empty;
     private bool _isGenerating;
     private bool _isComplete;
     private int _progressPercent;
@@ -44,6 +45,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
         GenerateCommand    = new RelayCommand(async _ => await GenerateAsync(), _ => CanGenerate);
         BrowseCommand      = new RelayCommand(_ => BrowseLocalPath());
         BrowseOutputCommand = new RelayCommand(_ => BrowseOutputFolder());
+        BrowseDriverRootCommand = new RelayCommand(_ => BrowseDriverRoot());
     }
 
     public bool UseGitHubSource
@@ -68,6 +70,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
     {
         get => _outputFolderPath;
         set { _outputFolderPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
+    }
+
+    /// <summary>
+    /// Optional root folder of pre-staged storage/network drivers to inject into the
+    /// boot image WIM (FR-051c). Empty means no driver injection.
+    /// </summary>
+    public string DriverRootPath
+    {
+        get => _driverRootPath;
+        set { _driverRootPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
     }
 
     public bool IsGenerating
@@ -111,11 +123,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
     public bool HasError    => ErrorMessage is not null;
     public bool CanGenerate => !IsGenerating
         && !string.IsNullOrWhiteSpace(OutputFolderPath)
-        && (!UseLocalSource || Directory.Exists(LocalSourcePath));
+        && (!UseLocalSource || Directory.Exists(LocalSourcePath))
+        && (string.IsNullOrWhiteSpace(DriverRootPath) || Directory.Exists(DriverRootPath));
 
     public ICommand GenerateCommand     { get; }
     public ICommand BrowseCommand       { get; }
     public ICommand BrowseOutputCommand { get; }
+    public ICommand BrowseDriverRootCommand { get; }
 
     private async Task GenerateAsync()
     {
@@ -133,7 +147,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
             var result = await _genService.GenerateAsync(
                 clientBinariesPath,
                 pfxBytes: null,         // cert injection via T173 extension
-                _outputFolderPath);
+                _outputFolderPath,
+                driverRootPath: string.IsNullOrWhiteSpace(_driverRootPath) ? null : _driverRootPath);
 
             OutputWimPath = result.WimPath;
             IsComplete    = true;
@@ -169,6 +184,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select output folder" };
         if (dialog.ShowDialog() == true)
             OutputFolderPath = dialog.FolderName;
+    }
+
+    private void BrowseDriverRoot()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select driver root folder (optional)" };
+        if (dialog.ShowDialog() == true)
+            DriverRootPath = dialog.FolderName;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -84,6 +84,45 @@ public sealed class GenerateBootImageSourceSelectionTests
         vm.CanGenerate.Should().BeFalse("generation is not started; IsComplete is false initially");
     }
 
+    // ── Optional driver injection (FR-051c) ───────────────────────────────────
+
+    [Fact]
+    public void DriverRootPath_DefaultsToEmpty()
+    {
+        var vm = CreateViewModel();
+        vm.DriverRootPath.Should().BeEmpty("driver injection is optional and off by default (FR-051c)");
+    }
+
+    [Fact]
+    public void CanGenerate_IsTrue_WhenDriverRootEmpty_AndOtherInputsValid()
+    {
+        var vm = CreateViewModel();
+        vm.UseGitHubSource  = true;
+        vm.OutputFolderPath = Path.GetTempPath();
+        vm.DriverRootPath   = "";
+        vm.CanGenerate.Should().BeTrue("an empty driver root is valid — driver injection is optional (FR-051c)");
+    }
+
+    [Fact]
+    public void CanGenerate_IsFalse_WhenDriverRootSet_But_PathInvalid()
+    {
+        var vm = CreateViewModel();
+        vm.UseGitHubSource  = true;
+        vm.OutputFolderPath = Path.GetTempPath();
+        vm.DriverRootPath   = @"C:\DoesNotExist\Drivers";
+        vm.CanGenerate.Should().BeFalse("a specified driver root folder must exist before generation (FR-051c)");
+    }
+
+    [Fact]
+    public void CanGenerate_IsTrue_WhenDriverRootSet_ToExistingFolder()
+    {
+        var vm = CreateViewModel();
+        vm.UseGitHubSource  = true;
+        vm.OutputFolderPath = Path.GetTempPath();
+        vm.DriverRootPath   = Path.GetTempPath();
+        vm.CanGenerate.Should().BeTrue("an existing driver root folder is valid (FR-051c)");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static CloudImaging.MediaBuilder.ViewModels.GenerateBootImageViewModel CreateViewModel()

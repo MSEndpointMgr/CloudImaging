@@ -1,0 +1,113 @@
+<UserControl x:Class="CloudImaging.MediaBuilder.Views.PrepareStorageDeviceView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <!--
+        FR-053/054/055/056/057: Prepare USB Storage Device workflow.
+        Select a published boot image + an eligible USB disk, confirm the destructive
+        action, then download → partition → deploy. Only USB/removable/non-system disks
+        are eligible; ineligible disks are shown with the blocking reason.
+    -->
+    <ScrollViewer Margin="40,32" VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="700">
+
+            <TextBlock Text="Prepare USB Storage Device"
+                       Style="{StaticResource TitleTextBlockStyle}"
+                       Margin="0,0,0,24" />
+
+            <!-- Source: boot image + disk -->
+            <ui:Card Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <TextBlock Text="Source"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   VerticalAlignment="Center" />
+                        <ui:Button Content="Refresh"
+                                   HorizontalAlignment="Right"
+                                   Command="{Binding RefreshCommand}" />
+                    </Grid>
+
+                    <TextBlock Text="Published boot image"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <ComboBox ItemsSource="{Binding BootImages}"
+                              SelectedItem="{Binding SelectedBootImage}"
+                              DisplayMemberPath="Label"
+                              HorizontalAlignment="Stretch"
+                              Margin="0,0,0,12" />
+
+                    <TextBlock Text="USB device"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <ComboBox ItemsSource="{Binding Disks}"
+                              SelectedItem="{Binding SelectedDisk}"
+                              DisplayMemberPath="Label"
+                              HorizontalAlignment="Stretch" />
+
+                    <ui:InfoBar Title="Disk not eligible"
+                                Message="{Binding ValidationMessage}"
+                                Severity="Warning"
+                                IsOpen="{Binding HasValidationMessage}"
+                                IsClosable="False"
+                                Margin="0,12,0,0" />
+                </StackPanel>
+            </ui:Card>
+
+            <!-- Destructive confirmation -->
+            <ui:Card Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="Confirm"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,8" />
+                    <CheckBox IsChecked="{Binding ConfirmErase}"
+                              Content="I understand that ALL data on the selected USB device will be permanently erased." />
+                </StackPanel>
+            </ui:Card>
+
+            <!-- Progress -->
+            <StackPanel Margin="0,0,0,16"
+                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="{Binding ProgressMessage}"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Margin="0,0,0,8" />
+                <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" />
+            </StackPanel>
+
+            <!-- Status -->
+            <TextBlock Text="{Binding StatusMessage}"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,12" />
+
+            <!-- Success -->
+            <ui:InfoBar Title="USB device prepared"
+                        Message="{Binding StatusMessage}"
+                        Severity="Success"
+                        IsOpen="{Binding IsComplete}"
+                        IsClosable="False"
+                        Margin="0,0,0,16" />
+
+            <!-- Error -->
+            <ui:InfoBar Title="Preparation failed"
+                        Message="{Binding ErrorMessage}"
+                        Severity="Error"
+                        IsOpen="{Binding HasError}"
+                        IsClosable="False"
+                        Margin="0,0,0,16" />
+
+            <!-- Actions -->
+            <StackPanel Orientation="Horizontal">
+                <ui:Button Content="Prepare USB Device"
+                           Appearance="Primary"
+                           Width="220" Height="44" FontSize="15"
+                           Command="{Binding PrepareCommand}"
+                           IsEnabled="{Binding CanPrepare}" />
+                <ui:Button Content="Back"
+                           Margin="12,0,0,0" Height="44"
+                           Command="{Binding BackCommand}" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -39,6 +39,10 @@
                         <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
                         <Setter Property="BorderThickness" Value="1" />
                         <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+                            </Trigger>
                             <DataTrigger Binding="{Binding SelectedOperation}" Value="Imaging">
                                 <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
                                 <Setter Property="BorderThickness" Value="2" />
@@ -71,6 +75,10 @@
                         <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
                         <Setter Property="BorderThickness" Value="1" />
                         <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+                            </Trigger>
                             <DataTrigger Binding="{Binding SelectedOperation}" Value="Decommissioning">
                                 <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
                                 <Setter Property="BorderThickness" Value="2" />

@@ -12,8 +12,9 @@ namespace CloudImaging.MediaBuilder.Services;
 ///   3. Locate or download Cloud Imaging Client binaries.
 ///   4. Copy WinPE base files to working directory.
 ///   5. Mount WIM, inject Client binaries + cert + branding.
-///   6. Unmount and commit WIM.
-///   7. Output WIM to the specified output directory.
+///   6. Optionally inject pre-staged storage/network drivers (FR-051c).
+///   7. Unmount and commit WIM.
+///   8. Output WIM to the specified output directory.
 /// </summary>
 public sealed partial class BootImageGenerationService
 {
@@ -47,11 +48,17 @@ public sealed partial class BootImageGenerationService
     /// <param name="clientBinariesPath">Folder containing the Cloud Imaging Client binaries.</param>
     /// <param name="pfxBytes">PFX bytes to embed as <c>certificates\bootmedia.pfx</c> (FR-070).</param>
     /// <param name="outputDirectory">Directory where the generated WIM will be placed.</param>
+    /// <param name="driverRootPath">
+    /// Optional. Root folder of pre-staged driver packages. When provided, every
+    /// <c>.inf</c> package beneath it is recursively injected into the WIM (FR-051c).
+    /// When null/empty, no driver injection is performed.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<GenerationResult> GenerateAsync(
         string clientBinariesPath,
         byte[]? pfxBytes,
         string outputDirectory,
+        string? driverRootPath = null,
         CancellationToken ct = default)
     {
         var workDir = Path.Combine(Path.GetTempPath(), $"ci-bootimage-{Guid.NewGuid():N}");
@@ -107,6 +114,9 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Boot media certificate embedded…", 60);
             }
 
+            // Inject pre-staged storage/network drivers into the mounted WIM (FR-051c)
+            await InjectDriversAsync(mountDir, driverRootPath, ct);
+
             ReportProgress("Unmounting and committing WIM…", 75);
             await RunDismAsync($"/Unmount-Image /MountDir:\"{mountDir}\" /Commit", ct);
 
@@ -152,6 +162,40 @@ public sealed partial class BootImageGenerationService
     private static async Task RunDismAsync(string args, CancellationToken ct)
     {
         await RunExternalAsync("dism.exe", args, ct);
+    }
+
+    // ── Driver injection (FR-051c) ────────────────────────────────────────────
+
+    /// <summary>
+    /// Recursively injects every driver package (.inf) beneath <paramref name="driverRootPath"/>
+    /// into the mounted WIM using DISM offline driver servicing. No-op when the path is
+    /// null/empty. Throws when a non-empty path does not exist. Skips (with a warning) when
+    /// the folder exists but contains no driver packages (FR-051c).
+    /// </summary>
+    private async Task InjectDriversAsync(string mountDir, string? driverRootPath, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(driverRootPath))
+            return;
+
+        if (!Directory.Exists(driverRootPath))
+            throw new DirectoryNotFoundException(
+                $"Driver root folder not found: {driverRootPath}");
+
+        var infCount = Directory
+            .EnumerateFiles(driverRootPath, "*.inf", SearchOption.AllDirectories)
+            .Count();
+
+        if (infCount == 0)
+        {
+            LogNoDriversFound(_logger, driverRootPath);
+            ReportProgress("No driver packages (.inf) found in driver root — skipping driver injection.", 68);
+            return;
+        }
+
+        ReportProgress($"Injecting {infCount} driver package(s) from driver root…", 70);
+        await RunDismAsync(
+            $"/Image:\"{mountDir}\" /Add-Driver /Driver:\"{driverRootPath}\" /Recurse /ForceUnsigned", ct);
+        LogDriversInjected(_logger, infCount, driverRootPath);
     }
 
     private static async Task RunExternalAsync(string exe, string args, CancellationToken ct)
@@ -206,6 +250,12 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media cert retrieval failed — generation continues without cert.")]
     private static partial void LogCertRetrieveFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
+    private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "No driver packages (.inf) found under driver root {DriverRoot} — skipping driver injection.")]
+    private static partial void LogNoDriversFound(ILogger logger, string driverRoot);
 
     private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
     {

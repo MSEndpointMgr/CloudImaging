@@ -56,6 +56,25 @@
                 </StackPanel>
             </ui:Card>
 
+            <!-- Drivers (optional) — FR-051c -->
+            <ui:Card Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="Drivers (optional)"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="Point to a pre-staged driver root folder. Every driver package (.inf) beneath it is recursively injected into the boot image — use this to add storage or network controller drivers that WinPE does not include. Leave empty to skip."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
+                    <StackPanel Orientation="Horizontal">
+                        <ui:TextBox Text="{Binding DriverRootPath, UpdateSourceTrigger=PropertyChanged}"
+                                    Width="320" PlaceholderText="Driver root folder (optional)" />
+                        <ui:Button Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseDriverRootCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </ui:Card>
+
             <!-- Progress -->
             <StackPanel Margin="0,0,0,16"
                         Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibility}}">

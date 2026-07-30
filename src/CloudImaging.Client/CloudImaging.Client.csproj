@@ -14,6 +14,18 @@
     <UseWpfTempProject>false</UseWpfTempProject>
   </PropertyGroup>
 
+  <!--
+    DEV SIMULATION MODE (developer-only "step through every view" navigator).
+    The DEV_SIMULATION constant is defined ONLY for Debug builds, so every piece of
+    dev-mode code (guarded by #if DEV_SIMULATION) is physically excluded from the
+    compiled binary in Release. Released artifacts are always published with
+    `-c Release` (see .github/workflows/release.yml), so dev mode can never surface
+    in a shipped application. Mirrors the CloudImaging.MediaBuilder pattern.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);DEV_SIMULATION</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http" />
     <!-- Fluent UI design library -->
@@ -21,6 +33,8 @@
     <!-- WMI for hardware metadata collection (FR-001a) -->
     <PackageReference Include="System.Management" />
     <!-- Serilog rolling file logging: max 10 MB per file, 5 retained (FR-066) -->
+    <!-- Git-ignored local dev overlay (real Device Gateway base URL). Copied only when present. -->
+    <Content Include="appsettings.Local.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('appsettings.Local.json')" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="Serilog.Extensions.Logging" />

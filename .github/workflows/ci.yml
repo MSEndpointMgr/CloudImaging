@@ -127,13 +127,32 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release -o ./publish/DeviceGatewayApi --no-restore
-      - name: Deploy
+      # The Function Apps are provisioned for run-from-package: the app reads a zip
+      # from the app-packages storage container via its managed identity. A Kudu
+      # config-zip push is rejected with HTTP 409 once WEBSITE_RUN_FROM_PACKAGE
+      # points at a blob URL, so deploy by uploading the package and repointing it.
+      - name: Deploy (run-from-package via blob)
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_APP }}
+          FUNCTION_APP: ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }}
         run: |
-          cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip .
-          az functionapp deployment source config-zip \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }} \
-            --src ../../deploy-gateway.zip
+          set -euo pipefail
+          (cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip . > /dev/null)
+          PKG="devicegatewayapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name app-packages \
+            --name "$PKG" \
+            --file deploy-gateway.zip \
+            --auth-mode login \
+            --overwrite true
+          PKG_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/app-packages/${PKG}"
+          az functionapp config appsettings set \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" > /dev/null
+          az functionapp restart --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP"
 
   # ── Component: OperatorApi (build + test + deploy) ───────────────────────────
   operator:
@@ -165,13 +184,28 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi --no-restore
-      - name: Deploy
+      - name: Deploy (run-from-package via blob)
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_APP }}
+          FUNCTION_APP: ${{ secrets.FUNCTION_APP_OPERATOR }}
         run: |
-          cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip .
-          az functionapp deployment source config-zip \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_OPERATOR }} \
-            --src ../../deploy-operator.zip
+          set -euo pipefail
+          (cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip . > /dev/null)
+          PKG="operatorapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name app-packages \
+            --name "$PKG" \
+            --file deploy-operator.zip \
+            --auth-mode login \
+            --overwrite true
+          PKG_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/app-packages/${PKG}"
+          az functionapp config appsettings set \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" > /dev/null
+          az functionapp restart --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP"
 
   # ── Component: ImagingCoreApi (build + test + deploy) ────────────────────────
   imaging-core:
@@ -203,13 +237,31 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi --no-restore
-      - name: Deploy
+      # ImagingCoreApi is private (publicNetworkAccess=Disabled, Private Link only).
+      # Blob upload + appsettings + restart all go through ARM / the storage data
+      # plane, so no Kudu/SCM access is needed and the app is never exposed publicly.
+      - name: Deploy (run-from-package via blob)
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_CORE }}
+          FUNCTION_APP: ${{ secrets.FUNCTION_APP_IMAGING_CORE }}
         run: |
-          cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip .
-          az functionapp deployment source config-zip \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
-            --src ../../deploy-core.zip
+          set -euo pipefail
+          (cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip . > /dev/null)
+          PKG="imagingcoreapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name app-packages \
+            --name "$PKG" \
+            --file deploy-core.zip \
+            --auth-mode login \
+            --overwrite true
+          PKG_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/app-packages/${PKG}"
+          az functionapp config appsettings set \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" > /dev/null
+          az functionapp restart --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP"
 
   # ── Component: Client (WPF, build + test only — never deployed) ──────────────
   client:
@@ -282,12 +334,40 @@ jobs:
       - name: Deploy
         working-directory: src/cloud-imaging-portal/server
         run: |
-          cd dist && zip -r ../../../deploy-portal-backend.zip .
+          # Assemble a self-contained bundle: compiled dist + manifest + production
+          # node_modules. Zipping dist alone omits package.json/node_modules, so the
+          # Node worker cannot resolve its runtime deps and the site fails to start.
+          # The zip is extracted to the persistent /home/site/wwwroot Azure Files share,
+          # so the files survive platform cold restarts. Do NOT set WEBSITE_RUN_FROM_PACKAGE=1
+          # on Linux App Service: that value is Windows-only and leaves wwwroot empty after a
+          # restart, crash-looping the worker with MODULE_NOT_FOUND on dist/index.js.
+          rm -rf deploy-pkg
+          mkdir -p deploy-pkg/dist
+          cp -r dist/. deploy-pkg/dist/
+          cp package.json package-lock.json deploy-pkg/
+          cd deploy-pkg
+          npm ci --omit=dev
+          zip -r ../deploy-portal-backend.zip . > /dev/null
+          # --track-status false: skip az CLI's built-in warm-up probe. A cold start after
+          # extraction can exceed its 10-min window and report a false failure even though the
+          # site comes up. We verify readiness explicitly below.
           az webapp deploy \
             --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
             --name ${{ secrets.APP_SERVICE_PORTAL_BACKEND }} \
-            --src-path ../../../deploy-portal-backend.zip \
-            --type zip
+            --src-path ../deploy-portal-backend.zip \
+            --type zip \
+            --track-status false
+      - name: Verify backend health
+        run: |
+          url="https://${{ secrets.APP_SERVICE_PORTAL_BACKEND }}.azurewebsites.net/api/health"
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url" || echo 000)
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then echo "Portal backend is healthy."; exit 0; fi
+            sleep 15
+          done
+          echo "::error::Portal backend did not return HTTP 200 within the timeout."
+          exit 1
 
   # ── Component: Portal frontend (build + lint + test + deploy) ────────────────
   portal-frontend:

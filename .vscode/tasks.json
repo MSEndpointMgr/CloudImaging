@@ -121,6 +121,43 @@
       "detail": "Build the CloudImaging.MediaBuilder WPF app in Release configuration."
     },
     {
+      "label": "Build: Client WPF (Debug)",
+      "type": "shell",
+      "command": "dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj --configuration Debug",
+      "problemMatcher": ["$msCompile"],
+      "group": "build",
+      "detail": "Build the CloudImaging.Client WPF app in Debug configuration.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
+    },
+    {
+      "label": "Build: Media Builder WPF (Debug)",
+      "type": "shell",
+      "command": "dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj --configuration Debug",
+      "problemMatcher": ["$msCompile"],
+      "group": "build",
+      "detail": "Build the CloudImaging.MediaBuilder WPF app in Debug configuration (enables DEV_SIMULATION mode).",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
+    },
+    {
+      "label": "Build: Both WPF apps (Debug)",
+      "dependsOn": [
+        "Build: Client WPF (Debug)",
+        "Build: Media Builder WPF (Debug)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "group": "build",
+      "detail": "Build both the Cloud Imaging Client and Media Builder WPF apps in Debug configuration."
+    },
+    {
       "label": "Test: .NET Solution",
       "type": "shell",
       "command": "dotnet test CloudImaging.sln --configuration Release",
