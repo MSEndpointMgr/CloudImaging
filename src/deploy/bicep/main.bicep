@@ -54,6 +54,12 @@ param apiFunctionSubnetPrefix string = '10.0.1.0/24'
 @description('Subnet for Private Endpoints.')
 param privateEndpointSubnetPrefix string = '10.0.2.0/24'
 
+@description('Dedicated delegated subnet for the Operator API Function App regional VNet integration.')
+param operatorSubnetPrefix string = '10.0.3.0/24'
+
+@description('Dedicated delegated subnet for the Device Gateway API Function App regional VNet integration.')
+param gatewaySubnetPrefix string = '10.0.4.0/24'
+
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
@@ -78,6 +84,8 @@ var names = {
   vnet: '${prefix}-vnet'
   apiFunctionSubnet: '${prefix}-snet-functions'
   privateEndpointSubnet: '${prefix}-snet-pe'
+  operatorSubnet: '${prefix}-snet-operator'
+  gatewaySubnet: '${prefix}-snet-gateway'
   nsgFunctions: '${prefix}-nsg-functions'
 
   // Storage
@@ -142,6 +150,10 @@ module networking 'modules/networking.bicep' = {
     apiFunctionSubnetPrefix: apiFunctionSubnetPrefix
     privateEndpointSubnetName: names.privateEndpointSubnet
     privateEndpointSubnetPrefix: privateEndpointSubnetPrefix
+    operatorSubnetName: names.operatorSubnet
+    operatorSubnetPrefix: operatorSubnetPrefix
+    gatewaySubnetName: names.gatewaySubnet
+    gatewaySubnetPrefix: gatewaySubnetPrefix
     nsgFunctionsName: names.nsgFunctions
   }
 }
@@ -153,6 +165,8 @@ module storage 'modules/storage.bicep' = {
     storageAppName: names.storageApp
     storageCoreApiName: names.storageCoreApi
     deviceGatewayMsiPrincipalId: identities.outputs.deviceGatewayPrincipalId
+    operatorMsiPrincipalId: identities.outputs.operatorApiPrincipalId
+    imagingCoreMsiPrincipalId: identities.outputs.imagingCorePrincipalId
   }
 }
 
@@ -178,6 +192,7 @@ module identities 'modules/identities.bicep' = {
 
 module imagingCoreApi 'modules/imaging-core-api.bicep' = {
   name: 'imaging-core-api'
+  dependsOn: [storage]
   params: {
     location: location
     funcName: names.funcImagingCore
@@ -189,6 +204,7 @@ module imagingCoreApi 'modules/imaging-core-api.bicep' = {
     vnetSubnetId: networking.outputs.apiFunctionSubnetId
     pepSubnetId: networking.outputs.privateEndpointSubnetId
     pepName: names.pepImagingCore
+    privateDnsZoneId: networking.outputs.appServicePrivateDnsZoneId
     keyVaultName: names.keyVault
     sharedEntraClientId: portalClientId
     tenantId: tenantId
@@ -203,6 +219,7 @@ module imagingCoreApi 'modules/imaging-core-api.bicep' = {
 
 module deviceGatewayApi 'modules/device-gateway-api.bicep' = {
   name: 'device-gateway-api'
+  dependsOn: [storage]
   params: {
     location: location
     funcName: names.funcDeviceGateway
@@ -213,6 +230,7 @@ module deviceGatewayApi 'modules/device-gateway-api.bicep' = {
     msiClientId: identities.outputs.deviceGatewayMsiClientId
     imagingCoreApiBaseUrl: imagingCoreApi.outputs.internalBaseUrl
     keyVaultName: names.keyVault
+    vnetSubnetId: networking.outputs.gatewaySubnetId
     deployApplicationGateway: deployApplicationGateway
     agwName: names.agw
     functionAppSku: functionAppSku
@@ -221,6 +239,7 @@ module deviceGatewayApi 'modules/device-gateway-api.bicep' = {
 
 module operatorApi 'modules/operator-api.bicep' = {
   name: 'operator-api'
+  dependsOn: [storage]
   params: {
     location: location
     funcName: names.funcOperatorApi
@@ -230,6 +249,7 @@ module operatorApi 'modules/operator-api.bicep' = {
     msiId: identities.outputs.operatorApiMsiId
     msiClientId: identities.outputs.operatorApiMsiClientId
     imagingCoreApiBaseUrl: imagingCoreApi.outputs.internalBaseUrl
+    vnetSubnetId: networking.outputs.operatorSubnetId
     sharedEntraClientId: mediaBuilderClientId
     operatorApiClientId: operatorApiClientId
     tenantId: tenantId

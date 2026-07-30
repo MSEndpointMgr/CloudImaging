@@ -31,6 +31,7 @@ output deviceGatewayMsiClientId string = msiDeviceGateway.properties.clientId
 output deviceGatewayPrincipalId string = msiDeviceGateway.properties.principalId
 output operatorApiMsiId string = msiOperatorApi.id
 output operatorApiMsiClientId string = msiOperatorApi.properties.clientId
+output operatorApiPrincipalId string = msiOperatorApi.properties.principalId
 output imagingCoreMsiId string = msiImagingCore.id
 output imagingCoreMsiClientId string = msiImagingCore.properties.clientId
 output imagingCorePrincipalId string = msiImagingCore.properties.principalId

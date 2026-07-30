@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "13123331593119982684"
+      "templateHash": "394804262461513936"
     }
   },
   "parameters": {
@@ -112,6 +112,20 @@
         "description": "Subnet for Private Endpoints."
       }
     },
+    "operatorSubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.3.0/24",
+      "metadata": {
+        "description": "Dedicated delegated subnet for the Operator API Function App regional VNet integration."
+      }
+    },
+    "gatewaySubnetPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.4.0/24",
+      "metadata": {
+        "description": "Dedicated delegated subnet for the Device Gateway API Function App regional VNet integration."
+      }
+    },
     "location": {
       "type": "string",
       "defaultValue": "[resourceGroup().location]",
@@ -151,6 +165,8 @@
       "vnet": "[format('{0}-vnet', variables('prefix'))]",
       "apiFunctionSubnet": "[format('{0}-snet-functions', variables('prefix'))]",
       "privateEndpointSubnet": "[format('{0}-snet-pe', variables('prefix'))]",
+      "operatorSubnet": "[format('{0}-snet-operator', variables('prefix'))]",
+      "gatewaySubnet": "[format('{0}-snet-gateway', variables('prefix'))]",
       "nsgFunctions": "[format('{0}-nsg-functions', variables('prefix'))]",
       "storageApp": "[format('{0}stapp', variables('storagePrefix'))]",
       "storageCoreApi": "[format('{0}stcore', variables('storagePrefix'))]",
@@ -288,6 +304,18 @@
           "privateEndpointSubnetPrefix": {
             "value": "[parameters('privateEndpointSubnetPrefix')]"
           },
+          "operatorSubnetName": {
+            "value": "[variables('names').operatorSubnet]"
+          },
+          "operatorSubnetPrefix": {
+            "value": "[parameters('operatorSubnetPrefix')]"
+          },
+          "gatewaySubnetName": {
+            "value": "[variables('names').gatewaySubnet]"
+          },
+          "gatewaySubnetPrefix": {
+            "value": "[parameters('gatewaySubnetPrefix')]"
+          },
           "nsgFunctionsName": {
             "value": "[variables('names').nsgFunctions]"
           }
@@ -299,7 +327,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "12600980596036244414"
+              "templateHash": "12795920459712341076"
             }
           },
           "parameters": {
@@ -326,6 +354,31 @@
             },
             "nsgFunctionsName": {
               "type": "string"
+            },
+            "operatorSubnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Delegated subnet for the Operator API Function App regional VNet integration. Each Function App plan requires its own dedicated Microsoft.Web/serverFarms-delegated subnet."
+              }
+            },
+            "operatorSubnetPrefix": {
+              "type": "string"
+            },
+            "gatewaySubnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Delegated subnet for the Device Gateway API Function App regional VNet integration."
+              }
+            },
+            "gatewaySubnetPrefix": {
+              "type": "string"
+            },
+            "appServicePrivateDnsZoneName": {
+              "type": "string",
+              "defaultValue": "privatelink.azurewebsites.net",
+              "metadata": {
+                "description": "Private DNS zone name used to resolve the private-endpoint address of the Imaging Core API. Must be the App Service private-link zone."
+              }
             }
           },
           "resources": [
@@ -401,6 +454,78 @@
                 "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('apiFunctionSubnetName'))]",
                 "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', parameters('vnetName'), parameters('operatorSubnetName'))]",
+              "properties": {
+                "addressPrefix": "[parameters('operatorSubnetPrefix')]",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
+                },
+                "delegations": [
+                  {
+                    "name": "delegation",
+                    "properties": {
+                      "serviceName": "Microsoft.Web/serverFarms"
+                    }
+                  }
+                ],
+                "privateEndpointNetworkPolicies": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('privateEndpointSubnetName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', parameters('vnetName'), parameters('gatewaySubnetName'))]",
+              "properties": {
+                "addressPrefix": "[parameters('gatewaySubnetPrefix')]",
+                "networkSecurityGroup": {
+                  "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]"
+                },
+                "delegations": [
+                  {
+                    "name": "delegation",
+                    "properties": {
+                      "serviceName": "Microsoft.Web/serverFarms"
+                    }
+                  }
+                ],
+                "privateEndpointNetworkPolicies": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgFunctionsName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('operatorSubnetName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[parameters('appServicePrivateDnsZoneName')]",
+              "location": "global"
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', parameters('appServicePrivateDnsZoneName'), format('{0}-link', parameters('vnetName')))]",
+              "location": "global",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', parameters('appServicePrivateDnsZoneName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -415,6 +540,18 @@
             "privateEndpointSubnetId": {
               "type": "string",
               "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('privateEndpointSubnetName'))]"
+            },
+            "operatorSubnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('operatorSubnetName'))]"
+            },
+            "gatewaySubnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('gatewaySubnetName'))]"
+            },
+            "appServicePrivateDnsZoneId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/privateDnsZones', parameters('appServicePrivateDnsZoneName'))]"
             }
           }
         }
@@ -441,6 +578,12 @@
           },
           "deviceGatewayMsiPrincipalId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.deviceGatewayPrincipalId.value]"
+          },
+          "operatorMsiPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.operatorApiPrincipalId.value]"
+          },
+          "imagingCoreMsiPrincipalId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.imagingCorePrincipalId.value]"
           }
         },
         "template": {
@@ -450,7 +593,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "3724880092875918293"
+              "templateHash": "18187627937497593954"
             }
           },
           "parameters": {
@@ -466,12 +609,31 @@
             "deviceGatewayMsiPrincipalId": {
               "type": "string",
               "metadata": {
-                "description": "Principal ID of the Device Gateway API managed identity. Granted Storage Table Data Contributor on the app storage account for the device-session token store, boot-media thumbprint cache, and single-use proof-of-possession nonce store (FR-069)."
+                "description": "Principal ID of the Device Gateway API user-assigned managed identity. Granted full blob/queue/table data-plane access on the app storage account for the host runtime, the device-session token store, the boot-media thumbprint cache and the proof-of-possession nonce store (FR-069)."
+              }
+            },
+            "operatorMsiPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the Operator API user-assigned managed identity. Granted full blob/queue/table data-plane access on the app storage account (host runtime + operator data operations)."
+              }
+            },
+            "imagingCoreMsiPrincipalId": {
+              "type": "string",
+              "metadata": {
+                "description": "Principal ID of the Imaging Core API user-assigned managed identity. Granted full blob/queue/table data-plane access on the core storage account (host runtime, OS/boot images, branding, session and catalog tables)."
               }
             }
           },
           "variables": {
-            "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3"
+            "storageBlobDataOwnerRoleId": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
+            "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
+            "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+            "dataPlaneRoleIds": [
+              "[variables('storageBlobDataOwnerRoleId')]",
+              "[variables('storageQueueDataContributorRoleId')]",
+              "[variables('storageTableDataContributorRoleId')]"
+            ]
           },
           "resources": [
             {
@@ -546,17 +708,87 @@
               ]
             },
             {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'app-packages')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageAppName'), 'default')]",
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageAppName'), 'default', 'app-packages')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageAppName'), 'default')]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "operatorStorageRbac",
+                "count": "[length(variables('dataPlaneRoleIds'))]"
+              },
               "type": "Microsoft.Authorization/roleAssignments",
               "apiVersion": "2022-04-01",
               "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]",
-              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName')), parameters('deviceGatewayMsiPrincipalId'), variables('storageTableDataContributorRoleId'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName')), parameters('operatorMsiPrincipalId'), variables('dataPlaneRoleIds')[copyIndex()])]",
               "properties": {
-                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageTableDataContributorRoleId'))]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('dataPlaneRoleIds')[copyIndex()])]",
+                "principalId": "[parameters('operatorMsiPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "gatewayStorageRbac",
+                "count": "[length(variables('dataPlaneRoleIds'))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName')), parameters('deviceGatewayMsiPrincipalId'), variables('dataPlaneRoleIds')[copyIndex()])]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('dataPlaneRoleIds')[copyIndex()])]",
                 "principalId": "[parameters('deviceGatewayMsiPrincipalId')]",
                 "principalType": "ServicePrincipal"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAppName'))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "coreStorageRbac",
+                "count": "[length(variables('dataPlaneRoleIds'))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageCoreApiName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageCoreApiName')), parameters('imagingCoreMsiPrincipalId'), variables('dataPlaneRoleIds')[copyIndex()])]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('dataPlaneRoleIds')[copyIndex()])]",
+                "principalId": "[parameters('imagingCoreMsiPrincipalId')]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageCoreApiName'))]"
               ]
             }
           ],
@@ -712,7 +944,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "1294641077926339285"
+              "templateHash": "8070990333772523265"
             }
           },
           "parameters": {
@@ -779,6 +1011,10 @@
               "type": "string",
               "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiOperatorApiName')), '2023-01-31').clientId]"
             },
+            "operatorApiPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiOperatorApiName')), '2023-01-31').principalId]"
+            },
             "imagingCoreMsiId": {
               "type": "string",
               "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('msiImagingCoreName'))]"
@@ -843,6 +1079,9 @@
           "pepName": {
             "value": "[variables('names').pepImagingCore]"
           },
+          "privateDnsZoneId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.appServicePrivateDnsZoneId.value]"
+          },
           "keyVaultName": {
             "value": "[variables('names').keyVault]"
           },
@@ -878,7 +1117,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "8021603594983661321"
+              "templateHash": "3905918478730965669"
             }
           },
           "parameters": {
@@ -911,6 +1150,12 @@
             },
             "pepName": {
               "type": "string"
+            },
+            "privateDnsZoneId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the privatelink.azurewebsites.net private DNS zone used to auto-register the private endpoint A records."
+              }
             },
             "keyVaultName": {
               "type": "string"
@@ -946,6 +1191,9 @@
               ]
             }
           },
+          "variables": {
+            "storageBlobDataReaderRoleId": "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
+          },
           "resources": [
             {
               "type": "Microsoft.Web/serverfarms",
@@ -967,7 +1215,7 @@
               "location": "[parameters('location')]",
               "kind": "functionapp,linux",
               "identity": {
-                "type": "UserAssigned",
+                "type": "SystemAssigned, UserAssigned",
                 "userAssignedIdentities": {
                   "[format('{0}', parameters('msiId'))]": {}
                 }
@@ -1063,6 +1311,38 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', parameters('pepName'), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "privatelink-azurewebsites-net",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('privateDnsZoneId')]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', parameters('pepName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.Web/sites', parameters('funcName')), variables('storageBlobDataReaderRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -1080,7 +1360,8 @@
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'identities')]",
         "[resourceId('Microsoft.Resources/deployments', 'networking')]",
-        "[resourceId('Microsoft.Resources/deployments', 'observability')]"
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]",
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
       ]
     },
     {
@@ -1120,6 +1401,9 @@
           "keyVaultName": {
             "value": "[variables('names').keyVault]"
           },
+          "vnetSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.gatewaySubnetId.value]"
+          },
           "deployApplicationGateway": {
             "value": "[parameters('deployApplicationGateway')]"
           },
@@ -1137,7 +1421,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "1664498261363433339"
+              "templateHash": "6714019051965794713"
             }
           },
           "parameters": {
@@ -1168,6 +1452,12 @@
             "keyVaultName": {
               "type": "string"
             },
+            "vnetSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the dedicated Microsoft.Web/serverFarms-delegated subnet for the Device Gateway API regional VNet integration. Required so the app can reach the private-link-only Imaging Core API."
+              }
+            },
             "deployApplicationGateway": {
               "type": "bool"
             },
@@ -1176,7 +1466,7 @@
             },
             "agwSubnetPrefix": {
               "type": "string",
-              "defaultValue": "10.0.3.0/24"
+              "defaultValue": "10.0.5.0/24"
             },
             "functionAppSku": {
               "type": "string",
@@ -1187,6 +1477,9 @@
                 "EP3"
               ]
             }
+          },
+          "variables": {
+            "storageBlobDataReaderRoleId": "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
           },
           "resources": [
             {
@@ -1209,13 +1502,15 @@
               "location": "[parameters('location')]",
               "kind": "functionapp,linux",
               "identity": {
-                "type": "UserAssigned",
+                "type": "SystemAssigned, UserAssigned",
                 "userAssignedIdentities": {
                   "[format('{0}', parameters('msiId'))]": {}
                 }
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "virtualNetworkSubnetId": "[parameters('vnetSubnetId')]",
+                "vnetRouteAllEnabled": true,
                 "clientCertEnabled": true,
                 "clientCertMode": "Required",
                 "siteConfig": {
@@ -1253,12 +1548,34 @@
                     {
                       "name": "Security__CertThumbprintCacheRefreshSeconds",
                       "value": "60"
+                    },
+                    {
+                      "name": "WEBSITE_DNS_SERVER",
+                      "value": "168.63.129.16"
+                    },
+                    {
+                      "name": "WEBSITE_VNET_ROUTE_ALL",
+                      "value": "1"
                     }
                   ]
                 }
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.Web/sites', parameters('funcName')), variables('storageBlobDataReaderRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
               ]
             },
             {
@@ -1374,7 +1691,9 @@
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'identities')]",
         "[resourceId('Microsoft.Resources/deployments', 'imaging-core-api')]",
-        "[resourceId('Microsoft.Resources/deployments', 'observability')]"
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]",
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]",
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
       ]
     },
     {
@@ -1411,6 +1730,9 @@
           "imagingCoreApiBaseUrl": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'imaging-core-api'), '2025-04-01').outputs.internalBaseUrl.value]"
           },
+          "vnetSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.operatorSubnetId.value]"
+          },
           "sharedEntraClientId": {
             "value": "[parameters('mediaBuilderClientId')]"
           },
@@ -1431,7 +1753,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "2772856967154179538"
+              "templateHash": "2889149301139046276"
             }
           },
           "parameters": {
@@ -1459,6 +1781,12 @@
             "imagingCoreApiBaseUrl": {
               "type": "string"
             },
+            "vnetSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the dedicated Microsoft.Web/serverFarms-delegated subnet for the Operator API regional VNet integration. Required so the app can reach the private-link-only Imaging Core API."
+              }
+            },
             "sharedEntraClientId": {
               "type": "string"
             },
@@ -1477,6 +1805,9 @@
                 "EP3"
               ]
             }
+          },
+          "variables": {
+            "storageBlobDataReaderRoleId": "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
           },
           "resources": [
             {
@@ -1499,13 +1830,15 @@
               "location": "[parameters('location')]",
               "kind": "functionapp,linux",
               "identity": {
-                "type": "UserAssigned",
+                "type": "SystemAssigned, UserAssigned",
                 "userAssignedIdentities": {
                   "[format('{0}', parameters('msiId'))]": {}
                 }
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "virtualNetworkSubnetId": "[parameters('vnetSubnetId')]",
+                "vnetRouteAllEnabled": true,
                 "siteConfig": {
                   "linuxFxVersion": "DOTNET-ISOLATED|10",
                   "appSettings": [
@@ -1544,12 +1877,34 @@
                     {
                       "name": "Entra__SharedClientId",
                       "value": "[parameters('sharedEntraClientId')]"
+                    },
+                    {
+                      "name": "WEBSITE_DNS_SERVER",
+                      "value": "168.63.129.16"
+                    },
+                    {
+                      "name": "WEBSITE_VNET_ROUTE_ALL",
+                      "value": "1"
                     }
                   ]
                 }
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+              "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), resourceId('Microsoft.Web/sites', parameters('funcName')), variables('storageBlobDataReaderRoleId'))]",
+              "properties": {
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
               ]
             }
           ],
@@ -1568,7 +1923,9 @@
       "dependsOn": [
         "[resourceId('Microsoft.Resources/deployments', 'identities')]",
         "[resourceId('Microsoft.Resources/deployments', 'imaging-core-api')]",
-        "[resourceId('Microsoft.Resources/deployments', 'observability')]"
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]",
+        "[resourceId('Microsoft.Resources/deployments', 'observability')]",
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
       ]
     },
     {

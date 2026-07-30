@@ -12,6 +12,8 @@ param msiClientId string
 param vnetSubnetId string
 param pepSubnetId string
 param pepName string
+@description('Resource ID of the privatelink.azurewebsites.net private DNS zone used to auto-register the private endpoint A records.')
+param privateDnsZoneId string
 param keyVaultName string
 // sharedEntraClientId: Application (client) ID of the Cloud Imaging Portal registration,
 // carried for Entra token validation context in the Imaging Core API (private, Private Link only).
@@ -39,7 +41,9 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
   location: location
   kind: 'functionapp,linux'
   identity: {
-    type: 'UserAssigned'
+    // System-assigned identity reads the run-from-package blob (Storage Blob Data
+    // Reader, granted below); the user-assigned identity is used by app code.
+    type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: { '${msiId}': {} }
   }
   properties: {
@@ -84,6 +88,42 @@ resource pep 'Microsoft.Network/privateEndpoints@2024-01-01' = {
         }
       }
     ]
+  }
+}
+
+// Registers the private endpoint's A records into privatelink.azurewebsites.net so
+// VNet-integrated callers (Operator, Device Gateway) resolve the Core API host name
+// to its private IP instead of the disabled public endpoint (FR-020).
+resource pepDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = {
+  parent: pep
+  name: 'default'
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'privatelink-azurewebsites-net'
+        properties: {
+          privateDnsZoneId: privateDnsZoneId
+        }
+      }
+    ]
+  }
+}
+
+// Run-from-package: the system-assigned identity reads the deployment zip from the
+// core storage account's app-packages container (keyless). Storage Blob Data Reader.
+resource coreStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
+}
+
+var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+
+resource corePackageReadAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(coreStorage.id, func.id, storageBlobDataReaderRoleId)
+  scope: coreStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataReaderRoleId)
+    principalId: func.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

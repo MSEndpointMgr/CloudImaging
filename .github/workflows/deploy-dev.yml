@@ -95,13 +95,28 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj -c Release -o ./publish/DeviceGatewayApi --no-restore
-      - name: Deploy
+      - name: Deploy (run-from-package via blob)
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_APP }}
+          FUNCTION_APP: ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }}
         run: |
-          cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip .
-          az functionapp deployment source config-zip \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_DEVICE_GATEWAY }} \
-            --src ../../deploy-gateway.zip
+          set -euo pipefail
+          (cd ./publish/DeviceGatewayApi && zip -r ../../deploy-gateway.zip . > /dev/null)
+          PKG="devicegatewayapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name app-packages \
+            --name "$PKG" \
+            --file deploy-gateway.zip \
+            --auth-mode login \
+            --overwrite true
+          PKG_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/app-packages/${PKG}"
+          az functionapp config appsettings set \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" > /dev/null
+          az functionapp restart --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP"
 
   # ── OperatorApi (Function App) ───────────────────────────────────────────────
   operator:
@@ -130,13 +145,28 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj -c Release -o ./publish/OperatorApi --no-restore
-      - name: Deploy
+      - name: Deploy (run-from-package via blob)
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_APP }}
+          FUNCTION_APP: ${{ secrets.FUNCTION_APP_OPERATOR }}
         run: |
-          cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip .
-          az functionapp deployment source config-zip \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_OPERATOR }} \
-            --src ../../deploy-operator.zip
+          set -euo pipefail
+          (cd ./publish/OperatorApi && zip -r ../../deploy-operator.zip . > /dev/null)
+          PKG="operatorapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name app-packages \
+            --name "$PKG" \
+            --file deploy-operator.zip \
+            --auth-mode login \
+            --overwrite true
+          PKG_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/app-packages/${PKG}"
+          az functionapp config appsettings set \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" > /dev/null
+          az functionapp restart --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP"
 
   # ── ImagingCoreApi (Function App) ────────────────────────────────────────────
   imaging-core:
@@ -165,35 +195,31 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: Publish
         run: dotnet publish src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj -c Release -o ./publish/ImagingCoreApi --no-restore
-      # ImagingCoreApi is private (publicNetworkAccess=Disabled, Private Link only — FR-020),
-      # so its SCM/Kudu endpoint is unreachable from the public GitHub-hosted runner. Briefly
-      # enable public access for the zip-deploy, then always restore the private posture below.
-      - name: Enable public access for deploy (temporary)
+      # ImagingCoreApi is private (publicNetworkAccess=Disabled, Private Link only — FR-020).
+      # Blob upload + appsettings + restart all go through ARM / the storage data plane, so no
+      # Kudu/SCM access is needed and the app never has to be exposed publicly for deployment.
+      - name: Deploy (run-from-package via blob)
+        env:
+          RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          STORAGE_ACCOUNT: ${{ secrets.STORAGE_ACCOUNT_CORE }}
+          FUNCTION_APP: ${{ secrets.FUNCTION_APP_IMAGING_CORE }}
         run: |
-          az resource update \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
-            --resource-type Microsoft.Web/sites \
-            --set properties.publicNetworkAccess=Enabled \
-            --output none
-          # Allow the SCM site a moment to pick up the new access setting.
-          sleep 45
-      - name: Deploy
-        run: |
-          cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip .
-          az functionapp deployment source config-zip \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
-            --src ../../deploy-core.zip
-      - name: Restore private access (always)
-        if: always()
-        run: |
-          az resource update \
-            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
-            --name ${{ secrets.FUNCTION_APP_IMAGING_CORE }} \
-            --resource-type Microsoft.Web/sites \
-            --set properties.publicNetworkAccess=Disabled \
-            --output none
+          set -euo pipefail
+          (cd ./publish/ImagingCoreApi && zip -r ../../deploy-core.zip . > /dev/null)
+          PKG="imagingcoreapi-${{ github.run_id }}-${{ github.run_attempt }}.zip"
+          az storage blob upload \
+            --account-name "$STORAGE_ACCOUNT" \
+            --container-name app-packages \
+            --name "$PKG" \
+            --file deploy-core.zip \
+            --auth-mode login \
+            --overwrite true
+          PKG_URL="https://${STORAGE_ACCOUNT}.blob.core.windows.net/app-packages/${PKG}"
+          az functionapp config appsettings set \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP" \
+            --settings WEBSITE_RUN_FROM_PACKAGE="$PKG_URL" > /dev/null
+          az functionapp restart --resource-group "$RESOURCE_GROUP" --name "$FUNCTION_APP"
 
   # ── Portal backend (App Service) ─────────────────────────────────────────────
   portal-backend:

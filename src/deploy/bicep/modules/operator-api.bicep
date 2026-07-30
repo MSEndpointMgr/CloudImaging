@@ -10,6 +10,8 @@ param appInsightsConnectionString string
 param msiId string
 param msiClientId string
 param imagingCoreApiBaseUrl string
+@description('Resource ID of the dedicated Microsoft.Web/serverFarms-delegated subnet for the Operator API regional VNet integration. Required so the app can reach the private-link-only Imaging Core API.')
+param vnetSubnetId string
 // sharedEntraClientId: Application (client) ID of the Cloud Imaging Media Builder registration.
 // Used as the Entra__SharedClientId app setting so the Operator API can validate
 // tokens issued to users via the Media Builder (native public client) sign-in flow.
@@ -36,11 +38,17 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
   location: location
   kind: 'functionapp,linux'
   identity: {
-    type: 'UserAssigned'
+    // System-assigned identity reads the run-from-package blob (Storage Blob Data
+    // Reader, granted below); the user-assigned identity is used by app code.
+    type: 'SystemAssigned, UserAssigned'
     userAssignedIdentities: { '${msiId}': {} }
   }
   properties: {
     serverFarmId: plan.id
+    // Regional VNet integration + route-all so calls to the Imaging Core API are
+    // routed through the VNet and resolve via the private DNS zone (FR-064).
+    virtualNetworkSubnetId: vnetSubnetId
+    vnetRouteAllEnabled: true
     siteConfig: {
       linuxFxVersion: 'DOTNET-ISOLATED|10'
       appSettings: [
@@ -55,8 +63,30 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'Entra__ClientId', value: operatorApiClientId }
         // SharedClientId used when Operator API makes outbound calls on behalf of user context
         { name: 'Entra__SharedClientId', value: sharedEntraClientId }
+        // Route DNS through Azure-provided resolver so the VNet-linked private DNS
+        // zone resolves the Imaging Core API private endpoint (FR-064).
+        { name: 'WEBSITE_DNS_SERVER', value: '168.63.129.16' }
+        { name: 'WEBSITE_VNET_ROUTE_ALL', value: '1' }
       ]
     }
+  }
+}
+
+// Run-from-package: the system-assigned identity reads the deployment zip from the
+// app storage account's app-packages container (keyless). Storage Blob Data Reader.
+resource appStorage 'Microsoft.Storage/storageAccounts@2023-05-01' existing = {
+  name: storageAccountName
+}
+
+var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
+
+resource operatorPackageReadAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(appStorage.id, func.id, storageBlobDataReaderRoleId)
+  scope: appStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataReaderRoleId)
+    principalId: func.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

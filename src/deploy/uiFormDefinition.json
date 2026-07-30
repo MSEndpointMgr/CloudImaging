@@ -276,6 +276,30 @@
                     "validationMessage": "Must be a valid CIDR block."
                   },
                   "visible": true
+                },
+                {
+                  "name": "operatorSubnetPrefix",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Operator API Subnet",
+                  "defaultValue": "10.0.3.0/24",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+                    "validationMessage": "Must be a valid CIDR block."
+                  },
+                  "visible": true
+                },
+                {
+                  "name": "gatewaySubnetPrefix",
+                  "type": "Microsoft.Common.TextBox",
+                  "label": "Device Gateway API Subnet",
+                  "defaultValue": "10.0.4.0/24",
+                  "constraints": {
+                    "required": true,
+                    "regex": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$",
+                    "validationMessage": "Must be a valid CIDR block."
+                  },
+                  "visible": true
                 }
               ]
             }
@@ -303,6 +327,8 @@
         "vnetAddressPrefix": "[steps('configuration').networkSection.vnetAddressPrefix]",
         "apiFunctionSubnetPrefix": "[steps('configuration').networkSection.apiFunctionSubnetPrefix]",
         "privateEndpointSubnetPrefix": "[steps('configuration').networkSection.privateEndpointSubnetPrefix]",
+        "operatorSubnetPrefix": "[steps('configuration').networkSection.operatorSubnetPrefix]",
+        "gatewaySubnetPrefix": "[steps('configuration').networkSection.gatewaySubnetPrefix]",
         "location": "[steps('basics').resourceScope.location.name]"
       }
     }
