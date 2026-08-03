@@ -149,9 +149,33 @@ resource appServicePrivateDnsZoneVnetLink 'Microsoft.Network/privateDnsZones/vir
   }
 }
 
+// Private DNS zone for the Key Vault private link. Resolves the vault's
+// *.vault.azure.net host name to its private-endpoint address so the
+// VNet-integrated (route-all) Imaging Core API can store and retrieve the boot
+// media certificate PFX. Key Vault networkAcls default to Deny with no VNet
+// rule, so without this private endpoint + zone the Core app's Key Vault calls
+// fail with HTTP 403 Forbidden (FR-068, FR-069). The A records are populated
+// automatically by the private endpoint's privateDnsZoneGroup (see
+// key-vault.bicep).
+resource keyVaultPrivateDnsZone 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: 'privatelink.vaultcore.azure.net'
+  location: 'global'
+}
+
+resource keyVaultPrivateDnsZoneVnetLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  parent: keyVaultPrivateDnsZone
+  name: '${vnetName}-link'
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: { id: vnet.id }
+  }
+}
+
 output vnetId string = vnet.id
 output apiFunctionSubnetId string = apiFunctionSubnet.id
 output privateEndpointSubnetId string = privateEndpointSubnet.id
 output operatorSubnetId string = operatorSubnet.id
 output gatewaySubnetId string = gatewaySubnet.id
 output appServicePrivateDnsZoneId string = appServicePrivateDnsZone.id
+output keyVaultPrivateDnsZoneId string = keyVaultPrivateDnsZone.id

@@ -57,12 +57,12 @@ public sealed partial class BootMediaCertificateManagementFunctions
             Thumbprint = cert.Thumbprint,
             NotBefore = cert.NotBefore,
             NotAfter = cert.NotAfter,
-            IsActive = false,       // Not yet active — caller must POST /rotate or activate separately
+            IsActive = true,        // Generate publishes the cert as the active boot media cert
             KeyVaultSecretName = secretName,
         };
 
-        // Store metadata in Table Storage (not yet activated)
-        // Note: use ActivateAsync only if this is a rotation; standalone generate just stores
+        // Store metadata in Table Storage and mark it active (atomic demote-old + activate-new)
+        // so the Media Builder can immediately retrieve it via GET internal/cert/active/pfx.
         await _certRepo.ActivateAsync(metadata, context.CancellationToken);
         LogCertGenerated(_logger, cert.Thumbprint, cert.NotAfter);
 

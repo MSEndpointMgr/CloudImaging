@@ -126,6 +126,7 @@ var names = {
 
   // Private Endpoints
   pepImagingCore: '${prefix}-pep-core'
+  pepKeyVault: '${prefix}-pep-kv'
 
   // Application Gateway (Enterprise tier)
   agw: '${prefix}-agw'
@@ -178,6 +179,9 @@ module keyVault 'modules/key-vault.bicep' = {
     location: location
     keyVaultName: names.keyVault
     imagingCoreMsiPrincipalId: identities.outputs.imagingCorePrincipalId
+    pepSubnetId: networking.outputs.privateEndpointSubnetId
+    pepName: names.pepKeyVault
+    privateDnsZoneId: networking.outputs.keyVaultPrivateDnsZoneId
   }
 }
 

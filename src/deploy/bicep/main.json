@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "9447387674745624471"
+      "templateHash": "10873396195175301352"
     }
   },
   "parameters": {
@@ -187,6 +187,7 @@
       "appPortalBackend": "[format('{0}-app-portal', variables('prefix'))]",
       "stappPortalFrontend": "[format('{0}-stapp-portal', variables('prefix'))]",
       "pepImagingCore": "[format('{0}-pep-core', variables('prefix'))]",
+      "pepKeyVault": "[format('{0}-pep-kv', variables('prefix'))]",
       "agw": "[format('{0}-agw', variables('prefix'))]"
     }
   },
@@ -327,7 +328,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "12795920459712341076"
+              "templateHash": "2131608780797951936"
             }
           },
           "parameters": {
@@ -526,6 +527,28 @@
                 "[resourceId('Microsoft.Network/privateDnsZones', parameters('appServicePrivateDnsZoneName'))]",
                 "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "privatelink.vaultcore.azure.net",
+              "location": "global"
+            },
+            {
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', 'privatelink.vaultcore.azure.net', format('{0}-link', parameters('vnetName')))]",
+              "location": "global",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net')]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -552,6 +575,10 @@
             "appServicePrivateDnsZoneId": {
               "type": "string",
               "value": "[resourceId('Microsoft.Network/privateDnsZones', parameters('appServicePrivateDnsZoneName'))]"
+            },
+            "keyVaultPrivateDnsZoneId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/privateDnsZones', 'privatelink.vaultcore.azure.net')]"
             }
           }
         }
@@ -830,6 +857,15 @@
           },
           "imagingCoreMsiPrincipalId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'identities'), '2025-04-01').outputs.imagingCorePrincipalId.value]"
+          },
+          "pepSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.privateEndpointSubnetId.value]"
+          },
+          "pepName": {
+            "value": "[variables('names').pepKeyVault]"
+          },
+          "privateDnsZoneId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.keyVaultPrivateDnsZoneId.value]"
           }
         },
         "template": {
@@ -839,7 +875,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "3322231024361098148"
+              "templateHash": "16766759999519200286"
             }
           },
           "parameters": {
@@ -851,6 +887,24 @@
             },
             "imagingCoreMsiPrincipalId": {
               "type": "string"
+            },
+            "pepSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the private-endpoint subnet the Key Vault private endpoint is placed in."
+              }
+            },
+            "pepName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the Key Vault private endpoint."
+              }
+            },
+            "privateDnsZoneId": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource ID of the privatelink.vaultcore.azure.net private DNS zone used to auto-register the private endpoint A records."
+              }
             }
           },
           "variables": {
@@ -893,6 +947,49 @@
               "dependsOn": [
                 "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[parameters('pepName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('pepSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[parameters('pepName')]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+                      "groupIds": [
+                        "vault"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', parameters('pepName'), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "privatelink-vaultcore-azure-net",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('privateDnsZoneId')]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', parameters('pepName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -908,7 +1005,8 @@
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'identities')]"
+        "[resourceId('Microsoft.Resources/deployments', 'identities')]",
+        "[resourceId('Microsoft.Resources/deployments', 'networking')]"
       ]
     },
     {
