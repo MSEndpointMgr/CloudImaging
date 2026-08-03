@@ -1,18 +1,27 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import axios from 'axios';
 import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
  * Boot media certificate management routes (T178, FR-068).
- * Administrator-only: generate and rotate certificates.
+ * Administrator-only: view active certificate metadata, generate and rotate certificates.
  */
 const router = Router();
 
-// GET /api/cert/active
+// GET /api/cert/active — active boot media certificate metadata (thumbprint/validity).
 router.get('/active', requireRole('CloudImaging.Administrator'), async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    res.json(await operatorApiClient.getConfiguration()); // cert metadata from operator
-  } catch (err) { next(err); }
+    res.json(await operatorApiClient.getBootMediaCertMetadata());
+  } catch (err) {
+    // No active certificate configured yet — surface as an empty result rather than an error
+    // so the Configuration page renders the "no certificate" state instead of failing to load.
+    if (axios.isAxiosError(err) && err.response?.status === 404) {
+      res.json(null);
+      return;
+    }
+    next(err);
+  }
 });
 
 // POST /api/cert/generate

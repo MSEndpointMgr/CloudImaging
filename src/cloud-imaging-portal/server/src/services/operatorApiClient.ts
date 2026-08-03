@@ -106,6 +106,12 @@ export class OperatorApiClient {
     await this.http.put<unknown>('/api/configuration', payload);
   }
 
+  /** Active boot media certificate metadata (thumbprint/validity) — never returns PFX bytes. */
+  async getBootMediaCertMetadata(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/bootmedia/certificate/metadata');
+    return data;
+  }
+
   // ── Branding ────────────────────────────────────────────────────────────────
 
   async getBranding(): Promise<unknown> {

@@ -107,6 +107,13 @@ public sealed class DeviceSessionRepository
             .Select(FromEntity);
     }
 
+    /// <summary>
+    /// List all sessions across both partitions (active and terminal) for the portal devices
+    /// view, so completed/failed sessions remain visible until they are purged (FR-031).
+    /// </summary>
+    public IAsyncEnumerable<DeviceSession> QueryAllAsync(CancellationToken ct = default) =>
+        _table.QueryAsync<TableEntity>(cancellationToken: ct).Select(FromEntity);
+
     // ── Entity mapping ────────────────────────────────────────────────────────
 
     private static TableEntity ToEntity(DeviceSession s, string partition) => new(partition, s.SessionId.ToString())
