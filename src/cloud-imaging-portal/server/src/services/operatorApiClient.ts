@@ -1,8 +1,12 @@
 import axios, { AxiosInstance } from 'axios';
+import { getOperatorApiToken } from './operatorApiToken.js';
 
 /**
  * Typed HTTP client for portal backend → Operator API calls over Private Link (T041, FR-013).
- * The access token is passed through as a Bearer credential for downstream validation.
+ * Every request is authenticated with the portal backend's OWN managed-identity token (which
+ * carries the `CloudImaging.PortalAccess` service role) via a request interceptor — the user's
+ * browser token is never forwarded downstream. User RBAC is enforced separately at the portal
+ * edge by the roleGuard middleware.
  */
 export class OperatorApiClient {
   private readonly http: AxiosInstance;
@@ -13,11 +17,12 @@ export class OperatorApiClient {
       timeout: 30_000,
       headers: { 'Content-Type': 'application/json' },
     });
-  }
 
-  /** Sets the Entra Bearer token for downstream Operator API auth. */
-  setToken(token: string): void {
-    this.http.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    this.http.interceptors.request.use(async (config) => {
+      const token = await getOperatorApiToken();
+      config.headers.set('Authorization', `Bearer ${token}`);
+      return config;
+    });
   }
 
   // ── Session operations ────────────────────────────────────────────────────

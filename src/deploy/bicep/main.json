@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "9942516323032569588"
+      "templateHash": "9447387674745624471"
     }
   },
   "parameters": {
@@ -1962,6 +1962,9 @@
           "operatorApiBaseUrl": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'operator-api'), '2025-04-01').outputs.baseUrl.value]"
           },
+          "operatorApiClientId": {
+            "value": "[parameters('operatorApiClientId')]"
+          },
           "sharedEntraClientId": {
             "value": "[parameters('portalClientId')]"
           },
@@ -1979,7 +1982,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "6513687645552757885"
+              "templateHash": "12544073099983532932"
             }
           },
           "parameters": {
@@ -2005,6 +2008,9 @@
               "type": "string"
             },
             "operatorApiBaseUrl": {
+              "type": "string"
+            },
+            "operatorApiClientId": {
               "type": "string"
             },
             "sharedEntraClientId": {
@@ -2074,6 +2080,10 @@
                     {
                       "name": "OPERATOR_API_BASE_URL",
                       "value": "[parameters('operatorApiBaseUrl')]"
+                    },
+                    {
+                      "name": "OPERATOR_API_SCOPE",
+                      "value": "[format('api://{0}/.default', parameters('operatorApiClientId'))]"
                     },
                     {
                       "name": "ENTRA_CLIENT_ID",

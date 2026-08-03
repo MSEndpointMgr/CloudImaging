@@ -8,6 +8,10 @@ param appInsightsConnectionString string
 param msiId string
 param msiClientId string
 param operatorApiBaseUrl string
+// operatorApiClientId: Application (client) ID of the Operator API app registration.
+// The portal backend acquires a managed-identity token for api://<operatorApiClientId>/.default
+// (carrying the CloudImaging.PortalAccess app role) to call the Operator API server-to-server.
+param operatorApiClientId string
 // sharedEntraClientId: Application (client) ID of the Cloud Imaging Portal SPA registration.
 // Used by the portal backend (ENTRA_CLIENT_ID) to validate browser sign-in tokens.
 param sharedEntraClientId string
@@ -55,6 +59,7 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'AZURE_CLIENT_ID', value: msiClientId }
         { name: 'OPERATOR_API_BASE_URL', value: operatorApiBaseUrl }
+        { name: 'OPERATOR_API_SCOPE', value: 'api://${operatorApiClientId}/.default' }
         { name: 'ENTRA_CLIENT_ID', value: sharedEntraClientId }
         { name: 'ENTRA_TENANT_ID', value: tenantId }
         { name: 'ENTRA_AUTHORITY', value: '${environment().authentication.loginEndpoint}${tenantId}' }

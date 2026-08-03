@@ -13,8 +13,6 @@ const router = Router();
 
 router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     const data = await operatorApiClient.getSessions(req.query['filter'] as string | undefined);
     res.json(data);
   } catch (err) {
@@ -26,8 +24,6 @@ router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, r
 
 router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     const data = await operatorApiClient.getSession(req.params['sessionId'] as string);
     res.json(data);
   } catch (err) {
@@ -39,8 +35,6 @@ router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: 
 
 router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     const { passcode } = req.body as { passcode: string };
     if (!passcode) {
       res.status(400).json({ error: 'passcode is required' });
@@ -57,8 +51,6 @@ router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Req
 
 router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     const { osImageId } = req.body as { osImageId: string };
     if (!osImageId) {
       res.status(400).json({ error: 'osImageId is required' });
@@ -75,8 +67,6 @@ router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), asyn
 
 router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     const { sessionIds, osImageId } = req.body as { sessionIds: string[]; osImageId: string };
     const data = await operatorApiClient.bulkAssign(sessionIds, osImageId);
     res.status(202).json(data);

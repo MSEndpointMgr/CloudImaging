@@ -10,10 +10,8 @@ const router = Router();
 
 // ── GET /api/images ───────────────────────────────────────────────────────────
 
-router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireRole('CloudImaging.PortalAccess'), async (_req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     res.json(await operatorApiClient.getImages());
   } catch (err) { next(err); }
 });
@@ -22,8 +20,6 @@ router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, r
 
 router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     const result = await operatorApiClient.createImage(req.body as unknown);
     res.status(201).json(result);
   } catch (err) { next(err); }
@@ -33,8 +29,6 @@ router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request,
 
 router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     res.json(await operatorApiClient.updateImage(req.params['imageId'] as string, req.body as unknown));
   } catch (err) { next(err); }
 });
@@ -43,8 +37,6 @@ router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req:
 
 router.delete('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '') ?? '';
-    operatorApiClient.setToken(token);
     await operatorApiClient.deleteImage(req.params['imageId'] as string);
     res.status(204).send();
   } catch (err) { next(err); }

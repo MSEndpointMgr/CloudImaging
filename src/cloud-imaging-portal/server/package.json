@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
     "@azure/msal-node": "^5.4.2",
     "@azure/storage-blob": "^12.33.0",
     "applicationinsights": "^2.9.8",

@@ -270,6 +270,7 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
     msiId: identities.outputs.portalBackendMsiId
     msiClientId: identities.outputs.portalBackendMsiClientId
     operatorApiBaseUrl: operatorApi.outputs.baseUrl
+    operatorApiClientId: operatorApiClientId
     sharedEntraClientId: portalClientId
     tenantId: tenantId
     appServiceSku: appServiceSku
