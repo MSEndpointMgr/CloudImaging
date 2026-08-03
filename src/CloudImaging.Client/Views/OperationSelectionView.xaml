@@ -18,15 +18,32 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <StackPanel Grid.Row="0" HorizontalAlignment="Center">
-            <TextBlock Text="Cloud Imaging"
-                       Style="{StaticResource TitleLargeTextBlockStyle}"
-                       HorizontalAlignment="Center" />
-            <TextBlock Text="Select an operation to begin"
-                       Style="{StaticResource BodyTextBlockStyle}"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       HorizontalAlignment="Center" Margin="0,6,0,0" />
+        <!-- Header: optional portal branding logo + title + description, centered as a group -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Center">
+            <!--
+                Branding logo embedded in the boot image (branding\logo.png next to the exe,
+                configured through the portal). Collapsed by default; the code-behind makes it
+                visible only when a logo is present — if none was configured, nothing is shown.
+            -->
+            <Image x:Name="BrandingLogo"
+                   Width="72" Height="72"
+                   Margin="0,0,20,0"
+                   VerticalAlignment="Center"
+                   Stretch="Uniform"
+                   Visibility="Collapsed" />
+
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="Cloud Imaging"
+                           Style="{StaticResource TitleLargeTextBlockStyle}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="Select an operation below to get started."
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           HorizontalAlignment="Center"
+                           TextAlignment="Center"
+                           TextWrapping="NoWrap"
+                           Margin="0,6,0,0" />
+            </StackPanel>
         </StackPanel>
 
         <!-- Operation cards -->
@@ -56,7 +73,8 @@
                                   CommandParameter="Imaging" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="💿" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <!-- Imaging = pull a fresh OS image from the cloud down onto the local disk -->
+                    <ui:SymbolIcon Symbol="CloudArrowDown24" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
                     <TextBlock Text="Imaging"
                                Style="{StaticResource SubtitleTextBlockStyle}"
                                HorizontalAlignment="Center" Margin="0,0,0,8" />
@@ -92,7 +110,7 @@
                                   CommandParameter="Decommissioning" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="🗑" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <ui:SymbolIcon Symbol="Delete24" FontSize="38" HorizontalAlignment="Center" Margin="0,0,0,12" />
                     <TextBlock Text="Decommissioning"
                                Style="{StaticResource SubtitleTextBlockStyle}"
                                HorizontalAlignment="Center" Margin="0,0,0,8" />

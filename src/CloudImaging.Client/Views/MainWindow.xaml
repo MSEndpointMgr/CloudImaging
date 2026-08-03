@@ -23,7 +23,6 @@
         </Grid.RowDefinitions>
 
         <ui:TitleBar Grid.Row="0"
-                     Title="Cloud Imaging"
                      ShowMaximize="False" />
 
         <Frame x:Name="NavigationFrame"

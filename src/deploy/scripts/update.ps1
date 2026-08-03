@@ -134,6 +134,64 @@ $storageCoreName    = ($storageAccounts | Where-Object { $_.StorageAccountName -
 # for a local -ArchivePath it is unset, so fall back to 'local'. Sanitize for blob naming.
 $packageLabel = if ($resolvedVersion) { $resolvedVersion -replace '[^A-Za-z0-9._-]', '-' } else { 'local' }
 
+# ── Step 4b: Ensure the deploying identity can upload packages ─────────────────────
+# Run-From-Package uploads use Entra ID data-plane auth (`az storage blob upload
+# --auth-mode login`). That path needs a *blob data* role — resource-group Owner/Contributor
+# is NOT sufficient. Grant Storage Blob Data Contributor to the signed-in identity on each
+# package storage account so upgrades work out of the box. Idempotent, and best-effort: if
+# the caller cannot assign roles, warn with guidance rather than failing the whole upgrade.
+function Grant-BlobUploadRole {
+    param([string[]] $StorageAccountName)
+
+    $accounts = $StorageAccountName | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+    if (-not $accounts) { return }
+
+    # Resolve the signed-in az CLI identity (user or service principal) — this is the
+    # principal that performs the blob upload below, so it is the one that needs the role.
+    try {
+        $acct = az account show --query "{type:user.type, name:user.name}" -o json 2>$null | ConvertFrom-Json
+        if ($acct.type -eq 'servicePrincipal') {
+            $principalId   = az ad sp show --id $acct.name --query id -o tsv 2>$null
+            $principalType = 'ServicePrincipal'
+        } else {
+            $principalId   = az ad signed-in-user show --query id -o tsv 2>$null
+            $principalType = 'User'
+        }
+    } catch { $principalId = $null }
+
+    if ([string]::IsNullOrWhiteSpace($principalId)) {
+        Write-Warning "Could not resolve the signed-in identity to verify blob-upload permissions. If the upload step below fails with 'Storage Blob Data' permission errors, assign the 'Storage Blob Data Contributor' role on the storage account(s) to your identity and re-run."
+        return
+    }
+
+    foreach ($name in $accounts) {
+        $scope = az storage account show --name $name --resource-group $ResourceGroupName --query id -o tsv 2>$null
+        if ([string]::IsNullOrWhiteSpace($scope)) { continue }
+
+        $existing = az role assignment list --assignee $principalId --scope $scope --role 'Storage Blob Data Contributor' --query "[0].id" -o tsv 2>$null
+        if (-not [string]::IsNullOrWhiteSpace($existing)) {
+            Write-Host "✓ Storage Blob Data Contributor already assigned on $name."
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess($name, 'Assign Storage Blob Data Contributor')) {
+            $null = az role assignment create `
+                --assignee-object-id $principalId `
+                --assignee-principal-type $principalType `
+                --role 'Storage Blob Data Contributor' `
+                --scope $scope `
+                --output none 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "✓ Granted Storage Blob Data Contributor on $name."
+            } else {
+                Write-Warning "Could not assign 'Storage Blob Data Contributor' on $name (need User Access Administrator/Owner). Ask an administrator to grant it, then re-run the upgrade."
+            }
+        }
+    }
+}
+
+Grant-BlobUploadRole -StorageAccountName @($storageAppName, $storageCoreName)
+
 # ── Step 5: Deploy each component ─────────────────────────────────────────────────
 
 function Deploy-FunctionApp {

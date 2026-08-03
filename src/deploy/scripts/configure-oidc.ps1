@@ -140,6 +140,30 @@ if ($null -eq $uaaExists) {
     Write-Host "✓ User Access Administrator role already assigned."
 }
 
+# ── Step 6b: Assign Storage Blob Data Contributor (run-from-package uploads) ──
+# The deploy pipeline uploads Function App packages to blob storage using AAD
+# auth (`az storage blob upload --auth-mode login`) and sets
+# WEBSITE_RUN_FROM_PACKAGE to the blob URL. This data-plane operation requires a
+# blob data role — Contributor on the resource group is NOT sufficient. Assign at
+# resource-group scope so it applies to every storage account (msedev*stapp /
+# msedev*stcore) regardless of setup ordering.
+
+$blobExists = Get-AzRoleAssignment `
+    -ObjectId $sp.Id `
+    -RoleDefinitionName 'Storage Blob Data Contributor' `
+    -Scope $scope `
+    -ErrorAction SilentlyContinue
+
+if ($null -eq $blobExists) {
+    Write-Host "Assigning Storage Blob Data Contributor role…"
+    if ($PSCmdlet.ShouldProcess($scope, 'Assign Storage Blob Data Contributor role')) {
+        New-AzRoleAssignment -ObjectId $sp.Id -RoleDefinitionName 'Storage Blob Data Contributor' -Scope $scope
+        Write-Host "✓ Storage Blob Data Contributor role assigned."
+    }
+} else {
+    Write-Host "✓ Storage Blob Data Contributor role already assigned."
+}
+
 # ── Step 7: Output GitHub Actions secrets ─────────────────────────────────────
 
 Write-Host ""

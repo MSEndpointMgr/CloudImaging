@@ -263,6 +263,15 @@ this assignment, sign-in succeeds but API calls return `403`.
 .\update.ps1 -ResourceGroupName corp-prod-rg -ArchivePath C:\Downloads\cloud-imaging-v1.1.0.zip
 ```
 
+> **Storage permission (handled automatically):** the Function App components are deployed with
+> **Run-From-Package** — each release ZIP is uploaded to the `app-packages` container using Entra ID
+> data-plane auth, which needs the **Storage Blob Data Contributor** role (resource-group
+> Owner/Contributor alone is *not* enough). `update.ps1` grants this role to your signed-in identity
+> on the package storage accounts automatically on first run. This requires the **User Access
+> Administrator** (or Owner) role listed in *What You'll Need*. If your account cannot assign roles,
+> the script prints a warning — ask an administrator to grant **Storage Blob Data Contributor** on
+> the `*stapp` and `*stcore` storage accounts, then re-run the upgrade.
+
 ---
 
 ## Getting Help
