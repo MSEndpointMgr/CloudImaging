@@ -82,16 +82,10 @@ public sealed class ImagingCoreClient
 
     // ── Portal configuration ───────────────────────────────────────────────────
 
-    public Task<HttpResponseMessage> GetConfigurationAsync(CancellationToken ct = default) =>
-        _http.GetAsync("/api/internal/configuration", ct);
-
-    public Task<HttpResponseMessage> UpdateConfigurationAsync(object payload, CancellationToken ct = default) =>
-        _http.PatchAsJsonAsync("/api/internal/configuration", payload, JsonOptions, ct);
-
     /// <summary>Returns the current portal configuration as a typed model.</summary>
     public async Task<PortalConfiguration> GetPortalConfigurationAsync(CancellationToken ct = default)
     {
-        var response = await _http.GetAsync("/api/internal/configuration", ct);
+        var response = await _http.GetAsync("/api/internal/portal-configuration", ct);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<PortalConfiguration>(JsonOptions, ct)
             ?? throw new InvalidOperationException("Null response from ImagingCoreApi portal-configuration endpoint.");

@@ -28,7 +28,7 @@ public sealed partial class PortalConfigurationFunctions
     /// <summary>Returns the current portal configuration.</summary>
     [Function(nameof(GetPortalConfiguration))]
     public async Task<HttpResponseData> GetPortalConfiguration(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "portal-configuration")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/portal-configuration")] HttpRequestData req,
         FunctionContext context)
     {
         var config = await _repo.GetAsync(context.CancellationToken);
@@ -41,7 +41,7 @@ public sealed partial class PortalConfigurationFunctions
     /// <summary>Replaces the portal configuration with the supplied payload.</summary>
     [Function(nameof(PutPortalConfiguration))]
     public async Task<HttpResponseData> PutPortalConfiguration(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "portal-configuration")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/portal-configuration")] HttpRequestData req,
         FunctionContext context)
     {
         PortalConfiguration? config;

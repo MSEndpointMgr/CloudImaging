@@ -65,10 +65,10 @@ Private source-of-truth API for lifecycle orchestration, SAS token URL issuance,
 
 ### Portal Configuration
 
-- `GET /api/internal/configuration`
+- `GET /api/internal/portal-configuration`
   - Return current portal deployment configuration (`devicePreFlightAuthorizationEnabled`, `sasTokenUrlExpiryMinutes`, `lastModifiedAt`).
-- `PATCH /api/internal/configuration`
-  - Update portal configuration settings. Changes to `sasTokenUrlExpiryMinutes` take effect immediately for all newly issued SAS token URLs; in-flight SAS token URLs are not retroactively affected. Restricted to calls from the Operator API acting on behalf of a `CloudImaging.Administrator` user.
+- `PUT /api/internal/portal-configuration`
+  - Replace portal configuration settings. Changes to `sasTokenUrlExpiryMinutes` take effect immediately for all newly issued SAS token URLs; in-flight SAS token URLs are not retroactively affected. Restricted to calls from the Operator API acting on behalf of a `CloudImaging.Administrator` user.
 
 - `POST /api/internal/boot-images/upload-session`
   - Create a staged boot image upload session and issue write authorization for a blob that is not yet published.
