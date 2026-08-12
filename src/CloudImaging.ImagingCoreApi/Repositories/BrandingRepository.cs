@@ -39,6 +39,7 @@ public sealed class BrandingRepository
         var entity = new TableEntity(Partition, Key)
         {
             ["LogoBlobPath"] = branding.LogoBlobPath,
+            ["PortalLogoBlobPath"] = branding.PortalLogoBlobPath,
             ["PrimaryColor"] = branding.PrimaryColor,
             ["AccentColor"] = branding.AccentColor,
             ["ApplicationName"] = branding.ApplicationName,
@@ -49,6 +50,7 @@ public sealed class BrandingRepository
     private static BrandingConfiguration FromEntity(TableEntity e) => new()
     {
         LogoBlobPath = e.GetString("LogoBlobPath"),
+        PortalLogoBlobPath = e.GetString("PortalLogoBlobPath"),
         PrimaryColor = e.GetString("PrimaryColor") ?? "#0078d4",
         AccentColor = e.GetString("AccentColor") ?? "#005a9e",
         ApplicationName = e.GetString("ApplicationName") ?? "Cloud Imaging",

@@ -11,6 +11,7 @@
             </ResourceDictionary.MergedDictionaries>
             <converters:BoolToErrorBrushConverter x:Key="BoolToErrorBrush" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

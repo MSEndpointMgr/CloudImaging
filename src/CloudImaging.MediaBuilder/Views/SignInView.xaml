@@ -8,7 +8,7 @@
         Navigation to OperationSelectionView is blocked until sign-in completes.
     -->
     <Grid>
-        <ui:Card MaxWidth="450" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="40,36">
+        <ui:Card MaxWidth="540" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="40,36">
             <StackPanel>
 
                 <!-- Logo / branding -->
@@ -22,6 +22,7 @@
                 </ui:SymbolIcon>
                 <ui:TextBlock Text="Cloud Imaging Media Builder"
                               FontTypography="Title"
+                              TextWrapping="Wrap" TextAlignment="Center"
                               HorizontalAlignment="Center" Margin="0,0,0,8" />
                 <ui:TextBlock Text="Generate WinPE boot images and prepare USB media for bare-metal OS imaging."
                               FontTypography="Body"
@@ -29,32 +30,36 @@
                               TextWrapping="Wrap" TextAlignment="Center"
                               Margin="0,0,0,32" />
 
-                <!-- Sign-in button -->
-                <ui:Button Content="Sign in with Microsoft"
-                           Icon="{ui:SymbolIcon PersonAccounts24}"
-                           Appearance="Primary"
-                           HorizontalAlignment="Stretch"
+                <!-- Sign-in button (shows an inline spinner while signing in) -->
+                <ui:Button Appearance="Primary"
+                           HorizontalAlignment="Center"
                            HorizontalContentAlignment="Center"
+                           MinWidth="180"
                            Height="44"
                            FontSize="15"
                            Command="{Binding SignInCommand}"
                            IsEnabled="{Binding CanSignIn}"
-                           IsDefault="True" />
+                           IsDefault="True">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding IsBusy, Converter={StaticResource InverseBoolToVisibility}}">
+                            <ui:SymbolIcon Symbol="PersonAccounts24" Margin="0,0,8,0" />
+                            <TextBlock Text="Sign in" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ui:ProgressRing IsIndeterminate="True"
+                                         Width="22" Height="22"
+                                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+                </ui:Button>
 
-                <!-- Progress ring (shown while signing in) -->
-                <ui:ProgressRing IsIndeterminate="True"
-                                 Width="28" Height="28"
-                                 HorizontalAlignment="Center"
-                                 Margin="0,16,0,0"
-                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
-
-                <!-- Status / error -->
+                <!-- Status / error (errors only; no transient "signing in" text) -->
                 <ui:TextBlock Text="{Binding StatusMessage}"
                               FontTypography="Caption"
                               HorizontalAlignment="Center"
                               TextAlignment="Center"
                               TextWrapping="Wrap"
                               Margin="0,14,0,0"
+                              Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}"
                               Foreground="{Binding HasError, Converter={StaticResource BoolToErrorBrush}}"
                               MaxWidth="380" />
             </StackPanel>

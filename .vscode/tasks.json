@@ -306,7 +306,7 @@
       "id": "resourceGroup",
       "type": "promptString",
       "description": "Azure Resource Group name",
-      "default": "rg-mse-dev-cloudimaging"
+      "default": "rg-<prefix>-<env>-cloudimaging"
     },
     {
       "id": "location",

@@ -27,7 +27,7 @@ describe('Portal frontend — auth guard', () => {
   });
 
   it('API scope is derived from the runtime portal config client ID', () => {
-    const clientId = 'd6ff0541-00bd-4615-84df-da2a54b604c5';
+    const clientId = '00000000-0000-0000-0000-000000000000';
     const scope = `api://${clientId}/user_impersonation`;
     expect(scope).toContain('user_impersonation');
   });

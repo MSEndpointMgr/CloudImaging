@@ -1,19 +1,22 @@
-import { createContext, useContext, useCallback, useEffect, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../lib/apiClient.ts';
 
 interface BrandingConfig {
   primaryColor?: string;
   accentColor?: string;
   applicationName?: string;
+  /** Boot image logo blob path (embedded into boot media by the Media Builder). */
   logoBlobPath?: string;
+  /** Portal header/sidebar logo blob path (streamed to the browser). */
+  portalLogoBlobPath?: string;
 }
 
 interface BrandingContextValue {
   branding: BrandingConfig;
-  /** Time-limited SAS URL for the configured logo, or null when none is set. */
+  /** Object URL for the configured portal logo, or null when none is set. */
   logoUrl: string | null;
   isLoaded: boolean;
-  /** Re-fetches branding (and the logo SAS URL) from the backend. */
+  /** Re-fetches branding (and the portal logo) from the backend. */
   refresh: () => Promise<void>;
 }
 
@@ -32,6 +35,16 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
   const [branding, setBranding] = useState<BrandingConfig>({});
   const [logoUrl, setLogoUrl]   = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
+  const logoUrlRef = useRef<string | null>(null);
+
+  /** Replaces the current logo object URL, revoking the previous one to avoid leaks. */
+  const setLogoObjectUrl = useCallback((url: string | null) => {
+    if (logoUrlRef.current) {
+      URL.revokeObjectURL(logoUrlRef.current);
+    }
+    logoUrlRef.current = url;
+    setLogoUrl(url);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -41,20 +54,21 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
         setBranding(data);
         applyBrandingCssVariables(data);
 
-        if (data.logoBlobPath) {
+        if (data.portalLogoBlobPath) {
           try {
-            const sasRes = await apiFetch('/api/branding/logo/sas', { credentials: 'include' });
-            if (sasRes.ok) {
-              const sas = await sasRes.json() as { sasTokenUrl?: string };
-              setLogoUrl(sas.sasTokenUrl ?? null);
+            // Stream the logo bytes through the backend (managed identity read, no SAS)
+            // and expose them as an ephemeral object URL for <img>.
+            const logoRes = await apiFetch('/api/branding/portal-logo/content', { credentials: 'include' });
+            if (logoRes.ok) {
+              setLogoObjectUrl(URL.createObjectURL(await logoRes.blob()));
             } else {
-              setLogoUrl(null);
+              setLogoObjectUrl(null);
             }
           } catch {
-            setLogoUrl(null);
+            setLogoObjectUrl(null);
           }
         } else {
-          setLogoUrl(null);
+          setLogoObjectUrl(null);
         }
       }
     } catch {
@@ -62,9 +76,16 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
     } finally {
       setIsLoaded(true);
     }
-  }, []);
+  }, [setLogoObjectUrl]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Revoke the last object URL on unmount.
+  useEffect(() => () => {
+    if (logoUrlRef.current) {
+      URL.revokeObjectURL(logoUrlRef.current);
+    }
+  }, []);
 
   return (
     <BrandingContext.Provider value={{ branding, logoUrl, isLoaded, refresh: load }}>

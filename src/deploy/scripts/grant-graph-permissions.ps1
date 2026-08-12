@@ -16,7 +16,7 @@
     Name of the Imaging Core API managed identity (defaults to the naming convention).
 
 .EXAMPLE
-    .\grant-graph-permissions.ps1 -ResourceGroupName "rg-mse-dev-cloudimaging"
+    .\grant-graph-permissions.ps1 -ResourceGroupName "rg-<prefix>-<env>-cloudimaging"
 #>
 [CmdletBinding()]
 param(

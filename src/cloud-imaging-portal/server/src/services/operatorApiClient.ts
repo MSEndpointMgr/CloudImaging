@@ -132,6 +132,29 @@ export class OperatorApiClient {
     const { data } = await this.http.put<unknown>('/api/branding/logo', payload);
     return data;
   }
+
+  async uploadBrandingPortalLogo(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>('/api/branding/portal-logo', payload);
+    return data;
+  }
+
+  /** Streams the boot image logo bytes (managed identity read, no SAS). */
+  async getBrandingLogoContent(): Promise<{ data: Buffer; contentType: string }> {
+    const res = await this.http.get('/api/branding/logo/content', { responseType: 'arraybuffer' });
+    return {
+      data: Buffer.from(res.data as ArrayBuffer),
+      contentType: (res.headers['content-type'] as string) ?? 'image/png',
+    };
+  }
+
+  /** Streams the portal logo bytes (managed identity read, no SAS). */
+  async getBrandingPortalLogoContent(): Promise<{ data: Buffer; contentType: string }> {
+    const res = await this.http.get('/api/branding/portal-logo/content', { responseType: 'arraybuffer' });
+    return {
+      data: Buffer.from(res.data as ArrayBuffer),
+      contentType: (res.headers['content-type'] as string) ?? 'image/png',
+    };
+  }
 }
 
 /** Singleton instance — created on first import, configured at request time. */

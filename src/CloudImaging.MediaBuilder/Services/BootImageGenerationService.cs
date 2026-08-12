@@ -142,6 +142,13 @@ public sealed partial class BootImageGenerationService
 
     // ── ADK discovery ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns <c>true</c> when the Windows ADK (with the WinPE add-on) is installed on this
+    /// workstation. Used by the OperationSelectionView to block the Generate Boot Image
+    /// workflow up-front with installation guidance (FR-050a).
+    /// </summary>
+    public static bool IsAdkInstalled() => FindAdkPath() is not null;
+
     private static string? FindAdkPath()
     {
         // Standard ADK install location

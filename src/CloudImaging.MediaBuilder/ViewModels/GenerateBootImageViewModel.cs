@@ -18,7 +18,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
 
     private bool _useGitHubSource = true;
     private string _localSourcePath = string.Empty;
-    private string _outputFolderPath = string.Empty;
+    private string _outputFolderPath = GetDefaultOutputFolder();
     private string _driverRootPath = string.Empty;
     private bool _isGenerating;
     private bool _isComplete;
@@ -191,6 +191,22 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select driver root folder (optional)" };
         if (dialog.ShowDialog() == true)
             DriverRootPath = dialog.FolderName;
+    }
+
+    /// <summary>
+    /// Default output location: a "Cloud Imaging Media" subfolder under the current user's
+    /// Documents folder. This is writable without elevation. Falls back to the user profile
+    /// (then the temp folder) if Documents cannot be resolved.
+    /// </summary>
+    private static string GetDefaultOutputFolder()
+    {
+        var basePath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        if (string.IsNullOrEmpty(basePath))
+            basePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrEmpty(basePath))
+            basePath = Path.GetTempPath();
+
+        return Path.Combine(basePath, "Cloud Imaging Media Builder", "Boot Images");
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

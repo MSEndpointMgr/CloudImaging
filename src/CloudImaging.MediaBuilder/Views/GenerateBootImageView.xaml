@@ -33,12 +33,19 @@
                     <RadioButton Content="Use local path (pre-downloaded binaries)"
                                  IsChecked="{Binding UseLocalSource}"
                                  GroupName="SourceType" Margin="0,4,0,4" />
-                    <StackPanel Orientation="Horizontal" Margin="20,0,0,4"
-                                Visibility="{Binding UseLocalSource, Converter={StaticResource BoolToVisibility}}">
-                        <ui:TextBox Text="{Binding LocalSourcePath, UpdateSourceTrigger=PropertyChanged}"
-                                    Width="320" PlaceholderText="Path to binaries folder" />
-                        <ui:Button Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseCommand}" />
-                    </StackPanel>
+                    <Grid Margin="0,4,0,4"
+                          Visibility="{Binding UseLocalSource, Converter={StaticResource BoolToVisibility}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox Grid.Column="0"
+                                    Text="{Binding LocalSourcePath, UpdateSourceTrigger=PropertyChanged}"
+                                    HorizontalAlignment="Stretch"
+                                    PlaceholderText="Path to binaries folder" />
+                        <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                                   Margin="8,0,0,0" Command="{Binding BrowseCommand}" />
+                    </Grid>
                 </StackPanel>
             </ui:Card>
 
@@ -48,11 +55,18 @@
                     <TextBlock Text="Output Folder"
                                Style="{StaticResource BodyStrongTextBlockStyle}"
                                Margin="0,0,0,12" />
-                    <StackPanel Orientation="Horizontal">
-                        <ui:TextBox Text="{Binding OutputFolderPath, UpdateSourceTrigger=PropertyChanged}"
-                                    Width="320" PlaceholderText="Output directory path" />
-                        <ui:Button Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseOutputCommand}" />
-                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox Grid.Column="0"
+                                    Text="{Binding OutputFolderPath, UpdateSourceTrigger=PropertyChanged}"
+                                    HorizontalAlignment="Stretch"
+                                    PlaceholderText="Output directory path" />
+                        <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                                   Margin="8,0,0,0" Command="{Binding BrowseOutputCommand}" />
+                    </Grid>
                 </StackPanel>
             </ui:Card>
 
@@ -67,11 +81,18 @@
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap"
                                Margin="0,0,0,12" />
-                    <StackPanel Orientation="Horizontal">
-                        <ui:TextBox Text="{Binding DriverRootPath, UpdateSourceTrigger=PropertyChanged}"
-                                    Width="320" PlaceholderText="Driver root folder (optional)" />
-                        <ui:Button Content="Browse…" Margin="8,0,0,0" Command="{Binding BrowseDriverRootCommand}" />
-                    </StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox Grid.Column="0"
+                                    Text="{Binding DriverRootPath, UpdateSourceTrigger=PropertyChanged}"
+                                    HorizontalAlignment="Stretch"
+                                    PlaceholderText="Driver root folder (optional)" />
+                        <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                                   Margin="8,0,0,0" Command="{Binding BrowseDriverRootCommand}" />
+                    </Grid>
                 </StackPanel>
             </ui:Card>
 

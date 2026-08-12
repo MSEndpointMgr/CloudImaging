@@ -80,6 +80,15 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> UploadBrandingLogoAsync(object payload, CancellationToken ct = default) =>
         _http.PutAsJsonAsync("/api/internal/branding/logo", payload, JsonOptions, ct);
 
+    public Task<HttpResponseMessage> UploadBrandingPortalLogoAsync(object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync("/api/internal/branding/portal-logo", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> GetBrandingLogoContentAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/branding/logo/content", ct);
+
+    public Task<HttpResponseMessage> GetBrandingPortalLogoContentAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/branding/portal-logo/content", ct);
+
     // ── Portal configuration ───────────────────────────────────────────────────
 
     /// <summary>Returns the current portal configuration as a typed model.</summary>

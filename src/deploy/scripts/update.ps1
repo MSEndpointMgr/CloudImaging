@@ -28,13 +28,13 @@
     When specified, download from GitHub is skipped.
 
 .EXAMPLE
-    .\update.ps1 -ResourceGroupName mse-az-cloud-imaging-dev
+    .\update.ps1 -ResourceGroupName rg-<prefix>-<env>-cloudimaging
 
 .EXAMPLE
-    .\update.ps1 -ResourceGroupName mse-az-cloud-imaging-prod -Version 1.2.0
+    .\update.ps1 -ResourceGroupName rg-<prefix>-<env>-cloudimaging -Version 1.2.0
 
 .EXAMPLE
-    .\update.ps1 -ResourceGroupName mse-az-cloud-imaging-dev -ArchivePath C:\Downloads\cloud-imaging-1.2.0.zip
+    .\update.ps1 -ResourceGroupName rg-<prefix>-<env>-cloudimaging -ArchivePath C:\Downloads\cloud-imaging-1.2.0.zip
 #>
 
 [CmdletBinding(SupportsShouldProcess)]

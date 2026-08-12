@@ -39,11 +39,11 @@
 
 .EXAMPLE
     .\assign-service-roles.ps1 `
-        -ResourceGroupName  "mse-az-cloud-imaging" `
-        -OperatorApiClientId "beb5c8c0-e7f0-4f67-9b00-5e011bc71d10" `
-        -MediaBuilderClientId "0095f085-6166-4154-ace4-f268fd58a500" `
-        -ResourcePrefix      "mse" `
-        -Environment         "dev"
+        -ResourceGroupName  "rg-<prefix>-<env>-cloudimaging" `
+        -OperatorApiClientId "00000000-0000-0000-0000-000000000000" `
+        -MediaBuilderClientId "11111111-1111-1111-1111-111111111111" `
+        -ResourcePrefix      "<prefix>" `
+        -Environment         "<env>"
 #>
 [CmdletBinding()]
 param(
@@ -96,7 +96,7 @@ try {
 # ── 3. Derive MSI name from naming convention if prefix not provided ──────────
 
 if (-not $ResourcePrefix) {
-    # Fallback: extract from resource group name (e.g. 'mse-az-cloud-imaging' → 'mse')
+    # Fallback: extract from resource group name (e.g. 'corp-prod-rg' → 'corp')
     $ResourcePrefix = ($ResourceGroupName -split '-')[0]
     Write-Host "ResourcePrefix not provided; derived '$ResourcePrefix' from resource group name."
 }

@@ -31,7 +31,7 @@
     .\configure-oidc.ps1 `
         -TenantId 00000000-0000-0000-0000-000000000000 `
         -SubscriptionId 11111111-1111-1111-1111-111111111111 `
-        -ResourceGroupName mse-az-cloud-imaging-dev
+        -ResourceGroupName rg-<prefix>-<env>-cloudimaging
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param (
@@ -145,8 +145,8 @@ if ($null -eq $uaaExists) {
 # auth (`az storage blob upload --auth-mode login`) and sets
 # WEBSITE_RUN_FROM_PACKAGE to the blob URL. This data-plane operation requires a
 # blob data role — Contributor on the resource group is NOT sufficient. Assign at
-# resource-group scope so it applies to every storage account (msedev*stapp /
-# msedev*stcore) regardless of setup ordering.
+# resource-group scope so it applies to every storage account (the *stapp /
+# *stcore package accounts) regardless of setup ordering.
 
 $blobExists = Get-AzRoleAssignment `
     -ObjectId $sp.Id `

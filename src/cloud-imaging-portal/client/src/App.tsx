@@ -4,6 +4,7 @@ import { AppShell } from './components/AppShell.tsx';
 import { AuthProvider, useAuth } from './context/authContext.tsx';
 import { BrandingProvider } from './context/brandingContext.tsx';
 import { ThemeProvider } from './context/themeContext.tsx';
+import { ToastProvider } from './context/toastContext.tsx';
 import { ProtectedRoute } from './components/ProtectedRoute.tsx';
 
 // Lazy page stubs — each section is a placeholder until the feature pages are built
@@ -32,21 +33,23 @@ export default function App(): React.ReactElement {
         <BrowserRouter>
           <AuthProvider>
             <BrandingProvider>
-              <ProtectedRoute>
-                <Suspense fallback={<div className="p-6 text-muted-foreground">Loading…</div>}>
-                  <Routes>
-                    <Route element={<AppShell />}>
-                      <Route index                   element={<DashboardPage />} />
-                      <Route path="sessions"         element={<SessionsPage />} />
-                      <Route path="os-images"        element={<OsImagesPage />} />
-                      <Route path="boot-images"      element={<BootImagesPage />} />
-                      <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
-                      <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
-                      <Route path="*"                element={<Navigate to="/" replace />} />
-                    </Route>
-                  </Routes>
-                </Suspense>
-              </ProtectedRoute>
+              <ToastProvider>
+                <ProtectedRoute>
+                  <Suspense fallback={<div className="p-6 text-muted-foreground">Loading…</div>}>
+                    <Routes>
+                      <Route element={<AppShell />}>
+                        <Route index                   element={<DashboardPage />} />
+                        <Route path="sessions"         element={<SessionsPage />} />
+                        <Route path="os-images"        element={<OsImagesPage />} />
+                        <Route path="boot-images"      element={<BootImagesPage />} />
+                        <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
+                        <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
+                        <Route path="*"                element={<Navigate to="/" replace />} />
+                      </Route>
+                    </Routes>
+                  </Suspense>
+                </ProtectedRoute>
+              </ToastProvider>
             </BrandingProvider>
           </AuthProvider>
         </BrowserRouter>

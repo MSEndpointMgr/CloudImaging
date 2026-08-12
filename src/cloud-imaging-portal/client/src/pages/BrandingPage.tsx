@@ -1,18 +1,25 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Upload, ImageIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Button } from '../components/ui/button';
+import { Button, type ButtonStatus } from '../components/ui/button';
 import { useBranding } from '../context/brandingContext.tsx';
+import { useToast } from '../context/toastContext.tsx';
 import { apiFetch } from '../lib/apiClient.ts';
 
 interface BrandingConfig {
+  /** Boot image logo (embedded into boot media by the Media Builder). */
   logoBlobPath?: string;
+  /** Portal header/sidebar logo (streamed to the browser). */
+  portalLogoBlobPath?: string;
   primaryColor: string;
   accentColor: string;
   applicationName: string;
 }
+
+/** Which logo an upload targets. */
+type LogoKind = 'portal' | 'boot';
 
 /** Maximum logo size accepted by the portal (keeps the request within the API body limit). */
 const MAX_LOGO_BYTES = 512 * 1024;
@@ -30,68 +37,113 @@ async function extractError(res: Response, fallback: string): Promise<string> {
 /** Branding settings page (T095, FR-038). Administrator-only writes. */
 export default function BrandingPage(): React.ReactElement {
   const { logoUrl, refresh } = useBranding();
+  const { notify, update } = useToast();
   const [config, setConfig] = useState<BrandingConfig>({
     primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
   });
-  const [loading, setLoading]     = useState(true);
-  const [saving, setSaving]       = useState(false);
-  const [saved, setSaved]         = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [logoError, setLogoError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [loading, setLoading]         = useState(true);
+  const [saveStatus, setSaveStatus]   = useState<ButtonStatus>('idle');
+  const [uploadingKind, setUploadingKind] = useState<LogoKind | null>(null);
+  const [bootLogoUrl, setBootLogoUrl] = useState<string | null>(null);
+  const bootLogoUrlRef = useRef<string | null>(null);
+  const portalInputRef = useRef<HTMLInputElement>(null);
+  const bootInputRef    = useRef<HTMLInputElement>(null);
+
+  /** Streams the boot image logo bytes into an object URL for preview, revoking the previous one. */
+  const loadBootPreview = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/branding/logo/content', { credentials: 'include' });
+      const next = res.ok ? URL.createObjectURL(await res.blob()) : null;
+      if (bootLogoUrlRef.current) URL.revokeObjectURL(bootLogoUrlRef.current);
+      bootLogoUrlRef.current = next;
+      setBootLogoUrl(next);
+    } catch {
+      /* leave the placeholder in place */
+    }
+  }, []);
 
   useEffect(() => {
     void (async () => {
       try {
         const res = await apiFetch('/api/branding', { credentials: 'include' });
-        if (res.ok) setConfig(await res.json() as BrandingConfig);
+        if (res.ok) {
+          const data = await res.json() as BrandingConfig;
+          setConfig(data);
+          if (data.logoBlobPath) await loadBootPreview();
+        }
       } catch { /* fallback to defaults */ }
       finally { setLoading(false); }
     })();
+  }, [loadBootPreview]);
+
+  // Revoke the boot preview object URL on unmount.
+  useEffect(() => () => {
+    if (bootLogoUrlRef.current) URL.revokeObjectURL(bootLogoUrlRef.current);
   }, []);
 
   const handleSave = async () => {
-    setSaving(true);
-    setError(null);
-    setSaved(false);
+    setSaveStatus('loading');
+    const toastId = notify({ status: 'loading', title: 'Saving branding settings…' });
     try {
       const res = await apiFetch('/api/branding', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(config),
+        body: JSON.stringify({
+          primaryColor: config.primaryColor,
+          accentColor: config.accentColor,
+          applicationName: config.applicationName,
+        }),
       });
       if (res.ok || res.status === 204) {
-        setSaved(true);
         await refresh();
-        setTimeout(() => setSaved(false), 3000);
+        setSaveStatus('success');
+        update(toastId, {
+          status: 'success',
+          title: 'Branding settings saved',
+          description: 'The portal appearance has been updated.',
+        });
+        setTimeout(() => setSaveStatus('idle'), 1600);
       } else {
-        setError(await extractError(res, 'Failed to save branding settings.'));
+        setSaveStatus('error');
+        update(toastId, {
+          status: 'error',
+          title: 'Could not save branding settings',
+          description: await extractError(res, 'Failed to save branding settings.'),
+        });
+        setTimeout(() => setSaveStatus('idle'), 1600);
       }
-    } catch { setError('Network error.'); }
-    finally { setSaving(false); }
+    } catch {
+      setSaveStatus('error');
+      update(toastId, {
+        status: 'error',
+        title: 'Could not save branding settings',
+        description: 'A network error occurred. Please try again.',
+      });
+      setTimeout(() => setSaveStatus('idle'), 1600);
+    }
   };
 
-  const handleLogoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoSelected = (kind: LogoKind) => async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = ''; // allow re-selecting the same file later
     if (!file) return;
 
-    setLogoError(null);
     if (!file.type.startsWith('image/')) {
-      setLogoError('Please choose an image file.');
+      notify({ status: 'error', title: 'Invalid file', description: 'Please choose an image file.' });
       return;
     }
     if (file.size > MAX_LOGO_BYTES) {
-      setLogoError('Logo must be 512 KB or smaller.');
+      notify({ status: 'error', title: 'Logo too large', description: 'Logo must be 512 KB or smaller.' });
       return;
     }
 
-    setUploading(true);
+    const endpoint = kind === 'portal' ? '/api/branding/portal-logo' : '/api/branding/logo';
+    setUploadingKind(kind);
+    const toastId = notify({ status: 'loading', title: 'Uploading logo…' });
     try {
       const dataBase64 = await readFileAsBase64(file);
-      const res = await apiFetch('/api/branding/logo', {
+      const res = await apiFetch(endpoint, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -99,15 +151,32 @@ export default function BrandingPage(): React.ReactElement {
       });
       if (res.ok) {
         const updated = await res.json() as BrandingConfig;
-        setConfig(prev => ({ ...prev, logoBlobPath: updated.logoBlobPath }));
-        await refresh();
+        setConfig(prev => ({
+          ...prev,
+          logoBlobPath: updated.logoBlobPath,
+          portalLogoBlobPath: updated.portalLogoBlobPath,
+        }));
+        if (kind === 'portal') {
+          await refresh(); // updates the streamed logo shown in the sidebar/header
+        } else {
+          await loadBootPreview();
+        }
+        update(toastId, { status: 'success', title: 'Logo updated' });
       } else {
-        setLogoError('Failed to upload the logo.');
+        update(toastId, {
+          status: 'error',
+          title: 'Could not upload logo',
+          description: await extractError(res, 'Failed to upload the logo.'),
+        });
       }
     } catch {
-      setLogoError('Network error while uploading the logo.');
+      update(toastId, {
+        status: 'error',
+        title: 'Could not upload logo',
+        description: 'A network error occurred while uploading the logo.',
+      });
     } finally {
-      setUploading(false);
+      setUploadingKind(null);
     }
   };
 
@@ -123,9 +192,9 @@ export default function BrandingPage(): React.ReactElement {
 
       <Card>
         <CardHeader>
-          <CardTitle>Logo</CardTitle>
+          <CardTitle>Portal logo</CardTitle>
           <CardDescription>
-            Shown in the portal sidebar and embedded in the Imaging Client boot media built by the Media Builder. PNG or SVG on a transparent background works best (max 512&nbsp;KB).
+            Shown in the portal sidebar and header. PNG or SVG on a transparent background works best (max 512&nbsp;KB).
           </CardDescription>
         </CardHeader>
         <CardContent className="flex items-center gap-4">
@@ -138,22 +207,57 @@ export default function BrandingPage(): React.ReactElement {
           </div>
           <div className="space-y-1.5">
             <input
-              ref={fileInputRef}
+              ref={portalInputRef}
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={handleLogoSelected}
+              onChange={handleLogoSelected('portal')}
             />
             <Button
               type="button"
               variant="outline"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
+              loading={uploadingKind === 'portal'}
+              onClick={() => portalInputRef.current?.click()}
             >
               <Upload className="mr-2 h-4 w-4" />
-              {uploading ? 'Uploading…' : logoUrl ? 'Replace logo' : 'Upload logo'}
+              {logoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
-            {logoError && <p className="text-sm text-destructive">{logoError}</p>}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Boot image logo</CardTitle>
+          <CardDescription>
+            Embedded into the Imaging Client boot media built by the Media Builder. May use different dimensions than the portal logo. PNG on a transparent background works best (max 512&nbsp;KB).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center gap-4">
+          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
+            {bootLogoUrl ? (
+              <img src={bootLogoUrl} alt="Current boot image logo" className="h-full w-full object-contain" />
+            ) : (
+              <ImageIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <input
+              ref={bootInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleLogoSelected('boot')}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              loading={uploadingKind === 'boot'}
+              onClick={() => bootInputRef.current?.click()}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {bootLogoUrl ? 'Replace logo' : 'Upload logo'}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -216,11 +320,9 @@ export default function BrandingPage(): React.ReactElement {
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving…' : 'Save branding'}
+        <Button onClick={handleSave} status={saveStatus}>
+          Save branding
         </Button>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {saved && <p className="text-sm text-emerald-600 dark:text-emerald-400">Branding settings saved.</p>}
       </div>
     </div>
   );

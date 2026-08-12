@@ -7,7 +7,8 @@
     TypeScript type definitions for use by the portal frontend and backend.
 
 .PARAMETER DeviceGatewayUrl
-    Base URL of the Device Gateway API (e.g. https://mse-dev-ci-func-gateway.azurewebsites.net).
+    Base URL of the Device Gateway API
+    (e.g. https://<prefix>-<env>-ci-func-gateway.azurewebsites.net).
 
 .PARAMETER OperatorApiUrl
     Base URL of the Operator API.
@@ -119,6 +120,7 @@ export interface PortalConfiguration {
 
 export interface BrandingConfiguration {
   logoBlobPath?: string;
+  portalLogoBlobPath?: string;
   primaryColor: string;
   accentColor: string;
   applicationName: string;

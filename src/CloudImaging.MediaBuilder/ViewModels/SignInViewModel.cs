@@ -13,7 +13,7 @@ public sealed class SignInViewModel : INotifyPropertyChanged
 {
     private readonly EntraAuthenticationService _authService;
     private readonly Action _navigateToOperationSelection;
-    private string _statusMessage = "Sign in to continue.";
+    private string _statusMessage = string.Empty;
     private bool _hasError;
     private bool _isBusy;
 

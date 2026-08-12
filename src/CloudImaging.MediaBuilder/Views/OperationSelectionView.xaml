@@ -97,12 +97,45 @@
             </Border>
         </UniformGrid>
 
-        <ui:Button Grid.Row="4"
-                   Content="Continue"
-                   Appearance="Primary"
-                   Width="200" Height="44" FontSize="15"
-                   Command="{Binding ContinueCommand}"
-                   IsEnabled="{Binding CanContinue}"
-                   HorizontalAlignment="Center" />
+        <StackPanel Grid.Row="4">
+            <!-- FR-050a: ADK prerequisite warning shown before navigating to Generate Boot Image -->
+            <Border Margin="8,0,8,16" Padding="16,12" CornerRadius="8"
+                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                    BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                    BorderThickness="1"
+                    Visibility="{Binding ShowAdkWarning, Converter={StaticResource BoolToVisibility}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <ui:SymbolIcon Grid.Column="0"
+                                   Symbol="Warning24"
+                                   FontSize="22"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,14,0"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Windows ADK required"
+                                   FontSize="15" FontWeight="SemiBold"
+                                   Margin="0,0,0,2" />
+                        <TextBlock TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}">
+                            <Run Text="Windows ADK with the WinPE add-on is not installed on this workstation. Install it from " /><Hyperlink NavigateUri="https://go.microsoft.com/fwlink/?linkid=2243390"
+                                       RequestNavigate="OnHyperlinkRequestNavigate">https://go.microsoft.com/fwlink/?linkid=2243390</Hyperlink><Run Text=", then relaunch to generate a boot image." />
+                        </TextBlock>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <ui:Button Content="Continue"
+                       Appearance="Primary"
+                       Width="200" Height="44" FontSize="15"
+                       Command="{Binding ContinueCommand}"
+                       IsEnabled="{Binding CanContinue}"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
     </Grid>
 </UserControl>

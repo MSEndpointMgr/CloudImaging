@@ -66,7 +66,18 @@ public sealed partial class BrandingFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        await _brandingRepo.UpsertAsync(payload, context.CancellationToken);
+        // Logo paths are owned by the dedicated upload endpoints — preserve them here so a
+        // colour/name save cannot accidentally clear a configured logo.
+        var existing = await _brandingRepo.GetAsync(context.CancellationToken);
+        var merged = new BrandingConfiguration
+        {
+            LogoBlobPath = existing.LogoBlobPath,
+            PortalLogoBlobPath = existing.PortalLogoBlobPath,
+            PrimaryColor = payload.PrimaryColor,
+            AccentColor = payload.AccentColor,
+            ApplicationName = payload.ApplicationName,
+        };
+        await _brandingRepo.UpsertAsync(merged, context.CancellationToken);
         LogBrandingUpdated(_logger);
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
@@ -94,12 +105,64 @@ public sealed partial class BrandingFunctions
     }
 
     [Function("UploadBrandingLogo")]
-    public async Task<HttpResponseData> UploadBrandingLogo(
+    public Task<HttpResponseData> UploadBrandingLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/branding/logo")] HttpRequestData req,
         FunctionContext context)
-    {
-        var ct = context.CancellationToken;
+        => ProcessLogoUploadAsync(req, isPortal: false, context.CancellationToken);
 
+    [Function("UploadBrandingPortalLogo")]
+    public Task<HttpResponseData> UploadBrandingPortalLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/branding/portal-logo")] HttpRequestData req,
+        FunctionContext context)
+        => ProcessLogoUploadAsync(req, isPortal: true, context.CancellationToken);
+
+    /// <summary>Streams the boot image logo bytes directly (managed identity read, no SAS).</summary>
+    [Function("GetBrandingLogoContent")]
+    public Task<HttpResponseData> GetBrandingLogoContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/branding/logo/content")] HttpRequestData req,
+        FunctionContext context)
+        => StreamLogoAsync(req, isPortal: false, context.CancellationToken);
+
+    /// <summary>Streams the portal logo bytes directly (managed identity read, no SAS).</summary>
+    [Function("GetBrandingPortalLogoContent")]
+    public Task<HttpResponseData> GetBrandingPortalLogoContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/branding/portal-logo/content")] HttpRequestData req,
+        FunctionContext context)
+        => StreamLogoAsync(req, isPortal: true, context.CancellationToken);
+
+    private async Task<HttpResponseData> StreamLogoAsync(HttpRequestData req, bool isPortal, CancellationToken ct)
+    {
+        var branding = await _brandingRepo.GetAsync(ct);
+        var storagePath = isPortal ? branding.PortalLogoBlobPath : branding.LogoBlobPath;
+        if (string.IsNullOrEmpty(storagePath))
+        {
+            return await Text(req, HttpStatusCode.NotFound, "No logo configured.", ct);
+        }
+
+        var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
+        if (slash < 0)
+        {
+            return await Text(req, HttpStatusCode.NotFound, "Logo path is malformed.", ct);
+        }
+
+        var blob = _blobClient.GetBlobContainerClient(storagePath[..slash]).GetBlobClient(storagePath[(slash + 1)..]);
+        try
+        {
+            var result = await blob.DownloadContentAsync(ct);
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            response.Headers.Add("Content-Type", result.Value.Details.ContentType ?? "image/png");
+            response.Headers.Add("Cache-Control", "no-cache");
+            await response.WriteBytesAsync(result.Value.Content.ToArray(), ct);
+            return response;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return await Text(req, HttpStatusCode.NotFound, "Logo blob not found.", ct);
+        }
+    }
+
+    private async Task<HttpResponseData> ProcessLogoUploadAsync(HttpRequestData req, bool isPortal, CancellationToken ct)
+    {
         LogoUploadRequest? payload;
         try { payload = await JsonSerializer.DeserializeAsync<LogoUploadRequest>(req.Body, JsonOptions, ct); }
         catch (JsonException) { return await Text(req, HttpStatusCode.BadRequest, "Request body is not valid JSON.", ct); }
@@ -131,7 +194,8 @@ public sealed partial class BrandingFunctions
 
         var branding = await _brandingRepo.GetAsync(ct);
         var extension = ResolveExtension(contentType, payload.FileName);
-        var blobName = $"logo/{Guid.NewGuid():N}.{extension}";
+        var prefix = isPortal ? "portal-logo" : "logo";
+        var blobName = $"{prefix}/{Guid.NewGuid():N}.{extension}";
         var container = _blobClient.GetBlobContainerClient(LogoContainer);
         var blob = container.GetBlobClient(blobName);
 
@@ -143,12 +207,14 @@ public sealed partial class BrandingFunctions
                 ct);
         }
 
-        // Best-effort removal of the previously configured logo blob.
-        await TryDeleteBlobAsync(branding.LogoBlobPath, ct);
+        // Best-effort removal of the previously configured logo blob for this scenario.
+        await TryDeleteBlobAsync(isPortal ? branding.PortalLogoBlobPath : branding.LogoBlobPath, ct);
 
+        var newPath = $"{LogoContainer}/{blobName}";
         var updated = new BrandingConfiguration
         {
-            LogoBlobPath = $"{LogoContainer}/{blobName}",
+            LogoBlobPath = isPortal ? branding.LogoBlobPath : newPath,
+            PortalLogoBlobPath = isPortal ? newPath : branding.PortalLogoBlobPath,
             PrimaryColor = branding.PrimaryColor,
             AccentColor = branding.AccentColor,
             ApplicationName = branding.ApplicationName,

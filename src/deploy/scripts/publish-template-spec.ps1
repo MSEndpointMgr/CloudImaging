@@ -18,7 +18,7 @@
     Semantic version string (e.g., "1.0.0").
 
 .EXAMPLE
-    .\publish-template-spec.ps1 -ResourceGroupName "rg-mse-dev-cloudimaging" -Location "eastus" -Version "1.0.0"
+    .\publish-template-spec.ps1 -ResourceGroupName "rg-<prefix>-<env>-cloudimaging" -Location "eastus" -Version "1.0.0"
 #>
 [CmdletBinding()]
 param(

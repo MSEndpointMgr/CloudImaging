@@ -54,6 +54,28 @@ public sealed partial class BrandingFunctions
         return await Proxy(req, await _coreClient.UploadBrandingLogoAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
+    [Function("UploadBrandingPortalLogo")]
+    public async Task<HttpResponseData> UploadBrandingPortalLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "branding/portal-logo")] HttpRequestData req,
+        FunctionContext context)
+    {
+        using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        return await Proxy(req, await _coreClient.UploadBrandingPortalLogoAsync(payload!, context.CancellationToken), context.CancellationToken);
+    }
+
+    [Function("GetBrandingLogoContent")]
+    public async Task<HttpResponseData> GetBrandingLogoContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "branding/logo/content")] HttpRequestData req,
+        FunctionContext context)
+        => await ProxyBinary(req, await _coreClient.GetBrandingLogoContentAsync(context.CancellationToken), context.CancellationToken);
+
+    [Function("GetBrandingPortalLogoContent")]
+    public async Task<HttpResponseData> GetBrandingPortalLogoContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "branding/portal-logo/content")] HttpRequestData req,
+        FunctionContext context)
+        => await ProxyBinary(req, await _coreClient.GetBrandingPortalLogoContentAsync(context.CancellationToken), context.CancellationToken);
+
     private static async Task<HttpResponseData> Proxy(
         HttpRequestData req, HttpResponseMessage coreResponse, CancellationToken ct)
     {
@@ -62,6 +84,23 @@ public sealed partial class BrandingFunctions
         {
             response.Headers.Add("Content-Type", "application/json");
             await response.WriteStringAsync(await coreResponse.Content.ReadAsStringAsync(ct), ct);
+        }
+        return response;
+    }
+
+    /// <summary>Streams a binary (image) response from the Core API through unchanged, preserving content-type.</summary>
+    private static async Task<HttpResponseData> ProxyBinary(
+        HttpRequestData req, HttpResponseMessage coreResponse, CancellationToken ct)
+    {
+        var response = req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
+        if (coreResponse.IsSuccessStatusCode)
+        {
+            response.Headers.Add("Content-Type", coreResponse.Content.Headers.ContentType?.ToString() ?? "application/octet-stream");
+            var cacheControl = coreResponse.Content.Headers.TryGetValues("Cache-Control", out var values)
+                ? string.Join(", ", values)
+                : "no-cache";
+            response.Headers.Add("Cache-Control", cacheControl);
+            await response.WriteBytesAsync(await coreResponse.Content.ReadAsByteArrayAsync(ct), ct);
         }
         return response;
     }
