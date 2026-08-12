@@ -143,7 +143,7 @@ export class OperatorApiClient {
     const res = await this.http.get('/api/branding/logo/content', { responseType: 'arraybuffer' });
     return {
       data: Buffer.from(res.data as ArrayBuffer),
-      contentType: (res.headers['content-type'] as string) ?? 'image/png',
+      contentType: (res.headers['content-type'] as string | undefined) ?? 'image/png',
     };
   }
 
@@ -152,7 +152,7 @@ export class OperatorApiClient {
     const res = await this.http.get('/api/branding/portal-logo/content', { responseType: 'arraybuffer' });
     return {
       data: Buffer.from(res.data as ArrayBuffer),
-      contentType: (res.headers['content-type'] as string) ?? 'image/png',
+      contentType: (res.headers['content-type'] as string | undefined) ?? 'image/png',
     };
   }
 }
