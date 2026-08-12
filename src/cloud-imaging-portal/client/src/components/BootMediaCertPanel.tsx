@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ShieldCheck, KeyRound, RefreshCw, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, KeyRound, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../lib/apiClient.ts';
 import { Button } from './ui/button.tsx';
 import { Badge } from './ui/badge.tsx';
 import { useToast } from '../context/toastContext.tsx';
+import { ConfirmImpactDialog, type ConfirmImpactCopy } from './ConfirmImpactDialog.tsx';
 
 interface CertMetadata {
   thumbprintDisplay?: string;
@@ -20,12 +21,7 @@ interface BootMediaCertPanelProps {
 type CertAction = 'generate' | 'rotate';
 
 /** Copy shown for each action's button and its impact confirmation prompt. */
-interface ActionCopy {
-  confirmTitle: string;
-  impact: string;
-  confirmLabel: string;
-  destructive: boolean;
-}
+type ActionCopy = ConfirmImpactCopy;
 
 /**
  * Boot media certificate management panel for the Configuration page.
@@ -153,7 +149,7 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
               : 'Create the first certificate and activate it so you can build boot media.'
           }
           action={
-            <Button onClick={() => setPending('generate')} disabled={busy}>
+            <Button onClick={() => setPending('generate')} disabled={busy} className="w-32">
               {hasCert ? 'Regenerate' : 'Generate'}
             </Button>
           }
@@ -169,7 +165,7 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
                 variant="outline"
                 onClick={() => setPending('rotate')}
                 disabled={busy}
-                className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+                className="w-32 border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
               >
                 Rotate…
               </Button>
@@ -185,6 +181,7 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
           busy={busy}
           onCancel={() => setPending(null)}
           onConfirm={() => void runAction(pending)}
+          titleId="cert-confirm-title"
         />
       )}
     </div>
@@ -215,59 +212,6 @@ function ActionRow({
         </div>
       </div>
       <div className="shrink-0 sm:pl-3">{action}</div>
-    </div>
-  );
-}
-
-/** Modal overlay that warns the operator about the impact before a certificate change. */
-function ConfirmImpactDialog({
-  copy,
-  busy,
-  onCancel,
-  onConfirm,
-}: {
-  copy: ActionCopy;
-  busy: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}): React.ReactElement {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="cert-confirm-title"
-    >
-      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
-        <div className="flex items-start gap-3 p-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div className="space-y-1.5">
-            <h2 id="cert-confirm-title" className="text-sm font-semibold">
-              {copy.confirmTitle}
-            </h2>
-            <p className="text-xs leading-relaxed text-muted-foreground">{copy.impact}</p>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            onClick={onConfirm}
-            disabled={busy}
-            loading={busy}
-            className={
-              copy.destructive
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : undefined
-            }
-          >
-            {copy.confirmLabel}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

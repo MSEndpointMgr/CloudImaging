@@ -76,6 +76,18 @@ public sealed partial class BrandingFunctions
         FunctionContext context)
         => await ProxyBinary(req, await _coreClient.GetBrandingPortalLogoContentAsync(context.CancellationToken), context.CancellationToken);
 
+    [Function("DeleteBrandingLogo")]
+    public async Task<HttpResponseData> DeleteBrandingLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "branding/logo")] HttpRequestData req,
+        FunctionContext context)
+        => await Proxy(req, await _coreClient.DeleteBrandingLogoAsync(context.CancellationToken), context.CancellationToken);
+
+    [Function("DeleteBrandingPortalLogo")]
+    public async Task<HttpResponseData> DeleteBrandingPortalLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "branding/portal-logo")] HttpRequestData req,
+        FunctionContext context)
+        => await Proxy(req, await _coreClient.DeleteBrandingPortalLogoAsync(context.CancellationToken), context.CancellationToken);
+
     private static async Task<HttpResponseData> Proxy(
         HttpRequestData req, HttpResponseMessage coreResponse, CancellationToken ct)
     {

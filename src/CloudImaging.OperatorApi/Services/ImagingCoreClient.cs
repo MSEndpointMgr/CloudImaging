@@ -89,6 +89,12 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> GetBrandingPortalLogoContentAsync(CancellationToken ct = default) =>
         _http.GetAsync("/api/internal/branding/portal-logo/content", ct);
 
+    public Task<HttpResponseMessage> DeleteBrandingLogoAsync(CancellationToken ct = default) =>
+        _http.DeleteAsync("/api/internal/branding/logo", ct);
+
+    public Task<HttpResponseMessage> DeleteBrandingPortalLogoAsync(CancellationToken ct = default) =>
+        _http.DeleteAsync("/api/internal/branding/portal-logo", ct);
+
     // ── Portal configuration ───────────────────────────────────────────────────
 
     /// <summary>Returns the current portal configuration as a typed model.</summary>

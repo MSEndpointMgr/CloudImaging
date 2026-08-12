@@ -155,6 +155,18 @@ export class OperatorApiClient {
       contentType: (res.headers['content-type'] as string | undefined) ?? 'image/png',
     };
   }
+
+  /** Clears the boot image logo, reverting boot media to the built-in default artwork. */
+  async deleteBrandingLogo(): Promise<unknown> {
+    const { data } = await this.http.delete<unknown>('/api/branding/logo');
+    return data;
+  }
+
+  /** Clears the portal logo, reverting the portal UI to the built-in default artwork. */
+  async deleteBrandingPortalLogo(): Promise<unknown> {
+    const { data } = await this.http.delete<unknown>('/api/branding/portal-logo');
+    return data;
+  }
 }
 
 /** Singleton instance — created on first import, configured at request time. */

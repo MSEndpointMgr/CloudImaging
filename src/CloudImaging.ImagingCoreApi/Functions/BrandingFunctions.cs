@@ -130,6 +130,42 @@ public sealed partial class BrandingFunctions
         FunctionContext context)
         => StreamLogoAsync(req, isPortal: true, context.CancellationToken);
 
+    /// <summary>Clears the boot image logo, reverting the boot media to the built-in default artwork.</summary>
+    [Function("DeleteBrandingLogo")]
+    public Task<HttpResponseData> DeleteBrandingLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/branding/logo")] HttpRequestData req,
+        FunctionContext context)
+        => ResetLogoAsync(req, isPortal: false, context.CancellationToken);
+
+    /// <summary>Clears the portal logo, reverting the portal UI to the built-in default artwork.</summary>
+    [Function("DeleteBrandingPortalLogo")]
+    public Task<HttpResponseData> DeleteBrandingPortalLogo(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/branding/portal-logo")] HttpRequestData req,
+        FunctionContext context)
+        => ResetLogoAsync(req, isPortal: true, context.CancellationToken);
+
+    private async Task<HttpResponseData> ResetLogoAsync(HttpRequestData req, bool isPortal, CancellationToken ct)
+    {
+        var branding = await _brandingRepo.GetAsync(ct);
+        await TryDeleteBlobAsync(isPortal ? branding.PortalLogoBlobPath : branding.LogoBlobPath, ct);
+
+        var updated = new BrandingConfiguration
+        {
+            LogoBlobPath = isPortal ? branding.LogoBlobPath : null,
+            PortalLogoBlobPath = isPortal ? null : branding.PortalLogoBlobPath,
+            PrimaryColor = branding.PrimaryColor,
+            AccentColor = branding.AccentColor,
+            ApplicationName = branding.ApplicationName,
+        };
+        await _brandingRepo.UpsertAsync(updated, ct);
+        LogBrandingUpdated(_logger);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(JsonSerializer.Serialize(updated, JsonOptions), ct);
+        return response;
+    }
+
     private async Task<HttpResponseData> StreamLogoAsync(HttpRequestData req, bool isPortal, CancellationToken ct)
     {
         var branding = await _brandingRepo.GetAsync(ct);

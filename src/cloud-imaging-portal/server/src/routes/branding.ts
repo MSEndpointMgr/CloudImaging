@@ -62,6 +62,18 @@ router.get('/portal-logo/content', requireRole('CloudImaging.PortalAccess'), asy
   }
 });
 
+router.delete('/logo', requireRole('CloudImaging.Administrator'), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await operatorApiClient.deleteBrandingLogo());
+  } catch (err) { next(err); }
+});
+
+router.delete('/portal-logo', requireRole('CloudImaging.Administrator'), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await operatorApiClient.deleteBrandingPortalLogo());
+  } catch (err) { next(err); }
+});
+
 /** True when an Operator API call failed with HTTP 404 (e.g. no logo configured yet). */
 function isNotFound(err: unknown): boolean {
   return (err as { response?: { status?: number } }).response?.status === 404;

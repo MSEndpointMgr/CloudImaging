@@ -15,6 +15,8 @@ namespace CloudImaging.OperatorApi.Functions;
 /// </summary>
 public sealed partial class PortalConfigurationFunctions
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<PortalConfigurationFunctions> _logger;
 
@@ -35,7 +37,7 @@ public sealed partial class PortalConfigurationFunctions
         var config = await _coreClient.GetPortalConfigurationAsync(context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(config), context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(config, JsonOptions), context.CancellationToken);
         return response;
     }
 
@@ -52,7 +54,8 @@ public sealed partial class PortalConfigurationFunctions
         {
             config = await JsonSerializer.DeserializeAsync<PortalConfiguration>(
                 req.Body,
-                cancellationToken: context.CancellationToken);
+                JsonOptions,
+                context.CancellationToken);
         }
         catch (JsonException ex)
         {

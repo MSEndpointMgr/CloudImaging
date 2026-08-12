@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Upload, ImageIcon } from 'lucide-react';
+import { Upload, ImageIcon, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Button, type ButtonStatus } from '../components/ui/button';
+import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch } from '../lib/apiClient.ts';
@@ -16,6 +17,27 @@ interface BrandingConfig {
   primaryColor: string;
   accentColor: string;
   applicationName: string;
+}
+
+/** The subset of branding fields the "Save branding" button actually persists. */
+interface AppearanceFields {
+  primaryColor: string;
+  accentColor: string;
+  applicationName: string;
+}
+
+function appearanceOf(config: BrandingConfig): AppearanceFields {
+  return {
+    primaryColor: config.primaryColor,
+    accentColor: config.accentColor,
+    applicationName: config.applicationName,
+  };
+}
+
+function appearanceEquals(a: AppearanceFields, b: AppearanceFields): boolean {
+  return a.primaryColor === b.primaryColor
+    && a.accentColor === b.accentColor
+    && a.applicationName === b.applicationName;
 }
 
 /** Which logo an upload targets. */
@@ -41,9 +63,16 @@ export default function BrandingPage(): React.ReactElement {
   const [config, setConfig] = useState<BrandingConfig>({
     primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
   });
+  /** Snapshot of the appearance fields as last loaded/saved — used to detect unsaved changes. */
+  const [savedAppearance, setSavedAppearance] = useState<AppearanceFields>({
+    primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
+  });
+  const isDirty = !appearanceEquals(appearanceOf(config), savedAppearance);
   const [loading, setLoading]         = useState(true);
   const [saveStatus, setSaveStatus]   = useState<ButtonStatus>('idle');
   const [uploadingKind, setUploadingKind] = useState<LogoKind | null>(null);
+  const [resettingKind, setResettingKind] = useState<LogoKind | null>(null);
+  const [pendingReset, setPendingReset] = useState<LogoKind | null>(null);
   const [bootLogoUrl, setBootLogoUrl] = useState<string | null>(null);
   const bootLogoUrlRef = useRef<string | null>(null);
   const portalInputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +98,7 @@ export default function BrandingPage(): React.ReactElement {
         if (res.ok) {
           const data = await res.json() as BrandingConfig;
           setConfig(data);
+          setSavedAppearance(appearanceOf(data));
           if (data.logoBlobPath) await loadBootPreview();
         }
       } catch { /* fallback to defaults */ }
@@ -97,6 +127,7 @@ export default function BrandingPage(): React.ReactElement {
       });
       if (res.ok || res.status === 204) {
         await refresh();
+        setSavedAppearance(appearanceOf(config));
         setSaveStatus('success');
         update(toastId, {
           status: 'success',
@@ -180,6 +211,53 @@ export default function BrandingPage(): React.ReactElement {
     }
   };
 
+  const resetCopyFor = (kind: LogoKind): ConfirmImpactCopy => ({
+    confirmTitle: kind === 'portal' ? 'Reset portal logo?' : 'Reset boot image logo?',
+    impact: kind === 'portal'
+      ? 'The custom portal logo will be permanently removed and the default Cloud Imaging mark will be shown in the sidebar and header instead. This action cannot be undone.'
+      : 'The custom boot image logo will be permanently removed and the default artwork will be embedded the next time boot media is built. Media already built with the custom logo is not affected, but you will need to rebuild boot media to pick up the default. This action cannot be undone.',
+    confirmLabel: 'Reset to default',
+    destructive: true,
+  });
+
+  const handleResetLogo = async (kind: LogoKind) => {
+    setPendingReset(null);
+    const endpoint = kind === 'portal' ? '/api/branding/portal-logo' : '/api/branding/logo';
+    setResettingKind(kind);
+    const toastId = notify({ status: 'loading', title: 'Resetting logo…' });
+    try {
+      const res = await apiFetch(endpoint, { method: 'DELETE', credentials: 'include' });
+      if (res.ok) {
+        const updated = await res.json() as BrandingConfig;
+        setConfig(prev => ({
+          ...prev,
+          logoBlobPath: updated.logoBlobPath,
+          portalLogoBlobPath: updated.portalLogoBlobPath,
+        }));
+        if (kind === 'portal') {
+          await refresh(); // clears the streamed logo shown in the sidebar/header
+        } else {
+          await loadBootPreview();
+        }
+        update(toastId, { status: 'success', title: 'Logo reset to default' });
+      } else {
+        update(toastId, {
+          status: 'error',
+          title: 'Could not reset logo',
+          description: await extractError(res, 'Failed to reset the logo.'),
+        });
+      }
+    } catch {
+      update(toastId, {
+        status: 'error',
+        title: 'Could not reset logo',
+        description: 'A network error occurred while resetting the logo.',
+      });
+    } finally {
+      setResettingKind(null);
+    }
+  };
+
   if (loading) return <p className="text-muted-foreground">Loading…</p>;
 
   return (
@@ -205,7 +283,7 @@ export default function BrandingPage(): React.ReactElement {
               <ImageIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-2">
             <input
               ref={portalInputRef}
               type="file"
@@ -222,6 +300,17 @@ export default function BrandingPage(): React.ReactElement {
               <Upload className="mr-2 h-4 w-4" />
               {logoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
+            {logoUrl && (
+              <Button
+                type="button"
+                variant="outline"
+                loading={resettingKind === 'portal'}
+                onClick={() => setPendingReset('portal')}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset to default
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -241,7 +330,7 @@ export default function BrandingPage(): React.ReactElement {
               <ImageIcon className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
             )}
           </div>
-          <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-2">
             <input
               ref={bootInputRef}
               type="file"
@@ -258,6 +347,17 @@ export default function BrandingPage(): React.ReactElement {
               <Upload className="mr-2 h-4 w-4" />
               {bootLogoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
+            {bootLogoUrl && (
+              <Button
+                type="button"
+                variant="outline"
+                loading={resettingKind === 'boot'}
+                onClick={() => setPendingReset('boot')}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset to default
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -320,10 +420,28 @@ export default function BrandingPage(): React.ReactElement {
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} status={saveStatus}>
+        <Button
+          onClick={handleSave}
+          status={saveStatus}
+          variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
+          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
+        >
           Save branding
         </Button>
+        {isDirty && saveStatus === 'idle' && (
+          <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
+        )}
       </div>
+
+      {pendingReset && (
+        <ConfirmImpactDialog
+          copy={resetCopyFor(pendingReset)}
+          busy={resettingKind === pendingReset}
+          onCancel={() => setPendingReset(null)}
+          onConfirm={() => void handleResetLogo(pendingReset)}
+          titleId="branding-reset-confirm-title"
+        />
+      )}
     </div>
   );
 }
