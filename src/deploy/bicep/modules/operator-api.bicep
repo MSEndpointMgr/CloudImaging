@@ -10,6 +10,10 @@ param appInsightsConnectionString string
 param msiId string
 param msiClientId string
 param imagingCoreApiBaseUrl string
+// Device Gateway API base URL (same deployment, always available before Operator API's
+// GET /api/configuration/endpoints is called). Exposed to the Media Builder so boot-image
+// generation can stamp the live URL into the Client's appsettings.json.
+param deviceGatewayApiBaseUrl string
 @description('Resource ID of the dedicated Microsoft.Web/serverFarms-delegated subnet for the Operator API regional VNet integration. Required so the app can reach the private-link-only Imaging Core API.')
 param vnetSubnetId string
 // sharedEntraClientId: Application (client) ID of the Cloud Imaging Media Builder registration.
@@ -58,6 +62,7 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'AZURE_CLIENT_ID', value: msiClientId }
         { name: 'ImagingCoreApi__BaseUrl', value: imagingCoreApiBaseUrl }
+        { name: 'DeviceGatewayApi__BaseUrl', value: deviceGatewayApiBaseUrl }
         { name: 'Entra__TenantId', value: tenantId }
         // ClientId used for the Operator API's OWN token validation audience
         { name: 'Entra__ClientId', value: operatorApiClientId }

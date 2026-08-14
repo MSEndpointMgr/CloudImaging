@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -71,7 +73,8 @@ public sealed partial class BootImageGenerationService
             if (adkPath is null)
                 throw new InvalidOperationException(
                     "Windows ADK with WinPE add-on is not installed. " +
-                    "Download it from https://go.microsoft.com/fwlink/?linkid=2243390");
+                    "Download the ADK from https://go.microsoft.com/fwlink/?linkid=2289980 " +
+                    "and the WinPE add-on from https://go.microsoft.com/fwlink/?linkid=2289981");
 
             // Retrieve the active boot media certificate PFX from Operator API (T173, FR-070)
             if (pfxBytes is null && _operatorApiClient is not null)
@@ -103,6 +106,25 @@ public sealed partial class BootImageGenerationService
             var clientDestDir = Path.Combine(mountDir, "CloudImaging");
             Directory.CreateDirectory(clientDestDir);
             CopyDirectory(clientBinariesPath, clientDestDir);
+
+            // Resolve the live Device Gateway URL from Operator API and stamp it into the
+            // Client's appsettings.json — every boot image build picks up the current URL,
+            // regardless of what shipped in the source binaries (FR-062 config bootstrap).
+            if (_operatorApiClient is not null)
+            {
+                ReportProgress("Resolving Device Gateway endpoint…", 53);
+                try
+                {
+                    var endpoints = await _operatorApiClient.GetEndpointConfigurationAsync(ct);
+                    await StampDeviceGatewayBaseUrlAsync(clientDestDir, endpoints.DeviceGatewayApiBaseUrl, ct);
+                    LogDeviceGatewayUrlStamped(_logger, endpoints.DeviceGatewayApiBaseUrl);
+                }
+                catch (Exception ex)
+                {
+                    LogDeviceGatewayUrlStampFailed(_logger, ex);
+                    // Non-fatal — generation continues with whatever BaseUrl shipped in the source binaries
+                }
+            }
 
             // Embed boot media certificate PFX if provided (FR-070)
             if (pfxBytes is { Length: > 0 })
@@ -149,6 +171,20 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public static bool IsAdkInstalled() => FindAdkPath() is not null;
 
+    /// <summary>
+    /// Locates an ADK install that also has the WinPE add-on present (FR-050a).
+    ///
+    /// The base ADK ("Deployment Tools" + "Common") and the WinPE add-on are SEPARATE
+    /// installers (adksetup.exe vs. adkwinpesetup.exe) that both extract into the SAME
+    /// root folder. It is entirely possible — and was reproduced on a real workstation —
+    /// for only the base ADK to be installed, in which case the ADK root directory exists
+    /// but "Windows Preinstallation Environment" (containing copype.cmd / MakeWinPEMedia.cmd)
+    /// does not. Checking only the root directory is a false positive: it lets the user
+    /// proceed into Generate Boot Image, where copype.cmd then fails with
+    /// "The system cannot find the path specified." (exit code 1).
+    ///
+    /// Per FR-050a, detection MUST target copype.cmd and MakeWinPEMedia.cmd specifically.
+    /// </summary>
     private static string? FindAdkPath()
     {
         // Standard ADK install location
@@ -157,7 +193,13 @@ public sealed partial class BootImageGenerationService
             @"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit",
             @"C:\Program Files\Windows Kits\10\Assessment and Deployment Kit",
         };
-        return candidates.FirstOrDefault(Directory.Exists);
+
+        return candidates.FirstOrDefault(root =>
+        {
+            var winPeDir = Path.Combine(root, "Windows Preinstallation Environment");
+            return File.Exists(Path.Combine(winPeDir, "copype.cmd"))
+                && File.Exists(Path.Combine(winPeDir, "MakeWinPEMedia.cmd"));
+        });
     }
 
     private static async Task CopyWinPeFilesAsync(string adkPath, string winPeRoot, CancellationToken ct)
@@ -220,6 +262,13 @@ public sealed partial class BootImageGenerationService
             },
             EnableRaisingEvents = true,
         };
+
+        // Capture stdout/stderr so a failure can surface the tool's actual diagnostic
+        // message instead of just an exit code (e.g. copype.cmd / dism.exe error text).
+        var output = new System.Text.StringBuilder();
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) output.AppendLine(e.Data); };
+        process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) output.AppendLine(e.Data); };
+
         var tcs = new TaskCompletionSource<int>();
         process.Exited += (_, _) => tcs.TrySetResult(process.ExitCode);
         process.Start();
@@ -228,7 +277,11 @@ public sealed partial class BootImageGenerationService
         ct.Register(() => { try { process.Kill(); } catch { } });
         int code = await tcs.Task;
         if (code != 0)
-            throw new InvalidOperationException($"{exe} exited with code {code}.");
+        {
+            var captured = output.ToString().Trim();
+            var detail   = captured.Length > 0 ? $" Output: {captured}" : string.Empty;
+            throw new InvalidOperationException($"{exe} exited with code {code}.{detail}");
+        }
     }
 
     private static void CopyDirectory(string source, string dest)
@@ -237,6 +290,34 @@ public sealed partial class BootImageGenerationService
             Directory.CreateDirectory(dir.Replace(source, dest));
         foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
             File.Copy(file, file.Replace(source, dest), overwrite: true);
+    }
+
+    /// <summary>
+    /// Patches <c>DeviceGatewayApi:BaseUrl</c> in the Client's <c>appsettings.json</c> (staged
+    /// inside the mounted WIM) with the live URL resolved from Operator API. No-op when the
+    /// URL is empty or the file isn't present (e.g. an unexpected Client binaries layout) —
+    /// callers treat failures as non-fatal to generation. Public so it can be unit tested
+    /// directly against a staging folder without needing ADK/DISM.
+    /// </summary>
+    public static async Task StampDeviceGatewayBaseUrlAsync(string clientDestDir, string? baseUrl, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return;
+
+        var appSettingsPath = Path.Combine(clientDestDir, "appsettings.json");
+        if (!File.Exists(appSettingsPath))
+            return;
+
+        var json = await File.ReadAllTextAsync(appSettingsPath, ct);
+        var root = JsonNode.Parse(json)?.AsObject() ?? [];
+        var deviceGatewaySection = root["DeviceGatewayApi"]?.AsObject() ?? [];
+        deviceGatewaySection["BaseUrl"] = baseUrl;
+        root["DeviceGatewayApi"] = deviceGatewaySection;
+
+        await File.WriteAllTextAsync(
+            appSettingsPath,
+            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+            ct);
     }
 
     private void ReportProgress(string message, int percent)
@@ -257,6 +338,12 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media cert retrieval failed — generation continues without cert.")]
     private static partial void LogCertRetrieveFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Device Gateway URL resolved from Operator API and stamped into Client appsettings.json: {BaseUrl}.")]
+    private static partial void LogDeviceGatewayUrlStamped(ILogger logger, string baseUrl);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Device Gateway URL resolution/stamping failed — generation continues with the Client's source appsettings.json.")]
+    private static partial void LogDeviceGatewayUrlStampFailed(ILogger logger, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
     private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);

@@ -220,6 +220,35 @@ this assignment, sign-in succeeds but API calls return `403`.
 > If the file is missing or incomplete, the app still launches but the sign-in screen shows
 > *"Entra ID sign-in is not configured"*.
 
+### Packaging as a Win32 app (e.g. Intune)
+
+The Media Builder is a self-contained `win-x64` publish (no separate .NET runtime needed on
+the target machine), so it packages cleanly as a Win32 app through whatever deployment
+tooling your organization already uses (Intune, ConfigMgr, etc.). Follow your existing Win32
+packaging process for the generic parts (wrapping, install/uninstall commands, assignment) —
+the parts specific to Cloud Imaging are:
+
+- **Source content**: the extracted `CloudImaging.MediaBuilder.zip` from the
+  [GitHub Releases](https://github.com/MSEndpointMgr/CloudImaging/releases) page (or your own
+  `dotnet publish` output), with the tenant-specific `appsettings.json` from this step
+  substituted in **before** wrapping. This is the one file that makes the package specific to
+  your deployment — everything else in the folder is generic and identical for every tenant.
+- **Detection rule**: base it on `CloudImaging.MediaBuilder.exe` existing at the install
+  destination (optionally pinned to a file version), so re-deploying a new release is picked
+  up as an update rather than silently skipped.
+- **Dependency**: the **Windows ADK + WinPE add-on** must already be present on the
+  technician's device — Media Builder detects the ADK install path at runtime and fails boot
+  image generation with a clear error if it's missing. It is *not* bundled in the package;
+  express it as a dependency in your packaging tool (or ensure it's baked into the technician
+  device image) rather than trying to include it in the Media Builder app itself.
+- **Install behavior**: the config is machine-wide, not per-user — install it once per device
+  rather than per signed-in user.
+
+> **Updating the config later** (e.g. rotating the client ID, or the Operator API URL
+> changing after a redeploy) requires repackaging with the updated `appsettings.json` and
+> publishing it as an app update — sign-in itself stays interactive per technician (MSAL
+> loopback flow) and isn't affected by the packaging.
+
 ---
 
 ## Step 7 — Generate Your First Boot Image
@@ -230,6 +259,12 @@ this assignment, sign-in succeeds but API calls return `403`.
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path
 5. Click **Generate** — the wizard produces a `.wim` file
 6. Upload the WIM to the portal: **Boot Images** → **Upload**
+
+> **Device Gateway URL is resolved automatically.** The Media Builder looks up the live Device
+> Gateway API URL from the Operator API and stamps it into the Client's `appsettings.json` while
+> building the WIM — there's nothing to configure manually, and every boot image build picks up
+> the current URL even if the Device Gateway was redeployed or renamed since the Client binaries
+> were built.
 
 ---
 

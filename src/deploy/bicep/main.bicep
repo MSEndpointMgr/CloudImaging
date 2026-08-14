@@ -255,6 +255,10 @@ module operatorApi 'modules/operator-api.bicep' = {
     msiId: identities.outputs.operatorApiMsiId
     msiClientId: identities.outputs.operatorApiMsiClientId
     imagingCoreApiBaseUrl: imagingCoreApi.outputs.internalBaseUrl
+    // Lets the Operator API hand back the live Device Gateway URL via GET /api/configuration/endpoints,
+    // so the Media Builder can stamp it into the Client's appsettings.json at boot-image build time
+    // instead of requiring a manual per-deployment config step (self-heals across Gateway redeploys/renames).
+    deviceGatewayApiBaseUrl: deviceGatewayApi.outputs.baseUrl
     vnetSubnetId: networking.outputs.operatorSubnetId
     sharedEntraClientId: mediaBuilderClientId
     operatorApiClientId: operatorApiClientId

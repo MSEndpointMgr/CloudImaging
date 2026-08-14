@@ -64,6 +64,21 @@ public sealed partial class OperatorApiClient
         return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
+    // ── Endpoint configuration ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Retrieves environment-level endpoint configuration (currently the Device Gateway API
+    /// base URL) so boot-image generation can stamp it into the Client's appsettings.json
+    /// instead of relying on a manually maintained config file.
+    /// </summary>
+    public async Task<EndpointConfigurationDto> GetEndpointConfigurationAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/api/configuration/endpoints", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<EndpointConfigurationDto>(JsonOptions, ct)
+            ?? throw new InvalidOperationException("Empty endpoint configuration response from Operator API.");
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Operator API request: {Method} {Path}.")]
     private static partial void LogRequest(ILogger logger, string method, string path);
 }
@@ -90,4 +105,10 @@ public sealed class BrandingLogoSasDto
 {
     public string SasTokenUrl { get; init; } = string.Empty;
     public DateTimeOffset ExpiresAt { get; init; }
+}
+
+/// <summary>Environment-level endpoint configuration (currently just the Device Gateway API URL).</summary>
+public sealed class EndpointConfigurationDto
+{
+    public string DeviceGatewayApiBaseUrl { get; init; } = string.Empty;
 }

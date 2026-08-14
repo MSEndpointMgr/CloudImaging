@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "10873396195175301352"
+      "templateHash": "16009610348898086644"
     }
   },
   "parameters": {
@@ -1828,6 +1828,9 @@
           "imagingCoreApiBaseUrl": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'imaging-core-api'), '2025-04-01').outputs.internalBaseUrl.value]"
           },
+          "deviceGatewayApiBaseUrl": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'device-gateway-api'), '2025-04-01').outputs.baseUrl.value]"
+          },
           "vnetSubnetId": {
             "value": "[reference(resourceId('Microsoft.Resources/deployments', 'networking'), '2025-04-01').outputs.operatorSubnetId.value]"
           },
@@ -1851,7 +1854,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.44.1.10279",
-              "templateHash": "2889149301139046276"
+              "templateHash": "10427801790542416925"
             }
           },
           "parameters": {
@@ -1877,6 +1880,9 @@
               "type": "string"
             },
             "imagingCoreApiBaseUrl": {
+              "type": "string"
+            },
+            "deviceGatewayApiBaseUrl": {
               "type": "string"
             },
             "vnetSubnetId": {
@@ -1965,6 +1971,10 @@
                       "value": "[parameters('imagingCoreApiBaseUrl')]"
                     },
                     {
+                      "name": "DeviceGatewayApi__BaseUrl",
+                      "value": "[parameters('deviceGatewayApiBaseUrl')]"
+                    },
+                    {
                       "name": "Entra__TenantId",
                       "value": "[parameters('tenantId')]"
                     },
@@ -2019,6 +2029,7 @@
         }
       },
       "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'device-gateway-api')]",
         "[resourceId('Microsoft.Resources/deployments', 'identities')]",
         "[resourceId('Microsoft.Resources/deployments', 'imaging-core-api')]",
         "[resourceId('Microsoft.Resources/deployments', 'networking')]",

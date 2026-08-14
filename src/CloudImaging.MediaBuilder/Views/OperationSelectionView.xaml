@@ -121,11 +121,33 @@
                         <TextBlock Text="Windows ADK required"
                                    FontSize="15" FontWeight="SemiBold"
                                    Margin="0,0,0,2" />
-                        <TextBlock TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}">
-                            <Run Text="Windows ADK with the WinPE add-on is not installed on this workstation. Install it from " /><Hyperlink NavigateUri="https://go.microsoft.com/fwlink/?linkid=2243390"
-                                       RequestNavigate="OnHyperlinkRequestNavigate">https://go.microsoft.com/fwlink/?linkid=2243390</Hyperlink><Run Text=", then relaunch to generate a boot image." />
-                        </TextBlock>
+                        <TextBlock Text="Both the Windows ADK and the Windows PE add-on must be installed on this workstation to generate a boot image."
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Margin="0,0,0,10" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock VerticalAlignment="Center">
+                                <Hyperlink NavigateUri="https://go.microsoft.com/fwlink/?linkid=2289980"
+                                           RequestNavigate="OnHyperlinkRequestNavigate"
+                                           FontWeight="SemiBold">Download the Windows ADK</Hyperlink>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock VerticalAlignment="Center">
+                                <Hyperlink NavigateUri="https://go.microsoft.com/fwlink/?linkid=2289981"
+                                           RequestNavigate="OnHyperlinkRequestNavigate"
+                                           FontWeight="SemiBold">Download the Windows PE add-on</Hyperlink>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <TextBlock Text="Install both, then relaunch to generate a boot image."
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
                 </Grid>
             </Border>
