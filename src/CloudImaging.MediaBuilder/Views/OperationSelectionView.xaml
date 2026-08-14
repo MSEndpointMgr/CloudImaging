@@ -99,7 +99,7 @@
 
         <StackPanel Grid.Row="4">
             <!-- FR-050a: ADK prerequisite warning shown before navigating to Generate Boot Image -->
-            <Border Margin="8,0,8,16" Padding="16,12" CornerRadius="8"
+            <Border Margin="8,0,8,16" Padding="14,10" CornerRadius="8"
                     Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                     BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
                     BorderThickness="1"
@@ -112,42 +112,21 @@
 
                     <ui:SymbolIcon Grid.Column="0"
                                    Symbol="Warning24"
-                                   FontSize="22"
+                                   FontSize="18"
                                    VerticalAlignment="Center"
-                                   Margin="0,0,14,0"
+                                   Margin="0,0,10,0"
                                    Foreground="{DynamicResource SystemFillColorCautionBrush}" />
 
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="Windows ADK required"
-                                   FontSize="15" FontWeight="SemiBold"
-                                   Margin="0,0,0,2" />
-                        <TextBlock Text="Both the Windows ADK and the Windows PE add-on must be installed on this workstation to generate a boot image."
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Margin="0,0,0,10" />
-
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBlock VerticalAlignment="Center">
-                                <Hyperlink NavigateUri="https://go.microsoft.com/fwlink/?linkid=2289980"
-                                           RequestNavigate="OnHyperlinkRequestNavigate"
-                                           FontWeight="SemiBold">Download the Windows ADK</Hyperlink>
-                            </TextBlock>
-                        </StackPanel>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBlock VerticalAlignment="Center">
-                                <Hyperlink NavigateUri="https://go.microsoft.com/fwlink/?linkid=2289981"
-                                           RequestNavigate="OnHyperlinkRequestNavigate"
-                                           FontWeight="SemiBold">Download the Windows PE add-on</Hyperlink>
-                            </TextBlock>
-                        </StackPanel>
-
-                        <TextBlock Text="Install both, then relaunch to generate a boot image."
-                                   FontSize="12"
-                                   TextWrapping="Wrap"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock TextWrapping="Wrap">
+                            <Run Text="Windows ADK required — " FontWeight="SemiBold" /><Run Text="install the ADK and WinPE add-on, then relaunch."
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </TextBlock>
+                        <TextBlock Margin="0,4,0,0">
+                            <Hyperlink NavigateUri="https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+                                       RequestNavigate="OnHyperlinkRequestNavigate"
+                                       Foreground="{DynamicResource SystemAccentColorBrush}">Download the ADK and WinPE add-on</Hyperlink>
+                        </TextBlock>
                     </StackPanel>
                 </Grid>
             </Border>

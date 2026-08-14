@@ -9,6 +9,10 @@ import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card.tsx';
 import { useToast } from '../context/toastContext.tsx';
+import type { ToastContextValue } from '../context/toastContext.tsx';
+import { rolesFromAccount } from '../context/authContext.tsx';
+import { getMsalInstance } from '../lib/msal.ts';
+import { getCertExpiryWarning, hasCertExpiryWarningBeenShown, markCertExpiryWarningShown } from '../lib/certExpiry.ts';
 
 interface PortalConfig {
   devicePreFlightAuthorizationEnabled: boolean;
@@ -54,6 +58,28 @@ async function extractError(res: Response, fallback: string): Promise<string> {
 }
 
 /**
+ * Surfaces a one-time-per-bucket toast as the active boot media certificate approaches
+ * expiry (30/14/7 day thresholds, then daily). Administrator-only (Technicians never
+ * receive certificate metadata from `/api/cert/active`, so `meta` is never populated for
+ * them — this check is an explicit extra guard on top of that).
+ *
+ * Module-level (not a component-scoped closure) and reads the account/roles directly
+ * from the MSAL instance rather than `useAuth()`, so it's safe to call from `load()`,
+ * which itself only runs once on mount (`useEffect(..., [])`).
+ */
+function maybeWarnCertExpiry(meta: CertMeta, notify: ToastContextValue['notify']): void {
+  const account = getMsalInstance().getActiveAccount() ?? getMsalInstance().getAllAccounts()[0] ?? null;
+  const isAdministrator = rolesFromAccount(account).includes('CloudImaging.Administrator');
+  if (!isAdministrator || !account || !meta.expiresAt || !meta.thumbprintDisplay) return;
+  const warning = getCertExpiryWarning(meta.expiresAt);
+  if (!warning) return;
+  const accountKey = account.homeAccountId || account.username;
+  if (hasCertExpiryWarningBeenShown(accountKey, meta.thumbprintDisplay, warning.bucket)) return;
+  notify({ status: warning.urgent ? 'error' : 'info', title: warning.title, description: warning.description });
+  markCertExpiryWarningShown(accountKey, meta.thumbprintDisplay, warning.bucket);
+}
+
+/**
  * Deployment configuration page.
  * Groups the deployment settings into tabs: Certificates (boot media certificate
  * management), Security (certificate & token validation lifetimes), Preflight,
@@ -89,12 +115,22 @@ export default function DeploymentConfigPage(): React.ReactElement {
         setConfig(data);
         setSavedConfig(data);
       }
-      if (certRes.ok) setCertMeta(await certRes.json() as CertMeta);
+      if (certRes.ok) {
+        const meta = await certRes.json() as CertMeta;
+        setCertMeta(meta);
+      }
     } catch { /* use defaults */ }
     finally { setLoading(false); }
   };
 
   useEffect(() => { void load(); }, []);
+
+  // Runs whenever certMeta changes (i.e. after every load()/onCertChanged refresh) —
+  // kept as a separate effect (rather than called inline from load()) so `notify` can be
+  // listed as a real, correctly-tracked dependency instead of load() closing over it.
+  useEffect(() => {
+    if (certMeta) maybeWarnCertExpiry(certMeta, notify);
+  }, [certMeta, notify]);
 
   const save = async () => {
     setSaveStatus('loading');

@@ -73,8 +73,7 @@ public sealed partial class BootImageGenerationService
             if (adkPath is null)
                 throw new InvalidOperationException(
                     "Windows ADK with WinPE add-on is not installed. " +
-                    "Download the ADK from https://go.microsoft.com/fwlink/?linkid=2289980 " +
-                    "and the WinPE add-on from https://go.microsoft.com/fwlink/?linkid=2289981");
+                    "Download both from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
 
             // Retrieve the active boot media certificate PFX from Operator API (T173, FR-070)
             if (pfxBytes is null && _operatorApiClient is not null)

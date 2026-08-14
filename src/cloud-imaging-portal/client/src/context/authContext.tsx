@@ -23,7 +23,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /** Extracts the app-role claim from an MSAL account's ID token. */
-function rolesFromAccount(account: AccountInfo | null): string[] {
+export function rolesFromAccount(account: AccountInfo | null): string[] {
   const claim: unknown = account?.idTokenClaims?.['roles'];
   if (Array.isArray(claim)) return claim as string[];
   if (typeof claim === 'string') return [claim];

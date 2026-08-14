@@ -39,13 +39,14 @@ public sealed class BootMediaCertificateMetadataContractTests
     }
 
     [Fact]
-    public void GetCertMetadata_ThumbprintDisplay_IsLastEightChars()
+    public void GetCertMetadata_ThumbprintDisplay_IsFullThumbprintUppercased()
     {
-        // thumbprintDisplay = last 8 chars of SHA-1 thumbprint + "…"
-        const string fullThumbprint    = "AABBCCDDEEFF0011223344556677889900112233";
-        var thumbprintDisplay = fullThumbprint[^8..].ToUpperInvariant() + "…";
-        thumbprintDisplay.Should().EndWith("…");
-        thumbprintDisplay.Length.Should().Be(9, "8 chars + ellipsis");
+        // thumbprintDisplay = the full SHA-1 thumbprint, uppercased (shown in full in the
+        // portal UI so administrators can positively identify the certificate; not truncated).
+        const string fullThumbprint = "aabbccddeeff0011223344556677889900112233";
+        var thumbprintDisplay = fullThumbprint.ToUpperInvariant();
+        thumbprintDisplay.Should().Be(fullThumbprint.ToUpperInvariant());
+        thumbprintDisplay.Length.Should().Be(fullThumbprint.Length, "the full thumbprint is shown, not a truncated suffix");
     }
 
     [Fact]

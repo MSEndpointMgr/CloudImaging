@@ -61,9 +61,7 @@ public sealed partial class BootMediaCertificateFunctions
         // Build metadata-only response — NEVER include PFX bytes or private key
         var metadata = new
         {
-            thumbprintDisplay = GetStringOrNull(root, "thumbprint") is string t && t.Length >= 8
-                ? t[^8..].ToUpperInvariant() + "…"
-                : GetStringOrNull(root, "thumbprint"),
+            thumbprintDisplay = GetStringOrNull(root, "thumbprint")?.ToUpperInvariant(),
             subject = GetStringOrNull(root, "keyVaultSecretName") ?? "Unknown",
             issuedAt = root.TryGetProperty("notBefore", out var nb) ? nb.GetString() : null,
             expiresAt = root.TryGetProperty("notAfter", out var na) ? na.GetString() : null,

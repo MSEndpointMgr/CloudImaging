@@ -34,7 +34,7 @@ interface Toast extends Required<Pick<ToastOptions, 'title' | 'status'>> {
   leaving?: boolean;
 }
 
-interface ToastContextValue {
+export interface ToastContextValue {
   /** Shows a notification and returns its id (use with `update`/`dismiss`). */
   notify: (options: ToastOptions) => string;
   /** Patches an existing notification (e.g. loading → success). */

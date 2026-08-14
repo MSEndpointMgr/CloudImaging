@@ -111,9 +111,9 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
       {/* Current certificate */}
       {certMeta ? (
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-md border border-border bg-muted/30 p-4 text-xs sm:grid-cols-4">
-          <div className="space-y-0.5">
+          <div className="col-span-2 space-y-0.5 sm:col-span-4">
             <dt className="text-muted-foreground">Thumbprint</dt>
-            <dd className="font-mono">{certMeta.thumbprintDisplay ?? '—'}</dd>
+            <dd className="break-all font-mono">{certMeta.thumbprintDisplay ?? '—'}</dd>
           </div>
           <div className="space-y-0.5">
             <dt className="text-muted-foreground">Issued</dt>
