@@ -262,12 +262,6 @@ export default function BrandingPage(): React.ReactElement {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <div>
-        <p className="text-sm text-muted-foreground">
-          Customise how the portal appears to operators.
-        </p>
-      </div>
-
       <Card>
         <CardHeader>
           <CardTitle>Portal logo</CardTitle>

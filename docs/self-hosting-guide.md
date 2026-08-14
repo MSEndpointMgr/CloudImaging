@@ -14,6 +14,7 @@
 | Az PowerShell | `Install-Module Az` |
 | Azure SWA CLI | `npm install -g @azure/static-web-apps-cli` |
 | Entra ID permissions | Create/update App Registrations |
+| Windows ADK + WinPE add-on | On every technician workstation that runs Media Builder — see [Step 6](#installing-the-windows-adk-on-technician-workstations) |
 
 ---
 
@@ -220,6 +221,51 @@ this assignment, sign-in succeeds but API calls return `403`.
 > If the file is missing or incomplete, the app still launches but the sign-in screen shows
 > *"Entra ID sign-in is not configured"*.
 
+### Installing the Windows ADK on technician workstations
+
+Every workstation that will run **Generate Boot Image** needs the **Windows Assessment and
+Deployment Kit (ADK)**. It is *not* bundled with Media Builder and must be installed
+separately on each technician device (or baked into the device image).
+
+The ADK ships as **two separate installers that must be the SAME version**:
+
+| # | Installer | Run it, then select **only** |
+|---|---|---|
+| 1 | `adksetup.exe` (base ADK) | ☑ **Deployment Tools** — leave everything else (USMT, Windows Performance Toolkit, Application Compatibility Toolkit, VAMT, etc.) unchecked; Media Builder doesn't need them |
+| 2 | `adkwinpesetup.exe` (WinPE add-on, downloaded and run *separately* after step 1) | ☑ **Windows Preinstallation Environment (WinPE)** — it's the only option |
+
+Get both installers, matched to the same ADK release, from the official Microsoft page:
+**<https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install>** (it links the
+correct base ADK and WinPE add-on downloads for the current release together — don't mix an
+older cached installer for one with a newer download for the other).
+
+> **Why "Deployment Tools" specifically:** it's the feature that installs `DISM.exe`,
+> `Oscdimg.exe`, and `copype.cmd`'s supporting environment (`DandISetEnv.bat`) under
+> `Deployment Tools\<arch>\...` — everything Media Builder's boot image generation shells out
+> to. The other ADK features (USMT, ACT, Windows Performance Toolkit, etc.) are unrelated to
+> Cloud Imaging and only add install time/disk space.
+
+> ⚠️ **The base ADK and the WinPE add-on version MUST match exactly.** They're installed and
+> updated independently, so it's easy to end up with (for example) an older Deployment Tools
+> paired with a newer WinPE add-on. When that happens, boot image generation fails deep inside
+> Microsoft's `copype.cmd` with an error like *"Unable to copy boot sector file:
+> ...\Deployment Tools\amd64\Oscdimg\efisys_EX.bin"* — the newer WinPE add-on's boot files
+> reference boot-sector files that the older Deployment Tools release doesn't ship yet. Media
+> Builder detects this specific mismatch and reports it clearly rather than surfacing the raw
+> `copype.cmd` error, but the fix is always the same: **re-run `adksetup.exe` and update
+> Deployment Tools to the same release as the WinPE add-on.**
+>
+> To check for a mismatch yourself, compare these two Add/Remove Programs entries — they must
+> report the **same** version:
+> ```powershell
+> Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' |
+>   Where-Object { $_.DisplayName -match 'Windows (Assessment and )?Deployment (Kit|Tools)$|WinPE Add-ons' } |
+>   Select-Object DisplayName, DisplayVersion
+> ```
+
+Media Builder verifies the ADK + WinPE add-on are present (and blocks **Generate Boot Image**
+with a link to the page above if not) before you can start a build.
+
 ### Packaging as a Win32 app (e.g. Intune)
 
 The Media Builder is a self-contained `win-x64` publish (no separate .NET runtime needed on
@@ -236,11 +282,13 @@ the parts specific to Cloud Imaging are:
 - **Detection rule**: base it on `CloudImaging.MediaBuilder.exe` existing at the install
   destination (optionally pinned to a file version), so re-deploying a new release is picked
   up as an update rather than silently skipped.
-- **Dependency**: the **Windows ADK + WinPE add-on** must already be present on the
-  technician's device — Media Builder detects the ADK install path at runtime and fails boot
-  image generation with a clear error if it's missing. It is *not* bundled in the package;
-  express it as a dependency in your packaging tool (or ensure it's baked into the technician
-  device image) rather than trying to include it in the Media Builder app itself.
+- **Dependency**: the **Windows ADK + WinPE add-on** (matching versions — see
+  [Installing the Windows ADK on technician workstations](#installing-the-windows-adk-on-technician-workstations)
+  above) must already be present on the technician's device — Media Builder detects the ADK
+  install path at runtime and fails boot image generation with a clear error if it's missing.
+  It is *not* bundled in the package; express it as a dependency in your packaging tool (or
+  ensure it's baked into the technician device image) rather than trying to include it in the
+  Media Builder app itself.
 - **Install behavior**: the config is machine-wide, not per-user — install it once per device
   rather than per signed-in user.
 
@@ -253,7 +301,8 @@ the parts specific to Cloud Imaging are:
 
 ## Step 7 — Generate Your First Boot Image
 
-1. Open the **Cloud Imaging Media Builder** on a technician workstation with Windows ADK installed
+1. Open the **Cloud Imaging Media Builder** on a technician workstation with the Windows ADK
+   + WinPE add-on installed (see [Step 6](#installing-the-windows-adk-on-technician-workstations))
 2. Sign in with your Entra ID credentials (must have `CloudImaging.Administrator` or `CloudImaging.Technician` role)
 3. Select **Generate Boot Image**
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path

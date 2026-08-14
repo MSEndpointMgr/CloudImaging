@@ -27,29 +27,31 @@ export function PreFlightAuthorizationToggle({
           bare-metal imaging environments.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex items-center justify-between gap-4 rounded-md border border-border p-4">
-        <div>
-          <p className="text-sm font-medium">Require pre-flight authorization</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {enabled ? 'Enabled — unauthorized devices are blocked.' : 'Disabled — any device may image.'}
-          </p>
+      <CardContent>
+        <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4">
+          <div>
+            <p className="text-sm font-medium">Require pre-flight authorization</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {enabled ? 'Enabled — unauthorized devices are blocked.' : 'Disabled — any device may image.'}
+            </p>
+          </div>
+          <button
+            onClick={() => !disabled && onChange(!enabled)}
+            disabled={disabled}
+            role="switch"
+            aria-checked={enabled}
+            className={[
+              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
+              enabled ? 'bg-primary' : 'bg-muted',
+              disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+            ].join(' ')}
+          >
+            <span className={[
+              'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+              enabled ? 'translate-x-6' : 'translate-x-1',
+            ].join(' ')} />
+          </button>
         </div>
-        <button
-          onClick={() => !disabled && onChange(!enabled)}
-          disabled={disabled}
-          role="switch"
-          aria-checked={enabled}
-          className={[
-            'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
-            enabled ? 'bg-primary' : 'bg-muted',
-            disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
-          ].join(' ')}
-        >
-          <span className={[
-            'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-            enabled ? 'translate-x-6' : 'translate-x-1',
-          ].join(' ')} />
-        </button>
       </CardContent>
     </Card>
   );
