@@ -4,131 +4,227 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <!--
         FR-051a, FR-051b: Source selection (GitHub auto-download or local path) and
-        output folder confirmation. No portal upload initiated by this app.
+        output folder confirmation. Once generation starts, the view swaps to a full
+        progress screen with live steps and a command/output log (FR-051d).
     -->
-    <ScrollViewer Margin="40,32" VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="700">
+    <Grid>
 
-            <TextBlock Text="Generate Boot Image"
-                       Style="{StaticResource TitleTextBlockStyle}"
-                       Margin="0,0,0,24" />
+        <!-- ══════════════ CONFIGURATION VIEW ══════════════ -->
+        <ScrollViewer Margin="40,32" VerticalScrollBarVisibility="Auto"
+                      Visibility="{Binding ShowProgressView, Converter={StaticResource InverseBoolToVisibility}}">
+            <StackPanel MaxWidth="700">
 
-            <!-- Source selection -->
-            <ui:Card Margin="0,0,0,16" Padding="20">
-                <StackPanel>
-                    <TextBlock Text="Client Binaries Source"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,12" />
-                    <RadioButton Content="Auto-download latest from GitHub Releases"
-                                 IsChecked="{Binding UseGitHubSource}"
-                                 GroupName="SourceType" Margin="0,4,0,4" />
-                    <StackPanel Orientation="Horizontal" Margin="20,0,0,8"
-                                Visibility="{Binding UseGitHubSource, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="Status: " Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding GitHubStatus}"
+                <TextBlock Text="Generate Boot Image"
+                           Style="{StaticResource TitleTextBlockStyle}"
+                           Margin="0,0,0,24" />
+
+                <!-- Source selection -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Client Binaries Source"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,12" />
+                        <RadioButton Content="Auto-download latest from GitHub Releases"
+                                     IsChecked="{Binding UseGitHubSource}"
+                                     GroupName="SourceType" Margin="0,4,0,4" />
+                        <StackPanel Orientation="Horizontal" Margin="20,0,0,8"
+                                    Visibility="{Binding UseGitHubSource, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="Status: " Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding GitHubStatus}"
+                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <RadioButton Content="Use local path (pre-downloaded binaries)"
+                                     IsChecked="{Binding UseLocalSource}"
+                                     GroupName="SourceType" Margin="0,4,0,4" />
+                        <Grid Margin="0,4,0,4"
+                              Visibility="{Binding UseLocalSource, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding LocalSourcePath, UpdateSourceTrigger=PropertyChanged}"
+                                        HorizontalAlignment="Stretch"
+                                        PlaceholderText="Path to binaries folder" />
+                            <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                                       Margin="8,0,0,0" Command="{Binding BrowseCommand}" />
+                        </Grid>
+                    </StackPanel>
+                </ui:Card>
+
+                <!-- Output folder -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Output Folder"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,12" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding OutputFolderPath, UpdateSourceTrigger=PropertyChanged}"
+                                        HorizontalAlignment="Stretch"
+                                        PlaceholderText="Output directory path" />
+                            <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                                       Margin="8,0,0,0" Command="{Binding BrowseOutputCommand}" />
+                        </Grid>
+                    </StackPanel>
+                </ui:Card>
+
+                <!-- Drivers (optional) — FR-051c -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Drivers (optional)"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Point to a pre-staged driver root folder. Every driver package (.inf) beneath it is recursively injected into the boot image — use this to add storage or network controller drivers that WinPE does not include. Leave empty to skip."
                                    Style="{StaticResource CaptionTextBlockStyle}"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   VerticalAlignment="Center" />
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding DriverRootPath, UpdateSourceTrigger=PropertyChanged}"
+                                        HorizontalAlignment="Stretch"
+                                        PlaceholderText="Driver root folder (optional)" />
+                            <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                                       Margin="8,0,0,0" Command="{Binding BrowseDriverRootCommand}" />
+                        </Grid>
                     </StackPanel>
-                    <RadioButton Content="Use local path (pre-downloaded binaries)"
-                                 IsChecked="{Binding UseLocalSource}"
-                                 GroupName="SourceType" Margin="0,4,0,4" />
-                    <Grid Margin="0,4,0,4"
-                          Visibility="{Binding UseLocalSource, Converter={StaticResource BoolToVisibility}}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBox Grid.Column="0"
-                                    Text="{Binding LocalSourcePath, UpdateSourceTrigger=PropertyChanged}"
-                                    HorizontalAlignment="Stretch"
-                                    PlaceholderText="Path to binaries folder" />
-                        <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
-                                   Margin="8,0,0,0" Command="{Binding BrowseCommand}" />
-                    </Grid>
-                </StackPanel>
-            </ui:Card>
+                </ui:Card>
 
-            <!-- Output folder -->
-            <ui:Card Margin="0,0,0,16" Padding="20">
-                <StackPanel>
-                    <TextBlock Text="Output Folder"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,12" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBox Grid.Column="0"
-                                    Text="{Binding OutputFolderPath, UpdateSourceTrigger=PropertyChanged}"
-                                    HorizontalAlignment="Stretch"
-                                    PlaceholderText="Output directory path" />
-                        <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
-                                   Margin="8,0,0,0" Command="{Binding BrowseOutputCommand}" />
-                    </Grid>
-                </StackPanel>
-            </ui:Card>
-
-            <!-- Drivers (optional) — FR-051c -->
-            <ui:Card Margin="0,0,0,16" Padding="20">
-                <StackPanel>
-                    <TextBlock Text="Drivers (optional)"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,4" />
-                    <TextBlock Text="Point to a pre-staged driver root folder. Every driver package (.inf) beneath it is recursively injected into the boot image — use this to add storage or network controller drivers that WinPE does not include. Leave empty to skip."
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap"
-                               Margin="0,0,0,12" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ui:TextBox Grid.Column="0"
-                                    Text="{Binding DriverRootPath, UpdateSourceTrigger=PropertyChanged}"
-                                    HorizontalAlignment="Stretch"
-                                    PlaceholderText="Driver root folder (optional)" />
-                        <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
-                                   Margin="8,0,0,0" Command="{Binding BrowseDriverRootCommand}" />
-                    </Grid>
-                </StackPanel>
-            </ui:Card>
-
-            <!-- Progress -->
-            <StackPanel Margin="0,0,0,16"
-                        Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="{Binding ProgressMessage}"
+                <!-- Generation requires Administrator rights (DISM) -->
+                <TextBlock Text="Generating a boot image mounts the WinPE image with DISM, which requires Administrator privileges. You will be prompted to elevate once you click Generate."
                            Style="{StaticResource CaptionTextBlockStyle}"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Margin="0,0,0,8" />
+                           TextWrapping="Wrap"
+                           Margin="0,0,0,16" />
+
+                <!-- Generate button -->
+                <ui:Button Content="Generate Boot Image"
+                           Appearance="Primary"
+                           Width="220" Height="44" FontSize="15"
+                           Command="{Binding GenerateCommand}"
+                           IsEnabled="{Binding CanGenerate}"
+                           HorizontalAlignment="Left" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- ══════════════ PROGRESS VIEW ══════════════ -->
+        <Grid Margin="40,32"
+              Visibility="{Binding ShowProgressView, Converter={StaticResource BoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Generating Boot Image"
+                       Style="{StaticResource TitleTextBlockStyle}"
+                       Margin="0,0,0,16" />
+
+            <!-- Overall progress -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,20">
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="{Binding ProgressMessage}"
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding ProgressPercent, StringFormat={}{0}%}"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               HorizontalAlignment="Right" />
+                </Grid>
                 <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" />
             </StackPanel>
 
-            <!-- Success -->
-            <ui:InfoBar Title="Boot image generated successfully"
-                        Message="{Binding OutputWimPath, StringFormat='Output: {0}. Upload the WIM to the Cloud Imaging Portal (Boot Images) to publish it.'}"
-                        Severity="Success"
-                        IsOpen="{Binding IsComplete}"
-                        IsClosable="False"
-                        Margin="0,0,0,16" />
+            <!-- Steps -->
+            <ItemsControl Grid.Row="2" ItemsSource="{Binding Steps}" Margin="0,0,0,20">
+                <ItemsControl.Resources>
+                    <Style x:Key="StepText" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                        <Setter Property="VerticalAlignment" Value="Center" />
+                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding State}" Value="Active">
+                                <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding State}" Value="Done">
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ItemsControl.Resources>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="0,3">
+                            <TextBlock Text="{Binding Glyph}" Width="24"
+                                       FontSize="14" TextAlignment="Center"
+                                       Style="{StaticResource StepText}" />
+                            <TextBlock Text="{Binding Label}" Margin="6,0,0,0"
+                                       Style="{StaticResource StepText}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
 
-            <!-- Error -->
-            <ui:InfoBar Title="Generation failed"
-                        Message="{Binding ErrorMessage}"
-                        Severity="Error"
-                        IsOpen="{Binding HasError}"
-                        IsClosable="False"
-                        Margin="0,0,0,16" />
+            <!-- Command / output log -->
+            <Border Grid.Row="3"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="2">
+                <!--
+                    Plain, read-only, selectable text (not a ListBox/ItemsControl) so the whole
+                    log can be selected and copied like a real console — one line per entry,
+                    no wrapping (horizontal scroll instead), no extra per-row chrome/spacing.
+                -->
+                <TextBox x:Name="LogTextBox"
+                         Text="{Binding LogText, Mode=OneWay}"
+                         IsReadOnly="True" IsReadOnlyCaretVisible="True"
+                         Background="Transparent" BorderThickness="0"
+                         FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         TextWrapping="NoWrap"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto" />
+            </Border>
 
-            <!-- Generate button -->
-            <ui:Button Content="Generate Boot Image"
-                       Appearance="Primary"
-                       Width="220" Height="44" FontSize="15"
-                       Command="{Binding GenerateCommand}"
-                       IsEnabled="{Binding CanGenerate}"
-                       HorizontalAlignment="Left" />
-        </StackPanel>
-    </ScrollViewer>
+            <!-- Result + footer -->
+            <StackPanel Grid.Row="4" Margin="0,16,0,0">
+                <ui:InfoBar Title="Boot image generated successfully"
+                            Message="{Binding OutputWimPath, StringFormat='Output: {0}. Upload the WIM to the Cloud Imaging Portal (Boot Images) to publish it.'}"
+                            Severity="Success"
+                            IsOpen="{Binding IsComplete}"
+                            IsClosable="False"
+                            Margin="0,0,0,12" />
+
+                <ui:InfoBar Title="Generation failed"
+                            Message="{Binding ErrorMessage}"
+                            Severity="Error"
+                            IsOpen="{Binding HasError}"
+                            IsClosable="False"
+                            Margin="0,0,0,12" />
+
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="Back to menu"
+                               Command="{Binding BackCommand}"
+                               MinWidth="130" Height="40"
+                               Margin="0,0,8,0" />
+                    <ui:Button Content="Generate another"
+                               Appearance="Primary"
+                               Command="{Binding NewGenerationCommand}"
+                               MinWidth="150" Height="40" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+    </Grid>
 </UserControl>

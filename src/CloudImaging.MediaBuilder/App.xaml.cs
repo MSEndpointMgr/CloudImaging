@@ -39,6 +39,24 @@ public partial class App : System.Windows.Application
             var config = LoadConfiguration();
             var loggerFactory = LoggingConfiguration.CreateLoggerFactory(_logger);
 
+            // Hidden elevated-worker mode: this same executable is relaunched with this
+            // switch (via a UAC prompt) by BootImageGenerationService.GenerateElevatedAsync
+            // when the main (non-elevated) process needs DISM image mounting, which requires
+            // Administrator privileges. Runs headless — no window, no sign-in — and exits.
+            if (e.Args.Length == 4 && e.Args[0] == BootImageGenerationService.ElevatedWorkerArg)
+            {
+                // Run on the thread pool (NOT the current thread): OnStartup runs under WPF's
+                // DispatcherSynchronizationContext, so blocking here with GetResult() while the
+                // worker's async continuations post back to this same (blocked) dispatcher thread
+                // would deadlock — leaving the parent stuck at "Requesting Administrator privileges".
+                // Task.Run gives the worker a thread-pool context with no dispatcher to deadlock on.
+                System.Threading.Tasks.Task.Run(() =>
+                        BootImageGenerationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], loggerFactory))
+                    .GetAwaiter().GetResult();
+                Shutdown(0);
+                return;
+            }
+
             var authService = new EntraAuthenticationService(
                 config.ClientId,
                 config.TenantId,
