@@ -124,11 +124,12 @@ Operator API
   `clientCertificateMode=require`; an optional Azure Application Gateway can be
   deployed as additive edge enforcement via the `deployApplicationGateway` IaC
   parameter
-- **Entra ID + app roles**: Operator API and Portal backend enforce two user-level
-  roles (`CloudImaging.Administrator`, `CloudImaging.Technician`) via a single
-  shared enterprise app registration; service-level roles
-  (`CloudImaging.PortalAccess`, `CloudImaging.MediaBuilderAccess`) control
-  Operator API service access
+- **Entra ID + app roles**: the Portal and Media Builder each have their own app
+  registration, but share the same two user-level roles (`CloudImaging.Administrator`,
+  `CloudImaging.Technician`), assigned independently per registration; service-level
+  roles (`CloudImaging.PortalAccess`, `CloudImaging.MediaBuilderAccess`) control
+  Operator API service access. See [docs/roles-and-access.md](docs/roles-and-access.md)
+  for the full access model
 - **Device-session tokens**: opaque, high-entropy bearer credentials issued at
   session initialization; separate from the one-time passcode and scoped to the
   specific device session

@@ -14,7 +14,7 @@
 | Az PowerShell | `Install-Module Az` |
 | Azure SWA CLI | `npm install -g @azure/static-web-apps-cli` |
 | Entra ID permissions | Create/update App Registrations |
-| Windows ADK + WinPE add-on | On every technician workstation that runs Media Builder — see [Step 6](#installing-the-windows-adk-on-technician-workstations) |
+| Windows ADK + WinPE add-on | On every technician workstation that runs Media Builder — see [Step 7](#installing-the-windows-adk-on-technician-workstations) |
 
 ---
 
@@ -152,9 +152,35 @@ $rg = "corp-prod-rg"   # your resource group
   -MediaBuilderClientId "<mediaBuilderClientId>"
 ```
 
+This script only handles the **service-level** roles (`CloudImaging.PortalAccess` on the Portal's
+managed identity). The **user-level** roles below still need to be assigned manually, per person.
+
 ---
 
-## Step 5 — Generate a Boot Media Certificate
+## Step 5 — Assign Access to Your Administrators and Technicians
+
+The app roles created in Step 1 are just definitions — nobody can sign in successfully until they're
+assigned to actual users or groups. For the full access model (what each role grants in the Portal
+vs. the Media Builder), see [roles-and-access.md](roles-and-access.md). To assign access:
+
+1. **Portal users**: Entra ID → **Enterprise applications** → **Cloud Imaging Portal** →
+   **Users and groups** → **Add user/group** → assign `CloudImaging.Administrator` or
+   `CloudImaging.Technician` to each person (or group) who signs in to the browser portal.
+2. **Media Builder users**: repeat on the **Cloud Imaging Media Builder** enterprise application —
+   assignments are **not** shared between the two registrations, so a technician who uses both apps
+   needs a role on *each* one.
+3. **Media Builder API access**: Media Builder users also need `CloudImaging.MediaBuilderAccess` on
+   the **Cloud Imaging Operator API** enterprise application — see
+   [Step 8](#step-8--generate-your-first-boot-image) and
+   [roles-and-access.md](roles-and-access.md#1-the-four-app-roles) for why this is a separate,
+   additional assignment.
+
+A user with no role assigned on a registration can still sign in, but sees an "Access denied"
+screen (Portal) or has every workflow blocked (Media Builder).
+
+---
+
+## Step 6 — Generate a Boot Media Certificate
 
 1. Sign in to the Cloud Imaging Portal as **CloudImaging.Administrator**
 2. Navigate to **Configuration**
@@ -163,7 +189,7 @@ $rg = "corp-prod-rg"   # your resource group
 
 ---
 
-## Step 6 — Configure the Media Builder
+## Step 7 — Configure the Media Builder
 
 The Media Builder is a desktop app that technicians run on their own workstations.
 Because Cloud Imaging is deployed into **your** tenant, each packaged build must be
@@ -299,10 +325,10 @@ the parts specific to Cloud Imaging are:
 
 ---
 
-## Step 7 — Generate Your First Boot Image
+## Step 8 — Generate Your First Boot Image
 
 1. Open the **Cloud Imaging Media Builder** on a technician workstation with the Windows ADK
-   + WinPE add-on installed (see [Step 6](#installing-the-windows-adk-on-technician-workstations))
+   + WinPE add-on installed (see [Step 7](#installing-the-windows-adk-on-technician-workstations))
 2. Sign in with your Entra ID credentials (must have `CloudImaging.Administrator` or `CloudImaging.Technician` role)
 3. Select **Generate Boot Image**
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path
@@ -317,7 +343,7 @@ the parts specific to Cloud Imaging are:
 
 ---
 
-## Step 8 — Prepare USB Media
+## Step 9 — Prepare USB Media
 
 1. In **Cloud Imaging Media Builder**, select **Prepare USB Storage Device**
 2. Select the boot image to deploy
@@ -326,7 +352,7 @@ the parts specific to Cloud Imaging are:
 
 ---
 
-## Step 9 — Image a Device
+## Step 10 — Image a Device
 
 1. Boot the target device from the USB drive
 2. The device auto-launches Cloud Imaging Client and displays a **passcode**
@@ -360,6 +386,7 @@ the parts specific to Cloud Imaging are:
 
 ## Getting Help
 
+- **Roles & access reference**: `docs/roles-and-access.md`
 - **Troubleshooting**: `docs/operations-runbook.md`
 - **Architecture details**: `specs/001-cloud-windows-imaging/plan.md`
 - **Issues**: [GitHub Issues](https://github.com/MSEndpointMgr/CloudImaging/issues)

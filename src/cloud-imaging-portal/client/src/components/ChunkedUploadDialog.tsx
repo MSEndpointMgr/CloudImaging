@@ -6,7 +6,6 @@ import {
   startChunkedUpload,
   uploadBlocks,
   finalizeChunkedUpload,
-  cancelChunkedUpload,
 } from '../services/chunkedUploadService.ts';
 
 interface ChunkedUploadDialogProps {
@@ -27,14 +26,13 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
   const [progress, setProgress]   = useState(0);
   const [state, setState]         = useState<UploadState>('idle');
   const [error, setError]         = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const abortRef                  = useRef<AbortController | null>(null);
 
   if (!open) return null;
 
   const reset = () => {
     setFile(null); setVersion(''); setSha256(''); setProgress(0);
-    setState('idle'); setError(null); setSessionId(null);
+    setState('idle'); setError(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -45,13 +43,12 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
 
     abortRef.current = new AbortController();
     try {
-      const session = await startChunkedUpload(file.name, version, file.size);
-      setSessionId(session.sessionId);
+      const session = await startChunkedUpload(file.name, version, sha256);
 
       const blockIds = await uploadBlocks(session, file, setProgress, abortRef.current.signal);
 
       setState('finalizing');
-      const result = await finalizeChunkedUpload(session.sessionId, blockIds);
+      const result = await finalizeChunkedUpload(session, blockIds, file.name, version, sha256, file.size);
       setState('done');
       onUploaded(result as { blobName: string });
     } catch (err) {
@@ -64,9 +61,8 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
     }
   };
 
-  const handleCancel = async () => {
+  const handleCancel = () => {
     abortRef.current?.abort();
-    if (sessionId) await cancelChunkedUpload(sessionId).catch(() => {/* best-effort */});
     setState('cancelled');
   };
 

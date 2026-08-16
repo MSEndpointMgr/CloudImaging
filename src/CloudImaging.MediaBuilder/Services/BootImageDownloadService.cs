@@ -1,16 +1,21 @@
 using System.IO;
 using System.Net.Http;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
 /// Downloads a boot image WIM from the Operator API SAS URL (T069, FR-056).
-/// Verifies the SHA-256 hash after download before reporting success.
+/// Verifies the SHA-256 hash after download before reporting success. On a hash mismatch (or
+/// any transient download failure) the corrupted file is discarded and the whole
+/// download+verify attempt is retried, up to <see cref="MaxAttempts"/> times with exponential
+/// backoff; on exhaustion the download is aborted with a BID-stage support reference code.
 /// </summary>
 public sealed partial class BootImageDownloadService
 {
     private const int BufferSize = 81_920;
+    private const int MaxAttempts = 3;
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<BootImageDownloadService> _logger;
@@ -32,6 +37,39 @@ public sealed partial class BootImageDownloadService
         string expectedHash,
         string destinationPath,
         CancellationToken ct = default)
+    {
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await DownloadOnceAsync(sasUrl, destinationPath, ct);
+                await VerifyHashAsync(destinationPath, expectedHash, ct);
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = ex;
+                LogAttemptFailed(_logger, attempt, ex);
+                try { File.Delete(destinationPath); } catch { /* best-effort */ }
+
+                if (attempt < MaxAttempts)
+                {
+                    var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // 2s, 4s
+                    await Task.Delay(delay, ct);
+                }
+            }
+        }
+
+        var code = SupportReferenceCode.ForMediaBuilder("PREPUSB", "BID");
+        throw new InvalidOperationException(
+            $"Failed to download and verify the boot image after {MaxAttempts} attempts. " +
+            $"Support reference: {code}.", lastError);
+    }
+
+    private async Task DownloadOnceAsync(string sasUrl, string destinationPath, CancellationToken ct)
     {
         LogDownloadStarting(_logger, destinationPath);
         Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? string.Empty);
@@ -55,9 +93,6 @@ public sealed partial class BootImageDownloadService
         }
 
         LogDownloadComplete(_logger, downloaded);
-
-        // SHA-256 verification (FR-056: verify before USB deployment)
-        await VerifyHashAsync(destinationPath, expectedHash, ct);
     }
 
     private async Task VerifyHashAsync(string filePath, string expectedHash, CancellationToken ct)
@@ -69,7 +104,6 @@ public sealed partial class BootImageDownloadService
 
         if (!string.Equals(actual, expectedHash, StringComparison.OrdinalIgnoreCase))
         {
-            File.Delete(filePath);
             throw new InvalidDataException(
                 $"Boot image SHA-256 mismatch. Expected: {expectedHash}, Actual: {actual}");
         }
@@ -88,4 +122,7 @@ public sealed partial class BootImageDownloadService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "SHA-256 verified for {Path}.")]
     private static partial void LogHashVerified(ILogger logger, string path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image download attempt {Attempt} failed.")]
+    private static partial void LogAttemptFailed(ILogger logger, int attempt, Exception ex);
 }

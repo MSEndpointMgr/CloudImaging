@@ -70,21 +70,35 @@ public partial class App : System.Windows.Application
             var operatorApiClient = new OperatorApiClient(
                 httpClient, loggerFactory.CreateLogger<OperatorApiClient>());
 
+            // Dedicated HttpClient for branding logo blob downloads (SAS-authenticated URL —
+            // must NOT carry the Operator API's Bearer token, same pattern as downloadHttpClient).
+            var brandingHttpClient = new HttpClient();
+            var brandingLogoEmbedService = new BrandingLogoEmbedService(
+                brandingHttpClient, operatorApiClient, loggerFactory.CreateLogger<BrandingLogoEmbedService>());
+
             var genService = new BootImageGenerationService(
-                loggerFactory.CreateLogger<BootImageGenerationService>(), operatorApiClient);
+                loggerFactory.CreateLogger<BootImageGenerationService>(), operatorApiClient, brandingLogoEmbedService);
 
             // A dedicated HttpClient for large boot-image downloads (no Operator API base address).
             var downloadHttpClient = new HttpClient();
+
+            // Dedicated HttpClient for the public GitHub Releases API + asset download (no auth).
+            var gitHubHttpClient = new HttpClient();
+            var gitHubReleasesClient = new GitHubReleasesClient(
+                gitHubHttpClient, loggerFactory.CreateLogger<GitHubReleasesClient>());
 
             var services = new AppServices(
                 authService,
                 operatorApiClient,
                 genService,
+                gitHubReleasesClient,
                 new UsbSafetyValidationService(loggerFactory.CreateLogger<UsbSafetyValidationService>()),
                 new BootImageDownloadService(downloadHttpClient, loggerFactory.CreateLogger<BootImageDownloadService>()),
                 new UsbPartitionProvisioningService(loggerFactory.CreateLogger<UsbPartitionProvisioningService>()),
                 new BootImageDeploymentService(loggerFactory.CreateLogger<BootImageDeploymentService>()),
                 new BootImageCacheService(loggerFactory.CreateLogger<BootImageCacheService>()),
+                new UsbDeviceChangeWatcher(loggerFactory.CreateLogger<UsbDeviceChangeWatcher>()),
+                new BootMediaCertificateCheckService(operatorApiClient, loggerFactory.CreateLogger<BootMediaCertificateCheckService>()),
                 loggerFactory);
 
             var mainWindow = new MainWindow();
@@ -192,11 +206,14 @@ public partial class App : System.Windows.Application
             svc.Auth,
             svc.OperatorApi,
             svc.Gen,
+            svc.GitHubReleases,
             svc.UsbValidator,
             svc.Downloader,
             svc.Provisioner,
             svc.Deployer,
-            svc.Cache);
+            svc.Cache,
+            svc.DeviceWatcher,
+            svc.CertCheck);
         return view;
     }
 
@@ -265,10 +282,13 @@ public partial class App : System.Windows.Application
         EntraAuthenticationService Auth,
         OperatorApiClient OperatorApi,
         BootImageGenerationService Gen,
+        GitHubReleasesClient GitHubReleases,
         UsbSafetyValidationService UsbValidator,
         BootImageDownloadService Downloader,
         UsbPartitionProvisioningService Provisioner,
         BootImageDeploymentService Deployer,
         BootImageCacheService Cache,
+        UsbDeviceChangeWatcher DeviceWatcher,
+        BootMediaCertificateCheckService CertCheck,
         ILoggerFactory LoggerFactory);
 }

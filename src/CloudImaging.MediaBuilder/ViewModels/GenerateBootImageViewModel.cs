@@ -8,6 +8,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
+using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 using Microsoft.Win32;
 
@@ -20,12 +21,19 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 {
     private readonly BootImageGenerationService _genService;
     private readonly EntraAuthenticationService _authService;
+    private readonly GitHubReleasesClient _gitHubReleasesClient;
     private readonly Action _navigateBack;
     private readonly StringBuilder _logBuilder = new();
     private readonly DispatcherTimer _elapsedTimer;
     private DateTime _generationStartedAtUtc;
     private int _heartbeatLineStart = -1;
     private CancellationTokenSource? _cts;
+    /// <summary>
+    /// Which stage of the generation workflow is currently executing, so a failure can be
+    /// attributed to the right support-reference stage code (T160/FR-058): DWN (client
+    /// binaries download), APL (image mount/apply/generation).
+    /// </summary>
+    private string _currentStage = "DWN";
 
     /// <summary>Label of the one step that is skipped (not done) when no driver path is given.</summary>
     private const string DriverInjectionStepLabel = "Inject drivers (optional)";
@@ -47,11 +55,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public GenerateBootImageViewModel(
         BootImageGenerationService genService,
         EntraAuthenticationService authService,
+        GitHubReleasesClient gitHubReleasesClient,
         Action navigateBack)
     {
-        _genService   = genService;
-        _authService  = authService;
-        _navigateBack = navigateBack;
+        _genService           = genService;
+        _authService          = authService;
+        _gitHubReleasesClient = gitHubReleasesClient;
+        _navigateBack         = navigateBack;
 
         Steps = new ObservableCollection<GenerationStep>(CreateSteps());
 
@@ -329,16 +339,26 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _cts = new CancellationTokenSource();
         try
         {
+            // Set (or refresh) the Operator API bearer token used for boot media certificate
+            // retrieval, branding logo retrieval, and Device Gateway endpoint resolution —
+            // without this, GenerateElevatedAsync's certificate fetch fails as unauthenticated.
+            var token = await _authService.GetAccessTokenAsync(_cts.Token)
+                ?? throw new InvalidOperationException("Sign in to the Operator API before generating a boot image.");
+            _genService.SetOperatorApiAccessToken(token);
+
+            _currentStage = "DWN";
             string clientBinariesPath = UseGitHubSource
                 ? await DownloadLatestClientAsync()
                 : LocalSourcePath;
 
-            // The generation service will try to embed the cert if the access token is available.
-            // GenerateElevatedAsync transparently relaunches this app elevated (one UAC prompt)
-            // if it isn't already running as Administrator, since DISM image mounting requires it.
+            // GenerateElevatedAsync resolves the boot media certificate and branding logo
+            // internally from the Operator API before transparently relaunching this app
+            // elevated (one UAC prompt) if it isn't already running as Administrator, since
+            // DISM image mounting requires it.
+            _currentStage = "APL";
             var result = await _genService.GenerateElevatedAsync(
                 clientBinariesPath,
-                pfxBytes: null,         // cert injection via T173 extension
+                pfxBytes: null,
                 _outputFolderPath,
                 driverRootPath: string.IsNullOrWhiteSpace(_driverRootPath) ? null : _driverRootPath,
                 ct: _cts.Token);
@@ -360,8 +380,11 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             // (e.g. an ADK/prerequisite check) — otherwise the log would just trail off with
             // whatever step banner was last announced, with nothing to explain the red InfoBar
             // shown alongside it.
-            ErrorMessage = ex.Message;
-            AppendLogLine($"FAILED: {ex.Message}");
+            // T160/FR-058: every failure path surfaces a support reference code so a technician
+            // can quote it to support without needing log access.
+            var code = SupportReferenceCode.ForMediaBuilder("GENBOOT", _currentStage);
+            ErrorMessage = string.Create(CultureInfo.InvariantCulture, $"{ex.Message} (Support reference: {code})");
+            AppendLogLine($"FAILED: {ErrorMessage}");
         }
         finally
         {
@@ -408,11 +431,22 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
     private async Task<string> DownloadLatestClientAsync()
     {
-        // Simplified: in full implementation this calls GitHub releases API.
-        // For now, fallback to a temp directory placeholder.
-        ProgressMessage = "Resolving latest GitHub release";
-        await Task.Delay(500); // placeholder
-        return System.IO.Path.GetTempPath();
+        void OnProgress(object? _, (string Message, int Percent) e) =>
+            OnUi(() =>
+            {
+                ProgressMessage = e.Message;
+                AppendLogLine(e.Message);
+            });
+
+        _gitHubReleasesClient.ProgressChanged += OnProgress;
+        try
+        {
+            return await _gitHubReleasesClient.DownloadLatestClientAsync(_cts!.Token);
+        }
+        finally
+        {
+            _gitHubReleasesClient.ProgressChanged -= OnProgress;
+        }
     }
 
     private void BrowseLocalPath()

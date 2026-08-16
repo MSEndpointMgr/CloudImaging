@@ -74,6 +74,16 @@ export class OperatorApiClient {
     await this.http.delete<unknown>(`/api/images/${imageId}`);
   }
 
+  async startOsImageUpload(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/images/upload/start', payload);
+    return data;
+  }
+
+  async publishOsImageUpload(uploadId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/images/upload/${uploadId}/publish`, payload);
+    return data;
+  }
+
   // ── Boot image operations ────────────────────────────────────────────────────
 
   async getBootImages(): Promise<unknown> {

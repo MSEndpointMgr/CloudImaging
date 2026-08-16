@@ -2,6 +2,7 @@ using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.IO;
+using System.Net.Http;
 using Xunit;
 
 namespace CloudImaging.MediaBuilder.Tests;
@@ -134,8 +135,10 @@ public sealed class GenerateBootImageSourceSelectionTests
             tenantId:           "test-tenant",
             operatorApiScope:   "api://test-client/.default",
             logger:             NullLogger<EntraAuthenticationService>.Instance);
+        var gitHubClient = new GitHubReleasesClient(
+            new HttpClient(), NullLogger<GitHubReleasesClient>.Instance);
 
         return new CloudImaging.MediaBuilder.ViewModels.GenerateBootImageViewModel(
-            genSvc, authSvc, navigateBack: () => { });
+            genSvc, authSvc, gitHubClient, navigateBack: () => { });
     }
 }

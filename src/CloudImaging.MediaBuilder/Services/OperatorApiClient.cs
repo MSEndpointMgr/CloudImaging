@@ -64,6 +64,19 @@ public sealed partial class OperatorApiClient
         return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
+    /// <summary>
+    /// Retrieves boot media certificate metadata (no PFX bytes) so callers can check whether an
+    /// active certificate is configured without downloading the certificate itself (T151,
+    /// FR-050a). Returns null when no certificate is configured (Operator API returns 404).
+    /// </summary>
+    public async Task<BootMediaCertificateMetadataDto?> GetBootMediaCertMetadataAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/api/bootmedia/certificate/metadata", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<BootMediaCertificateMetadataDto>(JsonOptions, ct);
+    }
+
     // ── Endpoint configuration ────────────────────────────────────────────────
 
     /// <summary>
@@ -111,4 +124,14 @@ public sealed class BrandingLogoSasDto
 public sealed class EndpointConfigurationDto
 {
     public string DeviceGatewayApiBaseUrl { get; init; } = string.Empty;
+}
+
+/// <summary>Boot media certificate metadata (no PFX bytes), returned by GET /api/bootmedia/certificate/metadata.</summary>
+public sealed class BootMediaCertificateMetadataDto
+{
+    public string? ThumbprintDisplay { get; init; }
+    public string? Subject           { get; init; }
+    public DateTimeOffset? IssuedAt  { get; init; }
+    public DateTimeOffset? ExpiresAt { get; init; }
+    public bool IsActive             { get; init; }
 }

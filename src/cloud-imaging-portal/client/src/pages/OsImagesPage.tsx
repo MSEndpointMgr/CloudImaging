@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
+import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
 
 interface OsImage {
   imageId: string;
@@ -28,6 +29,7 @@ export default function OsImagesPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadImages = async () => {
     setLoading(true);
@@ -78,11 +80,17 @@ export default function OsImagesPage(): React.ReactElement {
     <div className="space-y-4">
       <div className="flex items-center justify-end">
         {isAdministrator && (
-          <Button>
+          <Button onClick={() => setUploadOpen(true)}>
             <Plus size={14} /> Upload Image
           </Button>
         )}
       </div>
+
+      <ChunkedUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => { setUploadOpen(false); void loadImages(); }}
+      />
 
       {isAdministrator && selectedCount > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm">

@@ -291,7 +291,7 @@ export default function BrandingPage(): React.ReactElement {
               loading={uploadingKind === 'portal'}
               onClick={() => portalInputRef.current?.click()}
             >
-              <Upload className="mr-2 h-4 w-4" />
+              <Upload className="h-4 w-4" />
               {logoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
             {logoUrl && (
@@ -301,7 +301,7 @@ export default function BrandingPage(): React.ReactElement {
                 loading={resettingKind === 'portal'}
                 onClick={() => setPendingReset('portal')}
               >
-                <RotateCcw className="mr-2 h-4 w-4" />
+                <RotateCcw className="h-4 w-4" />
                 Reset to default
               </Button>
             )}
@@ -338,7 +338,7 @@ export default function BrandingPage(): React.ReactElement {
               loading={uploadingKind === 'boot'}
               onClick={() => bootInputRef.current?.click()}
             >
-              <Upload className="mr-2 h-4 w-4" />
+              <Upload className="h-4 w-4" />
               {bootLogoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
             {bootLogoUrl && (
@@ -348,7 +348,7 @@ export default function BrandingPage(): React.ReactElement {
                 loading={resettingKind === 'boot'}
                 onClick={() => setPendingReset('boot')}
               >
-                <RotateCcw className="mr-2 h-4 w-4" />
+                <RotateCcw className="h-4 w-4" />
                 Reset to default
               </Button>
             )}

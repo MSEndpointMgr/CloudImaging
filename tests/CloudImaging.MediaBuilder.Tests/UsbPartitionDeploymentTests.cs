@@ -23,24 +23,45 @@ public sealed class UsbPartitionDeploymentTests
     // ── Expected partition layout ─────────────────────────────────────────────
 
     [Fact]
-    public void PartitionLayout_IsTwoPartitions_Fat32Boot_NtfsData()
+    public void PartitionLayout_IsTwoPartitions_Fat32Boot_NtfsCache()
     {
-        // FR-055: two-partition layout — FAT32 boot (~500 MB) + NTFS data (remainder)
+        // FR-055: two-partition layout — FAT32 boot (min 2 GB) + NTFS cache (min 20 GB, aligned
+        // with the Cloud Imaging Client's ImageCacheService expectations)
         const int partitionCount = 2;
         const string bootFsType  = "FAT32";
-        const string dataFsType  = "NTFS";
+        const string cacheFsType = "NTFS";
 
         partitionCount.Should().Be(2, "USB must have exactly 2 partitions (FR-055)");
         bootFsType.Should().Be("FAT32", "boot partition must be FAT32 for WinPE compatibility");
-        dataFsType.Should().Be("NTFS",  "data partition must be NTFS");
+        cacheFsType.Should().Be("NTFS",  "cache partition must be NTFS");
     }
 
     [Fact]
-    public void BootPartition_Size_IsApproximately500MB()
+    public void BootPartition_Size_MeetsFr055Minimum_2Gb()
     {
-        const int bootPartitionMb = 500;
-        bootPartitionMb.Should().Be(500,
-            "boot partition must be ~500 MB (sufficient for WinPE + Client binaries)");
+        UsbPartitionProvisioningService.BootPartitionSizeMb.Should().Be(2048,
+            "boot partition must be at least 2 GB per FR-055 (sufficient for WinPE + Client binaries)");
+    }
+
+    [Fact]
+    public void CachePartition_MinimumSize_Is20Gb()
+    {
+        UsbPartitionProvisioningService.MinimumCachePartitionBytes.Should().Be(20L * 1024 * 1024 * 1024,
+            "cache partition must be at least 20 GB per FR-055, to hold Client OS image cache entries");
+    }
+
+    [Fact]
+    public async Task ProvisionAsync_Throws_WhenDiskTooSmallForCacheMinimum()
+    {
+        // A disk that only leaves room for a cache partition under the 20 GB FR-055 minimum
+        // must be rejected BEFORE any destructive diskpart action is taken.
+        var svc = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
+        const long tooSmallDiskBytes = 8L * 1024 * 1024 * 1024; // 8 GB total
+
+        Func<Task> act = async () => await svc.ProvisionAsync(diskNumber: 1, diskSizeBytes: tooSmallDiskBytes);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*too small*");
     }
 
     // ── Boot image deployment service ─────────────────────────────────────────

@@ -73,7 +73,7 @@ export default function BootImagesPage(): React.ReactElement {
         </div>
         {isAdministrator && (
           <Button onClick={() => setUploadOpen(true)}>
-            <Upload className="mr-2 h-4 w-4" />
+            <Upload className="h-4 w-4" />
             Upload boot image
           </Button>
         )}

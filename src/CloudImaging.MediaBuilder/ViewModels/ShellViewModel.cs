@@ -21,37 +21,52 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private readonly EntraAuthenticationService _authService;
     private readonly OperatorApiClient _operatorApiClient;
     private readonly BootImageGenerationService _genService;
+    private readonly GitHubReleasesClient _gitHubReleasesClient;
     private readonly UsbSafetyValidationService _usbValidator;
     private readonly BootImageDownloadService _downloader;
     private readonly UsbPartitionProvisioningService _provisioner;
     private readonly BootImageDeploymentService _deployer;
     private readonly BootImageCacheService _cache;
+    private readonly UsbDeviceChangeWatcher? _deviceWatcher;
+    private readonly BootMediaCertificateCheckService? _certCheckService;
 
     private object? _currentContent;
     private ShellSection _currentSection;
     private bool _canNavigate = true;
     private INotifyPropertyChanged? _trackedContentViewModel;
     private Func<bool>? _isTrackedContentBusy;
+    /// <summary>
+    /// Whether an active boot media certificate is configured (T151, FR-050a). Starts true
+    /// (optimistic) so the nav item isn't spuriously disabled before the async check below
+    /// completes; refined to the real value shortly after construction.
+    /// </summary>
+    private bool _certificateConfigured = true;
 
     public ShellViewModel(
         EntraAuthenticationService authService,
         OperatorApiClient operatorApiClient,
         BootImageGenerationService genService,
+        GitHubReleasesClient gitHubReleasesClient,
         UsbSafetyValidationService usbValidator,
         BootImageDownloadService downloader,
         UsbPartitionProvisioningService provisioner,
         BootImageDeploymentService deployer,
         BootImageCacheService cache,
+        UsbDeviceChangeWatcher? deviceWatcher = null,
+        BootMediaCertificateCheckService? certCheckService = null,
         Func<bool>? isAdkInstalled = null)
     {
         _authService       = authService;
         _operatorApiClient = operatorApiClient;
         _genService        = genService;
+        _gitHubReleasesClient = gitHubReleasesClient;
         _usbValidator      = usbValidator;
         _downloader        = downloader;
         _provisioner       = provisioner;
         _deployer          = deployer;
         _cache             = cache;
+        _deviceWatcher     = deviceWatcher;
+        _certCheckService  = certCheckService;
 
         AdkAvailable    = (isAdkInstalled ?? BootImageGenerationService.IsAdkInstalled)();
         IsAdministrator = _authService.IsAdministrator;
@@ -61,6 +76,13 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         GoPrepareUsbCommand = new RelayCommand(_ => GoPrepareUsb(), _ => CanNavigate);
 
         GoHome();
+
+        // T151/FR-050a: only Administrators can ever reach Generate Boot Image, so the check
+        // is skipped entirely for other roles. Runs after GoHome() so navigation is never
+        // blocked waiting on a network round-trip; the Home tile/nav item simply refreshes
+        // live (fail-closed until confirmed) once the check resolves.
+        if (IsAdministrator && _certCheckService is not null)
+            _ = RefreshCertificateStatusAsync();
     }
 
     /// <summary>
@@ -78,13 +100,14 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsAdministrator { get; }
 
-    /// <summary>True when the "Generate Boot Image" nav item should be reachable at all — requires BOTH the ADK and the Administrator role.</summary>
-    public bool IsGenerateBootImageAvailable => AdkAvailable && IsAdministrator;
+    /// <summary>True when the "Generate Boot Image" nav item should be reachable at all — requires the ADK, the Administrator role, AND a configured boot media certificate (T151).</summary>
+    public bool IsGenerateBootImageAvailable => AdkAvailable && IsAdministrator && _certificateConfigured;
 
     /// <summary>Tooltip/reason shown when the Generate Boot Image nav item is disabled; role restriction takes precedence.</summary>
     public string? GenerateBootImageUnavailableReason =>
         !IsAdministrator ? "Generate Boot Image requires the Administrator role."
         : !AdkAvailable ? "Install the Windows ADK to unlock this section."
+        : !_certificateConfigured ? "Generate a boot media certificate in Portal Configuration before generating boot images."
         : null;
 
     /// <summary>The view currently hosted in the shell's content area.</summary>
@@ -167,17 +190,16 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// <summary>Navigates to Home. Public (not just via the command) so dev-mode tooling can jump here directly.</summary>
     public void GoHome()
     {
-        var view = new OperationSelectionView
-        {
-            DataContext = new OperationSelectionViewModel(
-                op =>
-                {
-                    if (op == "GenerateBootImage") GoGenerate();
-                    else if (op == "PrepareUSB") GoPrepareUsb();
-                },
-                isAdkInstalled: () => AdkAvailable,
-                isAdministrator: IsAdministrator),
-        };
+        var operationSelectionViewModel = new OperationSelectionViewModel(
+            op =>
+            {
+                if (op == "GenerateBootImage") GoGenerate();
+                else if (op == "PrepareUSB") GoPrepareUsb();
+            },
+            isAdkInstalled: () => AdkAvailable,
+            isAdministrator: IsAdministrator,
+            isCertificateConfigured: _certificateConfigured);
+        var view = new OperationSelectionView { DataContext = operationSelectionViewModel };
         CurrentContent = view;
         CurrentSection = ShellSection.Home;
         StopTrackingBusyState();
@@ -190,7 +212,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// </summary>
     public void GoGenerate()
     {
-        var viewModel = new GenerateBootImageViewModel(_genService, _authService, GoHome);
+        var viewModel = new GenerateBootImageViewModel(_genService, _authService, _gitHubReleasesClient, GoHome);
         CurrentContent = new GenerateBootImageView { DataContext = viewModel };
         CurrentSection = ShellSection.Generate;
         TrackBusyState(viewModel, () => viewModel.IsGenerating);
@@ -200,10 +222,45 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     public void GoPrepareUsb()
     {
         var viewModel = new PrepareStorageDeviceViewModel(
-            _operatorApiClient, _authService, _usbValidator, _downloader, _provisioner, _deployer, _cache, GoHome);
+            _operatorApiClient, _authService, _usbValidator, _downloader, _provisioner, _deployer, _cache, GoHome, _deviceWatcher);
         CurrentContent = new PrepareStorageDeviceView { DataContext = viewModel };
         CurrentSection = ShellSection.PrepareUsb;
         TrackBusyState(viewModel, () => viewModel.IsBusy);
+    }
+
+    /// <summary>
+    /// Checks whether an active boot media certificate is configured (T151, FR-050a) and
+    /// refreshes both the shell-level nav-item gate and, if Home is still the currently
+    /// displayed section, the live <see cref="OperationSelectionViewModel"/> so the tile
+    /// updates without requiring a re-navigation.
+    /// </summary>
+    private async Task RefreshCertificateStatusAsync()
+    {
+        var configured = false;
+        try
+        {
+            var token = await _authService.GetAccessTokenAsync();
+            if (token is not null)
+            {
+                _operatorApiClient.SetAccessToken(token);
+                configured = await _certCheckService!.IsCertificateConfiguredAsync();
+            }
+        }
+        catch
+        {
+            configured = false;
+        }
+
+        if (_certificateConfigured == configured)
+            return;
+
+        _certificateConfigured = configured;
+        OnPropertyChanged(nameof(IsGenerateBootImageAvailable));
+        OnPropertyChanged(nameof(GenerateBootImageUnavailableReason));
+        CommandManager.InvalidateRequerySuggested();
+
+        if (CurrentContent is OperationSelectionView { DataContext: OperationSelectionViewModel vm })
+            vm.SetCertificateConfigured(configured);
     }
 
     /// <summary>

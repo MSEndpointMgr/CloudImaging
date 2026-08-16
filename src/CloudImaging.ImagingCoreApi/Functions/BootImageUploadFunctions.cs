@@ -58,26 +58,13 @@ public sealed partial class BootImageUploadFunctions
         var blobName = $"uploads/{uploadId}/{version.Replace(' ', '-')}.wim";
 
         // Generate a SAS URL with Write permission for the client to upload directly to Blob Storage
-        var containerClient = _blobClient.GetBlobContainerClient(UploadContainer);
-        var blobClient = containerClient.GetBlobClient(blobName);
-
-        string uploadUrl;
-        if (blobClient.CanGenerateSasUri)
-        {
-            var builder = new Azure.Storage.Sas.BlobSasBuilder
-            {
-                BlobContainerName = UploadContainer,
-                BlobName = blobName,
-                Resource = "b",
-                ExpiresOn = DateTimeOffset.UtcNow.AddHours(4),
-            };
-            builder.SetPermissions(Azure.Storage.Sas.BlobSasPermissions.Create | Azure.Storage.Sas.BlobSasPermissions.Write);
-            uploadUrl = blobClient.GenerateSasUri(builder).ToString();
-        }
-        else
-        {
-            uploadUrl = blobClient.Uri.ToString();
-        }
+        var uploadUrl = await BlobSasUrlGenerator.GenerateAsync(
+            _blobClient,
+            UploadContainer,
+            blobName,
+            Azure.Storage.Sas.BlobSasPermissions.Create | Azure.Storage.Sas.BlobSasPermissions.Write,
+            TimeSpan.FromHours(4),
+            context.CancellationToken);
 
         LogUploadStarted(_logger, uploadId, version);
 

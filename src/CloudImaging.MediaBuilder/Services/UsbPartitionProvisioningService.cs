@@ -8,11 +8,18 @@ namespace CloudImaging.MediaBuilder.Services;
 /// Provisions a USB drive with two partitions for WinPE boot image deployment (T070, T071, FR-055).
 ///
 /// Partition layout:
-///   Part 1 (FAT32, ~500 MB, bootable): WinPE boot files
-///   Part 2 (NTFS, remainder):          Data partition (optional, unused by Cloud Imaging)
+///   Part 1 (FAT32, boot, minimum 2 GB):   WinPE boot files.
+///   Part 2 (NTFS, cache, minimum 20 GB):  Cloud Imaging Client OS image cache
+///                                         (see CloudImaging.Client's ImageCacheService, FR-009d).
 /// </summary>
 public sealed partial class UsbPartitionProvisioningService
 {
+    /// <summary>Boot partition size in MB — the FR-055 minimum is 2 GB (2048 MB).</summary>
+    public const int BootPartitionSizeMb = 2048;
+
+    /// <summary>Minimum cache partition size in bytes, per FR-055.</summary>
+    public const long MinimumCachePartitionBytes = 20L * 1024 * 1024 * 1024;
+
     private readonly ILogger<UsbPartitionProvisioningService> _logger;
 
     public UsbPartitionProvisioningService(ILogger<UsbPartitionProvisioningService> logger)
@@ -22,11 +29,29 @@ public sealed partial class UsbPartitionProvisioningService
     /// Provisions the USB disk at <paramref name="diskNumber"/> with the WinPE partition layout.
     /// <b>DESTRUCTIVE</b> — all existing data on the disk is erased.
     /// </summary>
+    /// <param name="diskNumber">Physical disk index to partition.</param>
+    /// <param name="diskSizeBytes">
+    /// Total disk capacity. Used to verify — before any destructive action is taken — that the
+    /// resulting cache partition will meet the <see cref="MinimumCachePartitionBytes"/> minimum
+    /// required by FR-055.
+    /// </param>
     public async Task ProvisionAsync(
         uint diskNumber,
+        long diskSizeBytes,
         Action<string>? onProgress = null,
         CancellationToken ct = default)
     {
+        var bootPartitionBytes = BootPartitionSizeMb * 1024L * 1024L;
+        var cachePartitionBytes = diskSizeBytes - bootPartitionBytes;
+        if (cachePartitionBytes < MinimumCachePartitionBytes)
+        {
+            throw new InvalidOperationException(
+                $"Selected USB device is too small: after the {BootPartitionSizeMb} MB boot partition, only " +
+                $"{cachePartitionBytes / (1024.0 * 1024 * 1024):0.0} GB would remain for the cache partition, " +
+                $"below the {MinimumCachePartitionBytes / (1024L * 1024 * 1024)} GB minimum required (FR-055). " +
+                "Use a larger USB device.");
+        }
+
         LogStarting(_logger, diskNumber);
         onProgress?.Invoke($"Partitioning disk {diskNumber}…");
 
@@ -78,12 +103,12 @@ public sealed partial class UsbPartitionProvisioningService
          select disk {diskNumber}
          clean
          convert mbr
-         create partition primary size=500
+         create partition primary size={BootPartitionSizeMb}
          format quick fs=fat32 label="BOOT"
          active
          assign
          create partition primary
-         format quick fs=ntfs label="DATA"
+         format quick fs=ntfs label="CACHE"
          assign
          exit
          """;

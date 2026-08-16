@@ -46,6 +46,12 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> DeleteImageAsync(Guid imageId, CancellationToken ct = default) =>
         _http.DeleteAsync($"/api/internal/images/{imageId}", ct);
 
+    public Task<HttpResponseMessage> StartOsImageUploadAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/images/upload/start", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> PublishOsImageUploadAsync(string uploadId, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/images/upload/{uploadId}/publish", payload, JsonOptions, ct);
+
     // ── Boot image operations ──────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetBootImagesAsync(CancellationToken ct = default) =>

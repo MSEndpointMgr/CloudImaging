@@ -1,3 +1,4 @@
+using System.IO;
 using System.Management;
 using Microsoft.Extensions.Logging;
 
@@ -46,8 +47,10 @@ public sealed partial class UsbSafetyValidationService
                 var sizeBytes = disk["Size"] is string sz && long.TryParse(sz, out var b) ? b : 0L;
                 var busType   = disk["InterfaceType"]?.ToString() ?? string.Empty;
                 var mediaType = disk["MediaType"]?.ToString()     ?? string.Empty;
-                var removable = mediaType.Contains("Removable", StringComparison.OrdinalIgnoreCase)
-                             || busType.Equals("USB", StringComparison.OrdinalIgnoreCase);
+                // FR-054 requires bus type = USB AND removable flag = true as two INDEPENDENT
+                // criteria — removable must come from the disk's own MediaType, not be inferred
+                // from bus type, or a USB-attached FIXED external drive would incorrectly pass.
+                var removable = mediaType.Contains("Removable", StringComparison.OrdinalIgnoreCase);
 
                 disks.Add(new DiskInfo(index, caption, sizeBytes, busType, removable, IsSystemDisk(index)));
             }
@@ -86,18 +89,42 @@ public sealed partial class UsbSafetyValidationService
         return new ValidationResult(true, null);
     }
 
+    /// <summary>
+    /// Determines whether physical disk <paramref name="diskNumber"/> hosts the running Windows
+    /// installation, by tracing the real partition → disk chain from the system drive letter
+    /// (e.g. <c>C:</c>) via WMI associator queries: <c>Win32_LogicalDisk</c> →
+    /// <c>Win32_LogicalDiskToPartition</c> → <c>Win32_DiskDriveToDiskPartition</c> →
+    /// <c>Win32_DiskDrive.Index</c>. This is authoritative regardless of disk numbering/order,
+    /// unlike assuming the system disk is always disk 0 (not true on multi-disk workstations).
+    /// </summary>
     private static bool IsSystemDisk(uint diskNumber)
     {
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT SystemName FROM Win32_LogicalDisk WHERE DriveType=3");
-            using var results  = searcher.Get();
-            // A more complete implementation would trace the partition → disk chain.
-            // For now, disk 0 is assumed to be the system disk as a safe default.
+            var systemDrive = Path.GetPathRoot(Environment.SystemDirectory)?.TrimEnd('\\') ?? "C:";
+
+            using var partitionSearcher = new ManagementObjectSearcher(
+                $"ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{systemDrive}'}} WHERE AssocClass = Win32_LogicalDiskToPartition");
+            foreach (ManagementObject partition in partitionSearcher.Get())
+            {
+                using var diskSearcher = new ManagementObjectSearcher(
+                    $"ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition["DeviceID"]}'}} WHERE AssocClass = Win32_DiskDriveToDiskPartition");
+                foreach (ManagementObject diskDrive in diskSearcher.Get())
+                {
+                    if (diskDrive["Index"] is not null
+                        && Convert.ToUInt32(diskDrive["Index"], System.Globalization.CultureInfo.InvariantCulture) == diskNumber)
+                        return true;
+                }
+            }
+            return false;
+        }
+        catch
+        {
+            // Fail-safe: if the partition→disk trace itself fails (unexpected WMI issue), fall
+            // back to the conservative disk-0 assumption rather than silently treating an
+            // unverified disk as safe to erase.
             return diskNumber == 0;
         }
-        catch { return diskNumber == 0; }
     }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Disk '{Caption}' rejected: {Reason}.")]

@@ -83,6 +83,12 @@
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                Margin="0,6,0,0"
                                Visibility="{Binding IsRestrictedByRole, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="⚠ Requires a boot media certificate (not configured)"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding IsBlockedByMissingCertificate, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Border>
 
@@ -179,6 +185,34 @@
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock TextWrapping="Wrap">
                         <Run Text="Administrator role required. " FontWeight="SemiBold" /><Run Text="Generating boot images is restricted to the Administrator role. Ask your Cloud Imaging administrator to grant it if you need access."
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- T151/FR-050a: boot media certificate banner, shown when no active certificate is configured -->
+        <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsBlockedByMissingCertificate, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="Warning24"
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="Boot media certificate required. " FontWeight="SemiBold" /><Run Text="Generate a boot media certificate in Portal Configuration before generating boot images."
                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </TextBlock>
                 </StackPanel>

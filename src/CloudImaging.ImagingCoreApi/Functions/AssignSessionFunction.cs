@@ -5,6 +5,7 @@ using Azure.Storage.Sas;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -99,7 +100,7 @@ public sealed partial class AssignSessionFunction
             config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
 
         // Generate SAS token URL for the OS image blob
-        var sasUrl = GenerateSasUrl(image.StoragePath, sasExpiry);
+        var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
 
         // Transition: SessionAssigned → SessionStarted
         var assigned = new DeviceSession
@@ -141,7 +142,7 @@ public sealed partial class AssignSessionFunction
         return response;
     }
 
-    private string GenerateSasUrl(string storagePath, TimeSpan expiry)
+    private async Task<string> GenerateSasUrlAsync(string storagePath, TimeSpan expiry, CancellationToken cancellationToken)
     {
         try
         {
@@ -155,26 +156,8 @@ public sealed partial class AssignSessionFunction
             var container = storagePath[..slash];
             var blobName = storagePath[(slash + 1)..];
 
-            var containerClient = _blobClient.GetBlobContainerClient(container);
-            var blobClient = containerClient.GetBlobClient(blobName);
-
-            if (!blobClient.CanGenerateSasUri)
-            {
-                // Managed identity credentials — use delegation key approach is preferred
-                // For now return the blob URI; SAS generation requires user delegation key
-                return blobClient.Uri.ToString();
-            }
-
-            var sasBuilder = new BlobSasBuilder
-            {
-                BlobContainerName = container,
-                BlobName = blobName,
-                Resource = "b",
-                ExpiresOn = DateTimeOffset.UtcNow + expiry,
-            };
-            sasBuilder.SetPermissions(BlobSasPermissions.Read);
-
-            return blobClient.GenerateSasUri(sasBuilder).ToString();
+            return await BlobSasUrlGenerator.GenerateAsync(
+                _blobClient, container, blobName, BlobSasPermissions.Read, expiry, cancellationToken);
         }
         catch
         {

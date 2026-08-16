@@ -3,6 +3,7 @@ using System.Text.Json;
 using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -76,7 +77,7 @@ public sealed partial class RefreshSasTokenFunction
             var image = await _imageRepo.GetByIdAsync(session.AssignedOsImageId.Value, context.CancellationToken);
             if (image is not null)
             {
-                sasUrl = GenerateSasUrl(_blobClient, image.StoragePath, sasExpiry);
+                sasUrl = await GenerateSasUrlAsync(_blobClient, image.StoragePath, sasExpiry, context.CancellationToken);
             }
 
             var updated = new CloudImaging.Contracts.Models.DeviceSession
@@ -113,7 +114,7 @@ public sealed partial class RefreshSasTokenFunction
         return response;
     }
 
-    private static string GenerateSasUrl(BlobServiceClient blobClient, string storagePath, TimeSpan expiry)
+    private static async Task<string> GenerateSasUrlAsync(BlobServiceClient blobClient, string storagePath, TimeSpan expiry, CancellationToken cancellationToken)
     {
         var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
         if (slash < 0)
@@ -123,15 +124,8 @@ public sealed partial class RefreshSasTokenFunction
 
         var container = storagePath[..slash];
         var blobName = storagePath[(slash + 1)..];
-        var blobRef = blobClient.GetBlobContainerClient(container).GetBlobClient(blobName);
-        if (!blobRef.CanGenerateSasUri)
-        {
-            return blobRef.Uri.ToString();
-        }
-
-        var builder = new BlobSasBuilder { BlobContainerName = container, BlobName = blobName, Resource = "b", ExpiresOn = DateTimeOffset.UtcNow + expiry };
-        builder.SetPermissions(BlobSasPermissions.Read);
-        return blobRef.GenerateSasUri(builder).ToString();
+        return await BlobSasUrlGenerator.GenerateAsync(
+            blobClient, container, blobName, BlobSasPermissions.Read, expiry, cancellationToken);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "SAS token refreshed for session {SessionId}.")]

@@ -76,6 +76,33 @@ public sealed class PrepareStorageDeviceViewModelTests
         vm.ValidationMessage.Should().Be("System disk cannot be used.");
     }
 
+    // ── Support reference codes on failure (T160, FR-058) ─────────────────────
+
+    [Fact]
+    public async Task PrepareAsync_SurfacesSupportReferenceCode_OnFailure()
+    {
+        // No Entra sign-in is performed in this test, so GetAccessTokenAsync returns null
+        // and the workflow fails right after disk (re-)validation — i.e. during the DVI stage.
+        var vm = CreateViewModel();
+        vm.SelectedBootImage = CreateBootImage();
+        vm.SelectedDisk      = CreateValidDisk();
+        vm.ConfirmErase      = true;
+
+        vm.PrepareCommand.Execute(null);
+        await WaitUntilIdleAsync(vm);
+
+        vm.HasError.Should().BeTrue("preparation must fail without a signed-in Operator API session");
+        vm.ErrorMessage.Should().MatchRegex(@"CMB-PREPUSB-DVI-\d+",
+            "every Media Builder failure path must surface a support reference code (T160, FR-058)");
+    }
+
+    private static async Task WaitUntilIdleAsync(PrepareStorageDeviceViewModel vm)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (vm.IsBusy && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static PrepareStorageDeviceViewModel.BootImageChoice CreateBootImage() =>

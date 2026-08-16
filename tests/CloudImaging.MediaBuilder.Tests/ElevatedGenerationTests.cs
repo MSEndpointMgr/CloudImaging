@@ -9,6 +9,21 @@ using Xunit;
 namespace CloudImaging.MediaBuilder.Tests;
 
 /// <summary>
+/// Groups test classes that create real <c>%TEMP%\ci-elevated-*</c> IPC directories via
+/// <see cref="BootImageGenerationService.RunElevatedChildProcessAsync"/>. That method's
+/// <c>CleanupOrphanedIpcDirs</c> step unconditionally sweeps ALL such directories on every call
+/// (by design — see its doc comment), so tests in this collection must run sequentially rather
+/// than in xUnit's default cross-class parallelism, or one test's in-progress IPC directory can
+/// be deleted by another concurrently-running test.
+/// </summary>
+[CollectionDefinition(Name)]
+public sealed class ElevatedIpcDirTestGroup
+{
+    public const string Name = "Elevated IPC directory";
+}
+
+[Collection(ElevatedIpcDirTestGroup.Name)]
+/// <summary>
 /// Tests for the DISM-elevation-aware boot image generation path (FR-051).
 ///
 /// DISM image mounting requires Administrator privileges, but the main Media Builder

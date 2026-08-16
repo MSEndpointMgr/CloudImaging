@@ -72,6 +72,7 @@ public sealed partial class BootImageGenerationService
 
     private readonly ILogger<BootImageGenerationService> _logger;
     private readonly OperatorApiClient? _operatorApiClient;
+    private readonly BrandingLogoEmbedService? _brandingLogoEmbedService;
     private readonly Func<bool> _isElevated;
     private readonly Func<string, string, System.Diagnostics.Process> _startElevatedProcess;
 
@@ -94,28 +95,47 @@ public sealed partial class BootImageGenerationService
     public event EventHandler<string>? LogHeartbeat;
 
     /// <param name="operatorApiClient">
-    /// Optional. When provided, the service will attempt to retrieve the active boot
-    /// media certificate PFX from the Operator API and embed it in the WIM (T173, FR-070).
-    /// When null, pfxBytes must be supplied by the caller or cert embedding is skipped.
+    /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the active
+    /// boot media certificate PFX from the Operator API before generation starts, and
+    /// generation FAILS if none can be retrieved (T173, FR-070) — the produced boot media
+    /// would otherwise be unable to authenticate to the Device Gateway API. When null,
+    /// pfxBytes must be supplied by the caller or no certificate is embedded (test/dev seam).
+    /// </param>
+    /// <param name="brandingLogoEmbedService">
+    /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the
+    /// portal-configured branding logo before generation starts and embed it alongside the
+    /// Client (FR-002a, FR-051). Unlike the certificate, a missing/failed logo is never fatal —
+    /// the Client falls back to its default logo when none is embedded.
     /// </param>
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
     /// <param name="startElevatedProcessOverride">Test seam. Defaults to a real "runas"-elevated <see cref="System.Diagnostics.Process"/> launch.</param>
     public BootImageGenerationService(
         ILogger<BootImageGenerationService> logger,
         OperatorApiClient? operatorApiClient = null,
+        BrandingLogoEmbedService? brandingLogoEmbedService = null,
         Func<bool>? isElevatedOverride = null,
         Func<string, string, System.Diagnostics.Process>? startElevatedProcessOverride = null)
     {
-        _logger                = logger;
-        _operatorApiClient     = operatorApiClient;
-        _isElevated            = isElevatedOverride ?? IsElevated;
-        _startElevatedProcess  = startElevatedProcessOverride ?? StartElevatedProcess;
+        _logger                    = logger;
+        _operatorApiClient         = operatorApiClient;
+        _brandingLogoEmbedService  = brandingLogoEmbedService;
+        _isElevated                = isElevatedOverride ?? IsElevated;
+        _startElevatedProcess      = startElevatedProcessOverride ?? StartElevatedProcess;
     }
+
+    /// <summary>
+    /// Sets the Entra ID Bearer token used for the Operator API calls this service makes
+    /// directly (boot media certificate retrieval, branding logo retrieval, Device Gateway
+    /// endpoint resolution). No-op when no <see cref="OperatorApiClient"/> was provided to this
+    /// instance. Callers should set this (from <see cref="EntraAuthenticationService"/>) before
+    /// calling <see cref="GenerateElevatedAsync"/>.
+    /// </summary>
+    public void SetOperatorApiAccessToken(string token) => _operatorApiClient?.SetAccessToken(token);
 
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     private sealed record ElevatedGenerationParams(
-        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath);
+        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath);
 
     private sealed record ElevatedGenerationResult(
         bool Success, string? WimPath, string? Sha256Hash, string? Error);
@@ -141,14 +161,60 @@ public sealed partial class BootImageGenerationService
         string? driverRootPath = null,
         CancellationToken ct = default)
     {
-        if (_isElevated())
-            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, ct);
+        // Resolve the boot media certificate and branding logo HERE, in this process, BEFORE
+        // branching on elevation. The elevated worker process (see RunElevatedWorkerAsync)
+        // constructs its own BootImageGenerationService with no OperatorApiClient of its own —
+        // if either of these were left for GenerateAsync to fetch lazily, the elevated-relaunch
+        // path (the one actually used on every non-Administrator run) would silently never
+        // retrieve them. The resolved bytes are threaded through to the elevated worker via the
+        // same file-based IPC used for everything else (see RunElevatedChildProcessAsync).
+        if (pfxBytes is null && _operatorApiClient is not null)
+            pfxBytes = await ResolveBootMediaCertificateAsync(ct);
 
-        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, ct);
+        byte[]? logoBytes = _brandingLogoEmbedService is not null
+            ? await _brandingLogoEmbedService.TryDownloadLogoAsync(ct)
+            : null;
+
+        if (_isElevated())
+            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, logoBytes, ct);
+
+        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, outputDirectory, driverRootPath, ct);
+    }
+
+    /// <summary>
+    /// Retrieves the active boot media certificate PFX from the Operator API (T173, FR-070).
+    /// Called from <see cref="GenerateElevatedAsync"/> — before any elevation relaunch — so the
+    /// bytes can be threaded through IPC to the elevated worker. Boot image generation MUST NOT
+    /// proceed without an active certificate: the produced media would be unable to complete the
+    /// mTLS handshake with the Device Gateway API and would be non-functional, so a retrieval
+    /// failure here (network error, no active certificate configured, empty payload) is a hard
+    /// failure, not a warning.
+    /// </summary>
+    private async Task<byte[]> ResolveBootMediaCertificateAsync(CancellationToken ct)
+    {
+        ReportProgress("Retrieving boot media certificate", 8);
+        try
+        {
+            var pfx = await _operatorApiClient!.GetBootMediaCertPfxAsync(ct);
+            if (pfx is not { Length: > 0 })
+                throw new InvalidOperationException("The Operator API returned an empty boot media certificate.");
+
+            LogCertRetrieved(_logger);
+            return pfx;
+        }
+        catch (Exception ex)
+        {
+            LogCertRetrieveFailed(_logger, ex);
+            throw new InvalidOperationException(
+                "No active boot media certificate is configured in the Cloud Imaging Portal. " +
+                "Boot image generation cannot continue: the produced media would be unable to " +
+                "authenticate to the Device Gateway API. Configure an active boot media certificate " +
+                "in the Cloud Imaging Portal, then try again.", ex);
+        }
     }
 
     private async Task<GenerationResult> RunElevatedChildProcessAsync(
-        string clientBinariesPath, byte[]? pfxBytes, string outputDirectory, string? driverRootPath, CancellationToken ct)
+        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string outputDirectory, string? driverRootPath, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
@@ -173,7 +239,14 @@ public sealed partial class BootImageGenerationService
                 await File.WriteAllBytesAsync(pfxFilePath, pfxBytes, ct);
             }
 
-            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, pfxFilePath);
+            string? logoFilePath = null;
+            if (logoBytes is { Length: > 0 })
+            {
+                logoFilePath = Path.Combine(ipcDir, "logo.png");
+                await File.WriteAllBytesAsync(logoFilePath, logoBytes, ct);
+            }
+
+            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, pfxFilePath, logoFilePath);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -331,6 +404,7 @@ public sealed partial class BootImageGenerationService
                 ?? throw new InvalidOperationException("Could not parse generation parameters.");
 
             byte[]? pfxBytes = p.PfxFilePath is not null ? await File.ReadAllBytesAsync(p.PfxFilePath) : null;
+            byte[]? logoBytes = p.LogoFilePath is not null ? await File.ReadAllBytesAsync(p.LogoFilePath) : null;
 
             var svc = new BootImageGenerationService(loggerFactory.CreateLogger<BootImageGenerationService>());
 
@@ -349,7 +423,7 @@ public sealed partial class BootImageGenerationService
             svc.LogMessage      += (_, line) => Append($"L\t{line}");
             svc.LogHeartbeat    += (_, line) => Append($"H\t{line}");
 
-            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, cts.Token);
+            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, logoBytes, cts.Token);
 
             await File.WriteAllTextAsync(resultFile,
                 JsonSerializer.Serialize(new ElevatedGenerationResult(true, result.WimPath, result.Sha256Hash, null)));
@@ -417,9 +491,10 @@ public sealed partial class BootImageGenerationService
     }
 
     /// <summary>
-    /// Generates a WinPE boot image.
-    /// When <paramref name="pfxBytes"/> is null and <see cref="_operatorApiClient"/> is set,
-    /// the service fetches the active cert PFX from the Operator API (T173, FR-070).
+    /// Generates a WinPE boot image. <paramref name="pfxBytes"/> and <paramref name="logoBytes"/>
+    /// must already be resolved by the caller (see <see cref="GenerateElevatedAsync"/>, which
+    /// resolves both from the Operator API before elevation) — this method only embeds whatever
+    /// it is given and performs no Operator API calls of its own.
     /// </summary>
     /// <param name="clientBinariesPath">Folder containing the Cloud Imaging Client binaries.</param>
     /// <param name="pfxBytes">PFX bytes to embed as <c>certificates\bootmedia.pfx</c> (FR-070).</param>
@@ -429,12 +504,14 @@ public sealed partial class BootImageGenerationService
     /// <c>.inf</c> package beneath it is recursively injected into the WIM (FR-051c).
     /// When null/empty, no driver injection is performed.
     /// </param>
+    /// <param name="logoBytes">Branding logo bytes to embed at <c>branding\logo.png</c> (FR-002a). Optional — a missing logo is never fatal.</param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<GenerationResult> GenerateAsync(
         string clientBinariesPath,
         byte[]? pfxBytes,
         string outputDirectory,
         string? driverRootPath = null,
+        byte[]? logoBytes = null,
         CancellationToken ct = default)
     {
         // Sweep up whatever a previous run left behind if the process was killed/crashed
@@ -458,21 +535,8 @@ public sealed partial class BootImageGenerationService
                     "Windows ADK with WinPE add-on is not installed. " +
                     "Download both from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
 
-            // Retrieve the active boot media certificate PFX from Operator API (T173, FR-070)
-            if (pfxBytes is null && _operatorApiClient is not null)
-            {
-                ReportProgress("Retrieving boot media certificate", 8);
-                try
-                {
-                    pfxBytes = await _operatorApiClient.GetBootMediaCertPfxAsync(ct);
-                    LogCertRetrieved(_logger);
-                }
-                catch (Exception ex)
-                {
-                    LogCertRetrieveFailed(_logger, ex);
-                    // Non-fatal — generation continues without cert embedding
-                }
-            }
+            // The boot media certificate is resolved by GenerateElevatedAsync before this method
+            // runs (possibly in a separate elevated process) — see ResolveBootMediaCertificateAsync.
 
             ReportProgress("Copying WinPE base files", 15);
             EnsureOscdimgBootFilesPresent(adkPath);
@@ -501,6 +565,16 @@ public sealed partial class BootImageGenerationService
                 var clientDestDir = Path.Combine(mountDir, "CloudImaging");
                 Directory.CreateDirectory(clientDestDir);
                 CopyDirectory(clientBinariesPath, clientDestDir, ct);
+
+                // Embed the portal-configured branding logo, if one was resolved — otherwise the
+                // Client falls back to its default logo at runtime (FR-002a).
+                if (logoBytes is { Length: > 0 })
+                {
+                    var logoDest = Path.Combine(clientDestDir, BrandingLogoEmbedService.LogoRelativePath);
+                    Directory.CreateDirectory(Path.GetDirectoryName(logoDest)!);
+                    await File.WriteAllBytesAsync(logoDest, logoBytes, ct);
+                    LogBrandingLogoEmbedded(_logger, logoBytes.Length);
+                }
 
                 // Resolve the live Device Gateway URL from Operator API and stamp it into the
                 // Client's appsettings.json — every boot image build picks up the current URL,
@@ -1075,8 +1149,11 @@ public sealed partial class BootImageGenerationService
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot media certificate PFX retrieved for embedding.")]
     private static partial void LogCertRetrieved(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media cert retrieval failed — generation continues without cert.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media certificate retrieval failed — generation cannot continue.")]
     private static partial void LogCertRetrieveFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Branding logo embedded ({Bytes} bytes).")]
+    private static partial void LogBrandingLogoEmbedded(ILogger logger, int bytes);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Device Gateway URL resolved from Operator API and stamped into Client appsettings.json: {BaseUrl}.")]
     private static partial void LogDeviceGatewayUrlStamped(ILogger logger, string baseUrl);

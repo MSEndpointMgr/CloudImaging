@@ -6,6 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -95,7 +96,7 @@ public sealed partial class BrandingFunctions
             return notFound;
         }
 
-        var sasUrl = GenerateSasUrl(branding.LogoBlobPath, TimeSpan.FromMinutes(LogoSasMinutes));
+        var sasUrl = await GenerateSasUrlAsync(branding.LogoBlobPath, TimeSpan.FromMinutes(LogoSasMinutes), context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(
@@ -324,7 +325,7 @@ public sealed partial class BrandingFunctions
         return response;
     }
 
-    private string GenerateSasUrl(string storagePath, TimeSpan expiry)
+    private async Task<string> GenerateSasUrlAsync(string storagePath, TimeSpan expiry, CancellationToken cancellationToken)
     {
         var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
         if (slash < 0)
@@ -334,15 +335,8 @@ public sealed partial class BrandingFunctions
 
         var container = storagePath[..slash];
         var blobName = storagePath[(slash + 1)..];
-        var blobClient = _blobClient.GetBlobContainerClient(container).GetBlobClient(blobName);
-        if (!blobClient.CanGenerateSasUri)
-        {
-            return blobClient.Uri.ToString();
-        }
-
-        var builder = new BlobSasBuilder { BlobContainerName = container, BlobName = blobName, Resource = "b", ExpiresOn = DateTimeOffset.UtcNow + expiry };
-        builder.SetPermissions(BlobSasPermissions.Read);
-        return blobClient.GenerateSasUri(builder).ToString();
+        return await BlobSasUrlGenerator.GenerateAsync(
+            _blobClient, container, blobName, BlobSasPermissions.Read, expiry, cancellationToken);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Branding configuration updated.")]

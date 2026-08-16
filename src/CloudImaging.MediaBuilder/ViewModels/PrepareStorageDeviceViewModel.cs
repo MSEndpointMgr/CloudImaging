@@ -3,7 +3,9 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using System.Windows.Input;
+using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 
 namespace CloudImaging.MediaBuilder.ViewModels;
@@ -29,6 +31,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private readonly UsbPartitionProvisioningService _provisioner;
     private readonly BootImageDeploymentService _deployer;
     private readonly BootImageCacheService _cache;
+    private readonly UsbDeviceChangeWatcher? _deviceWatcher;
     private readonly Action _navigateBack;
 
     private BootImageChoice? _selectedBootImage;
@@ -43,6 +46,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private string _errorTitle = "Preparation failed";
     private bool _wasCancelled;
     private CancellationTokenSource? _cts;
+    /// <summary>
+    /// Which stage of the destructive workflow is currently executing, so a failure can be
+    /// attributed to the right support-reference stage code (T160/FR-058): DVI (disk
+    /// validation), BID (boot image download), PRT (partitioning), BCF (boot config/deploy).
+    /// </summary>
+    private string _currentStage = "DVI";
 
     public PrepareStorageDeviceViewModel(
         OperatorApiClient operatorApi,
@@ -52,19 +61,30 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         UsbPartitionProvisioningService provisioner,
         BootImageDeploymentService deployer,
         BootImageCacheService cache,
-        Action navigateBack)
+        Action navigateBack,
+        UsbDeviceChangeWatcher? deviceWatcher = null)
     {
-        _operatorApi  = operatorApi;
-        _authService  = authService;
-        _validator    = validator;
-        _downloader   = downloader;
-        _provisioner  = provisioner;
-        _deployer     = deployer;
-        _cache        = cache;
-        _navigateBack = navigateBack;
+        _operatorApi   = operatorApi;
+        _authService   = authService;
+        _validator     = validator;
+        _downloader    = downloader;
+        _provisioner   = provisioner;
+        _deployer      = deployer;
+        _cache         = cache;
+        _navigateBack  = navigateBack;
+        _deviceWatcher = deviceWatcher;
 
         _downloader.ProgressChanged += OnDownloadProgress;
         _deployer.ProgressChanged   += OnDeployProgress;
+
+        // T071/FR-054: auto-refresh the disk list when a USB device is plugged/unplugged,
+        // instead of relying solely on the manual Refresh button. Never disrupts an
+        // in-progress destructive operation (guarded by IsBusy in OnDeviceChanged).
+        if (_deviceWatcher is not null)
+        {
+            _deviceWatcher.DeviceChanged += OnDeviceChanged;
+            _deviceWatcher.Start();
+        }
 
         RefreshCommand = new RelayCommand(async _ => await RefreshAsync(), _ => !IsBusy);
         PrepareCommand = new RelayCommand(async _ => await PrepareAsync(), _ => CanPrepare);
@@ -265,6 +285,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         try
         {
             // Re-validate defensively right before the destructive operation (FR-054).
+            _currentStage = "DVI";
             var validation = _validator.Validate(SelectedDisk.Info);
             if (!validation.Valid)
                 throw new InvalidOperationException(validation.FailureReason ?? "Selected disk is not eligible.");
@@ -275,6 +296,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
             DiskSpaceGuard.EnsureFreeSpace(wimPath, SelectedBootImage.Dto.SizeBytes, "download the boot image");
 
+            _currentStage = "BID";
             SetProgress("Checking local cache…", 8);
             var cachedWimPath = await _cache.TryGetCachedWimAsync(SelectedBootImage.Dto.Sha256Hash, ct);
 
@@ -295,13 +317,15 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 await _cache.SaveAsync(wimPath, SelectedBootImage.Id, SelectedBootImage.Dto.Version, sas.Sha256Hash, ct);
             }
 
+            _currentStage = "PRT";
             SetProgress("Partitioning USB device…", 60);
-            await _provisioner.ProvisionAsync(SelectedDisk.DiskNumber, msg => ProgressMessage = msg, ct);
+            await _provisioner.ProvisionAsync(SelectedDisk.DiskNumber, SelectedDisk.Info.SizeBytes, msg => ProgressMessage = msg, ct);
 
             var bootDrive = _provisioner.FindBootVolumeDriveLetter()
                 ?? throw new InvalidOperationException(
                     "Could not locate the BOOT partition after provisioning the USB device.");
 
+            _currentStage = "BCF";
             SetProgress("Deploying boot image to USB…", 70);
             await _deployer.DeployAsync(wimPath, bootDrive, ct);
 
@@ -318,7 +342,13 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         catch (Exception ex)
         {
             ErrorTitle   = "Preparation failed";
-            ErrorMessage = ex.Message;
+            // T160/FR-058: every failure path surfaces a support reference code so a technician
+            // can quote it to support without needing log access. BootImageDownloadService
+            // already embeds its own BID code on retry exhaustion — avoid double-wrapping that.
+            ErrorMessage = ex.Message.Contains("CMB-", StringComparison.Ordinal)
+                ? ex.Message
+                : string.Create(CultureInfo.InvariantCulture,
+                    $"{ex.Message} (Support reference: {SupportReferenceCode.ForMediaBuilder("PREPUSB", _currentStage)})");
         }
         finally
         {
@@ -358,6 +388,31 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         ProgressMessage = e.Message;
     }
 
+    /// <summary>
+    /// Handles a debounced USB plug/unplug notification from <see cref="UsbDeviceChangeWatcher"/>
+    /// (T071, FR-054). Fires on a background thread, so refresh work is marshaled onto the UI
+    /// thread. Never runs while a destructive Prepare operation is in progress — re-enumerating
+    /// disks mid-operation could otherwise change <see cref="SelectedDisk"/> out from under it.
+    /// The manual Refresh button remains available as a fallback regardless of this.
+    /// </summary>
+    private void OnDeviceChanged(object? sender, EventArgs e) => OnUi(() =>
+    {
+        if (IsBusy)
+            return;
+
+        try { LoadDisks(); } catch { /* best-effort; manual Refresh remains available */ }
+    });
+
+    /// <summary>Marshals an action onto the UI thread (WMI events arrive on a worker thread).</summary>
+    private static void OnUi(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+            action();
+        else
+            dispatcher.Invoke(action);
+    }
+
     private void SetProgress(string message, int percent)
     {
         ProgressMessage = message;
@@ -382,7 +437,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
     /// <summary>Disposes the in-flight cancellation token source, if any (owned by this view model).</summary>
-    public void Dispose() => _cts?.Dispose();
+    public void Dispose()
+    {
+        _cts?.Dispose();
+        if (_deviceWatcher is not null)
+            _deviceWatcher.DeviceChanged -= OnDeviceChanged;
+    }
 
     /// <summary>A selectable disk plus its pre-computed eligibility (FR-054).</summary>
     public sealed record DiskChoice(

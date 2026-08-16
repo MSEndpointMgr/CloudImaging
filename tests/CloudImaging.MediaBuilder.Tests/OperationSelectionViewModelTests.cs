@@ -102,4 +102,65 @@ public sealed class OperationSelectionViewModelTests
 
         vm.CanContinue.Should().BeTrue("Prepare USB Device does not depend on the Administrator role");
     }
+
+    // ── Boot media certificate gating (T151, FR-050a) ─────────────────────────
+
+    [Fact]
+    public void GenerateBootImage_IsBlocked_AndCertWarned_WhenCertificateMissing()
+    {
+        var vm = new OperationSelectionViewModel(
+            _ => { }, isAdkInstalled: () => true, isAdministrator: true, isCertificateConfigured: false)
+        {
+            SelectedOperation = "GenerateBootImage",
+        };
+
+        vm.IsBlockedByMissingCertificate.Should().BeTrue("no active boot media certificate is configured");
+        vm.ShowCertificateWarning.Should().BeTrue("the missing certificate must be surfaced on the prior screen");
+        vm.IsGenerateBootImageAvailable.Should().BeFalse();
+        vm.CanContinue.Should().BeFalse("navigation to Generate Boot Image is blocked without a configured certificate");
+    }
+
+    [Fact]
+    public void GenerateBootImage_IsAllowed_WhenAdkPresent_Administrator_AndCertificateConfigured()
+    {
+        var vm = new OperationSelectionViewModel(
+            _ => { }, isAdkInstalled: () => true, isAdministrator: true, isCertificateConfigured: true)
+        {
+            SelectedOperation = "GenerateBootImage",
+        };
+
+        vm.IsBlockedByMissingCertificate.Should().BeFalse();
+        vm.IsGenerateBootImageAvailable.Should().BeTrue();
+        vm.CanContinue.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SetCertificateConfigured_RefreshesAvailability_AfterAsyncCheckResolves()
+    {
+        // Mirrors real usage: the cert check completes asynchronously after the screen is
+        // already showing (fail-closed until confirmed present).
+        var vm = new OperationSelectionViewModel(
+            _ => { }, isAdkInstalled: () => true, isAdministrator: true, isCertificateConfigured: false)
+        {
+            SelectedOperation = "GenerateBootImage",
+        };
+        vm.IsGenerateBootImageAvailable.Should().BeFalse();
+
+        vm.SetCertificateConfigured(true);
+
+        vm.IsGenerateBootImageAvailable.Should().BeTrue("the tile must unlock once the certificate check confirms one is configured");
+        vm.ShowCertificateWarning.Should().BeFalse();
+    }
+
+    [Fact]
+    public void PrepareUsb_IsAlwaysAvailable_EvenWhenCertificateMissing()
+    {
+        var vm = new OperationSelectionViewModel(
+            _ => { }, isAdkInstalled: () => true, isAdministrator: true, isCertificateConfigured: false)
+        {
+            SelectedOperation = "PrepareUSB",
+        };
+
+        vm.CanContinue.Should().BeTrue("Prepare USB Device does not depend on the boot media certificate");
+    }
 }

@@ -25,6 +25,23 @@ router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request,
   } catch (err) { next(err); }
 });
 
+// ── Staged, direct-to-blob upload (large WIM/ESD files) ───────────────────────
+// Browser stages blocks directly to Blob Storage via the SAS URL returned from `start`;
+// only small JSON metadata passes through this server (mirrors boot-images upload/*).
+
+router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await operatorApiClient.startOsImageUpload(req.body as unknown));
+  } catch (err) { next(err); }
+});
+
+router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const published = await operatorApiClient.publishOsImageUpload(req.params['uploadId'] as string, req.body as unknown);
+    res.status(201).json(published);
+  } catch (err) { next(err); }
+});
+
 // ── PATCH /api/images/:id — update metadata (Administrator) ───────────────────
 
 router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
