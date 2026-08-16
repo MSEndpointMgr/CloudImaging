@@ -7,41 +7,79 @@
         Select a published boot image + an eligible USB disk, confirm the destructive
         action, then download → partition → deploy. Only USB/removable/non-system disks
         are eligible; ineligible disks are shown with the blocking reason.
+
+        Layout mirrors GenerateBootImageView's configuration screen: header and the pinned
+        action footer are Auto rows outside the ScrollViewer (so only the cards themselves
+        scroll and the primary action always stays visible at the bottom of the window instead
+        of trailing right after the content with empty space left below it), cards stretch to
+        the full available width (no MaxWidth), and the footer is the same bordered
+        action-panel + right-aligned button pattern used throughout the app.
     -->
-    <ScrollViewer Margin="40,32" VerticalScrollBarVisibility="Auto">
-        <StackPanel MaxWidth="700">
+    <Grid Margin="40,32">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-            <TextBlock Text="Prepare USB Storage Device"
-                       Style="{StaticResource TitleTextBlockStyle}"
-                       Margin="0,0,0,24" />
+        <TextBlock Grid.Row="0" Text="Prepare USB Storage Device"
+                   Style="{StaticResource TitleTextBlockStyle}"
+                   Margin="0,0,0,24" />
 
-            <!-- Source: boot image + disk -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel>
+
+            <!-- Published boot image -->
             <ui:Card Margin="0,0,0,16" Padding="20">
-                <StackPanel>
-                    <Grid Margin="0,0,0,12">
-                        <TextBlock Text="Source"
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                        <TextBlock Text="Published Boot Image"
                                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                                   VerticalAlignment="Center" />
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Boot images published from the Cloud Imaging Portal (Boot Images). The latest published version is selected automatically. Pick an older one here to roll back to it, or click Refresh to re-scan boot images and USB devices."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+
+                        <ComboBox ItemsSource="{Binding BootImages}"
+                                  SelectedItem="{Binding SelectedBootImage}"
+                                  DisplayMemberPath="Label"
+                                  IsEnabled="{Binding HasBootImages}"
+                                  HorizontalAlignment="Stretch" />
+                    </StackPanel>
+
+                    <Grid Grid.Column="1" VerticalAlignment="Stretch">
                         <ui:Button Content="Refresh"
+                                   Style="{StaticResource AppButtonStyle}"
+                                   VerticalAlignment="Center"
                                    HorizontalAlignment="Right"
                                    Command="{Binding RefreshCommand}" />
                     </Grid>
+                </Grid>
+            </ui:Card>
 
-                    <TextBlock Text="Published boot image"
-                               Style="{StaticResource CaptionTextBlockStyle}"
+            <!-- USB device -->
+            <ui:Card Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="USB Device"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
                                Margin="0,0,0,4" />
-                    <ComboBox ItemsSource="{Binding BootImages}"
-                              SelectedItem="{Binding SelectedBootImage}"
-                              DisplayMemberPath="Label"
-                              HorizontalAlignment="Stretch"
-                              Margin="0,0,0,12" />
+                    <TextBlock Text="Only removable USB disks that aren't the machine's system disk are eligible. Internal and fixed disks are hidden from this list entirely to prevent an accidental wipe. If the disk you expect isn't listed, or is listed but blocked below, reconnect it and click Refresh above."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
 
-                    <TextBlock Text="USB device"
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Margin="0,0,0,4" />
                     <ComboBox ItemsSource="{Binding Disks}"
                               SelectedItem="{Binding SelectedDisk}"
                               DisplayMemberPath="Label"
+                              IsEnabled="{Binding HasDisks}"
                               HorizontalAlignment="Stretch" />
 
                     <ui:InfoBar Title="Disk not eligible"
@@ -54,32 +92,21 @@
             </ui:Card>
 
             <!-- Destructive confirmation -->
-            <ui:Card Margin="0,0,0,16" Padding="20">
-                <StackPanel>
-                    <TextBlock Text="Confirm"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,8" />
-                    <CheckBox IsChecked="{Binding ConfirmErase}"
-                              Content="I understand that ALL data on the selected USB device will be permanently erased." />
-                </StackPanel>
+            <ui:Card Margin="0,0,0,16" Padding="16,14">
+                <CheckBox IsChecked="{Binding ConfirmErase}"
+                          Content="I understand that ALL data on the selected USB device will be permanently erased." />
             </ui:Card>
 
             <!-- Progress -->
-            <StackPanel Margin="0,0,0,16"
-                        Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
-                <TextBlock Text="{Binding ProgressMessage}"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Margin="0,0,0,8" />
-                <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" />
-            </StackPanel>
-
-            <!-- Status -->
-            <TextBlock Text="{Binding StatusMessage}"
-                       Style="{StaticResource CaptionTextBlockStyle}"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       TextWrapping="Wrap"
-                       Margin="0,0,0,12" />
+            <ui:Card Margin="0,0,0,16" Padding="20"
+                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="{Binding ProgressMessage}"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,8" />
+                    <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="4" />
+                </StackPanel>
+            </ui:Card>
 
             <!-- Success -->
             <ui:InfoBar Title="USB device prepared"
@@ -90,24 +117,88 @@
                         Margin="0,0,0,16" />
 
             <!-- Error -->
-            <ui:InfoBar Title="Preparation failed"
+            <ui:InfoBar Title="{Binding ErrorTitle}"
                         Message="{Binding ErrorMessage}"
                         Severity="Error"
                         IsOpen="{Binding HasError}"
                         IsClosable="False"
                         Margin="0,0,0,16" />
 
-            <!-- Actions -->
-            <StackPanel Orientation="Horizontal">
-                <ui:Button Content="Prepare USB Device"
-                           Appearance="Primary"
-                           Width="220" Height="44" FontSize="15"
-                           Command="{Binding PrepareCommand}"
-                           IsEnabled="{Binding CanPrepare}" />
-                <ui:Button Content="Back"
-                           Margin="12,0,0,0" Height="44"
-                           Command="{Binding BackCommand}" />
-            </StackPanel>
+            <!-- Cancelled -->
+            <ui:InfoBar Title="Preparation cancelled"
+                        Message="USB device preparation was cancelled and temporary files were cleaned up."
+                        Severity="Warning"
+                        IsOpen="{Binding WasCancelled}"
+                        IsClosable="False"
+                        Margin="0,0,0,16" />
+
         </StackPanel>
-    </ScrollViewer>
+        </ScrollViewer>
+
+        <!--
+            Pinned footer — same pattern as GenerateBootImageView's action panel: its own
+            background/border so it reads as a fixed action panel rather than more scrollable
+            content, a short caption in the Auto-remaining column explaining what the button
+            does, and the button right-aligned in its own column. Holds Cancel while a
+            preparation is in progress, Prepare USB Device otherwise — fields stay editable
+            after a failure/cancellation, so the same button simply retries when clicked again,
+            with no separate "Back"/"Retry" pair needed (matching the Generate view's
+            configuration screen, which likewise relies on the sidebar nav rather than an
+            in-page Back button before an operation has started).
+        -->
+        <Border Grid.Row="2" Margin="0,16,0,0" Padding="20,16"
+                Background="{DynamicResource ControlFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1" CornerRadius="6">
+            <Grid>
+                <Grid Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Cancel stops the preparation and cleans up the downloaded boot image. Data already written to the USB device may be left incomplete."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Margin="0,0,16,0" />
+
+                    <ui:Button Grid.Column="1"
+                               Appearance="Secondary"
+                               Style="{StaticResource AppButtonStyle}"
+                               Command="{Binding CancelCommand}"
+                               HorizontalAlignment="Right">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Dismiss24" Margin="0,0,6,0" />
+                            <TextBlock Text="Cancel" />
+                        </StackPanel>
+                    </ui:Button>
+                </Grid>
+
+                <Grid Visibility="{Binding IsBusy, Converter={StaticResource InverseBoolToVisibility}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Downloads (or reuses a cached copy of) the selected boot image, partitions the USB device, and deploys WinPE with auto-start onto it."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Margin="0,0,16,0" />
+
+                    <ui:Button Grid.Column="1" Content="Prepare USB Device"
+                               Appearance="Primary"
+                               Style="{StaticResource AppButtonStyle}"
+                               Command="{Binding PrepareCommand}"
+                               IsEnabled="{Binding CanPrepare}"
+                               HorizontalAlignment="Right" />
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
 </UserControl>

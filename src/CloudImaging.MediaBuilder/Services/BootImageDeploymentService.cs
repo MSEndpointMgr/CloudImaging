@@ -32,6 +32,9 @@ public sealed partial class BootImageDeploymentService
         // Step 1: Copy WIM to the boot partition
         var destWim = Path.Combine(mediaRoot, "sources", "boot.wim");
         Directory.CreateDirectory(Path.GetDirectoryName(destWim)!);
+        // The FAT32 boot partition is typically small (a few GB) — check it has room for the
+        // WIM before copying instead of failing partway through with a disk-full I/O error.
+        DiskSpaceGuard.EnsureFreeSpace(mediaRoot, new FileInfo(wimPath).Length, "copy the boot image to the USB boot partition");
         File.Copy(wimPath, destWim, overwrite: true);
         ReportProgress("Boot WIM copied.", 50);
 
@@ -48,13 +51,16 @@ public sealed partial class BootImageDeploymentService
 
     private static async Task ConfigureBcdAsync(string mediaRoot, CancellationToken ct)
     {
-        // BCDBoot copies Windows boot files — for WinPE this configures startnet.cmd autolaunch
-        var startnetDir = Path.Combine(mediaRoot, "Windows", "System32");
-        Directory.CreateDirectory(startnetDir);
-        var startnetPath = Path.Combine(startnetDir, "startnet.cmd");
-        await File.WriteAllTextAsync(startnetPath,
-            "@echo off\r\nX:\\CloudImaging\\CloudImaging.Client.exe\r\n", ct);
+        // NOTE: WinPE auto-start (winpeshl.ini/startnet.cmd launching CloudImaging.Client.exe)
+        // is configured inside boot.wim itself, while it's mounted during boot image
+        // generation (see BootImageGenerationService.ConfigureWinPeAutoStartAsync) — not here.
+        // Files written directly onto this FAT32 boot partition (outside of \sources\boot.wim,
+        // \bootmgr and \Boot\BCD) have no effect at runtime: WinPE boots entirely from the
+        // mounted WIM, so a loose "Windows\System32\startnet.cmd" sitting beside it on the
+        // partition is never read.
+        await Task.CompletedTask;
     }
+
 
     private static async Task MakeBootableAsync(char driveLetter, CancellationToken ct)
     {

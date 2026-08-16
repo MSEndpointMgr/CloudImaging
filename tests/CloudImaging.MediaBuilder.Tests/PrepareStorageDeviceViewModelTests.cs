@@ -2,6 +2,7 @@ using CloudImaging.MediaBuilder.Services;
 using CloudImaging.MediaBuilder.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.IO;
 using System.Net.Http;
 using Xunit;
 
@@ -107,9 +108,12 @@ public sealed class PrepareStorageDeviceViewModelTests
         var downloader     = new BootImageDownloadService(http, NullLogger<BootImageDownloadService>.Instance);
         var provisioner    = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
         var deployer       = new BootImageDeploymentService(NullLogger<BootImageDeploymentService>.Instance);
+        var cache          = new BootImageCacheService(
+            Path.Combine(Path.GetTempPath(), $"ci-cache-tests-{Guid.NewGuid():N}"),
+            NullLogger<BootImageCacheService>.Instance);
 
         return new PrepareStorageDeviceViewModel(
-            operatorApi, authService, validator, downloader, provisioner, deployer,
+            operatorApi, authService, validator, downloader, provisioner, deployer, cache,
             navigateBack: () => { });
     }
 }

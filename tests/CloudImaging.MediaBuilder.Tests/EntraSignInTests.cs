@@ -25,6 +25,22 @@ public sealed class EntraSignInTests
         svc.Should().NotBeNull("service must be instantiable with valid parameters");
     }
 
+    // ── Role gating (FR-050b) ─────────────────────────────────────────────────
+
+    [Fact]
+    public void IsAdministrator_IsFalse_BeforeSignIn()
+    {
+        // Least-privilege default: never fail-open to Administrator before a token exists.
+        var svc = new EntraAuthenticationService(
+            clientId:           "test-client-id",
+            tenantId:           "test-tenant-id",
+            operatorApiScope:   "api://test-client-id/.default",
+            logger:             NullLogger<EntraAuthenticationService>.Instance);
+
+        svc.IsAdministrator.Should().BeFalse(
+            "the Administrator role must never be assumed before a sign-in completes (FR-050b)");
+    }
+
     // ── Token requirement before navigation ──────────────────────────────────
 
     [Fact]

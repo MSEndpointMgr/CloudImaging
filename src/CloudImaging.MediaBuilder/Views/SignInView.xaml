@@ -24,7 +24,7 @@
                               FontTypography="Title"
                               TextWrapping="Wrap" TextAlignment="Center"
                               HorizontalAlignment="Center" Margin="0,0,0,8" />
-                <ui:TextBlock Text="Generate WinPE boot images and prepare USB media for bare-metal OS imaging."
+                <ui:TextBlock Text="Create WinPE boot images and prepare USB devices for cloud-driven Windows imaging."
                               FontTypography="Body"
                               Appearance="Secondary"
                               TextWrapping="Wrap" TextAlignment="Center"
@@ -32,11 +32,10 @@
 
                 <!-- Sign-in button (shows an inline spinner while signing in) -->
                 <ui:Button Appearance="Primary"
+                           Style="{StaticResource AppButtonStyle}"
                            HorizontalAlignment="Center"
                            HorizontalContentAlignment="Center"
                            MinWidth="180"
-                           Height="44"
-                           FontSize="15"
                            Command="{Binding SignInCommand}"
                            IsEnabled="{Binding CanSignIn}"
                            IsDefault="True">

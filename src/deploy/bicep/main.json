@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "16009610348898086644"
+      "templateHash": "7178991336297958764"
     }
   },
   "parameters": {
@@ -2287,6 +2287,82 @@
         "[resourceId('Microsoft.Resources/deployments', 'identities')]",
         "[resourceId('Microsoft.Resources/deployments', 'observability')]",
         "[resourceId('Microsoft.Resources/deployments', 'operator-api')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storage-blob-cors",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "storageCoreApiName": {
+            "value": "[variables('names').storageCoreApi]"
+          },
+          "portalOrigin": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cloud-imaging-portal'), '2025-04-01').outputs.portalUrl.value]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.44.1.10279",
+              "templateHash": "13706924707627705438"
+            }
+          },
+          "parameters": {
+            "storageCoreApiName": {
+              "type": "string"
+            },
+            "portalOrigin": {
+              "type": "string"
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}', parameters('storageCoreApiName'), 'default')]",
+              "properties": {
+                "cors": {
+                  "corsRules": [
+                    {
+                      "allowedOrigins": [
+                        "[parameters('portalOrigin')]"
+                      ],
+                      "allowedMethods": [
+                        "GET",
+                        "HEAD",
+                        "PUT",
+                        "OPTIONS"
+                      ],
+                      "allowedHeaders": [
+                        "content-type",
+                        "x-ms-blob-type",
+                        "x-ms-version",
+                        "x-ms-date"
+                      ],
+                      "exposedHeaders": [
+                        "*"
+                      ],
+                      "maxAgeInSeconds": 3600
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'cloud-imaging-portal')]",
+        "[resourceId('Microsoft.Resources/deployments', 'storage')]"
       ]
     }
   ],

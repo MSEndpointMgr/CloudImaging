@@ -35,3 +35,18 @@ public sealed class InverseBoolToVisibilityConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
         throw new NotImplementedException();
 }
+
+/// <summary>
+/// Converts bool to a horizontal ScaleTransform factor: true → -1 (mirrored), false → 1
+/// (normal). Applied to an indeterminate ProgressRing's RenderTransform, this is a cheap way
+/// to make its spin animation read as running in the opposite direction (a horizontal mirror
+/// of a rotating arc rotates the opposite way) without needing a custom spinner template.
+/// </summary>
+public sealed class BoolToScaleXConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+        value is true ? -1.0 : 1.0;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+        throw new NotImplementedException();
+}

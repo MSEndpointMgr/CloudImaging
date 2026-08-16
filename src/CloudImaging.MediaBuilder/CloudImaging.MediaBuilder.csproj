@@ -12,6 +12,8 @@
       code from being compiled twice (main project + _wpftmp.csproj duplicate members).
     -->
     <UseWpfTempProject>false</UseWpfTempProject>
+    <!-- App/window icon shown in the taskbar, Alt+Tab, and the exe's own file icon. -->
+    <ApplicationIcon>Assets\taskbar.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!--
@@ -49,6 +51,11 @@
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Git-ignored local dev overlay (real Entra/Operator API values). Copied only when present. -->
     <Content Include="appsettings.Local.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('appsettings.Local.json')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Embedded as WPF resources so they can be referenced from XAML (Window.Icon, TitleBar.Icon) via a pack URI. -->
+    <Resource Include="Assets\taskbar.ico" />
   </ItemGroup>
 
 </Project>

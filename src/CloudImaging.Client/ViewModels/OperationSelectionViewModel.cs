@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Management;
+using System.Net;
 using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using CloudImaging.Contracts.Models;
@@ -14,10 +16,15 @@ namespace CloudImaging.Client.ViewModels;
 /// </summary>
 public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 {
+    /// <summary>Maximum time to wait for a routable network adapter before giving up and proceeding anyway.</summary>
+    private static readonly TimeSpan NetworkWaitTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan NetworkWaitPollInterval = TimeSpan.FromMilliseconds(500);
+
     private readonly DeviceGatewayApiClient _gatewayClient;
     private readonly Action<object> _navigate;
     private string? _selectedOperation;
     private string? _statusMessage;
+    private bool _isWaitingForNetwork;
     private bool _isBusy;
 
     public OperationSelectionViewModel(
@@ -46,6 +53,17 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public bool HasError     => !string.IsNullOrEmpty(StatusMessage);
     public bool CanContinue  => SelectedOperation is not null && !_isBusy;
 
+    /// <summary>
+    /// True while waiting for a network adapter to come up (T032a). Distinct from
+    /// <see cref="StatusMessage"/>/<see cref="HasError"/>, which are reserved for actual
+    /// failures — this is an informational, non-error waiting state.
+    /// </summary>
+    public bool IsWaitingForNetwork
+    {
+        get => _isWaitingForNetwork;
+        private set { _isWaitingForNetwork = value; OnPropertyChanged(); }
+    }
+
     public ICommand SelectOperationCommand { get; }
     public ICommand ContinueCommand        { get; }
 
@@ -58,6 +76,11 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
         try
         {
+            // In WinPE, the NIC driver/DHCP lease can take a few seconds to finish
+            // initializing after this view appears; wait briefly for a routable adapter
+            // before registering, instead of spuriously failing on a network error (T032a).
+            await WaitForNetworkAsync();
+
             // Collect hardware metadata silently (FR-001a)
             var hardware = await Task.Run(CollectHardwareMetadata);
 
@@ -89,9 +112,51 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         }
         finally
         {
+            IsWaitingForNetwork = false;
             _isBusy = false;
             OnPropertyChanged(nameof(CanContinue));
         }
+    }
+
+    /// <summary>
+    /// Best-effort wait (not a hard gate) for at least one non-loopback network adapter to be
+    /// up with a routable (non link-local) IPv4 address. If none appears within
+    /// <see cref="NetworkWaitTimeout"/>, registration proceeds anyway and any real
+    /// connectivity problem surfaces through the normal CreateSessionAsync error path.
+    /// </summary>
+    private async Task WaitForNetworkAsync()
+    {
+        if (IsNetworkReady())
+            return;
+
+        IsWaitingForNetwork = true;
+        var deadline = DateTime.UtcNow + NetworkWaitTimeout;
+        while (!IsNetworkReady() && DateTime.UtcNow < deadline)
+            await Task.Delay(NetworkWaitPollInterval);
+
+        IsWaitingForNetwork = false;
+    }
+
+    private static bool IsNetworkReady()
+    {
+        try
+        {
+            return NetworkInterface.GetAllNetworkInterfaces().Any(n =>
+                n.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                && n.OperationalStatus == OperationalStatus.Up
+                && n.GetIPProperties().UnicastAddresses.Any(a =>
+                    a.Address.AddressFamily == AddressFamily.InterNetwork && !IsLinkLocal(a.Address)));
+        }
+        catch
+        {
+            return true; // Can't determine in this environment — don't block on it.
+        }
+    }
+
+    private static bool IsLinkLocal(IPAddress address)
+    {
+        var bytes = address.GetAddressBytes();
+        return bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254;
     }
 
     // ── Hardware metadata collection (runs on background thread) ─────────────

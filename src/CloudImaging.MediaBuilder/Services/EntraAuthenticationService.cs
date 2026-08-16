@@ -18,6 +18,35 @@ public sealed partial class EntraAuthenticationService
 
     private AuthenticationResult? _lastResult;
 
+    /// <summary>The signed-in user's UPN (e.g. "jamie.doe@contoso.com"), or null if not signed in yet. Surfaced in the shell's footer.</summary>
+    public string? SignedInUserPrincipalName => _lastResult?.Account?.Username;
+
+    /// <summary>
+    /// The signed-in user's display name (e.g. "Jamie Doe"), read from the ID token's "name"
+    /// claim. Falls back to the UPN when the claim isn't present. Surfaced as the bold line in
+    /// the shell's footer, matching the mockup, since a full UPN rarely fits there.
+    /// </summary>
+    public string? SignedInDisplayName =>
+        _lastResult?.ClaimsPrincipal?.FindFirst("name")?.Value ?? SignedInUserPrincipalName;
+
+    /// <summary>
+    /// The Entra ID app role name (Administrator/Technician). Roles are assigned per user on
+    /// the shared enterprise app registration (FR-040b) and carried in the ID token's "roles"
+    /// claim, same convention as the Portal (see authContext.tsx). Not signed in / no role
+    /// assigned both surface as no match here (empty list), which callers treat as least
+    /// privilege — never fail-open to Administrator.
+    /// </summary>
+    private const string AdministratorRoleClaim = "CloudImaging.Administrator";
+
+    /// <summary>
+    /// True when the signed-in user holds the <c>CloudImaging.Administrator</c> app role.
+    /// Gates Media Builder's Generate Boot Image workflow (FR-050b) — Technician (or no-role)
+    /// users only get Prepare USB Storage Device. False before sign-in completes.
+    /// </summary>
+    public bool IsAdministrator =>
+        _lastResult?.ClaimsPrincipal?.Claims.Any(c =>
+            c.Type == "roles" && string.Equals(c.Value, AdministratorRoleClaim, StringComparison.Ordinal)) ?? false;
+
     public EntraAuthenticationService(
         string clientId,
         string tenantId,

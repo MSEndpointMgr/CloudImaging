@@ -192,6 +192,49 @@ function Grant-BlobUploadRole {
 
 Grant-BlobUploadRole -StorageAccountName @($storageAppName, $storageCoreName)
 
+# ── Step 4c: Ensure the boot-image storage account allows browser uploads (CORS) ───
+# The Boot Images page uploads WIM files directly from the browser to Blob Storage via a
+# SAS URL (not proxied through the portal backend), so the storage account's blob service
+# itself must answer the CORS preflight for the portal's origin — main.bicep's
+# storage-cors.bicep module sets this on a FULL IaC (Template Spec) deployment, but a
+# routine `update.ps1` upgrade does not re-run Bicep, so self-heal it here too (mirrors the
+# Grant-BlobUploadRole pattern above: idempotent, best-effort, never fails the upgrade).
+function Set-BootImageBlobCors {
+    param([string] $StorageAccountName, [string] $StaticWebAppName)
+
+    if ([string]::IsNullOrWhiteSpace($StorageAccountName) -or [string]::IsNullOrWhiteSpace($StaticWebAppName)) { return }
+
+    $hostname = az staticwebapp show --name $StaticWebAppName --resource-group $ResourceGroupName --query defaultHostname -o tsv 2>$null
+    if ([string]::IsNullOrWhiteSpace($hostname)) {
+        Write-Warning "Could not resolve the Static Web App's hostname — skipping boot-image blob CORS check. Boot image uploads may fail with a CORS error; re-run the upgrade once the Static Web App is available."
+        return
+    }
+    $origin = "https://$hostname"
+
+    $existing = az storage cors list --account-name $StorageAccountName --services b --query "[?contains(AllowedOrigins, '$origin')]" -o tsv 2>$null
+    if (-not [string]::IsNullOrWhiteSpace($existing)) {
+        Write-Host "✓ Boot-image blob CORS already allows $origin on $StorageAccountName."
+        return
+    }
+
+    if ($PSCmdlet.ShouldProcess($StorageAccountName, "Add blob CORS rule for $origin")) {
+        $null = az storage cors add --account-name $StorageAccountName --services b `
+            --methods GET HEAD PUT OPTIONS `
+            --origins $origin `
+            --allowed-headers content-type x-ms-blob-type x-ms-version x-ms-date `
+            --exposed-headers '*' `
+            --max-age 3600 `
+            --output none 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "✓ Added boot-image blob CORS rule for $origin on $StorageAccountName."
+        } else {
+            Write-Warning "Could not add the blob CORS rule on $StorageAccountName. Boot image uploads may fail with a CORS error — grant yourself a data-plane role (e.g. Storage Account Contributor) on the account and re-run, or add the rule manually."
+        }
+    }
+}
+
+Set-BootImageBlobCors -StorageAccountName $storageCoreName -StaticWebAppName ($staticWebApps | Select-Object -First 1).Name
+
 # ── Step 5: Deploy each component ─────────────────────────────────────────────────
 
 function Deploy-FunctionApp {

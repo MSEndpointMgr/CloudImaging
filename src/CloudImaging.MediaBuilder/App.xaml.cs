@@ -43,7 +43,7 @@ public partial class App : System.Windows.Application
             // switch (via a UAC prompt) by BootImageGenerationService.GenerateElevatedAsync
             // when the main (non-elevated) process needs DISM image mounting, which requires
             // Administrator privileges. Runs headless — no window, no sign-in — and exits.
-            if (e.Args.Length == 4 && e.Args[0] == BootImageGenerationService.ElevatedWorkerArg)
+            if (e.Args.Length == 5 && e.Args[0] == BootImageGenerationService.ElevatedWorkerArg)
             {
                 // Run on the thread pool (NOT the current thread): OnStartup runs under WPF's
                 // DispatcherSynchronizationContext, so blocking here with GetResult() while the
@@ -51,7 +51,7 @@ public partial class App : System.Windows.Application
                 // would deadlock — leaving the parent stuck at "Requesting Administrator privileges".
                 // Task.Run gives the worker a thread-pool context with no dispatcher to deadlock on.
                 System.Threading.Tasks.Task.Run(() =>
-                        BootImageGenerationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], loggerFactory))
+                        BootImageGenerationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], e.Args[4], loggerFactory))
                     .GetAwaiter().GetResult();
                 Shutdown(0);
                 return;
@@ -84,6 +84,7 @@ public partial class App : System.Windows.Application
                 new BootImageDownloadService(downloadHttpClient, loggerFactory.CreateLogger<BootImageDownloadService>()),
                 new UsbPartitionProvisioningService(loggerFactory.CreateLogger<UsbPartitionProvisioningService>()),
                 new BootImageDeploymentService(loggerFactory.CreateLogger<BootImageDeploymentService>()),
+                new BootImageCacheService(loggerFactory.CreateLogger<BootImageCacheService>()),
                 loggerFactory);
 
             var mainWindow = new MainWindow();
@@ -152,10 +153,22 @@ public partial class App : System.Windows.Application
         var launcher = new DevMode.DevSimulationLauncher(
             window,
             onSignInView:             () => window.NavigateTo(BuildSignInView(window, svc)),
-            onOperationSelectionView: () => window.NavigateTo(BuildOperationSelectionView(window, svc)),
-            onGenerateBootImageView:  () => window.NavigateTo(BuildGenerateBootImageView(window, svc)),
-            onPrepareUsbView:         () => window.NavigateTo(BuildPrepareStorageDeviceView(window, svc)));
+            onOperationSelectionView: () => NavigateShellTo(window, svc, s => s.GoHome()),
+            onGenerateBootImageView:  () => NavigateShellTo(window, svc, s => s.GoGenerate()),
+            onPrepareUsbView:         () => NavigateShellTo(window, svc, s => s.GoPrepareUsb()));
         launcher.Show();
+    }
+
+    /// <summary>
+    /// DEV-ONLY: builds a fresh shell and force-navigates it to the requested section,
+    /// bypassing the Generate Boot Image ADK gate so every view stays reachable for testing
+    /// even without the ADK installed.
+    /// </summary>
+    private static void NavigateShellTo(MainWindow window, AppServices svc, Action<ShellViewModel> go)
+    {
+        var shell = BuildShellView(window, svc);
+        go((ShellViewModel)shell.DataContext);
+        window.NavigateTo(shell);
     }
 #endif
     private static SignInView BuildSignInView(MainWindow window, AppServices svc)
@@ -163,44 +176,27 @@ public partial class App : System.Windows.Application
         var view = new SignInView();
         view.DataContext = new SignInViewModel(
             svc.Auth,
-            () => window.NavigateTo(BuildOperationSelectionView(window, svc)));
+            () => window.NavigateTo(BuildShellView(window, svc)));
         return view;
     }
 
-    private static OperationSelectionView BuildOperationSelectionView(MainWindow window, AppServices svc)
+    /// <summary>
+    /// Builds the persistent NavigationView-style shell shown after sign-in. The shell owns
+    /// its own section navigation (Home / Generate Boot Image / Prepare USB Device) internally
+    /// (see <see cref="ShellViewModel"/>) so the left nav pane never leaves once shown.
+    /// </summary>
+    private static ShellView BuildShellView(MainWindow window, AppServices svc)
     {
-        var view = new OperationSelectionView();
-        view.DataContext = new OperationSelectionViewModel(op =>
-        {
-            if (op == "GenerateBootImage")
-                window.NavigateTo(BuildGenerateBootImageView(window, svc));
-            else if (op == "PrepareUSB")
-                window.NavigateTo(BuildPrepareStorageDeviceView(window, svc));
-        });
-        return view;
-    }
-
-    private static GenerateBootImageView BuildGenerateBootImageView(MainWindow window, AppServices svc)
-    {
-        var view = new GenerateBootImageView();
-        view.DataContext = new GenerateBootImageViewModel(
-            svc.Gen,
+        var view = new ShellView();
+        view.DataContext = new ShellViewModel(
             svc.Auth,
-            () => window.NavigateTo(BuildOperationSelectionView(window, svc)));
-        return view;
-    }
-
-    private static PrepareStorageDeviceView BuildPrepareStorageDeviceView(MainWindow window, AppServices svc)
-    {
-        var view = new PrepareStorageDeviceView();
-        view.DataContext = new PrepareStorageDeviceViewModel(
             svc.OperatorApi,
-            svc.Auth,
+            svc.Gen,
             svc.UsbValidator,
             svc.Downloader,
             svc.Provisioner,
             svc.Deployer,
-            () => window.NavigateTo(BuildOperationSelectionView(window, svc)));
+            svc.Cache);
         return view;
     }
 
@@ -273,5 +269,6 @@ public partial class App : System.Windows.Application
         BootImageDownloadService Downloader,
         UsbPartitionProvisioningService Provisioner,
         BootImageDeploymentService Deployer,
+        BootImageCacheService Cache,
         ILoggerFactory LoggerFactory);
 }

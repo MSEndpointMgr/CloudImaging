@@ -2,8 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="Cloud Imaging Media Builder" Height="600" Width="900"
-        MinWidth="900" MinHeight="600"
+        Title="Cloud Imaging Media Builder" Height="760" Width="1080"
+        MinWidth="1000" MinHeight="620"
+        Icon="/Assets/taskbar.ico"
         WindowStartupLocation="CenterScreen"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
@@ -21,7 +22,11 @@
 
         <ui:TitleBar Grid.Row="0"
                      Title="Cloud Imaging Media Builder"
-                     ShowMaximize="False" />
+                     ShowMaximize="False">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="/Assets/taskbar.ico" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
 
         <ContentControl x:Name="ContentHost"
                         Grid.Row="1"

@@ -124,6 +124,13 @@
 
         <!-- Status / error -->
         <ui:InfoBar Grid.Row="4"
+                    Title="Waiting for network connection"
+                    Message="Preparing to register this device with the imaging service…"
+                    Severity="Informational"
+                    IsOpen="{Binding IsWaitingForNetwork}"
+                    IsClosable="False" />
+
+        <ui:InfoBar Grid.Row="4"
                     Title="Error"
                     Message="{Binding StatusMessage}"
                     Severity="Error"

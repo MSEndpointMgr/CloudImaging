@@ -285,6 +285,19 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
   }
 }
 
+// Deployed AFTER cloudImagingPortal (needs its auto-generated SWA hostname for the CORS
+// allowed-origin) — deliberately its own module so this late dependency doesn't create a
+// circular reference back through storage -> imagingCoreApi/deviceGatewayApi/operatorApi
+// -> cloudImagingPortal. Nothing else depends on this module.
+module storageBlobCors 'modules/storage-cors.bicep' = {
+  name: 'storage-blob-cors'
+  dependsOn: [storage]
+  params: {
+    storageCoreApiName: names.storageCoreApi
+    portalOrigin: cloudImagingPortal.outputs.portalUrl
+  }
+}
+
 // ── Outputs ───────────────────────────────────────────────────────────────────
 
 output portalUrl string = cloudImagingPortal.outputs.portalUrl

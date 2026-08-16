@@ -20,7 +20,7 @@ namespace CloudImaging.MediaBuilder.ViewModels;
 ///
 /// The destructive step requires an explicit confirmation gate (<see cref="ConfirmErase"/>).
 /// </summary>
-public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
+public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly OperatorApiClient _operatorApi;
     private readonly EntraAuthenticationService _authService;
@@ -28,6 +28,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
     private readonly BootImageDownloadService _downloader;
     private readonly UsbPartitionProvisioningService _provisioner;
     private readonly BootImageDeploymentService _deployer;
+    private readonly BootImageCacheService _cache;
     private readonly Action _navigateBack;
 
     private BootImageChoice? _selectedBootImage;
@@ -39,6 +40,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
     private string _progressMessage = string.Empty;
     private string _statusMessage = "Select a boot image and a USB device to begin.";
     private string? _errorMessage;
+    private string _errorTitle = "Preparation failed";
+    private bool _wasCancelled;
+    private CancellationTokenSource? _cts;
 
     public PrepareStorageDeviceViewModel(
         OperatorApiClient operatorApi,
@@ -47,6 +51,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
         BootImageDownloadService downloader,
         UsbPartitionProvisioningService provisioner,
         BootImageDeploymentService deployer,
+        BootImageCacheService cache,
         Action navigateBack)
     {
         _operatorApi  = operatorApi;
@@ -55,6 +60,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
         _downloader   = downloader;
         _provisioner  = provisioner;
         _deployer     = deployer;
+        _cache        = cache;
         _navigateBack = navigateBack;
 
         _downloader.ProgressChanged += OnDownloadProgress;
@@ -62,11 +68,15 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
 
         RefreshCommand = new RelayCommand(async _ => await RefreshAsync(), _ => !IsBusy);
         PrepareCommand = new RelayCommand(async _ => await PrepareAsync(), _ => CanPrepare);
+        CancelCommand  = new RelayCommand(_ => Cancel(), _ => IsBusy);
         BackCommand    = new RelayCommand(_ => _navigateBack());
     }
 
     public ObservableCollection<BootImageChoice> BootImages { get; } = [];
     public ObservableCollection<DiskChoice> Disks { get; } = [];
+
+    public bool HasBootImages => BootImages.Count > 0;
+    public bool HasDisks => Disks.Count > 0;
 
     public BootImageChoice? SelectedBootImage
     {
@@ -131,6 +141,24 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
 
     public bool HasError => ErrorMessage is not null;
 
+    /// <summary>
+    /// Heading shown alongside <see cref="ErrorMessage"/> — distinguishes a failure while merely
+    /// listing boot images/disks ("Refresh failed") from a failure during the destructive
+    /// download/partition/deploy workflow ("Preparation failed"), so a refresh error can never be
+    /// mistaken for the USB device having been touched.
+    /// </summary>
+    public string ErrorTitle
+    {
+        get => _errorTitle;
+        private set { _errorTitle = value; OnPropertyChanged(); }
+    }
+
+    public bool WasCancelled
+    {
+        get => _wasCancelled;
+        private set { _wasCancelled = value; OnPropertyChanged(); }
+    }
+
     /// <summary>Reason the selected disk is not eligible, or null when it is valid.</summary>
     public string? ValidationMessage => SelectedDisk is { IsValid: false } d ? d.InvalidReason : null;
 
@@ -144,6 +172,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
 
     public ICommand RefreshCommand { get; }
     public ICommand PrepareCommand { get; }
+    public ICommand CancelCommand { get; }
     public ICommand BackCommand { get; }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -161,6 +190,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
         }
         catch (Exception ex)
         {
+            ErrorTitle   = "Refresh failed";
             ErrorMessage = ex.Message;
         }
         finally
@@ -182,6 +212,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
 
         // Pre-select the first eligible USB disk, if any.
         SelectedDisk = Disks.FirstOrDefault(d => d.IsValid);
+        OnPropertyChanged(nameof(HasDisks));
     }
 
     private async Task LoadBootImagesAsync()
@@ -199,7 +230,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
         BootImages.Clear();
         foreach (var image in images.Where(i => i.IsActive))
         {
-            var latest = image.IsLatestPublished ? " — latest" : string.Empty;
+            var latest = image.IsLatestPublished ? " (latest)" : string.Empty;
             var label  = string.Create(CultureInfo.InvariantCulture,
                 $"v{image.Version} ({FormatBytes(image.SizeBytes)}){latest}");
             BootImages.Add(new BootImageChoice(image.BootImageId, label, image));
@@ -208,6 +239,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
         // FR-053: pre-select the latest published boot image.
         SelectedBootImage = BootImages.FirstOrDefault(b => b.Dto.IsLatestPublished)
                             ?? BootImages.FirstOrDefault();
+        OnPropertyChanged(nameof(HasBootImages));
         StatusMessage = BootImages.Count > 0
             ? "Confirm the destructive action, then prepare the USB device."
             : "No published boot images are available in the portal.";
@@ -222,10 +254,13 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
 
         IsBusy       = true;
         IsComplete   = false;
+        WasCancelled = false;
         ErrorMessage = null;
         ProgressPercent = 0;
 
         var wimPath = Path.Combine(Path.GetTempPath(), $"ci-boot-{Guid.NewGuid():N}.wim");
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
 
         try
         {
@@ -238,35 +273,69 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
                 ?? throw new InvalidOperationException("Sign in to the Operator API before preparing USB media.");
             _operatorApi.SetAccessToken(token);
 
-            SetProgress("Requesting download URL…", 5);
-            var sas = await _operatorApi.GetBootImageSasAsync(SelectedBootImage.Id);
+            DiskSpaceGuard.EnsureFreeSpace(wimPath, SelectedBootImage.Dto.SizeBytes, "download the boot image");
 
-            SetProgress("Downloading boot image…", 10);
-            await _downloader.DownloadAsync(sas.SasTokenUrl, sas.Sha256Hash, wimPath);
+            SetProgress("Checking local cache…", 8);
+            var cachedWimPath = await _cache.TryGetCachedWimAsync(SelectedBootImage.Dto.Sha256Hash, ct);
 
-            SetProgress("Partitioning USB device…", 55);
-            await _provisioner.ProvisionAsync(SelectedDisk.DiskNumber, msg => ProgressMessage = msg);
+            if (cachedWimPath is not null)
+            {
+                SetProgress("Using cached boot image…", 55);
+                File.Copy(cachedWimPath, wimPath, overwrite: true);
+            }
+            else
+            {
+                SetProgress("Requesting download URL…", 10);
+                var sas = await _operatorApi.GetBootImageSasAsync(SelectedBootImage.Id, ct);
+
+                SetProgress("Downloading boot image…", 15);
+                await _downloader.DownloadAsync(sas.SasTokenUrl, sas.Sha256Hash, wimPath, ct);
+
+                SetProgress("Caching boot image for future use…", 55);
+                await _cache.SaveAsync(wimPath, SelectedBootImage.Id, SelectedBootImage.Dto.Version, sas.Sha256Hash, ct);
+            }
+
+            SetProgress("Partitioning USB device…", 60);
+            await _provisioner.ProvisionAsync(SelectedDisk.DiskNumber, msg => ProgressMessage = msg, ct);
 
             var bootDrive = _provisioner.FindBootVolumeDriveLetter()
                 ?? throw new InvalidOperationException(
                     "Could not locate the BOOT partition after provisioning the USB device.");
 
             SetProgress("Deploying boot image to USB…", 70);
-            await _deployer.DeployAsync(wimPath, bootDrive);
+            await _deployer.DeployAsync(wimPath, bootDrive, ct);
 
             SetProgress("USB device prepared successfully.", 100);
             StatusMessage = "The USB device is ready. Boot the target machine from it to start imaging.";
             IsComplete    = true;
         }
+        catch (OperationCanceledException)
+        {
+            WasCancelled  = true;
+            StatusMessage = "Preparation cancelled.";
+            ProgressMessage = "Preparation cancelled. Cleaning up temporary files…";
+        }
         catch (Exception ex)
         {
+            ErrorTitle   = "Preparation failed";
             ErrorMessage = ex.Message;
         }
         finally
         {
             try { if (File.Exists(wimPath)) File.Delete(wimPath); } catch { /* best-effort cleanup */ }
+            _cts.Dispose();
+            _cts = null;
             IsBusy = false;
         }
+    }
+
+    private void Cancel()
+    {
+        if (_cts is null)
+            return;
+
+        ProgressMessage = "Cancelling. Waiting for cleanup to finish…";
+        _cts.Cancel();
     }
 
     // ── Progress plumbing ──────────────────────────────────────────────────────
@@ -276,8 +345,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
         if (e.Total <= 0)
             return;
 
-        // Download occupies the 10–55% band of the overall workflow.
-        ProgressPercent = 10 + (int)(45.0 * e.Downloaded / e.Total);
+        // Download occupies the 15–55% band of the overall workflow (skipped entirely on a cache hit).
+        ProgressPercent = 15 + (int)(40.0 * e.Downloaded / e.Total);
         ProgressMessage = string.Create(CultureInfo.InvariantCulture,
             $"Downloading boot image… {FormatBytes(e.Downloaded)} / {FormatBytes(e.Total)}");
     }
@@ -311,6 +380,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    /// <summary>Disposes the in-flight cancellation token source, if any (owned by this view model).</summary>
+    public void Dispose() => _cts?.Dispose();
 
     /// <summary>A selectable disk plus its pre-computed eligibility (FR-054).</summary>
     public sealed record DiskChoice(

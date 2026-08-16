@@ -92,3 +92,8 @@ src/cloud-imaging-portal/server/deploy-pkg/
 src/cloud-imaging-portal/client/src/**/*.js
 src/cloud-imaging-portal/client/vite.config.js
 src/cloud-imaging-portal/client/vite.config.d.ts
+
+# -------
+# UI design mockups (local design exploration, not shipped source)
+# -------
+docs/design/

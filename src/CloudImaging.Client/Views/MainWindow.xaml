@@ -7,6 +7,7 @@
         Width="800"   Height="600"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
+        Topmost="True"
         ExtendsContentIntoTitleBar="True"
         WindowCornerPreference="Round">
     <!--
@@ -15,6 +16,8 @@
         scrolling — every view is laid out to fit within 800×600 (FR-002b).
         Fluent title bar for a consistent look with the Media Builder; backdrop is
         left at the default so the window renders correctly under WinPE (no DWM Mica).
+        Topmost keeps the Client above any other window in WinPE (there's no shell/taskbar,
+        so nothing else should ever need to come to the foreground over it).
     -->
     <Grid>
         <Grid.RowDefinitions>

@@ -26,8 +26,8 @@ prefix/environment for the placeholders below:
 
 | Component | URL / Resource |
 |---|---|
-| Device Gateway API | `<prefix>-<env>-func-gateway.azurewebsites.net` |
-| Operator API | `<prefix>-<env>-func-operator.azurewebsites.net` |
+| Device Gateway API | `<prefix>-<env>-ci-func-gateway.azurewebsites.net` |
+| Operator API | `<prefix>-<env>-ci-func-operator.azurewebsites.net` |
 | Imaging Core API | Private Link (via Device Gateway and Operator API) |
 | Portal Backend | `<prefix>-<env>-app-portal.azurewebsites.net` |
 | Portal Frontend | `<prefix>-<env>-swa-portal.azurestaticapps.net` |

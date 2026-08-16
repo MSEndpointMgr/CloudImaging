@@ -12,6 +12,28 @@
             <converters:BoolToErrorBrushConverter x:Key="BoolToErrorBrush" />
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
             <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+            <converters:BoolToScaleXConverter x:Key="BoolToScaleX" />
+
+            <!--
+                Single size/shape baseline shared by EVERY ui:Button in the app. Appearance
+                (Primary/Secondary/Danger/etc., set per-button) still drives color — this only
+                standardizes height/min-width/font size/padding so buttons don't end up an
+                ad-hoc mix of sizes from page to page (previously anywhere from Height 32 to 44,
+                FontSize 13 to 15, MinWidth 96 to 180 depending on which view they were added to).
+
+                NOTE: this is deliberately an explicitly-keyed style (not an implicit
+                TargetType-only style with no x:Key). Making it implicit self-references the
+                merged ui:ControlsDictionary's own implicit Button style (same key,
+                same dictionary), which silently fails to resolve and drops back to plain
+                unstyled WPF chrome — losing the rounded corners/accent colors entirely. Apply
+                via Style="{StaticResource AppButtonStyle}" on each ui:Button instead.
+            -->
+            <Style x:Key="AppButtonStyle" TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Height" Value="36" />
+                <Setter Property="MinWidth" Value="120" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="Padding" Value="16,0" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

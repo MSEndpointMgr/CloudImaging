@@ -34,7 +34,7 @@
           "hide" : true
         }
       }
-      // Fallback: az functionapp deployment source config-zip ... --name <prefix>-dev-func-operator
+      // Fallback: az functionapp deployment source config-zip ... --name <prefix>-dev-ci-func-operator
     },
     {
       "label": "Deploy: Imaging Core API",

@@ -10,13 +10,25 @@
     <Grid>
 
         <!-- ══════════════ CONFIGURATION VIEW ══════════════ -->
-        <ScrollViewer Margin="40,32" VerticalScrollBarVisibility="Auto"
-                      Visibility="{Binding ShowProgressView, Converter={StaticResource InverseBoolToVisibility}}">
-            <StackPanel MaxWidth="700">
+        <!--
+            Header and the Generate button are pinned (Auto rows) outside the ScrollViewer so
+            only the configuration cards themselves scroll — the primary action stays visible
+            at the bottom of the content area without scrolling down to reach it.
+        -->
+        <Grid Margin="40,32"
+              Visibility="{Binding ShowProgressView, Converter={StaticResource InverseBoolToVisibility}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-                <TextBlock Text="Generate Boot Image"
-                           Style="{StaticResource TitleTextBlockStyle}"
-                           Margin="0,0,0,24" />
+            <TextBlock Grid.Row="0" Text="Generate Boot Image"
+                       Style="{StaticResource TitleTextBlockStyle}"
+                       Margin="0,0,0,24" />
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+            <StackPanel>
 
                 <!-- Source selection -->
                 <ui:Card Margin="0,0,0,16" Padding="20">
@@ -48,7 +60,8 @@
                                         Text="{Binding LocalSourcePath, UpdateSourceTrigger=PropertyChanged}"
                                         HorizontalAlignment="Stretch"
                                         PlaceholderText="Path to binaries folder" />
-                            <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                            <ui:Button Grid.Column="1" Content="Browse…"
+                                       Style="{StaticResource AppButtonStyle}"
                                        Margin="8,0,0,0" Command="{Binding BrowseCommand}" />
                         </Grid>
                     </StackPanel>
@@ -69,7 +82,8 @@
                                         Text="{Binding OutputFolderPath, UpdateSourceTrigger=PropertyChanged}"
                                         HorizontalAlignment="Stretch"
                                         PlaceholderText="Output directory path" />
-                            <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                            <ui:Button Grid.Column="1" Content="Browse…"
+                                       Style="{StaticResource AppButtonStyle}"
                                        Margin="8,0,0,0" Command="{Binding BrowseOutputCommand}" />
                         </Grid>
                     </StackPanel>
@@ -81,7 +95,7 @@
                         <TextBlock Text="Drivers (optional)"
                                    Style="{StaticResource BodyStrongTextBlockStyle}"
                                    Margin="0,0,0,4" />
-                        <TextBlock Text="Point to a pre-staged driver root folder. Every driver package (.inf) beneath it is recursively injected into the boot image — use this to add storage or network controller drivers that WinPE does not include. Leave empty to skip."
+                        <TextBlock Text="Point to a pre-staged driver root folder. Every driver package (.inf) beneath it is recursively injected into the boot image. Use this to add storage or network controller drivers that WinPE does not include. Leave empty to skip."
                                    Style="{StaticResource CaptionTextBlockStyle}"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                    TextWrapping="Wrap"
@@ -95,136 +109,349 @@
                                         Text="{Binding DriverRootPath, UpdateSourceTrigger=PropertyChanged}"
                                         HorizontalAlignment="Stretch"
                                         PlaceholderText="Driver root folder (optional)" />
-                            <ui:Button Grid.Column="1" Content="Browse…" MinWidth="96"
+                            <ui:Button Grid.Column="1" Content="Browse…"
+                                       Style="{StaticResource AppButtonStyle}"
                                        Margin="8,0,0,0" Command="{Binding BrowseDriverRootCommand}" />
                         </Grid>
                     </StackPanel>
                 </ui:Card>
 
-                <!-- Generation requires Administrator rights (DISM) -->
-                <TextBlock Text="Generating a boot image mounts the WinPE image with DISM, which requires Administrator privileges. You will be prompted to elevate once you click Generate."
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           TextWrapping="Wrap"
-                           Margin="0,0,0,16" />
-
-                <!-- Generate button -->
-                <ui:Button Content="Generate Boot Image"
-                           Appearance="Primary"
-                           Width="220" Height="44" FontSize="15"
-                           Command="{Binding GenerateCommand}"
-                           IsEnabled="{Binding CanGenerate}"
-                           HorizontalAlignment="Left" />
             </StackPanel>
-        </ScrollViewer>
+            </ScrollViewer>
+
+            <!--
+                Pinned footer: Generate button, always visible without scrolling. Given its own
+                background/border (distinct from the cards above and from the page background) so
+                it reads as a separate, fixed action panel rather than just more scrollable content.
+                Matches the progress/result footers' two-column layout — a short caption in the
+                Auto-remaining column explaining what the action does, button right-aligned in
+                its own column — rather than a bare button with nothing explaining it.
+            -->
+            <Border Grid.Row="2" Margin="0,16,0,0" Padding="20,16"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="Downloads (or uses) the client binaries, mounts a fresh WinPE image, embeds the client and any drivers, then unmounts and saves the finished WIM to the output folder."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               VerticalAlignment="Center"
+                               Margin="0,0,16,0" />
+
+                    <ui:Button Grid.Column="1" Content="Generate Boot Image"
+                               Appearance="Primary"
+                               Style="{StaticResource AppButtonStyle}"
+                               Command="{Binding GenerateCommand}"
+                               IsEnabled="{Binding CanGenerate}"
+                               HorizontalAlignment="Right" />
+                </Grid>
+            </Border>
+        </Grid>
 
         <!-- ══════════════ PROGRESS VIEW ══════════════ -->
-        <Grid Margin="40,32"
+        <!--
+            Same pinned-footer pattern as the configuration view above: header and footer are
+            Auto rows outside the ScrollViewer, so only the log/steps content scrolls and the
+            footer (Cancel, or Back to menu/Generate another once finished) always stays at the
+            bottom of the window instead of trailing right after the log/steps content.
+        -->
+        <Grid Margin="28,16,28,28"
               Visibility="{Binding ShowProgressView, Converter={StaticResource BoolToVisibility}}">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Generating Boot Image"
-                       Style="{StaticResource TitleTextBlockStyle}"
-                       Margin="0,0,0,16" />
-
-            <!-- Overall progress -->
-            <StackPanel Grid.Row="1" Margin="0,0,0,20">
-                <Grid Margin="0,0,0,6">
-                    <TextBlock Text="{Binding ProgressMessage}"
-                               Style="{StaticResource BodyTextBlockStyle}"
-                               HorizontalAlignment="Left" />
-                    <TextBlock Text="{Binding ProgressPercent, StringFormat={}{0}%}"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               HorizontalAlignment="Right" />
-                </Grid>
-                <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="6" />
+            <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                <StackPanel Orientation="Horizontal">
+                    <!--
+                        State icon next to the title, shown only once generation has actually
+                        finished (success/error/cancelled) — nothing shown while still in
+                        progress since the spinner below already covers that. Replaces the old
+                        separate green/red/yellow InfoBar boxes: the title + icon now carry the
+                        end state, and the subtitle line below carries the same detail (output
+                        path, error message, cancellation note) those InfoBars used to show.
+                    -->
+                    <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="28" Margin="0,6,10,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                   Visibility="{Binding IsComplete, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="28" Margin="0,6,10,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:SymbolIcon Symbol="Warning24" FontSize="28" Margin="0,6,10,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                   Visibility="{Binding WasCancelled, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="{Binding ProgressTitle}" Style="{StaticResource TitleLargeTextBlockStyle}" />
+                </StackPanel>
+                <TextBlock Text="{Binding ProgressSubtitle}"
+                           Style="{StaticResource BodyTextBlockStyle}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           Margin="0,4,0,0" />
             </StackPanel>
 
-            <!-- Steps -->
-            <ItemsControl Grid.Row="2" ItemsSource="{Binding Steps}" Margin="0,0,0,20">
-                <ItemsControl.Resources>
-                    <Style x:Key="StepText" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
-                        <Setter Property="VerticalAlignment" Value="Center" />
-                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding State}" Value="Active">
-                                <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-                                <Setter Property="FontWeight" Value="SemiBold" />
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding State}" Value="Done">
-                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </ItemsControl.Resources>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="0,3">
-                            <TextBlock Text="{Binding Glyph}" Width="24"
-                                       FontSize="14" TextAlignment="Center"
-                                       Style="{StaticResource StepText}" />
-                            <TextBlock Text="{Binding Label}" Margin="6,0,0,0"
-                                       Style="{StaticResource StepText}" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <!--
+                Spinner/progress header + progress bar stay Auto-height and stretch across the
+                full width, on top of the log viewer and steps sidebar below — which sit side by
+                side in the row 2 so their top edges line up with each other (mockup's
+                progress-shell). Row 2 is "*" so the log viewer grows/shrinks with the window
+                instead of being a fixed height, and the steps sidebar gets its own ScrollViewer
+                so a long step list never pushes the log viewer's height around.
+            -->
+            <Grid Grid.Row="1">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="230" />
+                </Grid.ColumnDefinitions>
 
-            <!-- Command / output log -->
-            <Border Grid.Row="3"
-                    Background="{DynamicResource ControlFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1" CornerRadius="6" Padding="2">
+                <Grid Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,0,0,14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!--
+                        RenderTransform mirrors the ring horizontally while cancelling, which
+                        makes the spin read as running in the opposite direction — a clear,
+                        immediate visual cue that a cancellation is in progress rather than
+                        the generation just continuing as normal.
+                    -->
+                    <ui:ProgressRing Grid.Column="0" Width="30" Height="30" IsIndeterminate="True" Margin="0,0,12,0"
+                                     RenderTransformOrigin="0.5,0.5"
+                                     Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibility}}">
+                        <ui:ProgressRing.RenderTransform>
+                            <ScaleTransform ScaleX="{Binding IsCancelling, Converter={StaticResource BoolToScaleX}}" />
+                        </ui:ProgressRing.RenderTransform>
+                    </ui:ProgressRing>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ProgressMessage}" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock FontSize="12" Foreground="{DynamicResource TextFillColorTertiaryBrush}">
+                            <Run Text="{Binding StepProgressLabel, Mode=OneWay}" />
+                            <Run Text=" · " />
+                            <Run Text="{Binding ElapsedTimeText, Mode=OneWay}" />
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Numeric read-out of ProgressPercent — the bar below only shows the fill visually. -->
+                    <TextBlock Grid.Column="2" Text="{Binding ProgressPercentText}" FontSize="20" FontWeight="SemiBold"
+                               VerticalAlignment="Center" Margin="12,0,0,0"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </Grid>
+
+                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                             Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100"
+                             Height="4" Margin="0,0,0,16" />
+
                 <!--
-                    Plain, read-only, selectable text (not a ListBox/ItemsControl) so the whole
-                    log can be selected and copied like a real console — one line per entry,
-                    no wrapping (horizontal scroll instead), no extra per-row chrome/spacing.
+                    Command/output log — no fixed height (unlike the mockup's static screenshot):
+                    stretches to fill the remaining window height so it grows/shrinks as the
+                    window is resized. No Padding here — the log's Border edge must land exactly
+                    on the same Grid line as the steps sidebar's top-left, so any inset needed
+                    for readable text is applied to the TextBox itself instead.
                 -->
-                <TextBox x:Name="LogTextBox"
-                         Text="{Binding LogText, Mode=OneWay}"
-                         IsReadOnly="True" IsReadOnlyCaretVisible="True"
-                         Background="Transparent" BorderThickness="0"
-                         FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
-                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                         TextWrapping="NoWrap"
-                         AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto" />
-            </Border>
+                <Border Grid.Row="2" Grid.Column="0" MinHeight="140"
+                        Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="6">
+                    <!--
+                        Selecting text focuses the TextBox, and the default WPF UI TextBox
+                        template draws an accent-colored bottom "AccentBorder" line whenever
+                        IsFocused is true (see TextControlFocusedBorderBrush in the template's
+                        IsFocused trigger), and highlights the background on IsMouseOver (see
+                        TextControlBackgroundPointerOver). Both make sense for input fields but
+                        look out of place on this read-only console-style log viewer, so they're
+                        neutralized here (scoped to just this Border) by overriding the brushes
+                        the template resolves via DynamicResource.
+                    -->
+                    <Border.Resources>
+                        <SolidColorBrush x:Key="TextControlFocusedBorderBrush" Color="Transparent" />
+                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                    </Border.Resources>
+                    <!--
+                        Plain, read-only, selectable text (not a ListBox/ItemsControl) so the whole
+                        log can be selected and copied like a real console — one line per entry,
+                        no wrapping (horizontal scroll instead), no extra per-row chrome/spacing.
+                    -->
+                    <TextBox x:Name="LogTextBox"
+                             Text="{Binding LogText, Mode=OneWay}"
+                             IsReadOnly="True" IsReadOnlyCaretVisible="True"
+                             Background="Transparent" BorderThickness="0" Padding="6,4"
+                             FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                             TextWrapping="NoWrap"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto" />
+                </Border>
 
-            <!-- Result + footer -->
-            <StackPanel Grid.Row="4" Margin="0,16,0,0">
-                <ui:InfoBar Title="Boot image generated successfully"
-                            Message="{Binding OutputWimPath, StringFormat='Output: {0}. Upload the WIM to the Cloud Imaging Portal (Boot Images) to publish it.'}"
-                            Severity="Success"
-                            IsOpen="{Binding IsComplete}"
-                            IsClosable="False"
-                            Margin="0,0,0,12" />
+                <!--
+                    Steps sidebar — same row as the log viewer so their top edges align. Scrolls
+                    independently (rather than stretching the row) so a long step list, or one
+                    with several Skipped captions, never changes the log viewer's height.
+                -->
+                <ScrollViewer Grid.Row="2" Grid.Column="2" VerticalScrollBarVisibility="Auto" Focusable="False">
+                <ItemsControl ItemsSource="{Binding Steps}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Ellipse Width="14" Height="14" StrokeThickness="2" Margin="0,2,10,0" VerticalAlignment="Top">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Stroke" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <Setter Property="Fill" Value="Transparent" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding State}" Value="Done">
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Active">
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemAccentColorBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Skipped">
+                                                    <Setter Property="StrokeDashArray" Value="2,2" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding State}" Value="Done">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Active">
+                                                        <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Skipped">
+                                                        <Setter Property="FontStyle" Value="Italic" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Caption}" FontSize="11" FontStyle="Italic"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                               Visibility="{Binding IsSkipped, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </ScrollViewer>
+            </Grid>
 
-                <ui:InfoBar Title="Generation failed"
-                            Message="{Binding ErrorMessage}"
-                            Severity="Error"
-                            IsOpen="{Binding HasError}"
-                            IsClosable="False"
-                            Margin="0,0,0,12" />
+            <!--
+                Result + pinned footer. The success/error/cancelled state is now conveyed by the
+                title icon + heading + subtitle at the top of this view (ProgressTitle/
+                ProgressSubtitle) rather than a separate colored InfoBar here.
+            -->
+            <StackPanel Grid.Row="2" Margin="0,20,0,0">
 
-                <StackPanel Orientation="Horizontal">
-                    <ui:Button Content="Back to menu"
-                               Command="{Binding BackCommand}"
-                               MinWidth="130" Height="40"
-                               Margin="0,0,8,0" />
-                    <ui:Button Content="Generate another"
-                               Appearance="Primary"
-                               Command="{Binding NewGenerationCommand}"
-                               MinWidth="150" Height="40" />
-                </StackPanel>
+                <!--
+                    Pinned footer, matching the configuration view's action panel: its own
+                    background/border so it reads as a fixed action panel rather than more
+                    scrollable content. Holds Cancel while generation is in progress, and
+                    Back to menu / Generate another once it's finished (success, error, or
+                    cancelled) — never both sets at once. Each state also shows a short caption
+                    explaining what its action(s) will actually do.
+                -->
+                <Border Padding="20,16"
+                        Background="{DynamicResource ControlFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1" CornerRadius="6">
+                    <Grid>
+                        <!--
+                            Same two-column layout as the finished-state Grid below: caption text
+                            wraps within its own Auto-remaining column (Column 0) instead of
+                            spanning the full footer width above a left-aligned button, and the
+                            button itself is right-aligned in Column 1 — consistent with every
+                            other footer in the app always keeping its action button(s) on the
+                            right-hand side.
+                        -->
+                        <Grid Visibility="{Binding IsGenerating, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="Cancel stops the generation, unmounts and discards the in-progress WinPE image, and deletes temporary files. This cannot be undone."
+                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,16,0" />
+
+                            <ui:Button Grid.Column="1"
+                                       Appearance="Secondary"
+                                       Style="{StaticResource AppButtonStyle}"
+                                       Command="{Binding CancelCommand}"
+                                       HorizontalAlignment="Right">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Dismiss24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Cancel" />
+                                </StackPanel>
+                            </ui:Button>
+                        </Grid>
+
+                        <Grid Visibility="{Binding IsGenerating, Converter={StaticResource InverseBoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="Back to menu returns to the operation list."
+                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,16,0" />
+
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <ui:Button Content="Back to menu"
+                                           Style="{StaticResource AppButtonStyle}"
+                                           Command="{Binding BackCommand}"
+                                           Margin="0,0,8,0" />
+                                <!--
+                                    A successful generation has nothing to retry, so this button
+                                    only appears after a failed or cancelled run (CanRetry).
+                                -->
+                                <ui:Button Content="Retry"
+                                           Appearance="Primary"
+                                           Style="{StaticResource AppButtonStyle}"
+                                           Command="{Binding NewGenerationCommand}"
+                                           Visibility="{Binding CanRetry, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
             </StackPanel>
         </Grid>
     </Grid>
 </UserControl>
+

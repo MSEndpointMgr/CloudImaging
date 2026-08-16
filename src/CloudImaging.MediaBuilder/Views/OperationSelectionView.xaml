@@ -3,29 +3,38 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <!--
-        FR-051: Media Builder OperationSelectionView.
-        Two operation cards: Generate Boot Image and Prepare USB.
-        User selects one then clicks Continue.
+        FR-051: Media Builder OperationSelectionView (the shell's "Home" content).
+        Two operation tiles: Generate Boot Image and Prepare USB Device. A single tap
+        navigates directly to the section (FR-050a: Generate Boot Image is disabled up
+        front — not just warned about after selection — when the ADK is missing).
     -->
-    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="720">
+    <Grid Margin="28,16,28,28" VerticalAlignment="Top" HorizontalAlignment="Left" MaxWidth="640">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="28" />
+            <RowDefinition Height="20" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="28" />
+            <RowDefinition Height="16" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0"
-                   Text="Select an Operation"
-                   Style="{StaticResource TitleLargeTextBlockStyle}"
-                   HorizontalAlignment="Center" />
+        <StackPanel Grid.Row="0">
+            <TextBlock Text="Cloud Imaging Media Builder"
+                       Style="{StaticResource TitleLargeTextBlockStyle}" />
+            <TextBlock Text="Create WinPE boot images and prepare USB devices for cloud-driven Windows imaging."
+                       Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       Margin="0,4,0,0" />
+        </StackPanel>
 
-        <!-- Operation cards -->
+        <!-- Operation tiles -->
         <UniformGrid Grid.Row="2" Columns="2">
 
-            <!-- Generate Boot Image -->
-            <Border Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <!-- Generate Boot Image — disabled up front when the ADK is missing (FR-050a) or the
+                 signed-in user lacks the Administrator role (FR-050b) -->
+            <Border Margin="0,0,14,0" Padding="20" CornerRadius="8" Cursor="Hand"
+                    IsEnabled="{Binding IsGenerateBootImageAvailable}"
+                    ToolTipService.ShowOnDisabled="True"
+                    ToolTip="{Binding GenerateBootImageUnavailableReason}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -36,32 +45,49 @@
                                 <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
                                 <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
                             </Trigger>
-                            <DataTrigger Binding="{Binding SelectedOperation}" Value="GenerateBootImage">
-                                <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
-                                <Setter Property="BorderThickness" Value="2" />
-                            </DataTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
                 <Border.InputBindings>
                     <MouseBinding MouseAction="LeftClick"
-                                  Command="{Binding SelectOperationCommand}"
+                                  Command="{Binding NavigateCommand}"
                                   CommandParameter="GenerateBootImage" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="💿" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <Grid Width="40" Height="40" HorizontalAlignment="Left" Margin="0,0,0,10">
+                        <Border CornerRadius="8" Background="{DynamicResource SystemAccentColorBrush}" Opacity="0.15" />
+                        <ui:SymbolIcon Symbol="Power24" FontSize="22"
+                                       Foreground="{DynamicResource SystemAccentColorBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
                     <TextBlock Text="Generate Boot Image"
                                Style="{StaticResource SubtitleTextBlockStyle}"
-                               HorizontalAlignment="Center" Margin="0,0,0,8" />
-                    <TextBlock Text="Build a WinPE boot image with the Cloud Imaging Client embedded."
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="Build a WinPE boot image with the Cloud Imaging Client embedded, drivers injected, and the boot-media certificate stamped in."
                                Style="{StaticResource BodyTextBlockStyle}"
-                               TextWrapping="Wrap" TextAlignment="Center"
+                               TextWrapping="Wrap"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="⚠ Requires the Windows ADK (not installed)"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding IsBlockedByMissingAdk, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="Requires the Administrator role"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding IsRestrictedByRole, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Border>
 
             <!-- Prepare USB -->
-            <Border Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <Border Margin="14,0,0,0" Padding="20" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -72,71 +98,91 @@
                                 <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
                                 <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
                             </Trigger>
-                            <DataTrigger Binding="{Binding SelectedOperation}" Value="PrepareUSB">
-                                <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
-                                <Setter Property="BorderThickness" Value="2" />
-                            </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
                 <Border.InputBindings>
                     <MouseBinding MouseAction="LeftClick"
-                                  Command="{Binding SelectOperationCommand}"
+                                  Command="{Binding NavigateCommand}"
                                   CommandParameter="PrepareUSB" />
                 </Border.InputBindings>
                 <StackPanel>
-                    <TextBlock Text="🖫" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
-                    <TextBlock Text="Prepare USB"
+                    <Grid Width="40" Height="40" HorizontalAlignment="Left" Margin="0,0,0,10">
+                        <Border CornerRadius="8" Background="{DynamicResource SystemAccentColorBrush}" Opacity="0.15" />
+                        <ui:SymbolIcon Symbol="UsbStick24" FontSize="22"
+                                       Foreground="{DynamicResource SystemAccentColorBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Text="Prepare USB Device"
                                Style="{StaticResource SubtitleTextBlockStyle}"
-                               HorizontalAlignment="Center" Margin="0,0,0,8" />
-                    <TextBlock Text="Download a boot image from the portal and write it to USB media."
+                               Margin="0,0,0,6" />
+                    <TextBlock Text="Download a published boot image from the portal (or use the local cache) and write it to a USB device."
                                Style="{StaticResource BodyTextBlockStyle}"
-                               TextWrapping="Wrap" TextAlignment="Center"
+                               TextWrapping="Wrap"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Border>
         </UniformGrid>
 
-        <StackPanel Grid.Row="4">
-            <!-- FR-050a: ADK prerequisite warning shown before navigating to Generate Boot Image -->
-            <Border Margin="8,0,8,16" Padding="14,10" CornerRadius="8"
-                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                    BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
-                    BorderThickness="1"
-                    Visibility="{Binding ShowAdkWarning, Converter={StaticResource BoolToVisibility}}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
+        <!-- FR-050a: ADK prerequisite banner, shown whenever the ADK is the reason Generate Boot Image is unavailable -->
+        <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsBlockedByMissingAdk, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                    <ui:SymbolIcon Grid.Column="0"
-                                   Symbol="Warning24"
-                                   FontSize="18"
-                                   VerticalAlignment="Center"
-                                   Margin="0,0,10,0"
-                                   Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="Warning24"
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
 
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock TextWrapping="Wrap">
-                            <Run Text="Windows ADK required — " FontWeight="SemiBold" /><Run Text="install the ADK and WinPE add-on, then relaunch."
-                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                        </TextBlock>
-                        <TextBlock Margin="0,4,0,0">
-                            <Hyperlink NavigateUri="https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
-                                       RequestNavigate="OnHyperlinkRequestNavigate"
-                                       Foreground="{DynamicResource SystemAccentColorBrush}">Download the ADK and WinPE add-on</Hyperlink>
-                        </TextBlock>
-                    </StackPanel>
-                </Grid>
-            </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="Windows ADK required. " FontWeight="SemiBold" /><Run Text="Install the ADK and WinPE add-on, then relaunch."
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBlock>
+                    <TextBlock Margin="0,4,0,0">
+                        <Hyperlink NavigateUri="https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install"
+                                   RequestNavigate="OnHyperlinkRequestNavigate"
+                                   Foreground="{DynamicResource SystemAccentColorBrush}">Download the ADK and WinPE add-on</Hyperlink>
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-            <ui:Button Content="Continue"
-                       Appearance="Primary"
-                       Width="200" Height="44" FontSize="15"
-                       Command="{Binding ContinueCommand}"
-                       IsEnabled="{Binding CanContinue}"
-                       HorizontalAlignment="Center" />
-        </StackPanel>
+        <!-- FR-050b: Administrator-role banner, shown when the signed-in user's role is the reason Generate Boot Image is unavailable -->
+        <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsRestrictedByRole, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="LockClosed24"
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="Administrator role required. " FontWeight="SemiBold" /><Run Text="Generating boot images is restricted to the Administrator role. Ask your Cloud Imaging administrator to grant it if you need access."
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>
