@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, Upload, X } from 'lucide-react';
+import { Trash2, Upload, X, HardDrive } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -84,11 +84,16 @@ export default function BootImagesPage(): React.ReactElement {
       {/* Capacity indicator (FR-063) */}
       <Card>
         <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center">
-          <div className="sm:w-40">
-            <p className="text-sm text-muted-foreground">Active entries</p>
-            <p className="text-2xl font-semibold tabular-nums">
-              {used}<span className="text-base font-normal text-muted-foreground"> / {MAX_BOOT_IMAGES}</span>
-            </p>
+          <div className="flex items-center gap-3 sm:w-44">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <HardDrive className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Active entries</p>
+              <p className="text-2xl font-semibold tabular-nums">
+                {used}<span className="text-base font-normal text-muted-foreground"> / {MAX_BOOT_IMAGES}</span>
+              </p>
+            </div>
           </div>
           <div className="flex-1">
             <div className="mb-1.5 flex items-center justify-between text-xs">
@@ -111,10 +116,10 @@ export default function BootImagesPage(): React.ReactElement {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Card>
+      <div className="rounded-md border border-border overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="hover:bg-transparent">
               <TableHead>Version</TableHead>
               <TableHead>Size</TableHead>
               <TableHead>SHA-256</TableHead>
@@ -125,9 +130,9 @@ export default function BootImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : images.length === 0 ? (
-              <TableRow><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">No boot images.</TableCell></TableRow>
+              <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">No boot images.</TableCell></TableRow>
             ) : images.map(img => (
               <TableRow key={img.bootImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
@@ -136,12 +141,18 @@ export default function BootImagesPage(): React.ReactElement {
                 <TableCell className="text-xs text-muted-foreground">{new Date(img.createdAt).toLocaleDateString()}</TableCell>
                 <TableCell>
                   {img.isLatestPublished
-                    ? <Badge variant="info">Latest</Badge>
-                    : <Badge variant="muted">Active</Badge>}
+                    ? <Badge variant="info" dot>Latest</Badge>
+                    : <Badge variant="muted" dot>Active</Badge>}
                 </TableCell>
                 {isAdministrator && (
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="icon" title="Delete" onClick={() => void handleDelete(img.bootImageId)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Delete"
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => void handleDelete(img.bootImageId)}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </TableCell>
@@ -150,7 +161,7 @@ export default function BootImagesPage(): React.ReactElement {
             ))}
           </TableBody>
         </Table>
-      </Card>
+      </div>
 
       {uploadOpen && (
         <UploadBootImageDialog

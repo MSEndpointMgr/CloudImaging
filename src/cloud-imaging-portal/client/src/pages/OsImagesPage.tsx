@@ -4,6 +4,7 @@ import { useAuth } from '../context/authContext.tsx';
 import { apiFetch } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
+import { Badge } from '../components/ui/badge.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
 
@@ -174,20 +175,20 @@ export default function OsImagesPage(): React.ReactElement {
                 </TableCell>
                 <TableCell>
                   {img.isInUse ? (
-                    <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800">In Use</span>
+                    <Badge variant="info" dot>In Use</Badge>
                   ) : (
-                    <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">Available</span>
+                    <Badge variant="success" dot>Available</Badge>
                   )}
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1">
                     {isAdministrator ? (
                       <>
-                        <button className="p-1 hover:text-primary" title="Edit">
+                        <button className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-primary" title="Edit">
                           <Pencil size={14} />
                         </button>
                         {!img.isInUse && (
-                          <button onClick={() => void handleDelete(img.imageId)} className="p-1 hover:text-destructive" title="Remove">
+                          <button onClick={() => void handleDelete(img.imageId)} className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remove">
                             <Trash2 size={14} />
                           </button>
                         )}

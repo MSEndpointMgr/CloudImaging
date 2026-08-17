@@ -275,7 +275,7 @@ function SessionsPageImpl(): React.ReactElement {
                   </TableCell>
                   <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                   <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                  <TableCell><Badge variant={stateBadgeVariant(s.state)}>{stateLabel(s.state)}</Badge></TableCell>
+                  <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                   <TableCell>
                     {s.overallProgressPercent > 0 ? (
                       <div className="flex items-center gap-2">
