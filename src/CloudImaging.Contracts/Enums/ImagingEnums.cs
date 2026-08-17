@@ -1,6 +1,9 @@
+using System.Text.Json.Serialization;
+
 namespace CloudImaging.Contracts.Enums;
 
 /// <summary>Machine-readable imaging step identifiers used in API payloads (FR-007).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ImagingStepName
 {
     FormatDisk,
@@ -11,6 +14,7 @@ public enum ImagingStepName
 }
 
 /// <summary>Step execution states.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ImagingStepStatus
 {
     Pending,
@@ -24,6 +28,7 @@ public enum ImagingStepStatus
 /// The admin-configurable <see cref="Models.PartitioningScheme"/> controls only the size and
 /// order of these — new/arbitrary partition types are not supported.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PartitionType
 {
     /// <summary>EFI System Partition — FAT32, holds the UEFI boot loader.</summary>

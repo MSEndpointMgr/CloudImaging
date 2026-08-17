@@ -49,6 +49,14 @@ public sealed partial class PartitioningSchemeRepository
             LogNoSchemeFound(_logger);
             return PartitioningScheme.Default;
         }
+        catch (JsonException ex)
+        {
+            // Guards against a row persisted before PartitionType gained a JsonStringEnumConverter
+            // (partitionType stored as a raw number rather than its name) — self-heal to the
+            // default layout instead of surfacing a 500 to the admin UI.
+            LogSchemeUnreadable(_logger, ex);
+            return PartitioningScheme.Default;
+        }
     }
 
     /// <summary>Upserts the partitioning scheme.</summary>
@@ -82,6 +90,9 @@ public sealed partial class PartitioningSchemeRepository
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No PartitioningScheme row found — returning default UEFI layout.")]
     private static partial void LogNoSchemeFound(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Stored PartitioningScheme row could not be deserialized — returning default UEFI layout.")]
+    private static partial void LogSchemeUnreadable(ILogger logger, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "PartitioningScheme upserted.")]
     private static partial void LogSchemeUpserted(ILogger logger);
