@@ -32,7 +32,7 @@ public sealed class SessionStatusPoller : IDisposable
     public SessionStatusPoller(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
-        int pollIntervalSeconds = 5)
+        int pollIntervalSeconds = 30)
     {
         _gatewayClient      = gatewayClient;
         _sessionId          = sessionId;

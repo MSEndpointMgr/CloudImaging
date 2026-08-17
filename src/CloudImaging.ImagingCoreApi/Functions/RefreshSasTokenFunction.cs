@@ -71,6 +71,7 @@ public sealed partial class RefreshSasTokenFunction
             || (session.SasTokenUrlExpiresAt.Value - DateTimeOffset.UtcNow) < RefreshThreshold;
 
         string sasUrl = session.SasTokenUrl ?? string.Empty;
+        DateTimeOffset? sasTokenUrlExpiresAt = session.SasTokenUrlExpiresAt;
 
         if (needsRefresh)
         {
@@ -79,6 +80,8 @@ public sealed partial class RefreshSasTokenFunction
             {
                 sasUrl = await GenerateSasUrlAsync(_blobClient, image.StoragePath, sasExpiry, context.CancellationToken);
             }
+
+            sasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry;
 
             var updated = new CloudImaging.Contracts.Models.DeviceSession
             {
@@ -96,7 +99,7 @@ public sealed partial class RefreshSasTokenFunction
                 DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
                 AssignedOsImageId = session.AssignedOsImageId,
                 SasTokenUrl = sasUrl,
-                SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
+                SasTokenUrlExpiresAt = sasTokenUrlExpiresAt,
                 OverallProgressPercent = session.OverallProgressPercent,
                 CurrentStep = session.CurrentStep,
                 CreatedAt = session.CreatedAt,
@@ -109,7 +112,8 @@ public sealed partial class RefreshSasTokenFunction
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(new { sasTokenUrl = sasUrl }),
+        await response.WriteStringAsync(
+            JsonSerializer.Serialize(new { sasTokenUrl = sasUrl, sasTokenUrlExpiresAt }),
             context.CancellationToken);
         return response;
     }

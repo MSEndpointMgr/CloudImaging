@@ -21,7 +21,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private static readonly TimeSpan NetworkWaitPollInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly DeviceGatewayApiClient _gatewayClient;
-    private readonly Action<object> _navigate;
+    private readonly Action<CreateSessionResponse, string> _navigate;
     private string? _selectedOperation;
     private string? _statusMessage;
     private bool _isWaitingForNetwork;
@@ -29,7 +29,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
-        Action<object> navigate)
+        Action<CreateSessionResponse, string> navigate)
     {
         _gatewayClient = gatewayClient;
         _navigate      = navigate;
@@ -83,10 +83,11 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
             // Collect hardware metadata silently (FR-001a)
             var hardware = await Task.Run(CollectHardwareMetadata);
+            var serialNumber = GetSerialNumber();
 
             var payload = new DeviceRegistrationPayload
             {
-                SerialNumber = GetSerialNumber(),
+                SerialNumber = serialNumber,
                 Manufacturer = GetManufacturer(),
                 Model        = GetModel(),
                 MacAddress   = GetMacAddress(),
@@ -103,8 +104,10 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // Set Bearer token for subsequent Device Gateway calls
             _gatewayClient.SetSessionToken(sessionResponse.DeviceSessionToken);
 
-            // Navigate to SessionInitView
-            _navigate(sessionResponse);
+            // Navigate to SessionInitView — carry the locally-collected serial number forward
+            // so it can be displayed later (e.g. ResultsView's NotAuthorized outcome, FR-026)
+            // instead of being discarded once sent to the server.
+            _navigate(sessionResponse, serialNumber);
         }
         catch (Exception ex)
         {

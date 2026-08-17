@@ -90,6 +90,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         PrepareCommand = new RelayCommand(async _ => await PrepareAsync(), _ => CanPrepare);
         CancelCommand  = new RelayCommand(_ => Cancel(), _ => IsBusy);
         BackCommand    = new RelayCommand(_ => _navigateBack());
+
+        // Load published boot images + eligible USB disks as soon as this view is reached,
+        // instead of requiring a manual Refresh click first (the Refresh button remains
+        // available afterward, e.g. to pick up a boot image just published in the portal).
+        _ = RefreshAsync();
     }
 
     public ObservableCollection<BootImageChoice> BootImages { get; } = [];
@@ -224,6 +229,14 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         Disks.Clear();
         foreach (var disk in _validator.EnumerateDisks())
         {
+            // FR-054: only USB, removable disks ever appear in this list at all — internal,
+            // fixed, and virtual (e.g. Hyper-V SCSI) disks are excluded entirely rather than
+            // merely grayed out. Validate() still runs below for the disks that DO pass this
+            // filter, to catch the rare case of a USB removable disk that is also the host's
+            // system disk (e.g. booting from a USB stick).
+            if (!disk.BusType.Equals("USB", StringComparison.OrdinalIgnoreCase) || !disk.IsRemovable)
+                continue;
+
             var result = _validator.Validate(disk);
             var label  = string.Create(CultureInfo.InvariantCulture,
                 $"Disk {disk.DiskNumber}: {disk.Caption} ({FormatBytes(disk.SizeBytes)}, {disk.BusType})");
@@ -328,6 +341,32 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _currentStage = "BCF";
             SetProgress("Deploying boot image to USB…", 70);
             await _deployer.DeployAsync(wimPath, bootDrive, ct);
+
+            // T071a/FR-059: persist the preparation manifest to the BOOT partition so the
+            // Client can later detect a newer published boot image (T071b/FR-059a).
+            var cacheDrive = _provisioner.FindCacheVolumeDriveLetter();
+            var manifest = new UsbPreparationManifest
+            {
+                ManifestVersion = UsbPreparationManifest.ManifestSchemaVersion,
+                PreparedAt = DateTimeOffset.UtcNow,
+                ToolVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+                    ?? "unknown",
+                BootImageVersion = SelectedBootImage.Dto.Version,
+                SelectedDiskId = SelectedDisk.DiskNumber.ToString(CultureInfo.InvariantCulture),
+                PartitionSchema = new Dictionary<string, object>
+                {
+                    ["bootDriveLetter"] = bootDrive,
+                    ["cacheDriveLetter"] = cacheDrive ?? string.Empty,
+                    ["diskSizeBytes"] = SelectedDisk.Info.SizeBytes,
+                },
+                ValidationResults = new Dictionary<string, object>
+                {
+                    ["busType"] = SelectedDisk.Info.BusType,
+                    ["diskValidated"] = validation.Valid,
+                },
+                AutoStartConfigured = true,
+            };
+            await _deployer.WriteUsbPreparationManifestAsync(bootDrive, manifest, ct);
 
             SetProgress("USB device prepared successfully.", 100);
             StatusMessage = "The USB device is ready. Boot the target machine from it to start imaging.";

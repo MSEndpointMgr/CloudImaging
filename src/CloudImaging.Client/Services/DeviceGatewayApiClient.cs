@@ -80,13 +80,21 @@ public sealed class DeviceGatewayApiClient
     /// <summary>
     /// GET /api/v1/sessions/{sessionId}/status — Poll the current session state.
     /// Requires the device-session token Bearer to be set in <see cref="HttpClient.DefaultRequestHeaders"/>.
+    /// On a non-success response, throws <see cref="DeviceGatewayApiException"/> (rather than a generic
+    /// <see cref="HttpRequestException"/>) carrying the RFC7807 problem "type"/"detail" from the response
+    /// body, if present, so callers can distinguish an mTLS certificate rejection from a rejected/expired/
+    /// revoked device-session Bearer token — both surface as HTTP 401 but need different user-facing text.
     /// </summary>
     public async Task<SessionStatusResponse?> GetSessionStatusAsync(
         Guid sessionId,
         CancellationToken ct = default)
     {
         var response = await _http.GetAsync($"/api/v1/sessions/{sessionId}/status", ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            throw await DeviceGatewayApiException.FromResponseAsync(response, ct);
+        }
+
         return await response.Content.ReadFromJsonAsync<SessionStatusResponse>(JsonOptions, ct);
     }
 
@@ -111,8 +119,12 @@ public sealed class DeviceGatewayApiClient
         response.EnsureSuccessStatusCode();
     }
 
-    /// <summary>POST /api/v1/sessions/{sessionId}/sas/refresh — Refresh the SAS token URL.</summary>
-    public async Task<string?> RefreshSasTokenAsync(
+    /// <summary>
+    /// POST /api/v1/sessions/{sessionId}/sas/refresh — Refresh the SAS token URL.
+    /// Returns both the (possibly unchanged) URL and its actual server-computed expiry, so the caller
+    /// never has to guess the new expiry (see <see cref="SasRefreshCoordinator"/>).
+    /// </summary>
+    public async Task<SasRefreshResult> RefreshSasTokenAsync(
         Guid sessionId,
         CancellationToken ct = default)
     {
@@ -121,7 +133,32 @@ public sealed class DeviceGatewayApiClient
         response.EnsureSuccessStatusCode();
         using var doc = await System.Text.Json.JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        return doc.RootElement.TryGetProperty("sasTokenUrl", out var p) ? p.GetString() : null;
+        var url = doc.RootElement.TryGetProperty("sasTokenUrl", out var p) ? p.GetString() : null;
+        var expiresAt = doc.RootElement.TryGetProperty("sasTokenUrlExpiresAt", out var e)
+            && DateTimeOffset.TryParse(
+                e.GetString(), System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
+                ? parsed
+                : (DateTimeOffset?)null;
+        return new SasRefreshResult(url, expiresAt);
+    }
+
+    /// <summary>
+    /// GET /api/v1/boot-image/latest — Retrieve the latest published boot image's version,
+    /// hash, and SAS download URL, used by <see cref="BootImageSelfUpdateService"/> to detect
+    /// stale boot media (T071b, FR-059a). Requires only the mTLS boot-media certificate — no
+    /// device-session token — so it can run independently of session bootstrap. Returns null on
+    /// any non-success response (no active session/token is required, but network/service
+    /// errors are treated as "nothing to update" rather than thrown, since this check must never
+    /// block Client startup).
+    /// </summary>
+    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/api/v1/boot-image/latest", ct);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadFromJsonAsync<LatestBootImageInfo>(JsonOptions, ct);
     }
 }
 
@@ -149,4 +186,49 @@ public sealed class SessionStatusResponse
     public string? SasTokenUrl { get; init; }
     public string? SasTokenUrlExpiresAt { get; init; }
     public string? Sha256Hash { get; init; }
+}
+
+/// <summary>Result of a SAS token refresh call — see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>
+public sealed record SasRefreshResult(string? SasTokenUrl, DateTimeOffset? ExpiresAt);
+
+/// <summary>
+/// Thrown when the Device Gateway API returns a non-success response. Carries the RFC7807
+/// "type"/"detail" fields from the response body (when present) so callers can distinguish, e.g.,
+/// an mTLS certificate rejection (<see cref="CloudImaging.Client.Services"/> boot-media cert) from a
+/// rejected/expired/revoked device-session Bearer token — both surface as HTTP 401.
+/// </summary>
+public sealed class DeviceGatewayApiException : Exception
+{
+    /// <summary>Well-known problem type used by <c>DeviceSessionTokenValidationMiddleware</c> for token failures.</summary>
+    public const string TokenProblemType = "https://cloudimaging.io/errors/unauthorized";
+
+    public System.Net.HttpStatusCode StatusCode { get; }
+    public string? ProblemType { get; }
+
+    public DeviceGatewayApiException(System.Net.HttpStatusCode statusCode, string? problemType, string? detail)
+        : base(detail ?? $"Device Gateway API returned HTTP {(int)statusCode}.")
+    {
+        StatusCode = statusCode;
+        ProblemType = problemType;
+    }
+
+    internal static async Task<DeviceGatewayApiException> FromResponseAsync(
+        System.Net.Http.HttpResponseMessage response, CancellationToken ct)
+    {
+        string? problemType = null;
+        string? detail = null;
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(
+                await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            problemType = doc.RootElement.TryGetProperty("type", out var t) ? t.GetString() : null;
+            detail = doc.RootElement.TryGetProperty("detail", out var d) ? d.GetString() : null;
+        }
+        catch
+        {
+            // Response body wasn't RFC7807 problem-details JSON — leave both null.
+        }
+
+        return new DeviceGatewayApiException(response.StatusCode, problemType, detail);
+    }
 }

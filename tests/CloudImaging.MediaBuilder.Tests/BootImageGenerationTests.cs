@@ -1,6 +1,7 @@
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.IO;
 using Xunit;
 
 namespace CloudImaging.MediaBuilder.Tests;
@@ -20,22 +21,33 @@ public sealed class BootImageGenerationTests
     }
 
     [Fact]
-    public void GenerateAsync_ThrowsWhenAdkNotFound()
+    public async Task GenerateAsync_ThrowsAndLeavesNoOutputWim_WhenPrerequisitesAreMissing()
     {
-        // On a CI machine without ADK installed, GenerateAsync should throw with a clear message
-        // rather than a cryptic NullReferenceException.
+        // Whether ADK is installed varies by machine (it genuinely IS installed on some
+        // developer/imaging workstations), so the specific failure point (ADK detection vs.
+        // DISM mount vs. missing client path) is environment-dependent and not asserted here.
+        // What must always hold regardless of environment: generation never succeeds against a
+        // bogus client binaries path, and it never leaves a partial/corrupt WIM artifact behind
+        // in the output directory for the technician to mistakenly pick up.
         var svc = new BootImageGenerationService(NullLogger<BootImageGenerationService>.Instance);
+        var outputDir = Directory.CreateTempSubdirectory("ci-genoutput-").FullName;
+        try
+        {
+            Func<Task> act = async () => await svc.GenerateAsync(
+                clientBinariesPath: Path.Combine(Path.GetTempPath(), $"ci-nonexistent-{Guid.NewGuid():N}"),
+                pfxBytes: null,
+                outputDirectory: outputDir);
 
-        // We call in a way that will fail quickly without writing any files
-        Func<Task> act = async () => await svc.GenerateAsync(
-            clientBinariesPath: @"C:\NonExistent\Path",
-            pfxBytes: null,
-            outputDirectory: System.IO.Path.GetTempPath());
+            await act.Should().ThrowAsync<Exception>(
+                "generation must not silently succeed when the client binaries path or ADK prerequisite is invalid");
 
-        // Expect either InvalidOperationException (ADK not found) or
-        // DirectoryNotFoundException (client path not found) — both are acceptable
-        act.Should().ThrowAsync<Exception>(
-            "generation should fail gracefully when ADK or client path is invalid");
+            Directory.GetFiles(outputDir, "*.wim").Should().BeEmpty(
+                "a failed generation must not leave a WIM artifact behind in the output directory");
+        }
+        finally
+        {
+            Directory.Delete(outputDir, recursive: true);
+        }
     }
 
     // ── PFX embedding ─────────────────────────────────────────────────────────
@@ -55,27 +67,39 @@ public sealed class BootImageGenerationTests
     // ── Progress events ───────────────────────────────────────────────────────
 
     [Fact]
-    public void BootImageGenerationService_FiresProgressEvents()
+    public void ProgressChanged_InvokesSubscriber_WhenEventIsRaised()
     {
+        // ADK/DISM is required to actually drive GenerateAsync progress reporting end-to-end, so
+        // this verifies the event delegate itself correctly relays (message, percent) to
+        // subscribers by invoking the field-backed event directly via reflection.
         var svc = new BootImageGenerationService(NullLogger<BootImageGenerationService>.Instance);
         var events = new List<(string Message, int Percent)>();
         svc.ProgressChanged += (_, e) => events.Add(e);
 
-        // We cannot actually trigger progress without ADK but we verify the event plumbing
-        svc.Should().NotBeNull("service must be instantiable");
-        // The event handler is registered — verifying wiring only
-        events.Should().BeEmpty("no events fired yet without calling GenerateAsync");
+        var field = typeof(BootImageGenerationService)
+            .GetField("ProgressChanged", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var handler = (MulticastDelegate?)field?.GetValue(svc);
+        handler.Should().NotBeNull("at least one subscriber must be registered on the backing field");
+        handler!.DynamicInvoke(svc, ("Working…", 42));
+
+        events.Should().ContainSingle().Which.Should().Be(("Working…", 42));
     }
 
     // ── Certificate embedding path ────────────────────────────────────────────
 
     [Fact]
-    public void CertificateEmbeddedAt_ExpectedPath_RelativeToClientExecutable()
+    public void CertificateEmbeddedAt_ExpectedPath_MatchesClientStartupCoordinatorExpectation()
     {
-        // FR-070: the PFX is embedded at certificates\bootmedia.pfx relative to the Client exe
-        // This path must match what SessionStartupCoordinator.PfxRelativePath expects (FR-071)
-        const string certPath = @"certificates\bootmedia.pfx";
-        certPath.Should().Be(@"certificates\bootmedia.pfx",
-            "the cert embedded in the WIM must be at the path the Client expects (FR-070/FR-071)");
+        // FR-070/FR-071: BootImageGenerationService embeds the PFX at
+        // {clientDestDir}\certificates\bootmedia.pfx (Path.Combine("certificates", "bootmedia.pfx")
+        // in BootImageGenerationService.cs). CloudImaging.Client.Services.SessionStartupCoordinator
+        // .PfxRelativePath (asserted independently in tests/CloudImaging.Client.Tests) MUST use
+        // this exact same relative path — cross-checked here as a literal contract, since the
+        // MediaBuilder test project does not reference the Client project.
+        var embeddedRelativePath = Path.Combine("certificates", "bootmedia.pfx");
+
+        embeddedRelativePath.Should().Be(@"certificates\bootmedia.pfx",
+            "the cert embedded in the WIM must be at the path the Client's SessionStartupCoordinator.PfxRelativePath expects (FR-070/FR-071)");
     }
 }
+

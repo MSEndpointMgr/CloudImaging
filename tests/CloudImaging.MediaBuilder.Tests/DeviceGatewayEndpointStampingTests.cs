@@ -1,7 +1,11 @@
 using System.IO;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Text.Json;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace CloudImaging.MediaBuilder.Tests;
@@ -14,11 +18,43 @@ namespace CloudImaging.MediaBuilder.Tests;
 public sealed class DeviceGatewayEndpointStampingTests
 {
     [Fact]
-    public void GetEndpointConfigurationAsync_IsAvailable()
+    public async Task GetEndpointConfigurationAsync_ReturnsDeviceGatewayBaseUrl_FromOperatorApiResponse()
     {
-        // Method exists with correct signature — verified via reflection
-        var method = typeof(OperatorApiClient).GetMethod("GetEndpointConfigurationAsync");
-        method.Should().NotBeNull("GetEndpointConfigurationAsync must be accessible on OperatorApiClient");
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new { DeviceGatewayApiBaseUrl = "https://mse-dev-ci-func-gateway.azurewebsites.net" }),
+        });
+        var svc = new OperatorApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
+            NullLogger<OperatorApiClient>.Instance);
+
+        var result = await svc.GetEndpointConfigurationAsync();
+
+        result.DeviceGatewayApiBaseUrl.Should().Be("https://mse-dev-ci-func-gateway.azurewebsites.net",
+            "the resolved base URL must come from the Operator API response body, not be hardcoded");
+    }
+
+    [Fact]
+    public async Task GetEndpointConfigurationAsync_Throws_WhenOperatorApiReturnsEmptyBody()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("null", System.Text.Encoding.UTF8, "application/json"),
+        });
+        var svc = new OperatorApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
+            NullLogger<OperatorApiClient>.Instance);
+
+        Func<Task> act = async () => await svc.GetEndpointConfigurationAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>(
+            "an empty configuration response must fail loudly rather than silently stamping an empty base URL");
+    }
+
+    private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            Task.FromResult(respond(request));
     }
 
     [Fact]

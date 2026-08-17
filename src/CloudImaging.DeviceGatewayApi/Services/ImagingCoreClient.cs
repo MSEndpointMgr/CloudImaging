@@ -33,4 +33,12 @@ public sealed class ImagingCoreClient
     /// <summary>Forward cache hash validation request to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> ValidateCacheHashAsync(Guid sessionId, object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync($"/api/internal/sessions/{sessionId}/cache/validate", payload, JsonOptions, ct);
+
+    /// <summary>Forward the active boot image catalog listing request to ImagingCoreApi (T071b, FR-059a).</summary>
+    public Task<HttpResponseMessage> GetBootImagesAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/boot-images", ct);
+
+    /// <summary>Forward a boot image SAS URL issuance request to ImagingCoreApi (T071b, FR-059a).</summary>
+    public Task<HttpResponseMessage> GetBootImageSasUrlAsync(Guid bootImageId, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/boot-images/{bootImageId}/sas", null, ct);
 }

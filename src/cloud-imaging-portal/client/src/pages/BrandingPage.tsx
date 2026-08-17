@@ -7,7 +7,7 @@ import { Button, type ButtonStatus } from '../components/ui/button';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 
 interface BrandingConfig {
   /** Boot image logo (embedded into boot media by the Media Builder). */
@@ -81,7 +81,7 @@ export default function BrandingPage(): React.ReactElement {
   /** Streams the boot image logo bytes into an object URL for preview, revoking the previous one. */
   const loadBootPreview = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/branding/logo/content', { credentials: 'include' });
+      const res = await apiFetchWithRetry('/api/branding/logo/content', { credentials: 'include' });
       const next = res.ok ? URL.createObjectURL(await res.blob()) : null;
       if (bootLogoUrlRef.current) URL.revokeObjectURL(bootLogoUrlRef.current);
       bootLogoUrlRef.current = next;
@@ -94,7 +94,7 @@ export default function BrandingPage(): React.ReactElement {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await apiFetch('/api/branding', { credentials: 'include' });
+        const res = await apiFetchWithRetry('/api/branding', { credentials: 'include' });
         if (res.ok) {
           const data = await res.json() as BrandingConfig;
           setConfig(data);

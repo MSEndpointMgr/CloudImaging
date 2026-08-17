@@ -526,6 +526,11 @@ public sealed partial class BootImageGenerationService
         var workDir = Path.Combine(Path.GetTempPath(), $"{WorkDirPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(workDir);
 
+        // Computed up front (rather than after the WIM is finalized) so the same value can be
+        // embedded in the manifest as BootImageManifest.ImageVersion and reused for the output
+        // file name below — the two are intentionally the same identifier.
+        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+
         try
         {
             ReportProgress("Verifying ADK installation", 5);
@@ -606,10 +611,18 @@ public sealed partial class BootImageGenerationService
                 }
 
                 // Inject pre-staged storage/network drivers into the mounted WIM (FR-051c)
-                await InjectDriversAsync(mountDir, driverRootPath, ct);
+                var driversInjected = await InjectDriversAsync(mountDir, driverRootPath, ct);
 
                 ReportProgress("Configuring WinPE auto-start", 63);
                 await ConfigureWinPeAutoStartAsync(mountDir, ct);
+
+                // Embed the integrity/provenance manifest (T065, FR-051) — a descoped, honest
+                // replacement for the old "signed manifest" claim; see BootImageManifest's remarks.
+                ReportProgress("Embedding boot image manifest", 64);
+                var manifest = BootImageManifestService.Build(
+                    clientDestDir, timestamp, driversInjected, driverRootPath, logoBytes, pfxBytes);
+                await BootImageManifestService.EmbedAsync(mountDir, manifest, ct);
+                LogManifestEmbedded(_logger, timestamp, driversInjected);
 
                 ReportProgress("Unmounting and committing WIM", 75);
                 await RunDismAsync($"/Unmount-Image /MountDir:\"{mountDir}\" /Commit", ct);
@@ -629,9 +642,9 @@ public sealed partial class BootImageGenerationService
             Directory.CreateDirectory(outputDirectory);
 
             // Never overwrite a previous run's WIM: each generation gets its own timestamped
-            // filename, so an earlier successful build in the same output folder is always
-            // still there afterwards rather than silently replaced.
-            var timestamp  = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+            // filename (the same timestamp embedded as BootImageManifest.ImageVersion above), so
+            // an earlier successful build in the same output folder is always still there
+            // afterwards rather than silently replaced.
             var outputWim  = Path.Combine(outputDirectory, $"cloud-imaging-boot-{timestamp}.wim");
             DiskSpaceGuard.EnsureFreeSpace(outputDirectory, new FileInfo(wimPath).Length, "copy the finished boot image to the output folder");
             File.Copy(wimPath, outputWim, overwrite: false);
@@ -882,10 +895,11 @@ public sealed partial class BootImageGenerationService
     /// null/empty. Throws when a non-empty path does not exist. Skips (with a warning) when
     /// the folder exists but contains no driver packages (FR-051c).
     /// </summary>
-    private async Task InjectDriversAsync(string mountDir, string? driverRootPath, CancellationToken ct)
+    /// <summary>Returns the number of driver packages (.inf) injected, or 0 when skipped/not requested.</summary>
+    private async Task<int> InjectDriversAsync(string mountDir, string? driverRootPath, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(driverRootPath))
-            return;
+            return 0;
 
         if (!Directory.Exists(driverRootPath))
             throw new DirectoryNotFoundException(
@@ -899,13 +913,14 @@ public sealed partial class BootImageGenerationService
         {
             LogNoDriversFound(_logger, driverRootPath);
             ReportProgress("No driver packages found — skipping injection", 68);
-            return;
+            return 0;
         }
 
         ReportProgress($"Injecting {infCount} driver package(s)", 70);
         await RunDismAsync(
             $"/Image:\"{mountDir}\" /Add-Driver /Driver:\"{driverRootPath}\" /Recurse /ForceUnsigned", ct);
         LogDriversInjected(_logger, infCount, driverRootPath);
+        return infCount;
     }
 
     /// <summary>
@@ -1163,6 +1178,9 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
     private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Boot image manifest embedded (imageVersion={ImageVersion}, driversInjected={DriversInjected}).")]
+    private static partial void LogManifestEmbedded(ILogger logger, string imageVersion, int driversInjected);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "No driver packages (.inf) found under driver root {DriverRoot} — skipping driver injection.")]
     private static partial void LogNoDriversFound(ILogger logger, string driverRoot);

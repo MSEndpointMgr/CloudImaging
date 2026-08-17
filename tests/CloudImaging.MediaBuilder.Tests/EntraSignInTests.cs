@@ -1,4 +1,5 @@
 using CloudImaging.MediaBuilder.Services;
+using CloudImaging.MediaBuilder.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -44,13 +45,25 @@ public sealed class EntraSignInTests
     // ── Token requirement before navigation ──────────────────────────────────
 
     [Fact]
-    public void SignIn_IsRequiredBeforeNavigatingToOperationSelection()
+    public void ConstructingSignInViewModel_DoesNotNavigate_BeforeSignInIsAttempted()
     {
         // FR-050, FR-052: sign-in is the FIRST action in the Media Builder — the app must
-        // NOT navigate to OperationSelectionView until sign-in completes.
-        const bool navigatesWithoutSignIn = false;
-        navigatesWithoutSignIn.Should().BeFalse(
-            "the Media Builder must block navigation until Entra sign-in is completed (FR-052)");
+        // NOT navigate to OperationSelectionView until sign-in completes. EntraAuthenticationService
+        // is sealed (drives real interactive MSAL sign-in) so it cannot be faked to simulate a
+        // successful sign-in here; this test instead guards the other half of FR-052 that IS
+        // safely verifiable without invoking MSAL — that no navigation happens merely from
+        // constructing the view model or before SignInCommand is ever executed.
+        var navigated = false;
+        var authService = new EntraAuthenticationService(
+            clientId:         "test-client-id",
+            tenantId:         "test-tenant-id",
+            operatorApiScope: "api://test-client-id/.default",
+            logger:           NullLogger<EntraAuthenticationService>.Instance);
+
+        var vm = new SignInViewModel(authService, () => navigated = true);
+
+        navigated.Should().BeFalse("navigation must never happen before a sign-in attempt completes (FR-052)");
+        vm.CanSignIn.Should().BeTrue("the view model must be ready to accept a sign-in attempt immediately");
     }
 
     // ── SignInResult contract ─────────────────────────────────────────────────

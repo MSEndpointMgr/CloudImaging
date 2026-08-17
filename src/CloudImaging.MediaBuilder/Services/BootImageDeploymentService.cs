@@ -1,4 +1,6 @@
 using System.IO;
+using System.Text.Json;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -9,6 +11,8 @@ namespace CloudImaging.MediaBuilder.Services;
 /// </summary>
 public sealed partial class BootImageDeploymentService
 {
+    private static readonly JsonSerializerOptions ManifestWriteOptions = new() { WriteIndented = true };
+
     private readonly ILogger<BootImageDeploymentService> _logger;
 
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
@@ -47,6 +51,24 @@ public sealed partial class BootImageDeploymentService
         ReportProgress("USB boot partition activated.", 100);
 
         LogComplete(_logger, bootDriveLetter);
+    }
+
+    /// <summary>
+    /// Writes the <see cref="UsbPreparationManifest"/> to the root of the BOOT partition
+    /// (alongside <c>\sources\boot.wim</c>), so both the Cloud Imaging Client (self-update
+    /// version check, T071b/FR-059a) and future diagnostics can read the currently-deployed
+    /// boot image version without mounting/inspecting the WIM itself (T071a, FR-059).
+    /// </summary>
+    public async Task WriteUsbPreparationManifestAsync(
+        string bootDriveLetter,
+        UsbPreparationManifest manifest,
+        CancellationToken ct = default)
+    {
+        var mediaRoot = bootDriveLetter.TrimEnd('\\', '/');
+        var manifestPath = Path.Combine(mediaRoot, UsbPreparationManifest.FileName);
+        var json = JsonSerializer.Serialize(manifest, ManifestWriteOptions);
+        await File.WriteAllTextAsync(manifestPath, json, ct);
+        LogManifestWritten(_logger, manifestPath, manifest.BootImageVersion);
     }
 
     private static async Task ConfigureBcdAsync(string mediaRoot, CancellationToken ct)
@@ -99,4 +121,7 @@ public sealed partial class BootImageDeploymentService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image deployment complete to {Drive}.")]
     private static partial void LogComplete(ILogger logger, string drive);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "USB preparation manifest written to {ManifestPath} (bootImageVersion={BootImageVersion}).")]
+    private static partial void LogManifestWritten(ILogger logger, string manifestPath, string bootImageVersion);
 }

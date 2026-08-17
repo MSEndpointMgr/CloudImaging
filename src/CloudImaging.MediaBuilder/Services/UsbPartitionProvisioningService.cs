@@ -77,12 +77,22 @@ public sealed partial class UsbPartitionProvisioningService
     /// created by <see cref="ProvisionAsync"/>, or <c>null</c> if it cannot be located.
     /// Used to hand the boot partition off to the deployment step.
     /// </summary>
-    public string? FindBootVolumeDriveLetter()
+    public string? FindBootVolumeDriveLetter() => FindVolumeDriveLetterByLabel("BOOT");
+
+    /// <summary>
+    /// Returns the drive letter of the NTFS volume labelled <c>CACHE</c> created by
+    /// <see cref="ProvisionAsync"/>, or <c>null</c> if it cannot be located. Used only to
+    /// record the partition layout in <c>UsbPreparationManifest.PartitionSchema</c> (T071a,
+    /// FR-059) — the manifest itself is written to the BOOT partition, not here.
+    /// </summary>
+    public string? FindCacheVolumeDriveLetter() => FindVolumeDriveLetterByLabel("CACHE");
+
+    private string? FindVolumeDriveLetterByLabel(string label)
     {
         try
         {
             using var searcher = new ManagementObjectSearcher(
-                "SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='BOOT'");
+                $"SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='{label}'");
             using var results = searcher.Get();
             foreach (ManagementObject volume in results)
             {

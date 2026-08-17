@@ -21,21 +21,27 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
         Outcome outcome,
         string? deviceSerialNumber,
         string? errorDetail,
-        Action navigateToStart)
+        Action navigateToStart,
+        string? explicitSupportReferenceCode = null)
     {
         _outcome            = outcome;
         _deviceSerialNumber = deviceSerialNumber;
         _errorDetail        = errorDetail;
         _navigateToStart    = navigateToStart;
 
-        // Support reference code: deterministic from serial + timestamp for correlation
-        SupportReferenceCode = outcome == Outcome.Failure
-            ? CloudImaging.Contracts.Models.SupportReferenceCode
-                .ForClient(deviceSerialNumber is not null && Guid.TryParse(deviceSerialNumber, out var g) ? g : Guid.Empty, "REG")
-                .ToString()
-            : null;
+        // Support reference code: prefer the code the failing stage actually generated
+        // (e.g. FMT/DWN/APL from ImagingWorkflowViewModel); fall back to a REG-stage code with a
+        // sentinel all-zero session ref only when the caller didn't already produce one (this
+        // should only happen for callers that don't yet carry session context, e.g. tooling).
+        SupportReferenceCode = outcome != Outcome.Failure
+            ? null
+            : explicitSupportReferenceCode
+                ?? CloudImaging.Contracts.Models.SupportReferenceCode
+                    .ForClient(Guid.Empty, "REG")
+                    .ToString();
 
         RetryCommand = new RelayCommand(_ => _navigateToStart());
+        ExitCommand  = new RelayCommand(_ => System.Windows.Application.Current?.Shutdown());
     }
 
     public bool IsSuccess       => _outcome == Outcome.Success;
@@ -47,6 +53,12 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     public string? ErrorDetail  => _errorDetail;
 
     public ICommand RetryCommand { get; }
+
+    /// <summary>
+    /// Closes the application. This is the only available action on the NotAuthorized outcome
+    /// (FR-007b/FR-026) — there is no automatic retry, since the device must first be enrolled.
+    /// </summary>
+    public ICommand ExitCommand { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>

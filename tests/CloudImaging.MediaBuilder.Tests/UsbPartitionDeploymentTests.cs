@@ -1,6 +1,8 @@
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.IO;
+using System.Reflection;
 using Xunit;
 
 namespace CloudImaging.MediaBuilder.Tests;
@@ -23,17 +25,22 @@ public sealed class UsbPartitionDeploymentTests
     // ── Expected partition layout ─────────────────────────────────────────────
 
     [Fact]
-    public void PartitionLayout_IsTwoPartitions_Fat32Boot_NtfsCache()
+    public void BuildDiskpartScript_ProducesTwoPartitions_Fat32Boot_NtfsCache()
     {
-        // FR-055: two-partition layout — FAT32 boot (min 2 GB) + NTFS cache (min 20 GB, aligned
-        // with the Cloud Imaging Client's ImageCacheService expectations)
-        const int partitionCount = 2;
-        const string bootFsType  = "FAT32";
-        const string cacheFsType = "NTFS";
+        // FR-055: two-partition layout — FAT32 boot (min 2 GB) + NTFS cache — asserted against
+        // the actual diskpart script UsbPartitionProvisioningService.ProvisionAsync executes,
+        // rather than a set of unrelated local constants.
+        var method = typeof(UsbPartitionProvisioningService).GetMethod(
+            "BuildDiskpartScript", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var script = (string)method.Invoke(null, [3u])!;
 
-        partitionCount.Should().Be(2, "USB must have exactly 2 partitions (FR-055)");
-        bootFsType.Should().Be("FAT32", "boot partition must be FAT32 for WinPE compatibility");
-        cacheFsType.Should().Be("NTFS",  "cache partition must be NTFS");
+        script.Should().Contain("select disk 3", "the script must target the exact disk number passed in");
+        script.Should().Contain($"size={UsbPartitionProvisioningService.BootPartitionSizeMb}",
+            "the boot partition size must come from the shared BootPartitionSizeMb constant");
+        script.Should().Contain("fs=fat32", "boot partition must be FAT32 for WinPE compatibility (FR-055)");
+        script.Should().Contain("fs=ntfs", "cache partition must be NTFS (FR-055)");
+        script.Split("create partition", StringSplitOptions.None).Length.Should().Be(3,
+            "exactly two 'create partition' commands must appear (2 partitions total, FR-055)");
     }
 
     [Fact]
@@ -77,45 +84,65 @@ public sealed class UsbPartitionDeploymentTests
     // ── Auto-start configuration ──────────────────────────────────────────────
 
     [Fact]
-    public void AutoStart_UsesStartnetCmd_ToLaunchCloudImagingClient()
+    public async Task ConfigureWinPeAutoStartAsync_WritesWinPeShlIniAndStartnetCmd_LaunchingClient()
     {
-        // startnet.cmd is the WinPE auto-start mechanism — it runs the Client automatically
-        const string autoStartFile = "startnet.cmd";
-        const string clientExe     = "CloudImaging.Client.exe";
+        // FR-051/FR-057: WinPE must launch the Cloud Imaging Client automatically at boot, with
+        // no visible console — verified against the actual files BootImageGenerationService
+        // writes into the mounted WIM, not a set of unrelated local constants.
+        var mountDir = Directory.CreateTempSubdirectory("ci-mount-").FullName;
+        try
+        {
+            var method = typeof(BootImageGenerationService).GetMethod(
+                "ConfigureWinPeAutoStartAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
+            await (Task)method.Invoke(null, [mountDir, CancellationToken.None])!;
 
-        autoStartFile.Should().Be("startnet.cmd",
-            "WinPE auto-start is configured via startnet.cmd");
-        clientExe.Should().Be("CloudImaging.Client.exe",
-            "startnet.cmd launches the Cloud Imaging Client executable");
+            var system32Dir = Path.Combine(mountDir, "Windows", "System32");
+            var winpeshlIni = await File.ReadAllTextAsync(Path.Combine(system32Dir, "winpeshl.ini"));
+            var startnetCmd = await File.ReadAllTextAsync(Path.Combine(system32Dir, "startnet.cmd"));
+
+            winpeshlIni.Should().Contain("[LaunchApps]").And.Contain("CloudImaging.Client.exe").And.Contain("wpeinit.exe");
+            startnetCmd.Should().Contain("CloudImaging.Client.exe").And.Contain("wpeinit.exe");
+        }
+        finally
+        {
+            Directory.Delete(mountDir, recursive: true);
+        }
     }
 
     // ── Deployment progress events ────────────────────────────────────────────
 
     [Fact]
-    public void BootImageDeploymentService_FiresProgressEvents()
+    public void ProgressChanged_InvokesSubscriber_WhenEventIsRaised()
     {
         var svc    = new BootImageDeploymentService(NullLogger<BootImageDeploymentService>.Instance);
         var events = new List<(string Message, int Percent)>();
         svc.ProgressChanged += (_, e) => events.Add(e);
 
-        // Event plumbing verified
-        events.Should().BeEmpty("no events fired without starting deployment");
+        var field = typeof(BootImageDeploymentService)
+            .GetField("ProgressChanged", BindingFlags.Instance | BindingFlags.NonPublic);
+        var handler = (MulticastDelegate?)field?.GetValue(svc);
+        handler.Should().NotBeNull("at least one subscriber must be registered on the backing field");
+        handler!.DynamicInvoke(svc, ("Deploying…", 50));
+
+        events.Should().ContainSingle().Which.Should().Be(("Deploying…", 50));
     }
 
     // ── Boot image list pre-selection ─────────────────────────────────────────
 
     [Fact]
-    public void BootImageList_PreSelects_LatestPublishedEntry()
+    public void BootImageChoice_PreSelectsLatestPublished_WhenBuiltFromOperatorApiList()
     {
-        // FR-053: the latest published entry is pre-selected in PrepareStorageDeviceView
+        // FR-053: the latest published entry is pre-selected in PrepareStorageDeviceView.
+        // Built from BootImageDto (the actual Operator API DTO), not an anonymous local shape.
         var images = new[]
         {
-            new { Version = "1.0", IsLatestPublished = false },
-            new { Version = "2.0", IsLatestPublished = true  },
+            new BootImageDto { BootImageId = Guid.NewGuid(), Version = "1.0", IsLatestPublished = false, IsActive = true },
+            new BootImageDto { BootImageId = Guid.NewGuid(), Version = "2.0", IsLatestPublished = true,  IsActive = true },
         };
 
-        var preSelected = images.First(i => i.IsLatestPublished);
-        preSelected.Version.Should().Be("2.0",
-            "the latest published boot image should be pre-selected (FR-053)");
+        var preSelected = images.SingleOrDefault(i => i.IsLatestPublished);
+
+        preSelected.Should().NotBeNull("exactly one entry must be flagged isLatestPublished (contract guaranteed by T060)");
+        preSelected!.Version.Should().Be("2.0", "the latest published boot image should be pre-selected (FR-053)");
     }
 }

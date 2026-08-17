@@ -51,11 +51,12 @@ public sealed partial class SasRefreshCoordinator : IDisposable
                 if (timeLeft < RefreshThreshold)
                 {
                     LogRefreshing(_logger, _sessionId, (int)timeLeft.TotalMinutes);
-                    var newUrl = await _gatewayClient.RefreshSasTokenAsync(_sessionId, ct);
-                    if (newUrl is not null)
+                    var result = await _gatewayClient.RefreshSasTokenAsync(_sessionId, ct);
+                    if (result.SasTokenUrl is not null)
                     {
-                        CurrentSasUrl = newUrl;
-                        SasExpiresAt  = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(60); // Server-side default
+                        CurrentSasUrl = result.SasTokenUrl;
+                        // Prefer the server-computed expiry; only guess if the server ever omits it.
+                        SasExpiresAt  = result.ExpiresAt ?? DateTimeOffset.UtcNow + TimeSpan.FromMinutes(60);
                         LogRefreshed(_logger, _sessionId);
                     }
                 }

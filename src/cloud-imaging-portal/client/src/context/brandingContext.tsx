@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetchWithRetry } from '../lib/apiClient.ts';
 
 interface BrandingConfig {
   primaryColor?: string;
@@ -48,7 +48,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
 
   const load = useCallback(async () => {
     try {
-      const res = await apiFetch('/api/branding', { credentials: 'include' });
+      const res = await apiFetchWithRetry('/api/branding', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json() as BrandingConfig;
         setBranding(data);
@@ -58,7 +58,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
           try {
             // Stream the logo bytes through the backend (managed identity read, no SAS)
             // and expose them as an ephemeral object URL for <img>.
-            const logoRes = await apiFetch('/api/branding/portal-logo/content', { credentials: 'include' });
+            const logoRes = await apiFetchWithRetry('/api/branding/portal-logo/content', { credentials: 'include' });
             if (logoRes.ok) {
               setLogoObjectUrl(URL.createObjectURL(await logoRes.blob()));
             } else {

@@ -23,7 +23,7 @@
             <!--
                 Branding logo embedded in the boot image (branding\logo.png next to the exe,
                 configured through the portal). Collapsed by default; the code-behind makes it
-                visible only when a logo is present — if none was configured, nothing is shown.
+                visible only when a logo is present.
             -->
             <Image x:Name="BrandingLogo"
                    Width="72" Height="72"
@@ -31,6 +31,19 @@
                    VerticalAlignment="Center"
                    Stretch="Uniform"
                    Visibility="Collapsed" />
+
+            <!--
+                Default vector logo shown whenever no portal-provided branding\logo.png is
+                configured for this boot image, so the header never renders with a blank gap
+                where a logo would otherwise go.
+            -->
+            <ui:SymbolIcon x:Name="BrandingLogoFallback"
+                           Symbol="CloudArrowDown24"
+                           FontSize="56"
+                           Margin="0,0,20,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                           Visibility="Collapsed" />
 
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Cloud Imaging"

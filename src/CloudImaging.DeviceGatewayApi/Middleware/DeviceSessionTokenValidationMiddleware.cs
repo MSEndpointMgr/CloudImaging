@@ -8,6 +8,9 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// <summary>
 /// Validates the device-session bearer token on all authenticated Device Gateway API endpoints.
 /// The public session bootstrap endpoint (POST /api/v1/sessions) is exempt — it has no token yet (FR-014, FR-018).
+/// GetLatestBootImage (GET /api/v1/boot-image/latest) is also exempt — the boot image self-update
+/// check (T071b, FR-059a) runs independently of session bootstrap/lifecycle, authenticated only
+/// by the mTLS boot-media certificate (enforced for every request regardless of this middleware).
 /// Attaches the validated session ID to the function context for downstream handlers.
 /// </summary>
 public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMiddleware
@@ -15,9 +18,9 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
     /// <summary>Context item key for the resolved session ID.</summary>
     public const string SessionIdKey = "DeviceSessionId";
 
-    /// <summary>Function names exempt from token validation (the public bootstrap endpoint).</summary>
+    /// <summary>Function names exempt from token validation (public/mTLS-only endpoints).</summary>
     public static readonly IReadOnlySet<string> ExemptFunctionNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage" };
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {

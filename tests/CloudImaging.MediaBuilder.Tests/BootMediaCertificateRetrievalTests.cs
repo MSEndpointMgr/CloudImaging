@@ -25,11 +25,32 @@ public sealed class BootMediaCertificateRetrievalTests
     }
 
     [Fact]
-    public void GetBootMediaCertPfxAsync_IsAvailable()
+    public async Task GetBootMediaCertPfxAsync_ReturnsPfxBytes_OnSuccessResponse()
     {
-        // Method exists with correct signature — verified via reflection
-        var method = typeof(OperatorApiClient).GetMethod("GetBootMediaCertPfxAsync");
-        method.Should().NotBeNull("GetBootMediaCertPfxAsync must be accessible on OperatorApiClient");
+        var pfxBytes = new byte[] { 9, 8, 7, 6, 5 };
+        var handler  = new FakeHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(pfxBytes) });
+        var svc = new OperatorApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
+            NullLogger<OperatorApiClient>.Instance);
+
+        var result = await svc.GetBootMediaCertPfxAsync();
+
+        result.Should().BeEquivalentTo(pfxBytes, "the returned bytes must be exactly the PFX content from the Operator API response body");
+    }
+
+    [Fact]
+    public async Task GetBootMediaCertPfxAsync_Throws_WhenOperatorApiReturnsNotFound()
+    {
+        var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var svc = new OperatorApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
+            NullLogger<OperatorApiClient>.Instance);
+
+        Func<Task> act = async () => await svc.GetBootMediaCertPfxAsync();
+
+        await act.Should().ThrowAsync<HttpRequestException>(
+            "a missing active certificate must surface as a failure rather than silently returning an empty/garbage PFX");
     }
 
     // ── Cert path in WIM ─────────────────────────────────────────────────────
@@ -37,11 +58,14 @@ public sealed class BootMediaCertificateRetrievalTests
     [Fact]
     public void EmbeddedCertPath_MatchesClientExpectedPath()
     {
-        // The PFX embedded by the Media Builder at certificates\bootmedia.pfx must match
-        // the path the Cloud Imaging Client expects (FR-070/FR-071).
-        const string embeddedPath = @"certificates\bootmedia.pfx";
+        // The PFX embedded by the Media Builder at certificates\bootmedia.pfx (produced via
+        // Path.Combine("certificates", "bootmedia.pfx") in BootImageGenerationService.cs) must
+        // match the path CloudImaging.Client.Services.SessionStartupCoordinator.PfxRelativePath
+        // expects (asserted independently in tests/CloudImaging.Client.Tests) — cross-checked
+        // here as a literal contract since this test project does not reference Client (FR-070/FR-071).
+        var embeddedPath = Path.Combine("certificates", "bootmedia.pfx");
         embeddedPath.Should().Be(@"certificates\bootmedia.pfx",
-            "embedded cert path must match what the Client expects (FR-070)");
+            "embedded cert path must match what the Client's SessionStartupCoordinator.PfxRelativePath expects (FR-070)");
     }
 
     // ── Real cert-resolution behavior via GenerateElevatedAsync (T173) ────────

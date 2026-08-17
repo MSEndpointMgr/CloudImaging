@@ -51,6 +51,17 @@ public partial class App : Application
 
             var gatewayClient = new DeviceGatewayApiClient(httpClient, startupResult.Certificate);
 
+            // T071b/FR-059a: kick off the boot image self-update check in the background.
+            // Fire-and-forget by design — it only affects the NEXT boot from this USB media
+            // (WinPE already loaded the current boot.wim into RAM before the Client started),
+            // so it must never delay startup or the current session, and it swallows its own
+            // failures internally (see BootImageSelfUpdateService remarks).
+            var selfUpdateService = new BootImageSelfUpdateService(
+                gatewayClient,
+                new HttpClient(),
+                loggerFactory.CreateLogger<BootImageSelfUpdateService>());
+            _ = selfUpdateService.CheckAndUpdateAsync();
+
             var mainWindow = new MainWindow();
             mainWindow.NavigateTo(BuildOperationSelectionView(mainWindow, gatewayClient, loggerFactory));
             mainWindow.Show();
@@ -137,7 +148,7 @@ public partial class App : Application
             SessionId = Guid.NewGuid(),
             Passcode = "428913",
             State = "AwaitingAuthorization",
-        });
+        }, "DEV-SIM-0001");
 
     /// <summary>DEV-ONLY: ProgressView seeded with a representative mid-imaging state.</summary>
     private static ProgressView BuildSampleProgressView()
@@ -161,11 +172,8 @@ public partial class App : Application
         var view = new OperationSelectionView();
         view.DataContext = new OperationSelectionViewModel(
             gateway,
-            sessionResponse =>
-            {
-                if (sessionResponse is CreateSessionResponse resp)
-                    window.NavigateTo(BuildSessionInitView(window, gateway, lf, resp));
-            });
+            (sessionResponse, serialNumber) =>
+                window.NavigateTo(BuildSessionInitView(window, gateway, lf, sessionResponse, serialNumber)));
         return view;
     }
 
@@ -173,16 +181,46 @@ public partial class App : Application
         MainWindow window,
         DeviceGatewayApiClient gateway,
         ILoggerFactory lf,
-        CreateSessionResponse session)
+        CreateSessionResponse session,
+        string? deviceSerialNumber)
     {
         var view = new SessionInitView();
         view.DataContext = new SessionInitViewModel(
             gateway,
             session.SessionId,
             session.Passcode,
-            (outcome, serialNumber, errorDetail) =>
-                window.NavigateTo(BuildResultsView(window, gateway, lf, outcome, serialNumber, errorDetail)));
+            deviceSerialNumber,
+            navigateToResults: (outcome, serialNumber, errorDetail, supportReferenceCode) =>
+                window.NavigateTo(BuildResultsView(window, gateway, lf, outcome, serialNumber, errorDetail, supportReferenceCode)),
+            navigateToProgress: (status, serialNumber) =>
+                window.NavigateTo(BuildProgressView(window, gateway, lf, session.SessionId, serialNumber, status)));
         return view;
+    }
+
+    /// <summary>
+    /// Builds the ProgressView and starts <see cref="ImagingWorkflowViewModel"/>, which drives the
+    /// Format → Download → Apply pipeline and navigates onward to ResultsView on completion/failure.
+    /// </summary>
+    private static ProgressView BuildProgressView(
+        MainWindow window,
+        DeviceGatewayApiClient gateway,
+        ILoggerFactory lf,
+        Guid sessionId,
+        string? deviceSerialNumber,
+        SessionStatusResponse initialStatus)
+    {
+        var progressViewModel = new ProgressViewModel();
+        var workflow = new ImagingWorkflowViewModel(
+            gateway,
+            sessionId,
+            deviceSerialNumber,
+            initialStatus,
+            progressViewModel,
+            navigateToResults: (outcome, serialNumber, errorDetail, supportReferenceCode) =>
+                window.NavigateTo(BuildResultsView(window, gateway, lf, outcome, serialNumber, errorDetail, supportReferenceCode)),
+            lf);
+        workflow.Start();
+        return new ProgressView { DataContext = progressViewModel };
     }
 
     private static ResultsView BuildResultsView(
@@ -191,14 +229,16 @@ public partial class App : Application
         ILoggerFactory lf,
         ResultsViewModel.Outcome outcome,
         string? serialNumber,
-        string? errorDetail)
+        string? errorDetail,
+        string? explicitSupportReferenceCode = null)
     {
         var view = new ResultsView();
         view.DataContext = new ResultsViewModel(
             outcome,
             serialNumber,
             errorDetail,
-            () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)));
+            () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
+            explicitSupportReferenceCode);
         return view;
     }
 

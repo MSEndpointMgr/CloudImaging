@@ -72,6 +72,12 @@
                                 IsOpen="True"
                                 IsClosable="False"
                                 Margin="0,16,0,0" />
+                    <!-- FR-007b/FR-026: Exit/Close is the only available action on this outcome (no Retry). -->
+                    <ui:Button Content="Exit"
+                               Appearance="Secondary"
+                               Width="160"
+                               Command="{Binding ExitCommand}"
+                               HorizontalAlignment="Center" Margin="0,24,0,0" />
                 </StackPanel>
 
             </StackPanel>

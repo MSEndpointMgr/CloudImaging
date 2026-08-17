@@ -20,14 +20,17 @@ public partial class OperationSelectionView : Page
 
     /// <summary>
     /// Shows the portal-provided branding logo embedded in the boot image
-    /// (<c>branding\logo.png</c> next to the exe). When no logo was configured
-    /// through the portal, the image stays collapsed so nothing is shown.
+    /// (<c>branding\logo.png</c> next to the exe). When no logo was configured through the
+    /// portal, a default vector logo (<see cref="OperationSelectionView.BrandingLogoFallback"/>,
+    /// a WPF-UI symbol glyph rather than a raster asset) is shown instead, so the header never
+    /// renders with a blank gap.
     /// </summary>
     private void LoadBrandingLogo()
     {
         var logoPath = new BrandingLogoService(NullLogger<BrandingLogoService>.Instance).GetLogoPath();
         if (logoPath is null)
         {
+            BrandingLogoFallback.Visibility = Visibility.Visible;
             return;
         }
 
@@ -45,7 +48,9 @@ public partial class OperationSelectionView : Page
         }
         catch
         {
-            // A corrupt or unreadable logo must never block operation selection.
+            // A corrupt or unreadable logo must never block operation selection —
+            // fall back to the default vector logo instead.
+            BrandingLogoFallback.Visibility = Visibility.Visible;
         }
     }
 }

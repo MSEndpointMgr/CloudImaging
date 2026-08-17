@@ -89,3 +89,38 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
 
   return response;
 }
+
+const TRANSIENT_RETRY_DELAYS_MS = [300, 900, 2000];
+
+function isTransientStatus(status: number): boolean {
+  // 502/503/504 (and the less common 500/429) are what a cold-starting Function App /
+  // App Service returns for the first request or two right after a deploy restart —
+  // NOT evidence that the underlying data is gone. 401/403/404 are left alone (real
+  // auth outcomes / genuinely-unconfigured resources) so this never masks a real error.
+  return status === 500 || status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Same as `apiFetch`, but retries a few times (short backoff) on a transient failure —
+ * a network error, or a 5xx/429 response. Every future release restarts the Portal
+ * Backend / Operator API / Imaging Core API for a few seconds; without this, anyone who
+ * loads a page during that window sees data (e.g. branding) silently fall back to
+ * defaults even though nothing was actually lost.
+ */
+export async function apiFetchWithRetry(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      const res = await apiFetch(input, init);
+      if (res.ok || !isTransientStatus(res.status) || attempt === TRANSIENT_RETRY_DELAYS_MS.length) {
+        return res;
+      }
+    } catch (err) {
+      lastError = err;
+      if (attempt === TRANSIENT_RETRY_DELAYS_MS.length) throw err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAYS_MS[attempt]));
+  }
+  // Unreachable in practice (loop always returns/throws above); satisfies control-flow analysis.
+  throw lastError instanceof Error ? lastError : new Error('apiFetchWithRetry exhausted retries');
+}

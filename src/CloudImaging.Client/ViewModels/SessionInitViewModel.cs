@@ -15,11 +15,15 @@ namespace CloudImaging.Client.ViewModels;
 /// </summary>
 public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
 {
-    private const int PollingIntervalSeconds = 5;
+    // FR-003: server-side polling cadence is 30s; the Client must match it rather than
+    // polling 6x more often than necessary.
+    private const int PollingIntervalSeconds = 30;
 
     private readonly DeviceGatewayApiClient _gatewayClient;
     private readonly Guid _sessionId;
-    private readonly Action<ResultsViewModel.Outcome, string?, string?> _navigateToResults;
+    private readonly string? _deviceSerialNumber;
+    private readonly Action<ResultsViewModel.Outcome, string?, string?, string?> _navigateToResults;
+    private readonly Action<SessionStatusResponse, string?> _navigateToProgress;
     private readonly CancellationTokenSource _cts = new();
 
     private bool _isPolling = true;
@@ -31,12 +35,16 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
         string passcode,
-        Action<ResultsViewModel.Outcome, string?, string?> navigateToResults)
+        string? deviceSerialNumber,
+        Action<ResultsViewModel.Outcome, string?, string?, string?> navigateToResults,
+        Action<SessionStatusResponse, string?> navigateToProgress)
     {
-        _gatewayClient     = gatewayClient;
-        _sessionId         = sessionId;
-        Passcode           = passcode;
-        _navigateToResults = navigateToResults;
+        _gatewayClient      = gatewayClient;
+        _sessionId          = sessionId;
+        Passcode            = passcode;
+        _deviceSerialNumber = deviceSerialNumber;
+        _navigateToResults  = navigateToResults;
+        _navigateToProgress = navigateToProgress;
 
         RefreshCommand = new RelayCommand(async _ => await PollOnceAsync());
 
@@ -106,21 +114,33 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.NotAuthorized,
-                        session.SessionId.ToString(),
+                        _deviceSerialNumber,
+                        null,
                         null);
                     break;
 
                 case SessionState.SessionCompleted:
                     IsPolling = false;
-                    _navigateToResults(ResultsViewModel.Outcome.Success, null, null);
+                    _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
                     break;
 
                 case SessionState.SessionFailed:
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.Failure,
+                        _deviceSerialNumber,
                         null,
                         null);
+                    break;
+
+                // FR-005/FR-009d: once the operator has coupled and assigned an image, hand off
+                // to the imaging pipeline instead of polling forever with no visible progress
+                // (previously, these three states fell into the generic "keep waiting" default).
+                case SessionState.SessionAssigned:
+                case SessionState.SessionStarted:
+                case SessionState.SessionInProgress:
+                    IsPolling = false;
+                    _navigateToProgress(session, _deviceSerialNumber);
                     break;
 
                 default:
@@ -135,11 +155,21 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                           "Regenerate the boot image using Cloud Imaging Media Builder " +
                           "and re-prepare the USB drive with the new image.");
         }
-        catch (HttpRequestException ex) when
-            (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        catch (DeviceGatewayApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            ShowCertError("Certificate mismatch (HTTP 401). " +
-                          "Regenerate the boot image and re-prepare USB media.");
+            // Both an mTLS certificate rejection and a revoked/expired device-session Bearer
+            // token surface as HTTP 401 — disambiguate using the RFC7807 problem "type" the
+            // server includes, instead of always showing the (often wrong) cert-mismatch text.
+            if (string.Equals(ex.ProblemType, DeviceGatewayApiException.TokenProblemType, StringComparison.Ordinal))
+            {
+                ShowCertError("The device session token was rejected or has expired. " +
+                              "Restart the Cloud Imaging Client to begin a new session.");
+            }
+            else
+            {
+                ShowCertError("Certificate mismatch (HTTP 401). " +
+                              "Regenerate the boot image and re-prepare USB media.");
+            }
         }
         catch (Exception ex)
         {

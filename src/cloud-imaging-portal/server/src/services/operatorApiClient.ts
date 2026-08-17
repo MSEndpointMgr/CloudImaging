@@ -2,6 +2,22 @@ import axios, { AxiosInstance } from 'axios';
 import { getOperatorApiToken } from './operatorApiToken.js';
 
 /**
+ * Default timeout for most (fast) Operator API calls — catches a genuinely unreachable
+ * backend quickly instead of hanging the request pipeline.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * Timeout for the boot-image / OS-image upload "publish" calls specifically. Publish
+ * downloads the whole staged blob through Imaging Core API to verify its SHA-256 hash and
+ * then copies it to its published path — both scale with image size, so a multi-hundred-MB
+ * WIM can legitimately take well over 30s. Using the short default here caused the publish
+ * (or a request queued behind it) to be aborted client-side and surfaced as a 504 even
+ * though the backend was still working correctly (see repo memory: boot-image-upload-504).
+ */
+const PUBLISH_TIMEOUT_MS = 180_000;
+
+/**
  * Typed HTTP client for portal backend → Operator API calls over Private Link (T041, FR-013).
  * Every request is authenticated with the portal backend's OWN managed-identity token (which
  * carries the `CloudImaging.PortalAccess` service role) via a request interceptor — the user's
@@ -14,7 +30,7 @@ export class OperatorApiClient {
   constructor(baseUrl: string) {
     this.http = axios.create({
       baseURL: baseUrl,
-      timeout: 30_000,
+      timeout: DEFAULT_TIMEOUT_MS,
       headers: { 'Content-Type': 'application/json' },
     });
 
@@ -80,7 +96,8 @@ export class OperatorApiClient {
   }
 
   async publishOsImageUpload(uploadId: string, payload: unknown): Promise<unknown> {
-    const { data } = await this.http.post<unknown>(`/api/images/upload/${uploadId}/publish`, payload);
+    const { data } = await this.http.post<unknown>(
+      `/api/images/upload/${uploadId}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
     return data;
   }
 
@@ -97,7 +114,8 @@ export class OperatorApiClient {
   }
 
   async publishBootImageUpload(token: string, payload: unknown): Promise<unknown> {
-    const { data } = await this.http.post<unknown>(`/api/boot-images/upload/${token}/publish`, payload);
+    const { data } = await this.http.post<unknown>(
+      `/api/boot-images/upload/${token}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
     return data;
   }
 
