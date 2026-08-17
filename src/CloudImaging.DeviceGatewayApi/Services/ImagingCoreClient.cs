@@ -49,4 +49,8 @@ public sealed class ImagingCoreClient
     /// <summary>Forward a recovery image SAS URL issuance request to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> GetRecoveryImageSasUrlAsync(Guid recoveryImageId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/recovery-images/{recoveryImageId}/sas", null, ct);
+
+    /// <summary>Forward a session log upload URL request to ImagingCoreApi.</summary>
+    public Task<HttpResponseMessage> RequestSessionLogUploadUrlAsync(Guid sessionId, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/sessions/{sessionId}/logs/upload-url", null, ct);
 }

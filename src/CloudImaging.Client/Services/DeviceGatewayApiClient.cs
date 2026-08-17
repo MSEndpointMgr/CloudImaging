@@ -175,6 +175,22 @@ public sealed class DeviceGatewayApiClient
 
         return await response.Content.ReadFromJsonAsync<LatestRecoveryImageInfo>(JsonOptions, ct);
     }
+
+    /// <summary>
+    /// POST /api/v1/sessions/{sessionId}/logs/upload-url — Requests a short-lived write SAS URL
+    /// the Client can PUT its current local diagnostic log to, used by
+    /// <see cref="Services.LogUploadService"/> on any terminal imaging failure. Requires the
+    /// device-session token Bearer. Returns null on any non-success response — this must never
+    /// block or mask the real failure being reported.
+    /// </summary>
+    public async Task<LogUploadUrlResponse?> RequestLogUploadUrlAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsync($"/api/v1/sessions/{sessionId}/logs/upload-url", null, ct);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadFromJsonAsync<LogUploadUrlResponse>(JsonOptions, ct);
+    }
 }
 
 /// <summary>
@@ -211,6 +227,17 @@ public sealed class SessionStatusResponse
 
 /// <summary>Result of a SAS token refresh call — see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>
 public sealed record SasRefreshResult(string? SasTokenUrl, DateTimeOffset? ExpiresAt);
+
+/// <summary>
+/// Response from the Device Gateway API POST /api/v1/sessions/{sessionId}/logs/upload-url
+/// endpoint — see <see cref="DeviceGatewayApiClient.RequestLogUploadUrlAsync"/>.
+/// </summary>
+public sealed class LogUploadUrlResponse
+{
+    public string FileName { get; init; } = string.Empty;
+    public string UploadUrl { get; init; } = string.Empty;
+    public DateTimeOffset ExpiresAt { get; init; }
+}
 
 /// <summary>
 /// Thrown when the Device Gateway API returns a non-success response. Carries the RFC7807

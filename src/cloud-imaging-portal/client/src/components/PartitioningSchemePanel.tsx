@@ -27,10 +27,29 @@ const PARTITION_LABELS: Record<PartitionType, string> = {
 };
 
 const PARTITION_DESCRIPTIONS: Record<PartitionType, string> = {
-  EfiSystem: 'Holds the UEFI boot loader. FAT32. Rarely needs to be changed from the 100 MB default.',
-  Msr: 'Reserved by Windows for its own use. No drive letter. Rarely needs to be changed from the 16 MB default.',
-  Windows: 'The main operating system partition. Always fills whatever space remains on the disk.',
-  Recovery: 'Holds the Windows Recovery Environment (WinRE) image applied during imaging.',
+  EfiSystem: 'Holds the UEFI boot loader. FAT32. Microsoft requires at least 100 MB on standard ' +
+    '(512/512e byte sector) drives, or 300 MB on 4K-native-sector drives. Rarely needs to be ' +
+    'changed from the 100 MB default.',
+  Msr: 'Reserved by Windows for its own use — no drive letter, no filesystem, no user data. ' +
+    'Microsoft’s recommendation is a fixed 16 MB; there is no benefit to making this larger.',
+  Windows: 'The main operating system partition. Always fills whatever space remains on the disk. ' +
+    'Microsoft requires at least 20 GB (64-bit) / 16 GB (32-bit) of total capacity, with 16 GB ' +
+    'free after the first sign-in (OOBE) and Automatic Maintenance have completed.',
+  Recovery: 'Holds the Windows Recovery Environment (WinRE) image applied during imaging. Microsoft ' +
+    'requires at least 300 MB, but recommends 990 MB with 250 MB of that free — winre.wim itself ' +
+    'is typically 500–700 MB, and NTFS overhead plus headroom for future Windows updates account ' +
+    'for the rest.',
+};
+
+/**
+ * Microsoft’s documented recommended size for each partition (`null` for Windows, which always
+ * fills whatever space remains). Source: Microsoft Learn, "UEFI/GPT-based hard drive partitions".
+ */
+const PARTITION_RECOMMENDED_MB: Record<PartitionType, number | null> = {
+  EfiSystem: 100,
+  Msr: 16,
+  Windows: null,
+  Recovery: 990,
 };
 
 const DEFAULT_SCHEME: PartitioningScheme = {
@@ -151,6 +170,14 @@ export function PartitioningSchemePanel(): React.ReactElement {
             imaging. Applies to every future device session — a session already in progress
             keeps the scheme that was in effect when it was created.
           </CardDescription>
+          <p className="text-xs text-muted-foreground">
+            This order — EFI System, MSR, Windows, Recovery — is Microsoft’s documented default
+            layout for UEFI-based PCs. The Recovery partition must stay last: Microsoft places it
+            immediately after Windows so a future WinRE update can grow it by shrinking the
+            Windows partition. To manually extend the Windows partition later, the Recovery
+            partition must first be removed (<code className="text-[11px]">reagentc /disable</code>,
+            delete it, extend Windows, optionally recreate Recovery afterwards).
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {partitions.map((p, index) => (
@@ -181,21 +208,37 @@ export function PartitioningSchemePanel(): React.ReactElement {
                 <Label>{PARTITION_LABELS[p.partitionType]}</Label>
                 <p className="text-xs text-muted-foreground">{PARTITION_DESCRIPTIONS[p.partitionType]}</p>
               </div>
-              <div className="w-40">
+              <div className="w-48 space-y-1">
                 {p.partitionType === 'Windows' ? (
                   <p className="text-sm text-muted-foreground">Fills remaining space</p>
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      max={p.partitionType === 'EfiSystem' || p.partitionType === 'Msr' ? 2048 : 51200}
-                      value={p.sizeMb}
-                      onChange={e => updateSize(p.partitionType, Number(e.target.value))}
-                      className="w-24"
-                    />
-                    <span className="text-xs text-muted-foreground">MB</span>
-                  </div>
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={p.partitionType === 'EfiSystem' || p.partitionType === 'Msr' ? 2048 : 51200}
+                        value={p.sizeMb}
+                        onChange={e => updateSize(p.partitionType, Number(e.target.value))}
+                        className="w-24"
+                      />
+                      <span className="text-xs text-muted-foreground">MB</span>
+                    </div>
+                    {PARTITION_RECOMMENDED_MB[p.partitionType] !== null && (
+                      <p className="text-xs text-muted-foreground">
+                        Recommended: {PARTITION_RECOMMENDED_MB[p.partitionType]} MB.{' '}
+                        {p.sizeMb !== PARTITION_RECOMMENDED_MB[p.partitionType] && (
+                          <button
+                            type="button"
+                            className="underline underline-offset-2 hover:text-foreground"
+                            onClick={() => updateSize(p.partitionType, PARTITION_RECOMMENDED_MB[p.partitionType]!)}
+                          >
+                            Use recommended
+                          </button>
+                        )}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>

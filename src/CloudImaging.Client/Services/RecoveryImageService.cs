@@ -6,12 +6,18 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.Client.Services;
 
 /// <summary>
-/// Applies the downloaded Windows Recovery Environment (WinRE) image to the device — the
+/// Applies the Windows Recovery Environment (WinRE) image to the device — the
 /// "ApplyRecoveryImage" step of the imaging pipeline, run after boot configuration.
 ///
 /// Unlike <see cref="ImageApplyService"/> (which uses DISM to apply the full OS image), the
 /// recovery image is simply copied into place and registered with the Windows Recovery
 /// Environment agent (<c>reagentc.exe</c>) — WinRE images are not applied via DISM.
+///
+/// <see cref="ApplyAsync"/> applies a Recovery Image downloaded from the Portal catalog (the
+/// preferred path — this is how admins deploy a custom WinRE with injected drivers or tools).
+/// <see cref="ApplyFromEmbeddedImageAsync"/> is the fallback used when no Recovery Image has
+/// been published: it reuses the <c>Winre.wim</c> the OS image already carries under
+/// <c>Windows\System32\Recovery</c> instead of failing the session outright.
 /// </summary>
 public sealed partial class RecoveryImageService
 {
@@ -51,13 +57,54 @@ public sealed partial class RecoveryImageService
 
         LogHashVerified(_logger, recoveryWimPath);
 
-        var windowsRecoveryDir = Path.Combine($"{windowsVolume}\\", "Windows", "System32", "Recovery");
-        Directory.CreateDirectory(windowsRecoveryDir);
-        File.Copy(recoveryWimPath, Path.Combine(windowsRecoveryDir, "Winre.wim"), overwrite: true);
+        var windowsRecoveryWimPath = GetWindowsRecoveryWimPath(windowsVolume);
+        Directory.CreateDirectory(Path.GetDirectoryName(windowsRecoveryWimPath)!);
+        File.Copy(recoveryWimPath, windowsRecoveryWimPath, overwrite: true);
 
+        await FinalizeApplyAsync(windowsVolume, recoveryVolume, ct);
+    }
+
+    /// <summary>
+    /// Fallback used when no Recovery Image has been published to the Portal catalog
+    /// (<see cref="Services.DeviceGatewayApiClient.GetLatestRecoveryImageAsync"/> returned null).
+    /// Every captured OS image already carries its own <c>Winre.wim</c> at the conventional
+    /// <c>Windows\System32\Recovery</c> location as a normal part of the Windows install — this
+    /// reuses that file (already implicitly hash-verified as part of the OS image apply step)
+    /// instead of hard-failing the session. Returns <c>false</c> (without throwing) if the applied
+    /// OS image has no embedded <c>Winre.wim</c> either, so the caller can fail the pipeline with
+    /// a clear error.
+    /// </summary>
+    /// <param name="windowsVolume">Drive letter of the applied Windows volume (e.g. "C:").</param>
+    /// <param name="recoveryVolume">Drive letter of the Recovery partition (e.g. "D:").</param>
+    public async Task<bool> ApplyFromEmbeddedImageAsync(
+        string windowsVolume,
+        string recoveryVolume,
+        CancellationToken ct = default)
+    {
+        var windowsRecoveryWimPath = GetWindowsRecoveryWimPath(windowsVolume);
+        if (!File.Exists(windowsRecoveryWimPath))
+        {
+            LogEmbeddedImageNotFound(_logger, windowsRecoveryWimPath);
+            return false;
+        }
+
+        LogUsingEmbeddedFallback(_logger, windowsRecoveryWimPath);
+        await FinalizeApplyAsync(windowsVolume, recoveryVolume, ct);
+        return true;
+    }
+
+    /// <summary>
+    /// Shared tail of both <see cref="ApplyAsync"/> and <see cref="ApplyFromEmbeddedImageAsync"/>:
+    /// copies the WinRE image already staged at <c>{windowsVolume}\Windows\System32\Recovery\Winre.wim</c>
+    /// onto the dedicated Recovery partition, registers and enables it via <c>reagentc.exe</c>, then
+    /// best-effort removes the Recovery partition's temporary drive letter.
+    /// </summary>
+    private async Task FinalizeApplyAsync(string windowsVolume, string recoveryVolume, CancellationToken ct)
+    {
+        var windowsRecoveryWimPath = GetWindowsRecoveryWimPath(windowsVolume);
         var partitionRecoveryDir = Path.Combine($"{recoveryVolume}\\", "Recovery", "WindowsRE");
         Directory.CreateDirectory(partitionRecoveryDir);
-        File.Copy(recoveryWimPath, Path.Combine(partitionRecoveryDir, "Winre.wim"), overwrite: true);
+        File.Copy(windowsRecoveryWimPath, Path.Combine(partitionRecoveryDir, "Winre.wim"), overwrite: true);
 
         await RunReagentcAsync($"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"", ct);
         await RunReagentcAsync($"/enable /target \"{windowsVolume}\\Windows\"", ct);
@@ -66,6 +113,10 @@ public sealed partial class RecoveryImageService
 
         LogApplyCompleted(_logger, windowsVolume, recoveryVolume);
     }
+
+    /// <summary>Computes the conventional path of the WinRE image embedded in an applied OS image.</summary>
+    private static string GetWindowsRecoveryWimPath(string windowsVolume) =>
+        Path.Combine($"{windowsVolume}\\", "Windows", "System32", "Recovery", "Winre.wim");
 
     private async Task RunReagentcAsync(string arguments, CancellationToken ct)
     {
@@ -175,4 +226,10 @@ public sealed partial class RecoveryImageService
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not remove the Recovery partition's temporary drive letter. This is cosmetic only and does not affect imaging.")]
     private static partial void LogHideRecoveryLetterFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "No published recovery image and no embedded WinRE found at {WimPath}.")]
+    private static partial void LogEmbeddedImageNotFound(ILogger logger, string wimPath);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "No published recovery image — falling back to the OS image's embedded WinRE at {WimPath}.")]
+    private static partial void LogUsingEmbeddedFallback(ILogger logger, string wimPath);
 }

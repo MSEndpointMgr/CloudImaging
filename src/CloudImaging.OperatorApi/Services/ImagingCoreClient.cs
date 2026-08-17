@@ -144,6 +144,14 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> PublishRecoveryImageUploadAsync(string uploadId, object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync($"/api/internal/recovery-images/upload/{uploadId}/publish", payload, JsonOptions, ct);
 
+    // ── Session logs ────────────────────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> GetSessionLogsAsync(Guid sessionId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/sessions/{sessionId}/logs", ct);
+
+    public Task<HttpResponseMessage> GetSessionLogDownloadUrlAsync(Guid sessionId, string fileName, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/sessions/{sessionId}/logs/{Uri.EscapeDataString(fileName)}/download-url", ct);
+
     // ── Boot media certificate ────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetActiveBootCertMetadataAsync(CancellationToken ct = default) =>

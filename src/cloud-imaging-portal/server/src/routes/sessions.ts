@@ -31,6 +31,29 @@ router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: 
   }
 });
 
+// ── GET /api/sessions/:id/logs — list uploaded diagnostic logs ────────────
+
+router.get('/:sessionId/logs', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await operatorApiClient.getSessionLogs(req.params['sessionId'] as string);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /api/sessions/:id/logs/:fileName/download-url — issue a download URL ──
+
+router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await operatorApiClient.getSessionLogDownloadUrl(
+      req.params['sessionId'] as string, req.params['fileName'] as string);
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── POST /api/sessions/couple — couple by passcode (PortalAccess) ─────────
 
 router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {

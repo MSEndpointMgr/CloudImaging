@@ -70,6 +70,45 @@ resource containerCoreAppPackages 'Microsoft.Storage/storageAccounts/blobService
   properties: { publicAccess: 'None' }
 }
 
+// Client-uploaded diagnostic logs, one blob per upload under a {sessionId}/ prefix, uploaded
+// best-effort by the Cloud Imaging Client on any terminal imaging failure so support can inspect
+// a device's full local log without relying on the technician retrieving it from WinPE before
+// reboot. Auto-expired after 90 days by the lifecycle policy below to bound storage/PII exposure.
+resource containerSessionLogs 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobServiceCore
+  name: 'session-logs'
+  properties: { publicAccess: 'None' }
+}
+
+// Lifecycle policy: delete session log blobs 90 days after last modification. Scoped only to the
+// session-logs/ prefix so it never touches os-images/boot-images/branding/app-packages.
+resource storageCoreLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  parent: storageCoreApi
+  name: 'default'
+  properties: {
+    policy: {
+      rules: [
+        {
+          enabled: true
+          name: 'expire-session-logs'
+          type: 'Lifecycle'
+          definition: {
+            filters: {
+              blobTypes: [ 'blockBlob' ]
+              prefixMatch: [ 'session-logs/' ]
+            }
+            actions: {
+              baseBlob: {
+                delete: { daysAfterModificationGreaterThan: 90 }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
 // Blob service + deployment package container for the shared app storage account,
 // used for the Operator API and Device Gateway API run-from-package deployments.
 resource blobServiceApp 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {

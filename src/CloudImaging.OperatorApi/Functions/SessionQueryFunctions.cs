@@ -13,6 +13,8 @@ namespace CloudImaging.OperatorApi.Functions;
 ///
 /// GET /api/sessions        — list device sessions for the portal devices view
 /// GET /api/sessions/{id}   — get a single device session summary
+/// GET /api/sessions/{id}/logs                    — list uploaded diagnostic logs for a session
+/// GET /api/sessions/{id}/logs/{fileName}/download-url — issue a short-lived download URL
 /// </summary>
 public sealed partial class SessionQueryFunctions
 {
@@ -51,6 +53,37 @@ public sealed partial class SessionQueryFunctions
 
         var coreResponse = await _coreClient.GetSessionAsync(sessionGuid, context.CancellationToken);
         LogSessionProxy(_logger, sessionGuid, (int)coreResponse.StatusCode);
+        return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    [Function("GetSessionLogs")]
+    public async Task<HttpResponseData> GetSessionLogs(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions/{sessionId}/logs")] HttpRequestData req,
+        string sessionId,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var coreResponse = await _coreClient.GetSessionLogsAsync(sessionGuid, context.CancellationToken);
+        return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    [Function("GetSessionLogDownloadUrl")]
+    public async Task<HttpResponseData> GetSessionLogDownloadUrl(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions/{sessionId}/logs/{fileName}/download-url")] HttpRequestData req,
+        string sessionId,
+        string fileName,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var coreResponse = await _coreClient.GetSessionLogDownloadUrlAsync(sessionGuid, fileName, context.CancellationToken);
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 

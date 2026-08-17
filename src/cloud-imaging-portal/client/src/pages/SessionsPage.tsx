@@ -4,7 +4,7 @@ export default function SessionsPage(): React.ReactElement {
 }
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, FileDown } from 'lucide-react';
 import { apiFetch } from '../lib/apiClient.ts';
 import { CoupleSessionDialog } from '../components/CoupleSessionDialog.tsx';
 import { AssignImageDialog } from '../components/AssignImageDialog.tsx';
@@ -12,6 +12,7 @@ import { Button } from '../components/ui/button.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { cn } from '../lib/utils.ts';
+import { useToast } from '../context/toastContext.tsx';
 import {
   Table,
   TableHeader,
@@ -30,6 +31,16 @@ interface Session {
   overallProgressPercent: number;
   currentStep: string | null;
 }
+
+interface SessionLogEntry {
+  fileName: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
+
+// States for which the Client may have uploaded a diagnostic log on failure.
+const FAILED_STATES = new Set(['SessionFailed', 'SessionNotAuthorized']);
+
 
 type DeviceView = 'pending' | 'monitor';
 
@@ -66,6 +77,7 @@ function stateBadgeVariant(state: string): BadgeProps['variant'] {
 }
 
 function SessionsPageImpl(): React.ReactElement {
+  const { notify } = useToast();
   const [sessions, setSessions]         = useState<Session[]>([]);
   const [view, setView]                 = useState<DeviceView>('pending');
   const [checked, setChecked]           = useState<Set<string>>(new Set());
@@ -73,7 +85,38 @@ function SessionsPageImpl(): React.ReactElement {
   const [assignOpen, setAssignOpen]     = useState(false);
   const [assignTarget, setAssignTarget] = useState<string | null>(null);
   const [loading, setLoading]           = useState(false);
+  const [downloadingLog, setDownloadingLog] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleDownloadLog = useCallback(async (sessionId: string) => {
+    setDownloadingLog(sessionId);
+    try {
+      const listRes = await apiFetch(`/api/sessions/${sessionId}/logs`, { credentials: 'include' });
+      if (!listRes.ok) {
+        notify({ status: 'error', title: 'Could not retrieve logs for this session.' });
+        return;
+      }
+      const entries = await listRes.json() as SessionLogEntry[];
+      if (entries.length === 0) {
+        notify({ status: 'info', title: 'No log was uploaded for this session.' });
+        return;
+      }
+      const latest = [...entries].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0];
+      const urlRes = await apiFetch(
+        `/api/sessions/${sessionId}/logs/${encodeURIComponent(latest.fileName)}/download-url`,
+        { credentials: 'include' });
+      if (!urlRes.ok) {
+        notify({ status: 'error', title: 'Could not generate a download link for this log.' });
+        return;
+      }
+      const { downloadUrl } = await urlRes.json() as { downloadUrl: string };
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    } catch {
+      notify({ status: 'error', title: 'Could not retrieve logs for this session.' });
+    } finally {
+      setDownloadingLog(null);
+    }
+  }, [notify]);
 
   const fetchSessions = useCallback(async (data?: Session[]) => {
     setLoading(true);
@@ -252,6 +295,16 @@ function SessionsPageImpl(): React.ReactElement {
                         onClick={() => { setAssignTarget(s.sessionId); setAssignOpen(true); }}
                       >
                         Assign Image
+                      </Button>
+                    )}
+                    {FAILED_STATES.has(s.state) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={downloadingLog === s.sessionId}
+                        onClick={() => { void handleDownloadLog(s.sessionId); }}
+                      >
+                        <FileDown className={downloadingLog === s.sessionId ? 'animate-pulse' : ''} /> Download log
                       </Button>
                     )}
                   </TableCell>

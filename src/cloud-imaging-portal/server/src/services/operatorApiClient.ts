@@ -172,6 +172,19 @@ export class OperatorApiClient {
     return data;
   }
 
+  // ── Session logs ──────────────────────────────────────────────────────────
+
+  async getSessionLogs(sessionId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/sessions/${sessionId}/logs`);
+    return data;
+  }
+
+  async getSessionLogDownloadUrl(sessionId: string, fileName: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(
+      `/api/sessions/${sessionId}/logs/${encodeURIComponent(fileName)}/download-url`);
+    return data;
+  }
+
   /** Active boot media certificate metadata (thumbprint/validity) — never returns PFX bytes. */
   async getBootMediaCertMetadata(): Promise<unknown> {
     const { data } = await this.http.get<unknown>('/api/bootmedia/certificate/metadata');

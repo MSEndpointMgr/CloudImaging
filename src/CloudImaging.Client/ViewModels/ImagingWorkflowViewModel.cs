@@ -201,10 +201,38 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, ct: ct);
 
             var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(ct);
+            var recoveryService = new Services.RecoveryImageService(_loggerFactory.CreateLogger<Services.RecoveryImageService>());
+
             if (recoveryInfo is null)
             {
-                await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC",
-                    "No published recovery image could be retrieved.", ct);
+                // No custom Recovery Image has been published to the Portal catalog — fall back
+                // to the WinRE that the OS image already carries at
+                // Windows\System32\Recovery\Winre.wim rather than failing the whole session.
+                _progress.StatusMessage = "No published recovery image — reusing the OS image's embedded recovery environment…";
+                try
+                {
+                    var reusedEmbeddedImage = await recoveryService.ApplyFromEmbeddedImageAsync(
+                        diskFormat.WindowsVolume, diskFormat.RecoveryVolume, ct);
+
+                    if (!reusedEmbeddedImage)
+                    {
+                        await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC",
+                            "No published recovery image is available, and the applied OS image does not contain an embedded WinRE (Winre.wim) to fall back to.", ct);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC", ex.Message, ct);
+                    return;
+                }
+
+                _progress.UpdateStep(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed);
+                await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed, ct: ct);
+                _progress.OverallPercent = 100;
+                _progress.StatusMessage = "Imaging complete.";
+
+                _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
                 return;
             }
 
@@ -227,7 +255,6 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             }
 
             _progress.StatusMessage = "Applying recovery image…";
-            var recoveryService = new Services.RecoveryImageService(_loggerFactory.CreateLogger<Services.RecoveryImageService>());
             try
             {
                 await recoveryService.ApplyAsync(
@@ -289,6 +316,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                     _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
                     return false;
                 case SessionState.SessionFailed:
+                    FireAndForgetLogUpload();
                     _navigateToResults(
                         ResultsViewModel.Outcome.Failure,
                         _deviceSerialNumber,
@@ -296,6 +324,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                         null);
                     return false;
                 case SessionState.SessionNotAuthorized:
+                    FireAndForgetLogUpload();
                     _navigateToResults(ResultsViewModel.Outcome.NotAuthorized, _deviceSerialNumber, null, null);
                     return false;
             }
@@ -307,6 +336,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             if (next is not null) _status = next;
         }
 
+        FireAndForgetLogUpload();
         _navigateToResults(
             ResultsViewModel.Outcome.Failure,
             _deviceSerialNumber,
@@ -334,7 +364,24 @@ public sealed class ImagingWorkflowViewModel : IDisposable
         _progress.ErrorMessage = errorDetail;
         _progress.SupportReferenceCode = code;
 
+        FireAndForgetLogUpload();
         _navigateToResults(ResultsViewModel.Outcome.Failure, _deviceSerialNumber, errorDetail, code);
+    }
+
+    /// <summary>
+    /// Kicks off a best-effort upload of the current local diagnostic log for this session,
+    /// without awaiting it — the failure Results view must appear immediately regardless of
+    /// network conditions. <see cref="Services.LogUploadService"/> internally bounds the whole
+    /// attempt with its own timeout and never throws, so this is safe to fire-and-forget.
+    /// </summary>
+    private void FireAndForgetLogUpload()
+    {
+        var httpClient = new HttpClient();
+        var logUploadService = new Services.LogUploadService(
+            httpClient, _gatewayClient, _loggerFactory.CreateLogger<Services.LogUploadService>());
+
+        _ = logUploadService.UploadCurrentLogAsync(_sessionId, CancellationToken.None)
+            .ContinueWith(_ => httpClient.Dispose(), TaskScheduler.Default);
     }
 
     private static DateTimeOffset? ParseExpiry(string? iso) =>
