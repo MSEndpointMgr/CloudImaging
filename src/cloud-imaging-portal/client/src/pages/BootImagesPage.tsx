@@ -44,8 +44,10 @@ export default function BootImagesPage(): React.ReactElement {
     setLoading(true); setError(null);
     try {
       const res = await apiFetch('/api/boot-images', { credentials: 'include' });
-      if (res.ok) setImages(await res.json() as BootImage[]);
-      else setError('Failed to load boot images.');
+      if (res.ok) {
+        const data = await res.json() as BootImage[];
+        setImages(data.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      } else setError('Failed to load boot images.');
     } catch { setError('Network error.'); }
     finally { setLoading(false); }
   };
