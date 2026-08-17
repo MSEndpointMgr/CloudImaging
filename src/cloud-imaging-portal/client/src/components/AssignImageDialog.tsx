@@ -38,7 +38,7 @@ export function AssignImageDialog({ open, sessionId, onClose, onAssigned }: Assi
           setImages(data.filter(i => i.isActive));
         }
       } catch {
-        // Images failed to load — show empty list
+        // Images failed to load. Show empty list
       }
     })();
   }, [open]);

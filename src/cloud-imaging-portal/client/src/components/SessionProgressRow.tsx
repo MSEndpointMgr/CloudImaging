@@ -55,9 +55,9 @@ export function SessionProgressRow({
               </div>
               <span className="text-xs text-muted-foreground">{overallPercent}%</span>
             </div>
-          ) : '—'}
+          ) : '-'}
         </td>
-        <td className="px-3 py-2 text-xs text-muted-foreground">{currentStep ?? '—'}</td>
+        <td className="px-3 py-2 text-xs text-muted-foreground">{currentStep ?? '-'}</td>
       </tr>
       {expanded && (
         <tr className="bg-muted/20">

@@ -89,7 +89,7 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
     }
   };
 
-  const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString() : '—');
+  const fmtDate = (d?: string) => (d ? new Date(d).toLocaleDateString() : '-');
 
   return (
     <div className="rounded-lg border border-border bg-card p-5 space-y-5">
@@ -113,7 +113,7 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-md border border-border bg-muted/30 p-4 text-xs sm:grid-cols-4">
           <div className="col-span-2 space-y-0.5 sm:col-span-4">
             <dt className="text-muted-foreground">Thumbprint</dt>
-            <dd className="break-all font-mono">{certMeta.thumbprintDisplay ?? '—'}</dd>
+            <dd className="break-all font-mono">{certMeta.thumbprintDisplay ?? '-'}</dd>
           </div>
           <div className="space-y-0.5">
             <dt className="text-muted-foreground">Issued</dt>

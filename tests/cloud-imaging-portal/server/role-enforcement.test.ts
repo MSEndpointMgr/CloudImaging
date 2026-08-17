@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal backend role enforcement integration tests (T018c, FR-040, FR-040a).
  */
-describe('Portal backend — role enforcement', () => {
+describe('Portal backend: role enforcement', () => {
   // ── Administrator operations ──────────────────────────────────────────────
 
   const adminOnlyOperations = [
@@ -23,7 +23,7 @@ describe('Portal backend — role enforcement', () => {
   ] as const;
 
   adminOnlyOperations.forEach(op => {
-    it(`${op} — requires CloudImaging.Administrator role`, () => {
+    it(`${op}: requires CloudImaging.Administrator role`, () => {
       expect('CloudImaging.Administrator').toBe('CloudImaging.Administrator');
     });
   });
@@ -41,7 +41,7 @@ describe('Portal backend — role enforcement', () => {
   ] as const;
 
   portalAccessOperations.forEach(op => {
-    it(`${op} — accessible with CloudImaging.PortalAccess role`, () => {
+    it(`${op}: accessible with CloudImaging.PortalAccess role`, () => {
       expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');
     });
   });

@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
  * Bytes are staged directly from the browser to Blob Storage via a SAS URL obtained from
  * POST /api/images/upload/start; only small JSON metadata passes through this server.
  */
-describe('Portal backend — staged OS image upload', () => {
+describe('Portal backend: staged OS image upload', () => {
   describe('POST /api/images/upload/start', () => {
     it('requires name, version, sha256Hash', () => {
       const body = { name: 'win11.wim', version: '24H2', sha256Hash: 'a'.repeat(64) };

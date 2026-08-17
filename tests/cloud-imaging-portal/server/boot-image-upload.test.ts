@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal backend boot image upload contract tests (T121, FR-063).
  */
-describe('Portal backend — boot image upload', () => {
+describe('Portal backend: boot image upload', () => {
   describe('POST /api/boot-images/upload/start', () => {
     it('returns uploadId and uploadUrl', () => {
       const res = { uploadId: 'uuid', blobName: 'uploads/uuid/v2.wim', uploadUrl: 'https://...' };

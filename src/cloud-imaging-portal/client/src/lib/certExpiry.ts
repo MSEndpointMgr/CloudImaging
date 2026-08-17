@@ -4,7 +4,7 @@
  * Surfaces an escalating notification as the active boot media certificate approaches
  * expiry: a one-time notice at 30 days remaining, another at 14 days, then a recurring
  * (once per calendar day) warning for the final 7 days and after expiry. Administrators
- * only see each bucket once — "seen" state is tracked per signed-in account + certificate
+ * only see each bucket once. "Seen" state is tracked per signed-in account + certificate
  * thumbprint in localStorage so it persists across tabs/sessions until the bucket changes
  * (e.g. a new day, or the certificate is rotated).
  */
@@ -15,7 +15,7 @@ export interface CertExpiryWarning {
   /** Identifies the specific warning instance; a repeat with the same bucket is suppressed. */
   bucket: string;
   daysRemaining: number;
-  /** `true` for the final 7 days / after expiry — rendered as an error-level toast. */
+  /** `true` for the final 7 days / after expiry. Rendered as an error-level toast. */
   urgent: boolean;
   title: string;
   description: string;
@@ -98,7 +98,7 @@ export function markCertExpiryWarningShown(accountKey: string, thumbprint: strin
     record[shownKey(accountKey, thumbprint)] = bucket;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
   } catch {
-    // Best-effort only (e.g. private browsing / storage quota) — worst case the
+    // Best-effort only (e.g. private browsing / storage quota). Worst case the
     // notification reappears on a later load, which is harmless.
   }
 }

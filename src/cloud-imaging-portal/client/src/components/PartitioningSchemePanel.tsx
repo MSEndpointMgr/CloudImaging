@@ -27,22 +27,14 @@ const PARTITION_LABELS: Record<PartitionType, string> = {
 };
 
 const PARTITION_DESCRIPTIONS: Record<PartitionType, string> = {
-  EfiSystem: 'Holds the UEFI boot loader. FAT32. Microsoft requires at least 100 MB on standard ' +
-    '(512/512e byte sector) drives, or 300 MB on 4K-native-sector drives. Rarely needs to be ' +
-    'changed from the 100 MB default.',
-  Msr: 'Reserved by Windows for its own use — no drive letter, no filesystem, no user data. ' +
-    'Microsoft’s recommendation is a fixed 16 MB; there is no benefit to making this larger.',
-  Windows: 'The main operating system partition. Always fills whatever space remains on the disk. ' +
-    'Microsoft requires at least 20 GB (64-bit) / 16 GB (32-bit) of total capacity, with 16 GB ' +
-    'free after the first sign-in (OOBE) and Automatic Maintenance have completed.',
-  Recovery: 'Holds the Windows Recovery Environment (WinRE) image applied during imaging. Microsoft ' +
-    'requires at least 300 MB, but recommends 990 MB with 250 MB of that free — winre.wim itself ' +
-    'is typically 500–700 MB, and NTFS overhead plus headroom for future Windows updates account ' +
-    'for the rest.',
+  EfiSystem: 'Holds the UEFI boot loader (FAT32). Microsoft minimum: 100 MB (300 MB on 4K-sector drives).',
+  Msr: 'Reserved by Windows for internal use. No drive letter or filesystem. Microsoft minimum: 16 MB (fixed).',
+  Windows: 'The main OS partition. Always fills whatever space remains on the disk.',
+  Recovery: 'Holds the WinRE recovery image. Microsoft recommends 990 MB (winre.wim is typically 500-700 MB).',
 };
 
 /**
- * Microsoft’s documented recommended size for each partition (`null` for Windows, which always
+ * Microsoft's documented recommended size for each partition (`null` for Windows, which always
  * fills whatever space remains). Source: Microsoft Learn, "UEFI/GPT-based hard drive partitions".
  */
 const PARTITION_RECOMMENDED_MB: Record<PartitionType, number | null> = {
@@ -74,9 +66,7 @@ function schemeEquals(a: PartitioningScheme, b: PartitioningScheme): boolean {
 
 /**
  * Admin-configurable disk partitioning scheme: sizes and order for the four fixed,
- * well-known UEFI-bootable partition types. Applies globally to every future imaging
- * session — sessions already in progress keep the scheme that was in effect when they
- * were created.
+ * well-known UEFI-bootable partition types. Applies globally to future imaging sessions only.
  */
 export function PartitioningSchemePanel(): React.ReactElement {
   const { notify, update } = useToast();
@@ -166,17 +156,13 @@ export function PartitioningSchemePanel(): React.ReactElement {
             <CardTitle>Disk partitioning scheme</CardTitle>
           </div>
           <CardDescription>
-            Controls the size and order of the partitions created on the target disk during
-            imaging. Applies to every future device session — a session already in progress
-            keeps the scheme that was in effect when it was created.
+            Controls the size and order of partitions created on the target disk. Applies to
+            future sessions only; sessions already in progress keep their original scheme.
           </CardDescription>
           <p className="text-xs text-muted-foreground">
-            This order — EFI System, MSR, Windows, Recovery — is Microsoft’s documented default
-            layout for UEFI-based PCs. The Recovery partition must stay last: Microsoft places it
-            immediately after Windows so a future WinRE update can grow it by shrinking the
-            Windows partition. To manually extend the Windows partition later, the Recovery
-            partition must first be removed (<code className="text-[11px]">reagentc /disable</code>,
-            delete it, extend Windows, optionally recreate Recovery afterwards).
+            This is Microsoft's default UEFI layout. Recovery must stay last so a future WinRE
+            update can grow it (by shrinking Windows). Extending Windows later requires removing
+            Recovery first (<code className="text-[11px]">reagentc /disable</code>, then resize).
           </p>
         </CardHeader>
         <CardContent className="space-y-4">

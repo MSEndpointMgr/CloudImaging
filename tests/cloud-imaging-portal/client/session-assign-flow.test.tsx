@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend single-session image assign flow tests (T038a, FR-033).
  */
-describe('Portal frontend — session image assign flow', () => {
+describe('Portal frontend: session image assign flow', () => {
   it('Assign Image button is visible only for SessionAssigned rows', () => {
     const assignableState = 'SessionAssigned';
     const nonAssignable   = ['SessionInit', 'SessionAllowed', 'SessionCompleted', 'SessionFailed'];

@@ -34,7 +34,7 @@ function fmtSize(bytes: number): string {
 
 /**
  * Recovery Images management page: WinRE images applied to the Recovery partition during
- * imaging. Devices always fetch whichever entry is currently published — the same
+ * imaging. Devices always fetch whichever entry is currently published, the same
  * "isLatestPublished" convention used by the Boot Images catalog. Administrator manages entries.
  */
 export default function RecoveryImagesPage(): React.ReactElement {
@@ -100,7 +100,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
             <div className="mb-1.5 flex items-center justify-between text-xs">
               <span className={atCapacity ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
                 {atCapacity
-                  ? 'At capacity — the oldest entry is replaced on the next upload'
+                  ? 'At capacity. The oldest entry is replaced on the next upload'
                   : `${remaining} slot${remaining === 1 ? '' : 's'} remaining`}
               </span>
               <span className="tabular-nums text-muted-foreground">{usedPct}%</span>

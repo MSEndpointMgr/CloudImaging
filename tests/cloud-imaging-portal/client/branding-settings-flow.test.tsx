@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend branding settings flow tests (T091, FR-038).
  */
-describe('Portal frontend — branding settings', () => {
+describe('Portal frontend: branding settings', () => {
   it('BrandingPage shows primaryColor and accentColor pickers', () => {
     const fields = ['primaryColor', 'accentColor', 'applicationName'];
     expect(fields).toContain('primaryColor');

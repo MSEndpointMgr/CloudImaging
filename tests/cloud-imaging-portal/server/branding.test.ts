@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal backend branding route tests (T090, FR-038).
  */
-describe('Portal backend — branding routes', () => {
+describe('Portal backend: branding routes', () => {
   describe('GET /api/branding', () => {
     it('requires PortalAccess role', () => {
       expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');

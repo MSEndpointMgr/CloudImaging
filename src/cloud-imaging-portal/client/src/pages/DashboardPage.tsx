@@ -54,7 +54,7 @@ const NAV_CARDS: NavCard[] = [
   {
     to: '/sessions',
     title: 'Sessions',
-    description: 'Monitor and manage active imaging sessions — couple devices, assign images, and track progress.',
+    description: 'Monitor and manage active imaging sessions. Couple devices, assign images, and track progress.',
     icon: <Monitor size={18} />,
   },
   {

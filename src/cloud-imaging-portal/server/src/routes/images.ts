@@ -3,7 +3,7 @@ import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
- * Images router — OS image catalog CRUD proxy to the Operator API (T086, FR-036, FR-037).
+ * Images router. OS image catalog CRUD proxy to the Operator API (T086, FR-036, FR-037).
  * Read endpoints require PortalAccess; write endpoints require Administrator.
  */
 const router = Router();
@@ -16,7 +16,7 @@ router.get('/', requireRole('CloudImaging.PortalAccess'), async (_req: Request, 
   } catch (err) { next(err); }
 });
 
-// ── POST /api/images — register new image (Administrator) ─────────────────────
+// ── POST /api/images: register new image (Administrator) ─────────────────────
 
 router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -42,7 +42,7 @@ router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator
   } catch (err) { next(err); }
 });
 
-// ── PATCH /api/images/:id — update metadata (Administrator) ───────────────────
+// ── PATCH /api/images/:id: update metadata (Administrator) ───────────────────
 
 router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {

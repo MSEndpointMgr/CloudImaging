@@ -6,7 +6,7 @@ import request from 'supertest';
  * Uses supertest against the Express app with mocked Operator API calls.
  */
 
-describe('Portal backend — session couple + assign routes', () => {
+describe('Portal backend: session couple + assign routes', () => {
   // ── Couple endpoint (T037) ────────────────────────────────────────────────
 
   describe('POST /api/sessions/couple', () => {

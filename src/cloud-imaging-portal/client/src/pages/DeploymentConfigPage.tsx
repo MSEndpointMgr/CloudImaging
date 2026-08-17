@@ -63,7 +63,7 @@ async function extractError(res: Response, fallback: string): Promise<string> {
  * Surfaces a one-time-per-bucket toast as the active boot media certificate approaches
  * expiry (30/14/7 day thresholds, then daily). Administrator-only (Technicians never
  * receive certificate metadata from `/api/cert/active`, so `meta` is never populated for
- * them — this check is an explicit extra guard on top of that).
+ * them; this check is an explicit extra guard on top of that).
  *
  * Module-level (not a component-scoped closure) and reads the account/roles directly
  * from the MSAL instance rather than `useAuth()`, so it's safe to call from `load()`,
@@ -98,7 +98,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
     clockSkewToleranceSeconds: 30,
   };
   const [config, setConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
-  /** Snapshot of the config as last loaded/saved — used to detect unsaved changes. */
+  /** Snapshot of the config as last loaded/saved. Used to detect unsaved changes. */
   const [savedConfig, setSavedConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
   const isDirty = !portalConfigEquals(config, savedConfig);
   const [certMeta, setCertMeta] = useState<CertMeta | null>(null);
@@ -127,7 +127,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
 
   useEffect(() => { void load(); }, []);
 
-  // Runs whenever certMeta changes (i.e. after every load()/onCertChanged refresh) —
+  // Runs whenever certMeta changes (i.e. after every load()/onCertChanged refresh).
   // kept as a separate effect (rather than called inline from load()) so `notify` can be
   // listed as a real, correctly-tracked dependency instead of load() closing over it.
   useEffect(() => {
@@ -257,7 +257,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
         />
       )}
 
-      {/* Partitioning — self-contained: own fetch/save, independent of the Save
+      {/* Partitioning: self-contained, own fetch/save, independent of the Save
           Configuration button below (which only applies to PortalConfig). */}
       {activeTab === 'partitioning' && <PartitioningSchemePanel />}
 

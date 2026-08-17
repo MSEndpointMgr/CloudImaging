@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
  *
  * `.env.local` holds developer-specific overrides and is never committed; `.env`
  * provides shared defaults. Neither exists in deployed environments, where the
- * platform (App Service application settings) supplies configuration instead —
+ * platform (App Service application settings) supplies configuration instead.
  * dotenv silently no-ops when the files are absent and never overrides variables
  * already present in `process.env`.
  */

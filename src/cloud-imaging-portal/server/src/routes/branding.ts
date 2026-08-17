@@ -3,7 +3,7 @@ import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
- * Branding router — proxies to Operator API branding endpoints (T094, FR-038).
+ * Branding router. Proxies to Operator API branding endpoints (T094, FR-038).
  */
 const router = Router();
 

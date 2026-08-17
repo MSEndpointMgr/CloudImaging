@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal backend tests for bulk assignment route (T073, FR-035).
  */
-describe('Portal backend — bulk assign route', () => {
+describe('Portal backend: bulk assign route', () => {
   describe('POST /api/sessions/bulk-assign', () => {
     it('requires sessionIds array and osImageId', () => {
       const body = { sessionIds: ['id1', 'id2'], osImageId: 'some-guid' };

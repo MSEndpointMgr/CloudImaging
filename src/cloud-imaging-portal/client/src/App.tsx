@@ -7,7 +7,7 @@ import { ThemeProvider } from './context/themeContext.tsx';
 import { ToastProvider } from './context/toastContext.tsx';
 import { ProtectedRoute } from './components/ProtectedRoute.tsx';
 
-// Lazy page stubs — each section is a placeholder until the feature pages are built
+// Lazy page stubs. Each section is a placeholder until the feature pages are built
 import { Suspense, lazy } from 'react';
 const DashboardPage   = lazy(() => import('./pages/DashboardPage.tsx'));
 const SessionsPage    = lazy(() => import('./pages/SessionsPage.tsx'));

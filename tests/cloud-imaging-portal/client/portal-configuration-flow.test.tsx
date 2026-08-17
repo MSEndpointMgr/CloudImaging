@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend deployment configuration page tests (T145, FR-026, FR-068).
  */
-describe('Portal frontend — deployment configuration page', () => {
+describe('Portal frontend: deployment configuration page', () => {
   it('DeploymentConfigPage renders pre-flight authorization toggle', () => {
     const hasToggle = true;
     expect(hasToggle).toBe(true);

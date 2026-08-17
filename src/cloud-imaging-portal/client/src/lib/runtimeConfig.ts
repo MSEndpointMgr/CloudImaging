@@ -57,7 +57,7 @@ export async function loadRuntimeConfig(): Promise<PortalRuntimeConfig> {
       }
     }
   } catch {
-    // Network/endpoint unavailable — fall through to the build-time fallback.
+    // Network/endpoint unavailable. Fall through to the build-time fallback.
   }
 
   const fallback = fromBuildTimeEnv();

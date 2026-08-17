@@ -32,7 +32,7 @@ export function PreFlightAuthorizationToggle({
           <div>
             <p className="text-sm font-medium">Require pre-flight authorization</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {enabled ? 'Enabled — unauthorized devices are blocked.' : 'Disabled — any device may image.'}
+              {enabled ? 'Enabled. Unauthorized devices are blocked.' : 'Disabled. Any device may image.'}
             </p>
           </div>
           <button

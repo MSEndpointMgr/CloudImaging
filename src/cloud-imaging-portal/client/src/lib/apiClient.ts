@@ -7,27 +7,27 @@ import { getMsalInstance, getApiScope } from './msal.ts';
  * already starting, which happens routinely here because pages fire several `apiFetch` calls
  * concurrently (e.g. `Promise.all`). Without de-duplication, the *second* concurrent caller's
  * unhandled `interaction_in_progress` error used to reject that request outright instead of
- * gracefully waiting for the one real redirect to navigate the page away — which is what
+ * gracefully waiting for the one real redirect to navigate the page away, which is what
  * produced the "stalls, then shows a 401/403 error" experience for an expired session instead
  * of a clean redirect to sign-in.
  */
 let redirectInFlight: Promise<never> | null = null;
 
-/** Never resolves — used while the browser is navigating away to the sign-in page. */
+/** Never resolves. Used while the browser is navigating away to the sign-in page. */
 function pendingForever(): Promise<never> {
   return new Promise<never>(() => { /* intentionally never settles; navigation is in flight */ });
 }
 
 /**
  * Starts (or joins) a single interactive sign-in redirect. Callers should `await` the
- * returned promise and treat it as "this request can never complete on this page load" —
+ * returned promise and treat it as "this request can never complete on this page load":
  * it only resolves once the browser has navigated away.
  */
 function triggerInteractiveRedirect(account: AccountInfo | null): Promise<never> {
   redirectInFlight ??= getMsalInstance()
     .acquireTokenRedirect({ account: account ?? undefined, scopes: [getApiScope()] })
     // Swallow errors here (e.g. a raced 'interaction_in_progress' from an overlapping
-    // call) — either way a redirect is already underway, so just keep waiting for it.
+    // call), either way a redirect is already underway, so just keep waiting for it.
     .catch(() => undefined)
     .then(pendingForever);
   return redirectInFlight;
@@ -57,7 +57,7 @@ async function acquireApiToken(): Promise<string | null> {
     // blocked by the browser's third-party-cookie restrictions (surfaces as
     // BrowserAuthError e.g. monitor_window_timeout) or the session truly requires
     // interaction (InteractionRequiredAuthError). Either way the only recovery is an
-    // interactive redirect — awaiting it here means this call never falls through to
+    // interactive redirect. Awaiting it here means this call never falls through to
     // an unauthenticated fetch that would otherwise flash a confusing 401/403 error in
     // the instant before the browser navigates to sign-in.
     return triggerInteractiveRedirect(account);
@@ -78,7 +78,7 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   const response = await fetch(input, { credentials: 'include', ...init, headers });
 
   // Defensive fallback: the server rejected the token as missing/expired/invalid even
-  // though MSAL believed it had (or could silently refresh) a valid one — e.g. a token
+  // though MSAL believed it had (or could silently refresh) a valid one, e.g. a token
   // that expires between acquisition and the request landing. Force the same
   // interactive redirect rather than letting the caller render a raw auth-failure
   // response, so a stale tab recovers the same way whether MSAL or the server is the
@@ -94,14 +94,14 @@ const TRANSIENT_RETRY_DELAYS_MS = [300, 900, 2000];
 
 function isTransientStatus(status: number): boolean {
   // 502/503/504 (and the less common 500/429) are what a cold-starting Function App /
-  // App Service returns for the first request or two right after a deploy restart —
+  // App Service returns for the first request or two right after a deploy restart.
   // NOT evidence that the underlying data is gone. 401/403/404 are left alone (real
   // auth outcomes / genuinely-unconfigured resources) so this never masks a real error.
   return status === 500 || status === 429 || status === 502 || status === 503 || status === 504;
 }
 
 /**
- * Same as `apiFetch`, but retries a few times (short backoff) on a transient failure —
+ * Same as `apiFetch`, but retries a few times (short backoff) on a transient failure:
  * a network error, or a 5xx/429 response. Every future release restarts the Portal
  * Backend / Operator API / Imaging Core API for a few seconds; without this, anyone who
  * loads a page during that window sees data (e.g. branding) silently fall back to

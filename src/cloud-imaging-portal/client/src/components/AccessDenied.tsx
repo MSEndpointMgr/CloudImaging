@@ -37,7 +37,7 @@ function initialsFrom(name: string): string {
 
 /**
  * Shown to users who are signed in but have no portal role assigned (FR-040a).
- * Renders the full portal chrome — branded sidebar and header — but with every
+ * Renders the full portal chrome (branded sidebar and header), but with every
  * navigation target locked, so it is clear the user has reached the portal yet
  * cannot act until an administrator grants them a role.
  */
@@ -53,7 +53,7 @@ export function AccessDenied(): React.ReactElement {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {/* Locked sidebar — decorative, non-interactive */}
+      {/* Locked sidebar (decorative, non-interactive) */}
       <aside
         aria-hidden="true"
         className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
@@ -87,7 +87,7 @@ export function AccessDenied(): React.ReactElement {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {/* Header — matches the authenticated app bar */}
+        {/* Header, matches the authenticated app bar */}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/95 px-6 backdrop-blur">
           <h1 className="text-base font-semibold text-foreground">{appName}</h1>
 

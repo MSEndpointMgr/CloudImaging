@@ -6,7 +6,7 @@ import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import axios from 'axios';
 
-// Application Insights — must be set up before importing any other modules (FR-065, FR-067)
+// Application Insights. Must be set up before importing any other modules (FR-065, FR-067)
 const aiConnectionString = process.env['APPLICATIONINSIGHTS_CONNECTION_STRING'];
 if (aiConnectionString) {
   appInsights.setup(aiConnectionString)
@@ -22,7 +22,7 @@ const app = express();
 // Security headers
 app.use(helmet());
 
-// CORS — restrict to configured origins (populated from CORS_ALLOWED_ORIGINS env var)
+// CORS. Restrict to configured origins (populated from CORS_ALLOWED_ORIGINS env var)
 const allowedOrigins = (process.env['CORS_ALLOWED_ORIGINS'] ?? '')
   .split(',')
   .map(o => o.trim())
@@ -49,7 +49,7 @@ app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 // runtime, sourced from the App Service app settings that Bicep populates from the
 // deployment's portalClientId/tenantId parameters. This lets a single prebuilt SPA
 // bundle work for any tenant without a build-time rebuild (FR-041/FR-042). These
-// values are NOT secrets — the client ID, tenant ID, and authority are all public
+// values are NOT secrets. The client ID, tenant ID, and authority are all public
 // and already embedded in every issued token and sign-in redirect.
 app.get('/api/config', (_req, res) => {
   const clientId = process.env['ENTRA_CLIENT_ID'] ?? '';
@@ -97,7 +97,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   // portal can distinguish "backend unreachable" from an authorization/validation
   // error instead of always surfacing a generic 500.
   if (axios.isAxiosError(err)) {
-    // No response received — the Operator API is unreachable (down, wrong URL,
+    // No response received. The Operator API is unreachable (down, wrong URL,
     // connection refused, DNS failure, or timed out).
     if (!err.response) {
       const unreachable = err.code === 'ECONNABORTED';
@@ -112,7 +112,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
       return;
     }
 
-    // Upstream responded with an error status — forward it (and its problem
+    // Upstream responded with an error status. Forward it (and its problem
     // details when present) so the client sees the real cause (e.g. 403, 400).
     const status = err.response.status;
     const upstream = err.response.data as Record<string, unknown> | undefined;

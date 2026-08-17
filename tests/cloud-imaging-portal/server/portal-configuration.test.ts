@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal backend portal configuration tests (T144, FR-026).
  */
-describe('Portal backend — portal configuration route', () => {
+describe('Portal backend: portal configuration route', () => {
   describe('GET /api/portal-config', () => {
     it('requires PortalAccess role', () => {
       expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');

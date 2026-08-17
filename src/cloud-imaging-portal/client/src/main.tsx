@@ -9,7 +9,7 @@ import './index.css';
 /**
  * Async bootstrap: fetch runtime portal configuration (Entra client ID/authority)
  * from the backend's public /api/config endpoint, construct and initialise MSAL
- * from it, then render. This keeps the prebuilt bundle tenant-agnostic — the same
+ * from it, then render. This keeps the prebuilt bundle tenant-agnostic: the same
  * artifact deploys to any customer without a rebuild (FR-041/FR-042).
  */
 async function bootstrap(): Promise<void> {

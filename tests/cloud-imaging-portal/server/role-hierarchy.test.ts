@@ -8,7 +8,7 @@ import type { AuthenticatedRequest } from '@/middleware/auth.js';
  *
  * Portal SPA user tokens only ever carry CloudImaging.Administrator or
  * CloudImaging.Technician. CloudImaging.PortalAccess is a service role that never
- * appears in a user token, so any signed-in user must implicitly satisfy it — otherwise
+ * appears in a user token, so any signed-in user must implicitly satisfy it, otherwise
  * every read route 403s for real users (reads fall back to defaults, writes report
  * "Failed to save").
  */
@@ -27,7 +27,7 @@ function runGuard(req: AuthenticatedRequest, roles: Parameters<typeof requireRol
   return nextCalled ? 200 : status;
 }
 
-describe('Portal backend — role hierarchy', () => {
+describe('Portal backend: role hierarchy', () => {
   it('Administrator implies Technician and PortalAccess', () => {
     const roles = getUserRoles(reqWithRoles(['CloudImaging.Administrator']));
     expect(roles.has('CloudImaging.Administrator')).toBe(true);

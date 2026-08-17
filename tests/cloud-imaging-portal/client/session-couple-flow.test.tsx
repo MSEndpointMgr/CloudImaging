@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend session couple flow tests (T038, FR-032).
  */
-describe('Portal frontend — session couple flow', () => {
+describe('Portal frontend: session couple flow', () => {
   it('CoupleSessionDialog accepts 6-character uppercase passcode', () => {
     const passcode = 'ABC123';
     expect(passcode.length).toBe(6);

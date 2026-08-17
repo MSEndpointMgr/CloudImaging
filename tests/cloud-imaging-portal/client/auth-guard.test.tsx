@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend auth guard contract tests (T018a, FR-030).
  */
-describe('Portal frontend — auth guard', () => {
+describe('Portal frontend: auth guard', () => {
   it('unauthenticated navigation triggers sign-in redirect', () => {
     // ProtectedRoute redirects unauthenticated users to Entra sign-in
     const redirectsToSignIn = true;

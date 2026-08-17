@@ -22,12 +22,12 @@ async function gotoSessions(page: Page): Promise<void> {
 
 // ── Test suite ────────────────────────────────────────────────────────────────
 
-test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
+test.describe('Cloud Imaging Portal: Critical E2E Paths', () => {
   test.use({ storageState: 'tests/cloud-imaging-portal/e2e/.auth/portal.json' });
 
   // ── 1. Passcode coupling flow ─────────────────────────────────────────────
 
-  test('passcode coupling flow — Couple Device modal opens and closes on success', async ({ page }) => {
+  test('passcode coupling flow: Couple Device modal opens and closes on success', async ({ page }) => {
     await gotoSessions(page);
 
     // Couple Device button must be always visible in the toolbar
@@ -50,7 +50,7 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
     await expect(modal).not.toBeVisible();
   });
 
-  test('passcode coupling — inline error shown for invalid passcode', async ({ page }) => {
+  test('passcode coupling: inline error shown for invalid passcode', async ({ page }) => {
     await gotoSessions(page);
     await page.getByRole('button', { name: /couple device/i }).click();
 
@@ -73,7 +73,7 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
 
   // ── 2. Session state progression ─────────────────────────────────────────
 
-  test('sessions page — filter tabs are visible and functional', async ({ page }) => {
+  test('sessions page: filter tabs are visible and functional', async ({ page }) => {
     await gotoSessions(page);
 
     // Both primary tabs should be present
@@ -84,14 +84,14 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
     }
   });
 
-  test('sessions page — select-all checkbox is present in the table header', async ({ page }) => {
+  test('sessions page: select-all checkbox is present in the table header', async ({ page }) => {
     await gotoSessions(page);
     await expect(
       page.getByRole('checkbox', { name: /select all sessions|deselect all sessions/i }),
     ).toBeVisible();
   });
 
-  test('sessions page — Refresh button is always visible', async ({ page }) => {
+  test('sessions page: Refresh button is always visible', async ({ page }) => {
     await gotoSessions(page);
     const refreshBtn = page.getByRole('button', { name: /refresh/i });
     await expect(refreshBtn).toBeVisible();
@@ -99,18 +99,18 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
 
   // ── 3. Bulk assignment ────────────────────────────────────────────────────
 
-  test('bulk assignment — BulkAssignPanel hidden when no Assigned-state rows selected', async ({ page }) => {
+  test('bulk assignment: BulkAssignPanel hidden when no Assigned-state rows selected', async ({ page }) => {
     await gotoSessions(page);
     // Bulk panel should not be visible when nothing is selected
     const bulkPanel = page.getByText(/assign image to \d+ session/i);
     const visible = await bulkPanel.isVisible().catch(() => false);
-    // In an empty session list this is false — that's expected
+    // In an empty session list this is false, that's expected
     expect(visible).toBe(false);
   });
 
   // ── 4. Branding update with page reload ───────────────────────────────────
 
-  test('branding settings page — is accessible from sidebar', async ({ page }) => {
+  test('branding settings page: is accessible from sidebar', async ({ page }) => {
     await page.goto(`${PORTAL_URL}/`);
     await page.waitForLoadState('networkidle');
 
@@ -120,7 +120,7 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
     await expect(page).toHaveURL(/branding/i);
   });
 
-  test('branding settings — color pickers and application name field present', async ({ page }) => {
+  test('branding settings: color pickers and application name field present', async ({ page }) => {
     await page.goto(`${PORTAL_URL}/branding`);
     await page.waitForLoadState('networkidle');
 
@@ -131,7 +131,7 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
 
   // ── 5. Navigation ─────────────────────────────────────────────────────────
 
-  test('sidebar navigation — all five sections are accessible', async ({ page }) => {
+  test('sidebar navigation: all five sections are accessible', async ({ page }) => {
     await page.goto(`${PORTAL_URL}/`);
     await page.waitForLoadState('networkidle');
 
@@ -144,7 +144,7 @@ test.describe('Cloud Imaging Portal — Critical E2E Paths', () => {
     }
   });
 
-  test('navigation — sidebar is present on all authenticated routes', async ({ page }) => {
+  test('navigation: sidebar is present on all authenticated routes', async ({ page }) => {
     for (const route of ['/', '/os-images', '/boot-images', '/branding', '/configuration']) {
       await page.goto(`${PORTAL_URL}${route}`);
       await page.waitForLoadState('networkidle');

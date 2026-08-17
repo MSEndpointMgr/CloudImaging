@@ -9,12 +9,12 @@ import { operatorApiClient } from '../services/operatorApiClient.js';
  */
 const router = Router();
 
-// GET /api/cert/active — active boot media certificate metadata (thumbprint/validity).
+// GET /api/cert/active: active boot media certificate metadata (thumbprint/validity).
 router.get('/active', requireRole('CloudImaging.Administrator'), async (_req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.getBootMediaCertMetadata());
   } catch (err) {
-    // No active certificate configured yet — surface as an empty result rather than an error
+    // No active certificate configured yet. Surface as an empty result rather than an error
     // so the Configuration page renders the "no certificate" state instead of failing to load.
     if (axios.isAxiosError(err) && err.response?.status === 404) {
       res.json(null);

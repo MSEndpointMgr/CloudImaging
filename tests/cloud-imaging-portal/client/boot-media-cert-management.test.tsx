@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend boot media certificate management UI tests (T175, FR-068).
  */
-describe('Portal frontend — boot media certificate management', () => {
+describe('Portal frontend: boot media certificate management', () => {
   it('BootMediaCertPanel shows thumbprintDisplay, issuedAt, expiresAt', () => {
     const fields = ['thumbprintDisplay', 'issuedAt', 'expiresAt', 'isActive'];
     expect(fields).toContain('thumbprintDisplay');

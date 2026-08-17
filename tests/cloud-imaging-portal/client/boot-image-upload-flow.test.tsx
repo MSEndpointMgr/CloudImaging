@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend boot image upload flow tests (T126, FR-063).
  */
-describe('Portal frontend — boot image upload flow', () => {
+describe('Portal frontend: boot image upload flow', () => {
   it('ChunkedUploadDialog accepts WIM file, version, sha256Hash', () => {
     const required = ['file', 'version', 'sha256Hash'];
     expect(required).toContain('sha256Hash');

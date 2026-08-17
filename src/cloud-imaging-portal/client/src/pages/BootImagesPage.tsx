@@ -92,7 +92,7 @@ export default function BootImagesPage(): React.ReactElement {
             <div className="mb-1.5 flex items-center justify-between text-xs">
               <span className={atCapacity ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
                 {atCapacity
-                  ? 'At capacity — the oldest entry is replaced on the next upload'
+                  ? 'At capacity. The oldest entry is replaced on the next upload'
                   : `${remaining} slot${remaining === 1 ? '' : 's'} remaining`}
               </span>
               <span className="tabular-nums text-muted-foreground">{usedPct}%</span>

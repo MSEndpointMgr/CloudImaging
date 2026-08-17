@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend image management UI tests (T082, FR-036, FR-037).
  */
-describe('Portal frontend — image management UI', () => {
+describe('Portal frontend: image management UI', () => {
   it('OsImagesPage renders a table with name, version, size, sha256Hash', () => {
     const columns = ['Name', 'Version', 'Size', 'SHA-256', 'Status', 'Actions'];
     expect(columns).toContain('SHA-256');

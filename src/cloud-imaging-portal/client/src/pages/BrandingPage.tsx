@@ -63,7 +63,7 @@ export default function BrandingPage(): React.ReactElement {
   const [config, setConfig] = useState<BrandingConfig>({
     primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
   });
-  /** Snapshot of the appearance fields as last loaded/saved — used to detect unsaved changes. */
+  /** Snapshot of the appearance fields as last loaded/saved. Used to detect unsaved changes. */
   const [savedAppearance, setSavedAppearance] = useState<AppearanceFields>({
     primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
   });

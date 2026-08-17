@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* shadcn/ui neutral design tokens (HSL) — light theme */
+    /* shadcn/ui neutral design tokens (HSL), light theme */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
@@ -22,7 +22,7 @@
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    /* Table column-header surface — darker than the card for clear contrast in light mode */
+    /* Table column-header surface, darker than the card for clear contrast in light mode */
     --table-header: 214.3 31.8% 85%;
 
     --accent: 210 40% 96.1%;
@@ -43,7 +43,7 @@
     --sidebar-accent-foreground: 222.2 47.4% 11.2%;
     --sidebar-border: 214.3 31.8% 91.4%;
 
-    /* Brand colors as RGB triples — overridden at runtime by brandingContext (FR-038). */
+    /* Brand colors as RGB triples, overridden at runtime by brandingContext (FR-038). */
     --color-primary: 37 99 235;   /* blue-600 default */
     --color-accent:  30 64 175;   /* blue-800 default */
   }
@@ -66,7 +66,7 @@
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
 
-    /* Table column-header surface — lighter than the card for clear contrast in dark mode */
+    /* Table column-header surface, lighter than the card for clear contrast in dark mode */
     --table-header: 217.2 32.6% 22%;
 
     --accent: 217.2 32.6% 17.5%;

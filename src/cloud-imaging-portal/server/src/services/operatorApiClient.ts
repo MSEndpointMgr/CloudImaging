@@ -2,7 +2,7 @@ import axios, { AxiosInstance } from 'axios';
 import { getOperatorApiToken } from './operatorApiToken.js';
 
 /**
- * Default timeout for most (fast) Operator API calls — catches a genuinely unreachable
+ * Default timeout for most (fast) Operator API calls. Catches a genuinely unreachable
  * backend quickly instead of hanging the request pipeline.
  */
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 /**
  * Timeout for the boot-image / OS-image upload "publish" calls specifically. Publish
  * downloads the whole staged blob through Imaging Core API to verify its SHA-256 hash and
- * then copies it to its published path — both scale with image size, so a multi-hundred-MB
+ * then copies it to its published path. Both scale with image size, so a multi-hundred-MB
  * WIM can legitimately take well over 30s. Using the short default here caused the publish
  * (or a request queued behind it) to be aborted client-side and surfaced as a 504 even
  * though the backend was still working correctly (see repo memory: boot-image-upload-504).
@@ -20,7 +20,7 @@ const PUBLISH_TIMEOUT_MS = 180_000;
 /**
  * Typed HTTP client for portal backend → Operator API calls over Private Link (T041, FR-013).
  * Every request is authenticated with the portal backend's OWN managed-identity token (which
- * carries the `CloudImaging.PortalAccess` service role) via a request interceptor — the user's
+ * carries the `CloudImaging.PortalAccess` service role) via a request interceptor. The user's
  * browser token is never forwarded downstream. User RBAC is enforced separately at the portal
  * edge by the roleGuard middleware.
  */
@@ -185,7 +185,7 @@ export class OperatorApiClient {
     return data;
   }
 
-  /** Active boot media certificate metadata (thumbprint/validity) — never returns PFX bytes. */
+  /** Active boot media certificate metadata (thumbprint/validity). Never returns PFX bytes. */
   async getBootMediaCertMetadata(): Promise<unknown> {
     const { data } = await this.http.get<unknown>('/api/bootmedia/certificate/metadata');
     return data;
@@ -248,7 +248,7 @@ export class OperatorApiClient {
   }
 }
 
-/** Singleton instance — created on first import, configured at request time. */
+/** Singleton instance, created on first import, configured at request time. */
 export const operatorApiClient = new OperatorApiClient(
   process.env['OPERATOR_API_BASE_URL'] ?? 'http://localhost:7072',
 );

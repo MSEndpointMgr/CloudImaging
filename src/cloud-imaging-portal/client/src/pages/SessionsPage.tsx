@@ -1,4 +1,4 @@
-// Full Sessions page implementation — see import below
+// Full Sessions page implementation, see import below
 export default function SessionsPage(): React.ReactElement {
   return <SessionsPageImpl />;
 }
@@ -284,9 +284,9 @@ function SessionsPageImpl(): React.ReactElement {
                         </div>
                         <span className="text-xs text-muted-foreground">{s.overallProgressPercent}%</span>
                       </div>
-                    ) : <span className="text-muted-foreground">—</span>}
+                    ) : <span className="text-muted-foreground">-</span>}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '—'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
                   <TableCell className="text-right">
                     {s.state === 'SessionAssigned' && (
                       <Button

@@ -1,7 +1,7 @@
 import { chromium, FullConfig } from '@playwright/test';
 
 /**
- * Playwright global setup — authenticates to the portal and saves auth state (T149).
+ * Playwright global setup. Authenticates to the portal and saves auth state (T149).
  *
  * Run against a locally running portal dev server:
  *   BASE_URL=http://localhost:5173 npx playwright test
@@ -10,10 +10,10 @@ import { chromium, FullConfig } from '@playwright/test';
  * committed to source control.
  *
  * Required env vars:
- *   PORTAL_URL         — Portal frontend URL (default: http://localhost:5173)
- *   PORTAL_USERNAME    — Entra ID UPN of a test account with PortalAccess or Administrator role
- *   PORTAL_PASSWORD    — Password for the test account
- *   E2E_AUTH_FILE      — Path to store auth state JSON (default: tests/e2e/.auth/portal.json)
+ *   PORTAL_URL         Portal frontend URL (default: http://localhost:5173)
+ *   PORTAL_USERNAME    Entra ID UPN of a test account with PortalAccess or Administrator role
+ *   PORTAL_PASSWORD    Password for the test account
+ *   E2E_AUTH_FILE      Path to store auth state JSON (default: tests/e2e/.auth/portal.json)
  */
 async function globalSetup(config: FullConfig): Promise<void> {
   const portalUrl   = process.env['PORTAL_URL']      ?? 'http://localhost:5173';
@@ -23,7 +23,7 @@ async function globalSetup(config: FullConfig): Promise<void> {
 
   if (!username || !password) {
     console.warn(
-      '[E2E Setup] PORTAL_USERNAME / PORTAL_PASSWORD not set — skipping pre-auth.\n' +
+      '[E2E Setup] PORTAL_USERNAME / PORTAL_PASSWORD not set, skipping pre-auth.\n' +
       '            Tests that require authentication will use mock/stub flows.'
     );
     return;
@@ -37,7 +37,7 @@ async function globalSetup(config: FullConfig): Promise<void> {
     console.log(`[E2E Setup] Navigating to ${portalUrl}…`);
     await page.goto(portalUrl, { waitUntil: 'networkidle' });
 
-    // MSAL redirect login — handle Entra ID login page
+    // MSAL redirect login: handle Entra ID login page
     if (page.url().includes('login.microsoftonline.com')) {
       console.log('[E2E Setup] Completing Entra ID sign-in…');
       await page.fill('input[type="email"]', username);

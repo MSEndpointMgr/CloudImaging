@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal backend image management route tests (T081, FR-036, FR-037).
  */
-describe('Portal backend — image management routes', () => {
+describe('Portal backend: image management routes', () => {
   describe('GET /api/images', () => {
     it('requires PortalAccess role', () => {
       expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');

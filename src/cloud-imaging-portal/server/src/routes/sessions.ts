@@ -3,13 +3,13 @@ import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
- * Sessions router — proxies all session-related operations to the Operator API (T041, T041a).
+ * Sessions router. Proxies all session-related operations to the Operator API (T041, T041a).
  * Authentication is already validated by auth middleware on the parent app.
  * Role enforcement uses requireRole() factory from roleGuard middleware.
  */
 const router = Router();
 
-// ── GET /api/sessions — list sessions (PortalAccess required) ─────────────
+// ── GET /api/sessions: list sessions (PortalAccess required) ─────────────
 
 router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -20,7 +20,7 @@ router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, r
   }
 });
 
-// ── GET /api/sessions/:id — get single session ────────────────────────────
+// ── GET /api/sessions/:id: get single session ────────────────────────────
 
 router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -31,7 +31,7 @@ router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: 
   }
 });
 
-// ── GET /api/sessions/:id/logs — list uploaded diagnostic logs ────────────
+// ── GET /api/sessions/:id/logs: list uploaded diagnostic logs ────────────
 
 router.get('/:sessionId/logs', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -42,7 +42,7 @@ router.get('/:sessionId/logs', requireRole('CloudImaging.PortalAccess'), async (
   }
 });
 
-// ── GET /api/sessions/:id/logs/:fileName/download-url — issue a download URL ──
+// ── GET /api/sessions/:id/logs/:fileName/download-url: issue a download URL ──
 
 router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -54,7 +54,7 @@ router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.
   }
 });
 
-// ── POST /api/sessions/couple — couple by passcode (PortalAccess) ─────────
+// ── POST /api/sessions/couple: couple by passcode (PortalAccess) ─────────
 
 router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -70,7 +70,7 @@ router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Req
   }
 });
 
-// ── POST /api/sessions/:sessionId/assign — assign image (PortalAccess) ────
+// ── POST /api/sessions/:sessionId/assign: assign image (PortalAccess) ────
 
 router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -86,7 +86,7 @@ router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), asyn
   }
 });
 
-// ── POST /api/sessions/bulk-assign — bulk assign (Technician + Administrator) ─────
+// ── POST /api/sessions/bulk-assign: bulk assign (Technician + Administrator) ─────
 
 router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {

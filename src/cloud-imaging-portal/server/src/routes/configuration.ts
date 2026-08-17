@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
-/** Configuration router (US6). Administrator-only — deployment/security settings. */
+/** Configuration router (US6). Administrator-only. Deployment/security settings. */
 const router = Router();
 
 router.get('/', requireRole('CloudImaging.Administrator'), async (_req: Request, res: Response, next: NextFunction) => {

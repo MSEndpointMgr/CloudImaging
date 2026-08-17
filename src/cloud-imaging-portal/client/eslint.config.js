@@ -8,7 +8,7 @@ export default tseslint.config(
   // Ignore build artefacts, compiled output and files not in tsconfig
   { ignores: ['dist', 'node_modules', 'coverage', '**/*.d.ts', '**/*.js', 'tailwind.config.ts', 'postcss.config.*', 'vite.config.ts'] },
   {
-    // Use recommendedTypeChecked — strictTypeChecked adds rules that conflict
+    // Use recommendedTypeChecked. strictTypeChecked adds rules that conflict
     // with common React patterns (no-misused-promises on JSX onClick, etc.)
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     files: ['**/*.{ts,tsx}'],

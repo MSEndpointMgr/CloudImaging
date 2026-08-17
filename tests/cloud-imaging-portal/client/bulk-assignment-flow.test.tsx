@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 /**
  * Portal frontend bulk assignment UI tests (T074, FR-035).
  */
-describe('Portal frontend — bulk assignment UI', () => {
+describe('Portal frontend: bulk assignment UI', () => {
   it('BulkAssignPanel appears only when ≥1 Assigned-state row is checked', () => {
     const eligibleCount = 2;
     expect(eligibleCount).toBeGreaterThanOrEqual(1);
