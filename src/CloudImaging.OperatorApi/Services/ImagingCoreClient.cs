@@ -119,6 +119,31 @@ public sealed class ImagingCoreClient
         response.EnsureSuccessStatusCode();
     }
 
+    // ── Partitioning scheme ─────────────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> GetPartitioningSchemeAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/partitioning-scheme", ct);
+
+    public Task<HttpResponseMessage> PutPartitioningSchemeAsync(PartitioningScheme scheme, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync("/api/internal/partitioning-scheme", scheme, JsonOptions, ct);
+
+    // ── Recovery image operations ──────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> GetRecoveryImagesAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/recovery-images", ct);
+
+    public Task<HttpResponseMessage> GetRecoveryImageSasAsync(Guid recoveryImageId, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/recovery-images/{recoveryImageId}/sas", null, ct);
+
+    public Task<HttpResponseMessage> DeleteRecoveryImageAsync(Guid recoveryImageId, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/recovery-images/{recoveryImageId}", ct);
+
+    public Task<HttpResponseMessage> StartRecoveryImageUploadAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/recovery-images/upload/start", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> PublishRecoveryImageUploadAsync(string uploadId, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/recovery-images/upload/{uploadId}/publish", payload, JsonOptions, ct);
+
     // ── Boot media certificate ────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetActiveBootCertMetadataAsync(CancellationToken ct = default) =>

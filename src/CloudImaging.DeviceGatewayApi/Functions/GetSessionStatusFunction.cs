@@ -81,6 +81,9 @@ public sealed partial class GetSessionStatusFunction
             sasTokenUrl = root.TryGetProperty("sasTokenUrl", out var su) ? su.GetString() : null,
             sasTokenUrlExpiresAt = root.TryGetProperty("sasTokenUrlExpiresAt", out var se) ? se.GetString() : null,
             sha256Hash = root.TryGetProperty("sha256Hash", out var sh) ? sh.GetString() : null,
+            partitioningScheme = root.TryGetProperty("partitioningScheme", out var ps) && ps.ValueKind != JsonValueKind.Null
+                ? ps
+                : (JsonElement?)null,
         };
 
         var response = req.CreateResponse(HttpStatusCode.OK);

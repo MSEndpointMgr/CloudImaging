@@ -160,6 +160,21 @@ public sealed class DeviceGatewayApiClient
 
         return await response.Content.ReadFromJsonAsync<LatestBootImageInfo>(JsonOptions, ct);
     }
+
+    /// <summary>
+    /// GET /api/v1/recovery-image/latest — Retrieve the latest published recovery (WinRE)
+    /// image's version, hash, and SAS download URL, used by <see cref="Services.RecoveryImageService"/>
+    /// to apply the recovery image to the Recovery partition. Requires the device-session token
+    /// Bearer (set via <see cref="SetSessionToken"/>). Returns null on any non-success response.
+    /// </summary>
+    public async Task<LatestRecoveryImageInfo?> GetLatestRecoveryImageAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/api/v1/recovery-image/latest", ct);
+        if (!response.IsSuccessStatusCode)
+            return null;
+
+        return await response.Content.ReadFromJsonAsync<LatestRecoveryImageInfo>(JsonOptions, ct);
+    }
 }
 
 /// <summary>
@@ -186,6 +201,12 @@ public sealed class SessionStatusResponse
     public string? SasTokenUrl { get; init; }
     public string? SasTokenUrlExpiresAt { get; init; }
     public string? Sha256Hash { get; init; }
+
+    /// <summary>
+    /// The partitioning scheme snapshotted onto this session at creation time. Null only if the
+    /// backend has not been upgraded yet (defensive — the server always populates this today).
+    /// </summary>
+    public PartitioningScheme? PartitioningScheme { get; init; }
 }
 
 /// <summary>Result of a SAS token refresh call — see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>

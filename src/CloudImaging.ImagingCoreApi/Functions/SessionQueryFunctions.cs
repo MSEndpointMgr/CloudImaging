@@ -15,19 +15,24 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 ///
 /// GET /api/internal/sessions        — list all sessions (active + terminal), optional state filter
 /// GET /api/internal/sessions/{id}   — get a single session summary
+/// GET /api/internal/sessions/{sessionId}/status — device-facing status poll (secrets included:
+///   this is called only by Device Gateway API over Private Link, never by the portal)
 /// </summary>
 public sealed partial class SessionQueryFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly DeviceSessionRepository _sessionRepo;
+    private readonly OsImageRepository _osImageRepo;
     private readonly ILogger<SessionQueryFunctions> _logger;
 
     public SessionQueryFunctions(
         DeviceSessionRepository sessionRepo,
+        OsImageRepository osImageRepo,
         ILogger<SessionQueryFunctions> logger)
     {
         _sessionRepo = sessionRepo;
+        _osImageRepo = osImageRepo;
         _logger = logger;
     }
 
@@ -80,6 +85,53 @@ public sealed partial class SessionQueryFunctions
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(ToSummary(session), JsonOptions), context.CancellationToken);
+        return response;
+    }
+
+    // ── GET /api/internal/sessions/{sessionId}/status ────────────────────────
+
+    [Function("GetSessionStatus")]
+    public async Task<HttpResponseData> GetSessionStatus(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/status")] HttpRequestData req,
+        string sessionId, FunctionContext context)
+    {
+        if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
+        if (session is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+
+        string? sha256Hash = null;
+        if (session.AssignedOsImageId is Guid assignedId)
+        {
+            var image = await _osImageRepo.GetByIdAsync(assignedId, context.CancellationToken);
+            sha256Hash = image?.Sha256Hash;
+        }
+
+        object? partitioningScheme = session.PartitioningSchemeSnapshotJson is string schemeJson
+            ? JsonSerializer.Deserialize<JsonElement>(schemeJson, JsonOptions)
+            : null;
+
+        var responseBody = new
+        {
+            sessionId = session.SessionId,
+            state = session.State.ToString(),
+            currentStep = session.CurrentStep,
+            overallProgressPercent = session.OverallProgressPercent,
+            sasTokenUrl = session.SasTokenUrl,
+            sasTokenUrlExpiresAt = session.SasTokenUrlExpiresAt,
+            sha256Hash,
+            partitioningScheme,
+        };
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(JsonSerializer.Serialize(responseBody, JsonOptions), context.CancellationToken);
         return response;
     }
 

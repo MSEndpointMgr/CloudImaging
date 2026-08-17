@@ -1,5 +1,6 @@
 using System.IO;
 using System.Net.Http;
+using System.Text.Json;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
@@ -7,21 +8,28 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.Client.ViewModels;
 
 /// <summary>
-/// Orchestrates the Format → Download → Apply imaging pipeline once a session has (or reaches)
-/// an OS image assignment. Drives <see cref="ProgressViewModel"/>, reports step progress back to
-/// the Device Gateway API via <see cref="Services.ImagingProgressReporter"/>, and navigates to
-/// <see cref="ResultsView"/> on completion, failure, or an unexpected terminal transition
+/// Orchestrates the Format → Download → Apply → Configure Boot → Apply Recovery imaging
+/// pipeline once a session has (or reaches) an OS image assignment. Drives
+/// <see cref="ProgressViewModel"/>, reports step progress back to the Device Gateway API via
+/// <see cref="Services.ImagingProgressReporter"/>, and navigates to <see cref="ResultsView"/> on
+/// completion, failure, or an unexpected terminal transition
 /// (T056, FR-005, FR-006, FR-007, FR-008, FR-009d).
 ///
 /// Previously, none of <see cref="Services.ImageDownloadService"/>, <see cref="Services.ImageApplyService"/>,
 /// <see cref="Services.ImagingProgressReporter"/>, <see cref="Services.SasRefreshCoordinator"/>,
 /// <see cref="Services.ImageCacheService"/>, or <see cref="Services.ImageCacheMaintenanceService"/> were
 /// ever instantiated by the running application — this type is what wires them together.
+///
+/// The disk is now partitioned per the admin-configured <see cref="PartitioningScheme"/>
+/// snapshotted onto the session (ESP/MSR/Windows/Recovery), boot files are configured with
+/// <c>bcdboot</c>, and the WinRE recovery image is downloaded and applied — turning what was
+/// previously a single non-bootable partition into a real UEFI-bootable device.
 /// </summary>
 public sealed class ImagingWorkflowViewModel : IDisposable
 {
     private static readonly TimeSpan AssignmentWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan AssignmentPollInterval = TimeSpan.FromSeconds(5);
+    private static readonly JsonSerializerOptions SchemeJsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Services.DeviceGatewayApiClient _gatewayClient;
     private readonly Guid _sessionId;
@@ -80,17 +88,18 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             _sasCoordinator.Start();
 
             var hash = _status.Sha256Hash ?? string.Empty;
+            var scheme = _status.PartitioningScheme ?? PartitioningScheme.Default;
 
             // ── Format ──────────────────────────────────────────────────────────
             _progress.StatusMessage = "Preparing the target disk…";
             _progress.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress);
             await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress, ct: ct);
 
-            string targetVolume;
+            Services.DiskFormatResult diskFormat;
             try
             {
                 var formatService = new Services.DiskFormatService(_loggerFactory.CreateLogger<Services.DiskFormatService>());
-                targetVolume = await formatService.FormatTargetDiskAsync(ct);
+                diskFormat = await formatService.FormatTargetDiskAsync(scheme, ct);
             }
             catch (Exception ex)
             {
@@ -100,9 +109,9 @@ public sealed class ImagingWorkflowViewModel : IDisposable
 
             _progress.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.Completed);
             await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.Completed, ct: ct);
-            _progress.OverallPercent = 10;
+            _progress.OverallPercent = 8;
 
-            // ── Download ────────────────────────────────────────────────────────
+            // ── Download OS image ──────────────────────────────────────────────
             _progress.StatusMessage = "Downloading operating system image…";
             _progress.UpdateStep(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress);
 
@@ -127,7 +136,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                     destinationPath: destinationPath,
                     onProgress: pct =>
                     {
-                        _progress.OverallPercent = 10 + (int)(pct * 0.6); // 10–70%
+                        _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8–55%
                         _ = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
                     ct: ct);
@@ -140,9 +149,9 @@ public sealed class ImagingWorkflowViewModel : IDisposable
 
             _progress.UpdateStep(ImagingStepName.DownloadImage, ImagingStepStatus.Completed);
             await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.Completed, ct: ct);
-            _progress.OverallPercent = 70;
+            _progress.OverallPercent = 55;
 
-            // ── Apply ───────────────────────────────────────────────────────────
+            // ── Apply OS image ─────────────────────────────────────────────────
             _progress.StatusMessage = "Applying operating system image…";
             _progress.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress);
 
@@ -152,8 +161,8 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                 await applyService.ApplyAsync(
                     wimPath,
                     hash,
-                    targetVolume,
-                    onProgress: pct => _progress.OverallPercent = 70 + (int)(pct * 0.3), // 70–100%
+                    diskFormat.WindowsVolume,
+                    onProgress: pct => _progress.OverallPercent = 55 + (int)(pct * 0.25), // 55–80%
                     ct: ct);
             }
             catch (Exception ex)
@@ -164,6 +173,78 @@ public sealed class ImagingWorkflowViewModel : IDisposable
 
             _progress.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.Completed);
             await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.Completed, ct: ct);
+            _progress.OverallPercent = 80;
+
+            // ── Configure boot ──────────────────────────────────────────────────
+            _progress.StatusMessage = "Configuring boot files…";
+            _progress.UpdateStep(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress);
+            await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress, ct: ct);
+
+            var bootConfigService = new Services.BootConfigurationService(_loggerFactory.CreateLogger<Services.BootConfigurationService>());
+            try
+            {
+                await bootConfigService.ConfigureAsync(diskFormat.WindowsVolume, diskFormat.EfiSystemVolume, ct);
+            }
+            catch (Exception ex)
+            {
+                await FailAsync(reporter, ImagingStepName.ConfigureBoot, "BOT", ex.Message, ct);
+                return;
+            }
+
+            _progress.UpdateStep(ImagingStepName.ConfigureBoot, ImagingStepStatus.Completed);
+            await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.Completed, ct: ct);
+            _progress.OverallPercent = 85;
+
+            // ── Download + apply recovery image ─────────────────────────────────
+            _progress.StatusMessage = "Downloading recovery image…";
+            _progress.UpdateStep(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress);
+            await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, ct: ct);
+
+            var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(ct);
+            if (recoveryInfo is null)
+            {
+                await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC",
+                    "No published recovery image could be retrieved.", ct);
+                return;
+            }
+
+            var recoveryDestinationPath = Path.Combine(Path.GetTempPath(), $"ci-recovery-{_sessionId:N}.wim");
+            string recoveryWimPath;
+            try
+            {
+                recoveryWimPath = await downloadService.EnsureLocalWimAsync(
+                    imageId: recoveryInfo.Sha256Hash,
+                    expectedHash: recoveryInfo.Sha256Hash,
+                    sasUrl: recoveryInfo.SasTokenUrl,
+                    destinationPath: recoveryDestinationPath,
+                    onProgress: pct => _progress.OverallPercent = 85 + (int)(pct * 0.10), // 85–95%
+                    ct: ct);
+            }
+            catch (Exception ex)
+            {
+                await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC", ex.Message, ct);
+                return;
+            }
+
+            _progress.StatusMessage = "Applying recovery image…";
+            var recoveryService = new Services.RecoveryImageService(_loggerFactory.CreateLogger<Services.RecoveryImageService>());
+            try
+            {
+                await recoveryService.ApplyAsync(
+                    recoveryWimPath,
+                    recoveryInfo.Sha256Hash,
+                    diskFormat.WindowsVolume,
+                    diskFormat.RecoveryVolume,
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC", ex.Message, ct);
+                return;
+            }
+
+            _progress.UpdateStep(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed);
+            await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed, ct: ct);
             _progress.OverallPercent = 100;
             _progress.StatusMessage = "Imaging complete.";
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Lock, Link as LinkIcon } from 'lucide-react';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
+import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
 import { apiFetch } from '../lib/apiClient.ts';
 import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
@@ -29,12 +30,13 @@ interface CertMeta {
   isActive?: boolean;
 }
 
-type TabKey = 'certificates' | 'security' | 'preflight' | 'misc';
+type TabKey = 'certificates' | 'security' | 'preflight' | 'partitioning' | 'misc';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'certificates', label: 'Certificates' },
   { key: 'security',     label: 'Security' },
   { key: 'preflight',    label: 'Preflight' },
+  { key: 'partitioning', label: 'Partitioning' },
   { key: 'misc',         label: 'Miscellaneous' },
 ];
 
@@ -255,6 +257,10 @@ export default function DeploymentConfigPage(): React.ReactElement {
         />
       )}
 
+      {/* Partitioning — self-contained: own fetch/save, independent of the Save
+          Configuration button below (which only applies to PortalConfig). */}
+      {activeTab === 'partitioning' && <PartitioningSchemePanel />}
+
       {/* Miscellaneous */}
       {activeTab === 'misc' && (
         <Card>
@@ -278,20 +284,23 @@ export default function DeploymentConfigPage(): React.ReactElement {
       )}
 
       {/* Save controls apply to the Security/Preflight/Miscellaneous tabs; the boot
-          media certificate panel in the Certificates tab has its own separate actions. */}
-      <div className="flex items-center gap-3">
-        <Button
-          onClick={save}
-          status={saveStatus}
-          variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
-          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
-        >
-          Save Configuration
-        </Button>
-        {isDirty && saveStatus === 'idle' && (
-          <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
-        )}
-      </div>
+          media certificate panel and the partitioning scheme panel have their own
+          separate actions. */}
+      {activeTab !== 'certificates' && activeTab !== 'partitioning' && (
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={save}
+            status={saveStatus}
+            variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
+            disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
+          >
+            Save Configuration
+          </Button>
+          {isDirty && saveStatus === 'idle' && (
+            <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ const SECTION_TITLES: Record<string, string> = {
   '/sessions': 'Devices',
   '/os-images': 'OS Images',
   '/boot-images': 'Boot Images',
+  '/recovery-images': 'Recovery Images',
   '/branding': 'Branding',
   '/configuration': 'Configuration',
 };

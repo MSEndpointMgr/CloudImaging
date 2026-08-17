@@ -27,9 +27,12 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 /// </summary>
 public sealed partial class CreateSessionFunction
 {
+    private static readonly JsonSerializerOptions SchemeJsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly DevicePreFlightAuthorizationService _preFlight;
     private readonly PortalConfigurationRepository _configRepo;
+    private readonly PartitioningSchemeRepository _partitioningSchemeRepo;
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
@@ -37,12 +40,14 @@ public sealed partial class CreateSessionFunction
         DeviceSessionRepository sessionRepo,
         DevicePreFlightAuthorizationService preFlight,
         PortalConfigurationRepository configRepo,
+        PartitioningSchemeRepository partitioningSchemeRepo,
         IConfiguration config,
         ILogger<CreateSessionFunction> logger)
     {
         _sessionRepo = sessionRepo;
         _preFlight = preFlight;
         _configRepo = configRepo;
+        _partitioningSchemeRepo = partitioningSchemeRepo;
         _config = config;
         _logger = logger;
     }
@@ -93,6 +98,11 @@ public sealed partial class CreateSessionFunction
             ? SessionState.SessionNotAuthorized
             : SessionState.SessionAllowed;
 
+        // Snapshot the partitioning scheme currently in effect onto the session (locked at
+        // creation time — later admin edits to the global scheme do not affect this session).
+        var partitioningScheme = await _partitioningSchemeRepo.GetAsync(context.CancellationToken);
+        var partitioningSchemeSnapshotJson = JsonSerializer.Serialize(partitioningScheme, SchemeJsonOptions);
+
         // Issue device-session token if not NotAuthorized
         // (The actual token service is in DeviceGatewayApi — ImagingCoreApi returns the raw session,
         //  and DeviceGatewayApi issues the bearer token before returning to the device)
@@ -111,6 +121,7 @@ public sealed partial class CreateSessionFunction
             OverallProgressPercent = 0,
             CreatedAt = session.CreatedAt,
             LastHeartbeatAt = session.LastHeartbeatAt,
+            PartitioningSchemeSnapshotJson = partitioningSchemeSnapshotJson,
         };
 
         await _sessionRepo.CreateAsync(finalSession, context.CancellationToken);

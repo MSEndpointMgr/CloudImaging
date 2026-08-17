@@ -38,6 +38,8 @@ var host = new HostBuilder()
         services.AddSingleton<BootImageRepository>();
         services.AddSingleton<BrandingRepository>();
         services.AddSingleton<PortalConfigurationRepository>();
+        services.AddSingleton<PartitioningSchemeRepository>();
+        services.AddSingleton<RecoveryImageRepository>();
         services.AddSingleton<BootMediaCertificateRepository>();
 
         // Key Vault certificate service (FR-068)
@@ -93,6 +95,8 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<BootImageRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<BrandingRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<PortalConfigurationRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<PartitioningSchemeRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<RecoveryImageRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<BootMediaCertificateRepository>().EnsureTableExistsAsync(ct);
 }
 

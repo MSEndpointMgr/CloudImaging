@@ -1,53 +1,78 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Management;
+using System.Text;
+using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
 
 /// <summary>
-/// Formats the target disk before the OS image is applied — the "Format" step of the
-/// Format/Download/Apply pipeline (FR-007).
+/// The drive letters assigned to each formatted partition, for use by later pipeline steps
+/// (DISM apply target, boot configuration, recovery image apply).
+/// </summary>
+public sealed record DiskFormatResult(string EfiSystemVolume, string WindowsVolume, string RecoveryVolume);
+
+/// <summary>
+/// Formats the target disk before the OS image is applied — the "Format" step of the imaging
+/// pipeline (FR-007). Builds a full UEFI-bootable GPT layout (EFI System Partition, MSR,
+/// Windows, Recovery) from the admin-configured <see cref="PartitioningScheme"/> snapshotted
+/// onto the session, rather than a single non-bootable partition.
 ///
 /// Target disk selection: the single non-removable (non-USB-interface) disk attached to the
 /// device is selected automatically. If zero or more than one such disk is found, formatting
 /// is refused with a clear error rather than guessing which physical disk to wipe — there is
 /// no spec-defined disk-selection policy for multi-disk devices today; this is a deliberately
 /// conservative default pending a product decision for that scenario.
-///
-/// Produces a single GPT partition spanning the disk, quick-formatted NTFS, assigned the next
-/// available drive letter. This is the minimal layout required by <see cref="ImageApplyService"/>'s
-/// DISM /Apply-Image call. It does NOT create an EFI System Partition/MSR partition or run
-/// bcdboot — full UEFI boot-configuration partitioning is out of scope of this change and is
-/// called out here explicitly so this simplification is never mistaken for a complete
-/// implementation.
 /// </summary>
 public sealed partial class DiskFormatService
 {
+    /// <summary>Minimum acceptable size for the Windows partition after other partitions are reserved.</summary>
+    private const long MinWindowsPartitionMb = 8 * 1024;
+
+    /// <summary>Safety margin subtracted from the disk's reported size to allow for GPT/alignment overhead.</summary>
+    private const long SafetyMarginMb = 8;
+
     private readonly ILogger<DiskFormatService> _logger;
 
     public DiskFormatService(ILogger<DiskFormatService> logger) => _logger = logger;
 
     /// <summary>
-    /// Cleans, partitions, and formats the sole eligible fixed disk, returning the assigned
-    /// drive letter (e.g. <c>"C:"</c>) for use as the DISM apply target.
+    /// Cleans, partitions, and formats the sole eligible fixed disk according to
+    /// <paramref name="scheme"/>, returning the drive letters assigned to each partition.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// Zero or multiple eligible fixed disks were found, or diskpart failed.
+    /// Zero or multiple eligible fixed disks were found, the scheme is missing a required
+    /// partition type, the disk is too small for the configured sizes, or diskpart failed.
     /// </exception>
-    public async Task<string> FormatTargetDiskAsync(CancellationToken ct = default)
+    public async Task<DiskFormatResult> FormatTargetDiskAsync(PartitioningScheme scheme, CancellationToken ct = default)
     {
+        var ordered = ValidateAndOrder(scheme);
+
         var diskIndex = FindSingleFixedDiskIndex();
         LogTargetDiskSelected(_logger, diskIndex);
 
-        var driveLetter = FindNextAvailableDriveLetter();
-        var script =
-            $"select disk {diskIndex}\r\n" +
-            "clean\r\n" +
-            "convert gpt\r\n" +
-            "create partition primary\r\n" +
-            "format fs=ntfs quick label=\"Windows\"\r\n" +
-            $"assign letter={driveLetter}\r\n";
+        var diskSizeMb = GetDiskSizeMb(diskIndex);
+        var reservedMb = ordered.Where(p => p.PartitionType != PartitionType.Windows).Sum(p => (long)p.SizeMb);
+        var windowsMb = diskSizeMb - reservedMb - SafetyMarginMb;
+
+        if (windowsMb < MinWindowsPartitionMb)
+        {
+            throw new InvalidOperationException(
+                $"The configured partitioning scheme leaves only {windowsMb} MB for the Windows partition " +
+                $"on a {diskSizeMb} MB disk (minimum {MinWindowsPartitionMb} MB). Reduce the size of the " +
+                "other partitions or use a larger disk.");
+        }
+
+        var letters = AllocateDriveLetters(3);
+        var espLetter = letters[0];
+        var windowsLetter = letters[1];
+        var recoveryLetter = letters[2];
+
+        var script = BuildDiskpartScript(diskIndex, ordered, windowsMb, espLetter, windowsLetter, recoveryLetter);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"ci-diskpart-{Guid.NewGuid():N}.txt");
         await File.WriteAllTextAsync(scriptPath, script, ct);
@@ -61,8 +86,78 @@ public sealed partial class DiskFormatService
             try { File.Delete(scriptPath); } catch { /* best-effort cleanup */ }
         }
 
-        LogFormatCompleted(_logger, diskIndex, driveLetter);
-        return $"{driveLetter}:";
+        LogFormatCompleted(_logger, diskIndex, windowsLetter);
+        return new DiskFormatResult($"{espLetter}:", $"{windowsLetter}:", $"{recoveryLetter}:");
+    }
+
+    /// <summary>
+    /// Validates that the scheme defines exactly one of each required, fixed partition type
+    /// and returns the partitions ordered per their configured <see cref="PartitionDefinition.Order"/>.
+    /// </summary>
+    private static List<PartitionDefinition> ValidateAndOrder(PartitioningScheme scheme)
+    {
+        var ordered = scheme.Partitions.OrderBy(p => p.Order).ToList();
+        var types = ordered.Select(p => p.PartitionType).ToHashSet();
+
+        var required = new[] { PartitionType.EfiSystem, PartitionType.Msr, PartitionType.Windows, PartitionType.Recovery };
+        if (required.Any(r => !types.Contains(r)) || types.Count != ordered.Count)
+        {
+            throw new InvalidOperationException(
+                "The partitioning scheme must define exactly one each of EfiSystem, Msr, Windows, and Recovery.");
+        }
+
+        return ordered;
+    }
+
+    /// <summary>
+    /// Builds the diskpart script for the full UEFI-bootable layout. The Windows partition
+    /// always receives <paramref name="windowsSizeMb"/> (computed as the disk's remaining
+    /// space after the other three fixed-size partitions) regardless of its position in
+    /// <paramref name="ordered"/>, so the configured order never leaves a partition without
+    /// its intended space. The Recovery partition is marked hidden/required via the GPT
+    /// attribute bits (0x8000000000000001) but keeps a temporary drive letter so
+    /// <see cref="RecoveryImageService"/> can write the WinRE image to it later in the pipeline.
+    /// </summary>
+    private static string BuildDiskpartScript(
+        int diskIndex,
+        IReadOnlyList<PartitionDefinition> ordered,
+        long windowsSizeMb,
+        string espLetter,
+        string windowsLetter,
+        string recoveryLetter)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(CultureInfo.InvariantCulture, $"select disk {diskIndex}");
+        sb.AppendLine("clean");
+        sb.AppendLine("convert gpt");
+
+        foreach (var partition in ordered)
+        {
+            switch (partition.PartitionType)
+            {
+                case PartitionType.EfiSystem:
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"create partition efi size={partition.SizeMb}");
+                    sb.AppendLine("format fs=fat32 quick label=\"System\"");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={espLetter}");
+                    break;
+                case PartitionType.Msr:
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"create partition msr size={partition.SizeMb}");
+                    break;
+                case PartitionType.Windows:
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"create partition primary size={windowsSizeMb}");
+                    sb.AppendLine("format fs=ntfs quick label=\"Windows\"");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={windowsLetter}");
+                    break;
+                case PartitionType.Recovery:
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"create partition primary size={partition.SizeMb}");
+                    sb.AppendLine("format fs=ntfs quick label=\"Recovery\"");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={recoveryLetter}");
+                    sb.AppendLine("gpt attributes=0x8000000000000001");
+                    break;
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>
@@ -95,15 +190,47 @@ public sealed partial class DiskFormatService
         };
     }
 
-    private static string FindNextAvailableDriveLetter()
+    /// <summary>Returns the target disk's total size in megabytes, via WMI.</summary>
+    private static long GetDiskSizeMb(int diskIndex)
     {
-        var used = DriveInfo.GetDrives().Select(d => char.ToUpperInvariant(d.Name[0])).ToHashSet();
-        for (var c = 'C'; c <= 'Z'; c++)
+        using var searcher = new ManagementObjectSearcher($"SELECT Size FROM Win32_DiskDrive WHERE Index = {diskIndex}");
+        using var results = searcher.Get();
+        foreach (ManagementObject disk in results)
         {
-            if (!used.Contains(c)) return c.ToString();
+            if (disk["Size"] is string sizeStr && ulong.TryParse(sizeStr, out var bytes))
+            {
+                return (long)(bytes / (1024 * 1024));
+            }
         }
 
-        throw new InvalidOperationException("No available drive letter could be found.");
+        throw new InvalidOperationException($"Could not determine the size of disk {diskIndex}.");
+    }
+
+    /// <summary>
+    /// Reserves <paramref name="count"/> distinct, currently-unused drive letters up front.
+    /// They must all be chosen before diskpart runs — a single diskpart invocation creates and
+    /// assigns all partitions before Windows refreshes its mounted-volume view, so
+    /// <see cref="DriveInfo.GetDrives"/> would not yet reflect letters assigned earlier in the
+    /// same script.
+    /// </summary>
+    private static string[] AllocateDriveLetters(int count)
+    {
+        var used = DriveInfo.GetDrives().Select(d => char.ToUpperInvariant(d.Name[0])).ToHashSet();
+        var result = new List<string>();
+        for (var c = 'C'; c <= 'Z' && result.Count < count; c++)
+        {
+            if (used.Add(c))
+            {
+                result.Add(c.ToString());
+            }
+        }
+
+        if (result.Count < count)
+        {
+            throw new InvalidOperationException("Not enough available drive letters could be found.");
+        }
+
+        return [.. result];
     }
 
     private async Task RunDiskpartAsync(string scriptPath, CancellationToken ct)

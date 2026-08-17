@@ -7,7 +7,8 @@ namespace CloudImaging.Client.ViewModels;
 
 /// <summary>
 /// View model for the ProgressView (T056, FR-007).
-/// 3-node step indicator with overall progress bar.
+/// 5-node step indicator with overall progress bar: Format, Download, Apply, Configure Boot,
+/// Apply Recovery.
 /// </summary>
 public sealed class ProgressViewModel : INotifyPropertyChanged
 {
@@ -22,9 +23,11 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     private string? _supportReferenceCode;
 
     // Step states
-    private ImagingStepStatus _formatStatus  = ImagingStepStatus.Pending;
-    private ImagingStepStatus _downloadStatus = ImagingStepStatus.Pending;
-    private ImagingStepStatus _applyStatus   = ImagingStepStatus.Pending;
+    private ImagingStepStatus _formatStatus         = ImagingStepStatus.Pending;
+    private ImagingStepStatus _downloadStatus        = ImagingStepStatus.Pending;
+    private ImagingStepStatus _applyStatus           = ImagingStepStatus.Pending;
+    private ImagingStepStatus _configureBootStatus   = ImagingStepStatus.Pending;
+    private ImagingStepStatus _applyRecoveryStatus   = ImagingStepStatus.Pending;
 
     public int  OverallPercent { get => _overallPercent; set { _overallPercent = value; OnPropertyChanged(); } }
     public string StatusMessage  { get => _statusMessage;  set { _statusMessage  = value; OnPropertyChanged(); } }
@@ -33,23 +36,29 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     public bool HasError => ErrorMessage is not null;
 
     // Step completion booleans for XAML checkmark visibility
-    public bool FormatCompleted   => _formatStatus   == ImagingStepStatus.Completed;
-    public bool DownloadCompleted => _downloadStatus == ImagingStepStatus.Completed;
-    public bool ApplyCompleted    => _applyStatus    == ImagingStepStatus.Completed;
+    public bool FormatCompleted         => _formatStatus         == ImagingStepStatus.Completed;
+    public bool DownloadCompleted       => _downloadStatus        == ImagingStepStatus.Completed;
+    public bool ApplyCompleted          => _applyStatus           == ImagingStepStatus.Completed;
+    public bool ConfigureBootCompleted  => _configureBootStatus   == ImagingStepStatus.Completed;
+    public bool ApplyRecoveryCompleted  => _applyRecoveryStatus   == ImagingStepStatus.Completed;
 
     // Step node colors
-    public Brush FormatStepColor   => StepBrush(_formatStatus);
-    public Brush DownloadStepColor => StepBrush(_downloadStatus);
-    public Brush ApplyStepColor    => StepBrush(_applyStatus);
+    public Brush FormatStepColor        => StepBrush(_formatStatus);
+    public Brush DownloadStepColor      => StepBrush(_downloadStatus);
+    public Brush ApplyStepColor         => StepBrush(_applyStatus);
+    public Brush ConfigureBootStepColor => StepBrush(_configureBootStatus);
+    public Brush ApplyRecoveryStepColor => StepBrush(_applyRecoveryStatus);
 
     /// <summary>Updates a step's status and refreshes all step bindings.</summary>
     public void UpdateStep(ImagingStepName step, ImagingStepStatus status)
     {
         switch (step)
         {
-            case ImagingStepName.FormatDisk:    _formatStatus   = status; break;
-            case ImagingStepName.DownloadImage: _downloadStatus = status; break;
-            case ImagingStepName.ApplyImage:    _applyStatus    = status; break;
+            case ImagingStepName.FormatDisk:         _formatStatus         = status; break;
+            case ImagingStepName.DownloadImage:      _downloadStatus       = status; break;
+            case ImagingStepName.ApplyImage:         _applyStatus          = status; break;
+            case ImagingStepName.ConfigureBoot:      _configureBootStatus  = status; break;
+            case ImagingStepName.ApplyRecoveryImage: _applyRecoveryStatus  = status; break;
         }
         NotifyStepBindings();
     }
@@ -59,9 +68,13 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(FormatCompleted));
         OnPropertyChanged(nameof(DownloadCompleted));
         OnPropertyChanged(nameof(ApplyCompleted));
+        OnPropertyChanged(nameof(ConfigureBootCompleted));
+        OnPropertyChanged(nameof(ApplyRecoveryCompleted));
         OnPropertyChanged(nameof(FormatStepColor));
         OnPropertyChanged(nameof(DownloadStepColor));
         OnPropertyChanged(nameof(ApplyStepColor));
+        OnPropertyChanged(nameof(ConfigureBootStepColor));
+        OnPropertyChanged(nameof(ApplyRecoveryStepColor));
     }
 
     private static Brush StepBrush(ImagingStepStatus status) => status switch

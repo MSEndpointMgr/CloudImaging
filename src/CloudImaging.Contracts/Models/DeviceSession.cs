@@ -34,6 +34,13 @@ public sealed class DeviceSession
     public string? SasTokenUrl { get; init; }
     public DateTimeOffset? SasTokenUrlExpiresAt { get; init; }
 
+    /// <summary>
+    /// The <see cref="PartitioningScheme"/> in effect at session-creation time, serialized to
+    /// JSON. Locked at creation so later admin edits to the global scheme do not affect sessions
+    /// already in progress.
+    /// </summary>
+    public string? PartitioningSchemeSnapshotJson { get; init; }
+
     // Progress
     public int OverallProgressPercent { get; init; }
     public string? CurrentStep { get; init; }

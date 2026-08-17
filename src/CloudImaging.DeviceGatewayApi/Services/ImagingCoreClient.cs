@@ -41,4 +41,12 @@ public sealed class ImagingCoreClient
     /// <summary>Forward a boot image SAS URL issuance request to ImagingCoreApi (T071b, FR-059a).</summary>
     public Task<HttpResponseMessage> GetBootImageSasUrlAsync(Guid bootImageId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/boot-images/{bootImageId}/sas", null, ct);
+
+    /// <summary>Forward the active recovery image catalog listing request to ImagingCoreApi.</summary>
+    public Task<HttpResponseMessage> GetRecoveryImagesAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/recovery-images", ct);
+
+    /// <summary>Forward a recovery image SAS URL issuance request to ImagingCoreApi.</summary>
+    public Task<HttpResponseMessage> GetRecoveryImageSasUrlAsync(Guid recoveryImageId, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/recovery-images/{recoveryImageId}/sas", null, ct);
 }

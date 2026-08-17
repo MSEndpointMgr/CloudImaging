@@ -134,6 +134,44 @@ export class OperatorApiClient {
     await this.http.put<unknown>('/api/configuration', payload);
   }
 
+  // ── Partitioning scheme ───────────────────────────────────────────────────
+
+  async getPartitioningScheme(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/partitioning-scheme');
+    return data;
+  }
+
+  async putPartitioningScheme(payload: unknown): Promise<void> {
+    await this.http.put<unknown>('/api/partitioning-scheme', payload);
+  }
+
+  // ── Recovery image operations ────────────────────────────────────────────
+
+  async getRecoveryImages(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/recovery-images');
+    return data;
+  }
+
+  async getRecoveryImageSas(recoveryImageId: string): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/recovery-images/${recoveryImageId}/sas`);
+    return data;
+  }
+
+  async deleteRecoveryImage(recoveryImageId: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/recovery-images/${recoveryImageId}`);
+  }
+
+  async startRecoveryImageUpload(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/recovery-images/upload/start', payload);
+    return data;
+  }
+
+  async publishRecoveryImageUpload(uploadId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(
+      `/api/recovery-images/upload/${uploadId}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
+    return data;
+  }
+
   /** Active boot media certificate metadata (thumbprint/validity) — never returns PFX bytes. */
   async getBootMediaCertMetadata(): Promise<unknown> {
     const { data } = await this.http.get<unknown>('/api/bootmedia/certificate/metadata');

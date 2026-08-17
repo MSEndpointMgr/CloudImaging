@@ -13,6 +13,7 @@ const DashboardPage   = lazy(() => import('./pages/DashboardPage.tsx'));
 const SessionsPage    = lazy(() => import('./pages/SessionsPage.tsx'));
 const OsImagesPage    = lazy(() => import('./pages/OsImagesPage.tsx'));
 const BootImagesPage  = lazy(() => import('./pages/BootImagesPage.tsx'));
+const RecoveryImagesPage = lazy(() => import('./pages/RecoveryImagesPage.tsx'));
 const BrandingPage    = lazy(() => import('./pages/BrandingPage.tsx'));
 const DeploymentConfigPage = lazy(() => import('./pages/DeploymentConfigPage.tsx'));
 
@@ -42,6 +43,7 @@ export default function App(): React.ReactElement {
                         <Route path="sessions"         element={<SessionsPage />} />
                         <Route path="os-images"        element={<OsImagesPage />} />
                         <Route path="boot-images"      element={<BootImagesPage />} />
+                        <Route path="recovery-images"  element={<RecoveryImagesPage />} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
                         <Route path="*"                element={<Navigate to="/" replace />} />
