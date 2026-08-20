@@ -8,7 +8,8 @@ import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
-import { apiFetch } from '../lib/apiClient.ts';
+import { useToast } from '../context/toastContext.tsx';
+import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import {
   startRecoveryImageUpload,
   uploadRecoveryFileToBlobStorage,
@@ -39,18 +40,18 @@ function fmtSize(bytes: number): string {
  */
 export default function RecoveryImagesPage(): React.ReactElement {
   const { isAdministrator } = useAuth();
+  const { notify } = useToast();
   const [images, setImages]   = useState<RecoveryImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadImages = async () => {
-    setLoading(true); setError(null);
+    setLoading(true);
     try {
-      const res = await apiFetch('/api/recovery-images', { credentials: 'include' });
+      const res = await apiFetchWithRetry('/api/recovery-images', { credentials: 'include' });
       if (res.ok) setImages(await res.json() as RecoveryImage[]);
-      else setError('Failed to load recovery images.');
-    } catch { setError('Network error.'); }
+      else notify({ status: 'error', title: 'Failed to load recovery images.' });
+    } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
   };
 
@@ -62,7 +63,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
     if (res.ok || res.status === 204) { void loadImages(); return; }
     if (res.status === 409) {
       const msg = await res.text().catch(() => null);
-      setError(msg || 'Cannot delete the currently published recovery image. Publish a replacement first.');
+      notify({ status: 'error', title: msg || 'Cannot delete the currently published recovery image. Publish a replacement first.' });
     }
   };
 
@@ -119,8 +120,6 @@ export default function RecoveryImagesPage(): React.ReactElement {
           </div>
         </CardContent>
       </Card>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>

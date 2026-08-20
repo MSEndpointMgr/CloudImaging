@@ -38,6 +38,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private DiskChoice? _selectedDisk;
     private bool _confirmErase;
     private bool _isBusy;
+    private bool _isRefreshingBootImages;
     private bool _isComplete;
     private int _progressPercent;
     private string _progressMessage = string.Empty;
@@ -86,15 +87,19 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _deviceWatcher.Start();
         }
 
-        RefreshCommand = new RelayCommand(async _ => await RefreshAsync(), _ => !IsBusy);
+        RefreshCommand = new RelayCommand(async _ => await RefreshBootImagesAsync(), _ => !IsBusy && !IsRefreshingBootImages);
         PrepareCommand = new RelayCommand(async _ => await PrepareAsync(), _ => CanPrepare);
         CancelCommand  = new RelayCommand(_ => Cancel(), _ => IsBusy);
         BackCommand    = new RelayCommand(_ => _navigateBack());
 
-        // Load published boot images + eligible USB disks as soon as this view is reached,
-        // instead of requiring a manual Refresh click first (the Refresh button remains
-        // available afterward, e.g. to pick up a boot image just published in the portal).
-        _ = RefreshAsync();
+        // Load the eligible USB disk list (fast, local WMI) and kick off the published boot
+        // image list from the portal as soon as this view is reached, instead of requiring a
+        // manual Refresh click first. The Refresh button next to the boot image dropdown only
+        // re-fetches boot images (FR-053) — disks already refresh automatically on USB
+        // plug/unplug via _deviceWatcher (OnDeviceChanged), so re-scanning them here too would
+        // just be redundant work that briefly toggles IsBusy and flickers the whole page.
+        try { LoadDisks(); } catch { /* best-effort; the disk list stays empty, no fallback needed */ }
+        _ = RefreshBootImagesAsync();
     }
 
     public ObservableCollection<BootImageChoice> BootImages { get; } = [];
@@ -132,6 +137,17 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         get => _isBusy;
         private set { _isBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanPrepare)); }
+    }
+
+    /// <summary>
+    /// True only while the Refresh button's boot-image re-fetch is in flight. Deliberately
+    /// separate from <see cref="IsBusy"/> (the destructive Prepare workflow's busy flag), so a
+    /// quick boot-image refresh never shows/hides the Progress card and reflows the whole page.
+    /// </summary>
+    public bool IsRefreshingBootImages
+    {
+        get => _isRefreshingBootImages;
+        private set { _isRefreshingBootImages = value; OnPropertyChanged(); }
     }
 
     public bool IsComplete
@@ -202,15 +218,14 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     // ── Refresh ───────────────────────────────────────────────────────────────
 
-    private async Task RefreshAsync()
+    private async Task RefreshBootImagesAsync()
     {
-        IsBusy       = true;
-        IsComplete   = false;
-        ErrorMessage = null;
+        IsRefreshingBootImages = true;
+        IsComplete             = false;
+        ErrorMessage           = null;
 
         try
         {
-            LoadDisks();
             await LoadBootImagesAsync();
         }
         catch (Exception ex)
@@ -220,7 +235,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         finally
         {
-            IsBusy = false;
+            IsRefreshingBootImages = false;
         }
     }
 
@@ -387,7 +402,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             ErrorMessage = ex.Message.Contains("CMB-", StringComparison.Ordinal)
                 ? ex.Message
                 : string.Create(CultureInfo.InvariantCulture,
-                    $"{ex.Message} (Support reference: {SupportReferenceCode.ForMediaBuilder("PREPUSB", _currentStage)})");
+                    $"{ex.Message} (Error reference: {SupportReferenceCode.ForMediaBuilder("PREPUSB", _currentStage)})");
         }
         finally
         {

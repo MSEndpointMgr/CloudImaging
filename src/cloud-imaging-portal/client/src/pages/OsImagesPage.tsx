@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Pencil, Plus } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
@@ -35,7 +35,7 @@ export default function OsImagesPage(): React.ReactElement {
   const loadImages = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/images', { credentials: 'include' });
+      const res = await apiFetchWithRetry('/api/images', { credentials: 'include' });
       if (res.ok) setImages(await res.json() as OsImage[]);
       else setImages([]);
     } catch { setImages([]); }

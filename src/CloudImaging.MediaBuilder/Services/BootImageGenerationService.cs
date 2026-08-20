@@ -135,7 +135,7 @@ public sealed partial class BootImageGenerationService
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     private sealed record ElevatedGenerationParams(
-        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath);
+        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl);
 
     private sealed record ElevatedGenerationResult(
         bool Success, string? WimPath, string? Sha256Hash, string? Error);
@@ -161,13 +161,14 @@ public sealed partial class BootImageGenerationService
         string? driverRootPath = null,
         CancellationToken ct = default)
     {
-        // Resolve the boot media certificate and branding logo HERE, in this process, BEFORE
-        // branching on elevation. The elevated worker process (see RunElevatedWorkerAsync)
-        // constructs its own BootImageGenerationService with no OperatorApiClient of its own —
-        // if either of these were left for GenerateAsync to fetch lazily, the elevated-relaunch
-        // path (the one actually used on every non-Administrator run) would silently never
-        // retrieve them. The resolved bytes are threaded through to the elevated worker via the
-        // same file-based IPC used for everything else (see RunElevatedChildProcessAsync).
+        // Resolve the boot media certificate, branding logo, and Device Gateway URL HERE, in
+        // this process, BEFORE branching on elevation. The elevated worker process (see
+        // RunElevatedWorkerAsync) constructs its own BootImageGenerationService with no
+        // OperatorApiClient of its own. If any of these were left for GenerateAsync to fetch
+        // lazily, the elevated-relaunch path (the one actually used on every non-Administrator
+        // run) would silently never retrieve them. The resolved values are threaded through to
+        // the elevated worker via the same file-based IPC used for everything else (see
+        // RunElevatedChildProcessAsync).
         if (pfxBytes is null && _operatorApiClient is not null)
             pfxBytes = await ResolveBootMediaCertificateAsync(ct);
 
@@ -175,10 +176,14 @@ public sealed partial class BootImageGenerationService
             ? await _brandingLogoEmbedService.TryDownloadLogoAsync(ct)
             : null;
 
-        if (_isElevated())
-            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, logoBytes, ct);
+        string? deviceGatewayBaseUrl = _operatorApiClient is not null
+            ? await ResolveDeviceGatewayBaseUrlAsync(ct)
+            : null;
 
-        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, outputDirectory, driverRootPath, ct);
+        if (_isElevated())
+            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, logoBytes, deviceGatewayBaseUrl, ct);
+
+        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, ct);
     }
 
     /// <summary>
@@ -213,8 +218,38 @@ public sealed partial class BootImageGenerationService
         }
     }
 
+    /// <summary>
+    /// Resolves the live Device Gateway API base URL from the Operator API (FR-062), called
+    /// from <see cref="GenerateElevatedAsync"/> before any elevation relaunch, so the value
+    /// can be threaded through to the elevated worker. Boot image generation MUST NOT proceed
+    /// without a resolved URL: the produced media would have no working Device Gateway endpoint
+    /// configured, so a retrieval failure here is a hard failure, not a warning.
+    /// </summary>
+    private async Task<string> ResolveDeviceGatewayBaseUrlAsync(CancellationToken ct)
+    {
+        ReportProgress("Resolving Device Gateway endpoint", 9);
+        try
+        {
+            var endpoints = await _operatorApiClient!.GetEndpointConfigurationAsync(ct);
+            if (string.IsNullOrWhiteSpace(endpoints.DeviceGatewayApiBaseUrl))
+                throw new InvalidOperationException("The Operator API returned an empty Device Gateway base URL.");
+
+            LogDeviceGatewayUrlResolved(_logger, endpoints.DeviceGatewayApiBaseUrl);
+            return endpoints.DeviceGatewayApiBaseUrl;
+        }
+        catch (Exception ex)
+        {
+            LogDeviceGatewayUrlResolveFailed(_logger, ex);
+            throw new InvalidOperationException(
+                "Could not resolve the Device Gateway API URL from the Cloud Imaging Portal. " +
+                "Boot image generation cannot continue: the produced media would have no working " +
+                "Device Gateway endpoint configured. Check the Operator API deployment/connectivity, " +
+                "then try again.", ex);
+        }
+    }
+
     private async Task<GenerationResult> RunElevatedChildProcessAsync(
-        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string outputDirectory, string? driverRootPath, CancellationToken ct)
+        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
@@ -246,7 +281,7 @@ public sealed partial class BootImageGenerationService
                 await File.WriteAllBytesAsync(logoFilePath, logoBytes, ct);
             }
 
-            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, pfxFilePath, logoFilePath);
+            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -423,7 +458,7 @@ public sealed partial class BootImageGenerationService
             svc.LogMessage      += (_, line) => Append($"L\t{line}");
             svc.LogHeartbeat    += (_, line) => Append($"H\t{line}");
 
-            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, logoBytes, cts.Token);
+            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, logoBytes, p.DeviceGatewayBaseUrl, cts.Token);
 
             await File.WriteAllTextAsync(resultFile,
                 JsonSerializer.Serialize(new ElevatedGenerationResult(true, result.WimPath, result.Sha256Hash, null)));
@@ -491,10 +526,11 @@ public sealed partial class BootImageGenerationService
     }
 
     /// <summary>
-    /// Generates a WinPE boot image. <paramref name="pfxBytes"/> and <paramref name="logoBytes"/>
-    /// must already be resolved by the caller (see <see cref="GenerateElevatedAsync"/>, which
-    /// resolves both from the Operator API before elevation) — this method only embeds whatever
-    /// it is given and performs no Operator API calls of its own.
+    /// Generates a WinPE boot image. <paramref name="pfxBytes"/>, <paramref name="logoBytes"/>,
+    /// and <paramref name="deviceGatewayBaseUrl"/> must already be resolved by the caller (see
+    /// <see cref="GenerateElevatedAsync"/>, which resolves all three from the Operator API
+    /// before elevation). This method only embeds whatever it is given and performs no
+    /// Operator API calls of its own.
     /// </summary>
     /// <param name="clientBinariesPath">Folder containing the Cloud Imaging Client binaries.</param>
     /// <param name="pfxBytes">PFX bytes to embed as <c>certificates\bootmedia.pfx</c> (FR-070).</param>
@@ -505,6 +541,7 @@ public sealed partial class BootImageGenerationService
     /// When null/empty, no driver injection is performed.
     /// </param>
     /// <param name="logoBytes">Branding logo bytes to embed at <c>branding\logo.png</c> (FR-002a). Optional — a missing logo is never fatal.</param>
+    /// <param name="deviceGatewayBaseUrl">Live Device Gateway URL stamped into the Client's appsettings.json (FR-062). Only null in the test/dev seam where no <see cref="OperatorApiClient"/> was provided.</param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<GenerationResult> GenerateAsync(
         string clientBinariesPath,
@@ -512,6 +549,7 @@ public sealed partial class BootImageGenerationService
         string outputDirectory,
         string? driverRootPath = null,
         byte[]? logoBytes = null,
+        string? deviceGatewayBaseUrl = null,
         CancellationToken ct = default)
     {
         // Sweep up whatever a previous run left behind if the process was killed/crashed
@@ -581,23 +619,15 @@ public sealed partial class BootImageGenerationService
                     LogBrandingLogoEmbedded(_logger, logoBytes.Length);
                 }
 
-                // Resolve the live Device Gateway URL from Operator API and stamp it into the
-                // Client's appsettings.json — every boot image build picks up the current URL,
-                // regardless of what shipped in the source binaries (FR-062 config bootstrap).
-                if (_operatorApiClient is not null)
+                // Stamp the Device Gateway URL resolved by GenerateElevatedAsync (before
+                // elevation) into the Client's appsettings.json. Every boot image build picks
+                // up the current URL this way, regardless of what shipped in the source binaries
+                // (FR-062 config bootstrap).
+                if (deviceGatewayBaseUrl is { Length: > 0 })
                 {
-                    ReportProgress("Resolving Device Gateway endpoint", 53);
-                    try
-                    {
-                        var endpoints = await _operatorApiClient.GetEndpointConfigurationAsync(ct);
-                        await StampDeviceGatewayBaseUrlAsync(clientDestDir, endpoints.DeviceGatewayApiBaseUrl, ct);
-                        LogDeviceGatewayUrlStamped(_logger, endpoints.DeviceGatewayApiBaseUrl);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogDeviceGatewayUrlStampFailed(_logger, ex);
-                        // Non-fatal — generation continues with whatever BaseUrl shipped in the source binaries
-                    }
+                    ReportProgress("Stamping Device Gateway endpoint", 53);
+                    await StampDeviceGatewayBaseUrlAsync(clientDestDir, deviceGatewayBaseUrl, ct);
+                    LogDeviceGatewayUrlStamped(_logger, deviceGatewayBaseUrl);
                 }
 
                 // Embed boot media certificate PFX if provided (FR-070)
@@ -1076,6 +1106,14 @@ public sealed partial class BootImageGenerationService
     }
 
 
+    /// <summary>
+    /// Dev-only local-override files that must never be shipped inside a boot image: they're
+    /// git-ignored and, if present in a developer's build output, would silently override the
+    /// production Device Gateway URL stamped into appsettings.json (FR-062).
+    /// </summary>
+    private static readonly string[] ExcludedFromBootImage =
+        ["appsettings.Local.json", "appsettings.Development.json", ".env", "local.settings.json"];
+
     private static void CopyDirectory(string source, string dest, CancellationToken ct)
     {
         foreach (var dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
@@ -1098,16 +1136,20 @@ public sealed partial class BootImageGenerationService
             if (string.Equals(Path.GetExtension(file), ".pdb", StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            if (ExcludedFromBootImage.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase))
+                continue;
+
             File.Copy(file, file.Replace(source, dest), overwrite: true);
         }
     }
 
-
     /// <summary>
     /// Patches <c>DeviceGatewayApi:BaseUrl</c> in the Client's <c>appsettings.json</c> (staged
-    /// inside the mounted WIM) with the live URL resolved from Operator API. No-op when the
-    /// URL is empty or the file isn't present (e.g. an unexpected Client binaries layout) —
-    /// callers treat failures as non-fatal to generation. Public so it can be unit tested
+    /// inside the mounted WIM) with the live URL resolved from Operator API. No-op when
+    /// <paramref name="baseUrl"/> is empty or <c>appsettings.json</c> isn't present (e.g. an
+    /// unexpected Client binaries layout); any other failure (e.g. malformed JSON, I/O error)
+    /// propagates to the caller, since the caller only calls this once a non-empty URL has
+    /// already been resolved (see <see cref="GenerateAsync"/>). Public so it can be unit tested
     /// directly against a staging folder without needing ADK/DISM.
     /// </summary>
     public static async Task StampDeviceGatewayBaseUrlAsync(string clientDestDir, string? baseUrl, CancellationToken ct)
@@ -1170,11 +1212,14 @@ public sealed partial class BootImageGenerationService
     [LoggerMessage(Level = LogLevel.Information, Message = "Branding logo embedded ({Bytes} bytes).")]
     private static partial void LogBrandingLogoEmbedded(ILogger logger, int bytes);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Device Gateway URL resolved from Operator API and stamped into Client appsettings.json: {BaseUrl}.")]
-    private static partial void LogDeviceGatewayUrlStamped(ILogger logger, string baseUrl);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Device Gateway URL resolved from Operator API: {BaseUrl}.")]
+    private static partial void LogDeviceGatewayUrlResolved(ILogger logger, string baseUrl);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Device Gateway URL resolution/stamping failed — generation continues with the Client's source appsettings.json.")]
-    private static partial void LogDeviceGatewayUrlStampFailed(ILogger logger, Exception ex);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Device Gateway URL resolution failed. Generation cannot continue.")]
+    private static partial void LogDeviceGatewayUrlResolveFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Device Gateway URL stamped into Client appsettings.json: {BaseUrl}.")]
+    private static partial void LogDeviceGatewayUrlStamped(ILogger logger, string baseUrl);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
     private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);

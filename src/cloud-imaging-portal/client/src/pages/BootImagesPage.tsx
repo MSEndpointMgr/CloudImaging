@@ -8,7 +8,8 @@ import { Badge } from '../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
-import { apiFetch } from '../lib/apiClient.ts';
+import { useToast } from '../context/toastContext.tsx';
+import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import {
   startBootImageUpload,
   uploadFileToBlobStorage,
@@ -35,20 +36,20 @@ function fmtSize(bytes: number): string {
 /** Boot Images management page (T127, US7, FR-063). Administrator manages entries. */
 export default function BootImagesPage(): React.ReactElement {
   const { isAdministrator } = useAuth();
+  const { notify } = useToast();
   const [images, setImages]   = useState<BootImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const loadImages = async () => {
-    setLoading(true); setError(null);
+    setLoading(true);
     try {
-      const res = await apiFetch('/api/boot-images', { credentials: 'include' });
+      const res = await apiFetchWithRetry('/api/boot-images', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json() as BootImage[];
         setImages(data.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
-      } else setError('Failed to load boot images.');
-    } catch { setError('Network error.'); }
+      } else notify({ status: 'error', title: 'Failed to load boot images.' });
+    } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
   };
 
@@ -113,8 +114,6 @@ export default function BootImagesPage(): React.ReactElement {
           </div>
         </CardContent>
       </Card>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>

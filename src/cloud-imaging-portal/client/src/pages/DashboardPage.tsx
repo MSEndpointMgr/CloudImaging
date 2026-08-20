@@ -10,7 +10,7 @@ import {
   LayoutDashboard,
   ArrowRight,
 } from 'lucide-react';
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { useAuth } from '../context/authContext.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
 import { Card, CardContent } from '../components/ui/card.tsx';
@@ -101,9 +101,9 @@ export default function DashboardPage(): React.ReactElement {
     void (async () => {
       try {
         const [sRes, iRes, bRes] = await Promise.all([
-          apiFetch('/api/sessions',    { credentials: 'include' }),
-          apiFetch('/api/images',      { credentials: 'include' }),
-          apiFetch('/api/boot-images', { credentials: 'include' }),
+          apiFetchWithRetry('/api/sessions',    { credentials: 'include' }),
+          apiFetchWithRetry('/api/images',      { credentials: 'include' }),
+          apiFetchWithRetry('/api/boot-images', { credentials: 'include' }),
         ]);
         const sessions   = sRes.ok ? (await sRes.json() as SessionLike[]) : [];
         const osImages   = iRes.ok ? (await iRes.json() as unknown[])     : [];

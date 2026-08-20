@@ -40,6 +40,12 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
     serverFarmId: plan.id
     siteConfig: {
       linuxFxVersion: 'NODE|22-lts'
+      // Without Always On, App Service unloads the app after ~20 min idle; the next
+      // request pays a full Node cold start on top of the downstream Operator/Core API
+      // round trip, which can exceed the portal's own 30s upstream timeout and surface
+      // as a 504 "did not respond in time" after a long-idle browser tab comes back.
+      // Plan tier is PremiumV3 (P1v3), which supports Always On at no extra cost.
+      alwaysOn: true
       // Explicit ESM entry point. Without this, Oryx guesses `node app.js`, which fails
       // with "Cannot use import statement outside a module" because the backend is ESM
       // ("type": "module"). The deploy bundle places package.json + node_modules + dist/

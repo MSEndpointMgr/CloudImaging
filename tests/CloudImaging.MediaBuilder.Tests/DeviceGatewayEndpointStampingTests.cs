@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,6 +16,7 @@ namespace CloudImaging.MediaBuilder.Tests;
 /// appsettings.json during boot image generation, so every boot image self-heals against
 /// Device Gateway redeploys/renames instead of relying on a manually maintained config file.
 /// </summary>
+[Collection(ElevatedIpcDirTestGroup.Name)]
 public sealed class DeviceGatewayEndpointStampingTests
 {
     [Fact]
@@ -141,5 +143,99 @@ public sealed class DeviceGatewayEndpointStampingTests
         {
             dir.Delete(recursive: true);
         }
+    }
+
+    // ── Real URL-resolution behavior via GenerateElevatedAsync ────
+
+    [Fact]
+    public async Task GenerateElevatedAsync_ResolvesDeviceGatewayUrlBeforeElevation_AndThreadsThroughToWorker()
+    {
+        // Same relaunch path as the boot media certificate (see BootMediaCertificateRetrievalTests):
+        // the URL must be resolved by the PARENT process (which has an authenticated
+        // OperatorApiClient) and threaded through to the elevated worker via params.json, never
+        // fetched lazily inside the elevated worker, which has no OperatorApiClient of its own.
+        var handler = new FakeHttpMessageHandler(req => req.RequestUri!.AbsolutePath switch
+        {
+            "/api/bootmedia/certificate/pfx" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2, 3, 4]) },
+            "/api/configuration/endpoints" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new { DeviceGatewayApiBaseUrl = "https://gateway.example.com" }),
+            },
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        var operatorApi = new OperatorApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
+            NullLogger<OperatorApiClient>.Instance);
+
+        string? capturedBaseUrl = null;
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            operatorApiClient: operatorApi,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: (_, args) =>
+            {
+                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
+                var paramsFile = files[0];
+                var resultFile = files[2];
+
+                var paramsJson = File.ReadAllText(paramsFile);
+                capturedBaseUrl = JsonDocument.Parse(paramsJson).RootElement.GetProperty("DeviceGatewayBaseUrl").GetString();
+
+                File.WriteAllText(resultFile,
+                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
+                return System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c exit 0")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow  = true,
+                })!;
+            });
+
+        var result = await svc.GenerateElevatedAsync(
+            clientBinariesPath: @"C:\DoesNotExist",
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath());
+
+        result.WimPath.Should().Be(@"C:\out\cloud-imaging-boot.wim");
+        capturedBaseUrl.Should().Be("https://gateway.example.com",
+            "the URL resolved from the Operator API must be written to the IPC params file handed " +
+            "to the elevated worker, even though the parent process is never itself elevated");
+    }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_AbortsBeforeElevation_WhenDeviceGatewayUrlCannotBeResolved()
+    {
+        // A boot image with no working Device Gateway URL configured is non-functional, so a
+        // failed/empty resolution must be a HARD failure, generation must never even attempt to
+        // elevate (matching the boot media certificate's fatal-failure behavior). The cert route
+        // succeeds here so the Device Gateway resolution step is what's actually under test.
+        var handler = new FakeHttpMessageHandler(req => req.RequestUri!.AbsolutePath switch
+        {
+            "/api/bootmedia/certificate/pfx" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2, 3, 4]) },
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+        });
+        var operatorApi = new OperatorApiClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
+            NullLogger<OperatorApiClient>.Instance);
+
+        var launcherCalled = false;
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            operatorApiClient: operatorApi,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: (_, _) =>
+            {
+                launcherCalled = true;
+                throw new InvalidOperationException("Should not elevate when the Device Gateway URL cannot be resolved.");
+            });
+
+        Func<Task> act = async () => await svc.GenerateElevatedAsync(
+            clientBinariesPath: @"C:\DoesNotExist",
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath());
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Could not resolve the Device Gateway API URL*");
+        launcherCalled.Should().BeFalse(
+            "generation must fail before any elevation is attempted when the Device Gateway URL cannot be resolved");
     }
 }

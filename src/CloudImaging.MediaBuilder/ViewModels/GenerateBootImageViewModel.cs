@@ -351,10 +351,10 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 ? await DownloadLatestClientAsync()
                 : LocalSourcePath;
 
-            // GenerateElevatedAsync resolves the boot media certificate and branding logo
-            // internally from the Operator API before transparently relaunching this app
-            // elevated (one UAC prompt) if it isn't already running as Administrator, since
-            // DISM image mounting requires it.
+            // GenerateElevatedAsync resolves the boot media certificate, branding logo, and
+            // Device Gateway URL internally from the Operator API before transparently
+            // relaunching this app elevated (one UAC prompt) if it isn't already running as
+            // Administrator, since DISM image mounting requires it.
             _currentStage = "APL";
             var result = await _genService.GenerateElevatedAsync(
                 clientBinariesPath,
@@ -383,7 +383,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             // T160/FR-058: every failure path surfaces a support reference code so a technician
             // can quote it to support without needing log access.
             var code = SupportReferenceCode.ForMediaBuilder("GENBOOT", _currentStage);
-            ErrorMessage = string.Create(CultureInfo.InvariantCulture, $"{ex.Message} (Support reference: {code})");
+            ErrorMessage = string.Create(CultureInfo.InvariantCulture, $"{ex.Message} (Error reference: {code})");
             AppendLogLine($"FAILED: {ErrorMessage}");
         }
         finally

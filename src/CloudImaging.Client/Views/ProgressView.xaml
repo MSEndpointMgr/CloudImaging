@@ -131,7 +131,7 @@
                     IsOpen="{Binding HasError}"
                     IsClosable="False" />
         <TextBlock Grid.Row="6"
-                   Text="{Binding SupportReferenceCode, StringFormat='Support ref: {0}'}"
+                   Text="{Binding SupportReferenceCode, StringFormat='Error ref: {0}'}"
                    Style="{StaticResource CaptionTextBlockStyle}"
                    FontFamily="Consolas"
                    Margin="0,60,0,0"

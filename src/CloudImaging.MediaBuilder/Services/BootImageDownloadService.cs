@@ -66,7 +66,7 @@ public sealed partial class BootImageDownloadService
         var code = SupportReferenceCode.ForMediaBuilder("PREPUSB", "BID");
         throw new InvalidOperationException(
             $"Failed to download and verify the boot image after {MaxAttempts} attempts. " +
-            $"Support reference: {code}.", lastError);
+            $"Error reference: {code}.", lastError);
     }
 
     private async Task DownloadOnceAsync(string sasUrl, string destinationPath, CancellationToken ct)

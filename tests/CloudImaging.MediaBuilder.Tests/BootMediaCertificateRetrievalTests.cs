@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Json;
 using Xunit;
 
 namespace CloudImaging.MediaBuilder.Tests;
@@ -79,9 +80,15 @@ public sealed class BootMediaCertificateRetrievalTests
         // elevated worker, which has no OperatorApiClient of its own.
         var pfxBytes = new byte[] { 1, 2, 3, 4 };
         var handler  = new FakeHttpMessageHandler(req =>
-            req.RequestUri!.AbsolutePath == "/api/bootmedia/certificate/pfx"
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(pfxBytes) }
-                : new HttpResponseMessage(HttpStatusCode.NotFound));
+            req.RequestUri!.AbsolutePath switch
+            {
+                "/api/bootmedia/certificate/pfx" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(pfxBytes) },
+                "/api/configuration/endpoints" => new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(new { DeviceGatewayApiBaseUrl = "https://gateway.example.com" }),
+                },
+                _ => new HttpResponseMessage(HttpStatusCode.NotFound),
+            });
         var operatorApi = new OperatorApiClient(
             new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
             NullLogger<OperatorApiClient>.Instance);

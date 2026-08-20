@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { RefreshCw, FileDown } from 'lucide-react';
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { CoupleSessionDialog } from '../components/CoupleSessionDialog.tsx';
 import { AssignImageDialog } from '../components/AssignImageDialog.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -121,7 +121,7 @@ function SessionsPageImpl(): React.ReactElement {
   const fetchSessions = useCallback(async (data?: Session[]) => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/sessions', { credentials: 'include' });
+      const res = await apiFetchWithRetry('/api/sessions', { credentials: 'include' });
       if (res.ok) {
         const fetched = await res.json() as Session[];
         setSessions(fetched);

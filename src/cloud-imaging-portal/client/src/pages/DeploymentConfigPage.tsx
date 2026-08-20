@@ -3,7 +3,7 @@ import { Lock, Link as LinkIcon } from 'lucide-react';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -109,8 +109,8 @@ export default function DeploymentConfigPage(): React.ReactElement {
     setLoading(true);
     try {
       const [cfgRes, certRes] = await Promise.all([
-        apiFetch('/api/portal-config', { credentials: 'include' }),
-        apiFetch('/api/cert/active',   { credentials: 'include' }),
+        apiFetchWithRetry('/api/portal-config', { credentials: 'include' }),
+        apiFetchWithRetry('/api/cert/active',   { credentials: 'include' }),
       ]);
       if (cfgRes.ok) {
         const data = await cfgRes.json() as PortalConfig;

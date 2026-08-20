@@ -32,35 +32,39 @@
             <!-- Published boot image -->
             <ui:Card Margin="0,0,0,16" Padding="20">
                 <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel Grid.Column="0" Margin="0,0,16,0">
+                    <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,0,0,12">
                         <TextBlock Text="Published Boot Image"
                                    Style="{StaticResource BodyStrongTextBlockStyle}"
                                    Margin="0,0,0,4" />
-                        <TextBlock Text="Boot images published from the Cloud Imaging Portal (Boot Images). The latest published version is selected automatically. Pick an older one here to roll back to it, or click Refresh to re-scan boot images and USB devices."
+                        <TextBlock Text="Boot images published from the Cloud Imaging Portal (Boot Images). The latest published version is selected automatically. Pick an older one here to roll back to it, or click Refresh to re-check for a newly published boot image."
                                    Style="{StaticResource CaptionTextBlockStyle}"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,12" />
-
-                        <ComboBox ItemsSource="{Binding BootImages}"
-                                  SelectedItem="{Binding SelectedBootImage}"
-                                  DisplayMemberPath="Label"
-                                  IsEnabled="{Binding HasBootImages}"
-                                  HorizontalAlignment="Stretch" />
+                                   TextWrapping="Wrap" />
                     </StackPanel>
 
-                    <Grid Grid.Column="1" VerticalAlignment="Stretch">
-                        <ui:Button Content="Refresh"
-                                   Style="{StaticResource AppButtonStyle}"
-                                   VerticalAlignment="Center"
-                                   HorizontalAlignment="Right"
-                                   Command="{Binding RefreshCommand}" />
-                    </Grid>
+                    <ComboBox Grid.Row="1" Grid.Column="0"
+                              ItemsSource="{Binding BootImages}"
+                              SelectedItem="{Binding SelectedBootImage}"
+                              DisplayMemberPath="Label"
+                              IsEnabled="{Binding HasBootImages}"
+                              VerticalAlignment="Center"
+                              HorizontalAlignment="Stretch" />
+
+                    <ui:Button Grid.Row="1" Grid.Column="1"
+                               Content="Refresh"
+                               Style="{StaticResource AppButtonStyle}"
+                               VerticalAlignment="Center"
+                               Margin="12,0,0,0"
+                               Command="{Binding RefreshCommand}" />
                 </Grid>
             </ui:Card>
 
@@ -70,7 +74,7 @@
                     <TextBlock Text="USB Device"
                                Style="{StaticResource BodyStrongTextBlockStyle}"
                                Margin="0,0,0,4" />
-                    <TextBlock Text="Only removable USB disks that aren't the machine's system disk are eligible. Internal and fixed disks are hidden from this list entirely to prevent an accidental wipe. If the disk you expect isn't listed, or is listed but blocked below, reconnect it and click Refresh above."
+                    <TextBlock Text="Only removable USB disks that aren't the machine's system disk are eligible. Internal and fixed disks are hidden from this list entirely to prevent an accidental wipe. The list updates automatically when you plug in or remove a USB device."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap"

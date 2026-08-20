@@ -34,13 +34,13 @@
                                Style="{StaticResource TitleTextBlockStyle}"
                                Foreground="{DynamicResource SystemFillColorCriticalBrush}"
                                HorizontalAlignment="Center" Margin="0,16,0,0" />
-                    <ui:InfoBar Title="{Binding SupportReferenceCode, StringFormat='Support Reference: {0}'}"
+                    <ui:InfoBar Title="{Binding SupportReferenceCode, StringFormat='Error reference: {0}'}"
                                 Message="{Binding ErrorDetail}"
                                 Severity="Error"
                                 IsOpen="True"
                                 IsClosable="False"
                                 Margin="0,16,0,0" />
-                    <TextBlock Text="Contact your IT administrator with the support reference code above."
+                    <TextBlock Text="Include this reference when reporting the issue at github.com/MSEndpointMgr/CloudImaging."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap" TextAlignment="Center"
