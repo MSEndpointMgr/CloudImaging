@@ -23,7 +23,7 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
         new(StringComparer.OrdinalIgnoreCase)
         {
             "GetBootImages",
-            "GetBootImageSas",
+            "GetBootImageSasUrl",
             "GetBrandingLogoSas",
             "GetBootMediaCertificateMetadata",
             "GetBootMediaCertificatePfx",
