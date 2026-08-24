@@ -162,6 +162,7 @@ function SessionsPageImpl(): React.ReactElement {
   };
 
   return (
+    <>
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -313,6 +314,7 @@ function SessionsPageImpl(): React.ReactElement {
             </TableBody>
           </Table>
       </div>
+    </div>
 
       <CoupleSessionDialog open={coupleOpen} onClose={() => setCoupleOpen(false)} onCoupled={() => handleRefresh()} />
       <AssignImageDialog
@@ -321,6 +323,6 @@ function SessionsPageImpl(): React.ReactElement {
         onClose={() => { setAssignOpen(false); setAssignTarget(null); }}
         onAssigned={() => handleRefresh()}
       />
-    </div>
+    </>
   );
 }

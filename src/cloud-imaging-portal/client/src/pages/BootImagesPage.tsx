@@ -68,6 +68,7 @@ export default function BootImagesPage(): React.ReactElement {
   const usedPct   = Math.min(100, Math.round((used / MAX_BOOT_IMAGES) * 100));
 
   return (
+    <>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -162,6 +163,7 @@ export default function BootImagesPage(): React.ReactElement {
           </TableBody>
         </Table>
       </div>
+    </div>
 
       {uploadOpen && (
         <UploadBootImageDialog
@@ -170,7 +172,7 @@ export default function BootImagesPage(): React.ReactElement {
           onPublished={() => { setUploadOpen(false); void loadImages(); }}
         />
       )}
-    </div>
+    </>
   );
 }
 

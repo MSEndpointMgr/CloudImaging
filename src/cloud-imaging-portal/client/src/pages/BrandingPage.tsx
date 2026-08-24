@@ -261,6 +261,7 @@ export default function BrandingPage(): React.ReactElement {
   if (loading) return <p className="text-muted-foreground">Loading…</p>;
 
   return (
+    <>
     <div className="max-w-2xl space-y-6">
       <Card>
         <CardHeader>
@@ -426,6 +427,7 @@ export default function BrandingPage(): React.ReactElement {
           <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
         )}
       </div>
+    </div>
 
       {pendingReset && (
         <ConfirmImpactDialog
@@ -436,7 +438,7 @@ export default function BrandingPage(): React.ReactElement {
           titleId="branding-reset-confirm-title"
         />
       )}
-    </div>
+    </>
   );
 }
 

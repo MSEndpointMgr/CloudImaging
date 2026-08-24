@@ -78,6 +78,7 @@ export default function OsImagesPage(): React.ReactElement {
   const selectedCount = checked.size;
 
   return (
+    <>
     <div className="space-y-4">
       <div className="flex items-center justify-end">
         {isAdministrator && (
@@ -86,12 +87,6 @@ export default function OsImagesPage(): React.ReactElement {
           </Button>
         )}
       </div>
-
-      <ChunkedUploadDialog
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        onUploaded={() => { setUploadOpen(false); void loadImages(); }}
-      />
 
       {isAdministrator && selectedCount > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm">
@@ -204,5 +199,12 @@ export default function OsImagesPage(): React.ReactElement {
         </Table>
       </div>
     </div>
+
+      <ChunkedUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => { setUploadOpen(false); void loadImages(); }}
+      />
+    </>
   );
 }

@@ -74,6 +74,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
   const usedPct   = Math.min(100, Math.round((used / MAX_RECOVERY_IMAGES) * 100));
 
   return (
+    <>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -169,6 +170,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
           </TableBody>
         </Table>
       </div>
+    </div>
 
       {uploadOpen && (
         <UploadRecoveryImageDialog
@@ -177,7 +179,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
           onPublished={() => { setUploadOpen(false); void loadImages(); }}
         />
       )}
-    </div>
+    </>
   );
 }
 
