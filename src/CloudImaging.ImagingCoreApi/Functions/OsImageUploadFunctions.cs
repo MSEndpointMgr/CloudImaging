@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Text.Json;
 using Azure.Storage.Blobs;
@@ -9,7 +10,6 @@ using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using System.IO;
 
 namespace CloudImaging.ImagingCoreApi.Functions;
 
