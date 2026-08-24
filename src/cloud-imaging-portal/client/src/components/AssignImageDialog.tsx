@@ -86,7 +86,7 @@ export function AssignImageDialog({ open, sessionId, onClose, onAssigned }: Assi
   const fmt = (bytes: number) => `${(bytes / 1_073_741_824).toFixed(1)} GB`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-lg">
         <h2 className="text-lg font-semibold mb-4">Select OS Image</h2>
         <Input

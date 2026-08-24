@@ -63,7 +63,7 @@ export function CoupleSessionDialog({ open, onClose, onCoupled }: CoupleSessionD
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-sm">
         <h2 className="text-lg font-semibold mb-4">Couple Device</h2>
         <p className="text-sm text-muted-foreground mb-4">

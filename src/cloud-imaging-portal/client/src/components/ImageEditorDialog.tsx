@@ -54,7 +54,7 @@ export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialog
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-md">
         <h2 className="text-lg font-semibold mb-4">Edit Image</h2>
 

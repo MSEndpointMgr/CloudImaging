@@ -78,7 +78,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
   const canUpload = !!file && version.trim().length > 0 && sha256.trim().length === 64;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 py-6">
           <div className="flex items-center justify-between">

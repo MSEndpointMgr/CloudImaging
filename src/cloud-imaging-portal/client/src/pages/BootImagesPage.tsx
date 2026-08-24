@@ -226,7 +226,7 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
     : '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 py-6">
           <div className="flex items-center justify-between">
