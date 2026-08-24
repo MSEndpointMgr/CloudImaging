@@ -5,6 +5,7 @@ import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
 import { Card, CardContent } from './ui/card.tsx';
+import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
 import {
   startChunkedUpload,
   uploadBlocks,
@@ -99,15 +100,28 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="osImageFile">WIM file</Label>
+            <Label htmlFor="osImageFile">Image file (.wim or .iso)</Label>
             <input
               ref={fileInputRef}
               id="osImageFile"
               type="file"
-              accept=".wim,.esd,application/octet-stream"
+              accept={IMAGE_FILE_ACCEPT}
               className="hidden"
               disabled={busy}
-              onChange={e => { setFile(e.target.files?.[0] ?? null); setError(null); }}
+              onChange={e => {
+                const selected = e.target.files?.[0] ?? null;
+                if (selected) {
+                  const validationError = validateImageFile(selected);
+                  if (validationError) {
+                    setError(validationError);
+                    setFile(null);
+                    e.target.value = '';
+                    return;
+                  }
+                }
+                setFile(selected);
+                setError(null);
+              }}
             />
             <div className="flex items-center gap-3">
               <Button type="button" variant="outline" disabled={busy} onClick={() => fileInputRef.current?.click()}>

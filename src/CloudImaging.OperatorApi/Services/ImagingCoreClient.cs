@@ -57,6 +57,9 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> GetBootImagesAsync(CancellationToken ct = default) =>
         _http.GetAsync("/api/internal/boot-images", ct);
 
+    public Task<HttpResponseMessage> GetBootImageByIdAsync(Guid bootImageId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/boot-images/{bootImageId}", ct);
+
     public Task<HttpResponseMessage> GetBootImageSasAsync(Guid bootImageId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/boot-images/{bootImageId}/sas", null, ct);
 

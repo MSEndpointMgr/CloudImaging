@@ -52,6 +52,23 @@ public sealed partial class UsbSafetyValidationService
                 // from bus type, or a USB-attached FIXED external drive would incorrectly pass.
                 var removable = mediaType.Contains("Removable", StringComparison.OrdinalIgnoreCase);
 
+                // Win32_DiskDrive.Size is known to occasionally report 0 for freshly-attached or
+                // freshly-wiped (RAW, no partition table) USB disks until the legacy Storport
+                // disk-class driver refreshes its cached geometry — this leaves the technician
+                // stuck with a "0.0 B" device that then fails partitioning with a bogus negative
+                // free-space error. Fall back to the modern Storage Management WMI provider
+                // (MSFT_Disk, used internally by PowerShell's Get-Disk), which reads geometry
+                // directly and isn't subject to that legacy caching quirk.
+                if (sizeBytes <= 0)
+                {
+                    var fallback = TryGetSizeFromStorageProvider(index);
+                    if (fallback is > 0)
+                    {
+                        LogSizeFallbackUsed(_logger, index, fallback.Value);
+                        sizeBytes = fallback.Value;
+                    }
+                }
+
                 disks.Add(new DiskInfo(index, caption, sizeBytes, busType, removable, IsSystemDisk(index)));
             }
         }
@@ -127,6 +144,38 @@ public sealed partial class UsbSafetyValidationService
         }
     }
 
+    /// <summary>
+    /// Fallback disk-size lookup via the Storage Management WMI provider
+    /// (<c>root\Microsoft\Windows\Storage</c>, <c>MSFT_Disk</c>) — the same provider PowerShell's
+    /// <c>Get-Disk</c> cmdlet uses. Its <c>Size</c> property is a genuine <c>UInt64</c> queried
+    /// directly from disk geometry, unlike the legacy <c>Win32_DiskDrive.Size</c> (a scripting-era
+    /// string property) which can cache a stale 0 for a disk that was just attached or just wiped
+    /// (RAW/no partition table). Returns <c>null</c> if the provider is unavailable or the disk
+    /// isn't found there (e.g. older Windows builds without the Storage Management API stack).
+    /// </summary>
+    private static long? TryGetSizeFromStorageProvider(uint diskNumber)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                @"root\Microsoft\Windows\Storage",
+                $"SELECT Size FROM MSFT_Disk WHERE Number = {diskNumber}");
+            using var results = searcher.Get();
+
+            foreach (ManagementObject disk in results)
+            {
+                if (disk["Size"] is not null)
+                    return Convert.ToInt64(disk["Size"], System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+        catch
+        {
+            // Storage Management WMI namespace may not be present/queryable on every system;
+            // treat as "no fallback available" rather than surfacing a secondary error.
+        }
+        return null;
+    }
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Disk '{Caption}' rejected: {Reason}.")]
     private static partial void LogRejected(ILogger logger, string caption, string reason);
 
@@ -135,4 +184,8 @@ public sealed partial class UsbSafetyValidationService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Disk enumeration failed.")]
     private static partial void LogEnumerationFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Disk {DiskNumber} reported 0 bytes via Win32_DiskDrive; used MSFT_Disk fallback size {SizeBytes} bytes.")]
+    private static partial void LogSizeFallbackUsed(ILogger logger, uint diskNumber, long sizeBytes);
 }

@@ -10,6 +10,7 @@ import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
+import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
 import {
   startBootImageUpload,
   uploadFileToBlobStorage,
@@ -194,7 +195,7 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
 
   const handleSubmit = async () => {
     if (!version.trim() || !file) {
-      setError('Provide a version and select a .wim file.');
+      setError('Provide a version and select a .wim or .iso file.');
       return;
     }
     setError(null);
@@ -202,7 +203,7 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
       setStage('hashing');
       const sha256Hash = await computeSha256(file);
 
-      const session = await startBootImageUpload(version.trim(), sha256Hash);
+      const session = await startBootImageUpload(version.trim(), sha256Hash, file.name);
 
       setStage('uploading');
       setPercent(0);
@@ -253,15 +254,28 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="bootImageFile">Boot media (.wim)</Label>
+            <Label htmlFor="bootImageFile">Boot media (.wim or .iso)</Label>
             <input
               ref={fileInputRef}
               id="bootImageFile"
               type="file"
-              accept=".wim,application/octet-stream"
+              accept={IMAGE_FILE_ACCEPT}
               className="hidden"
               disabled={busy}
-              onChange={e => { setFile(e.target.files?.[0] ?? null); setError(null); }}
+              onChange={e => {
+                const selected = e.target.files?.[0] ?? null;
+                if (selected) {
+                  const validationError = validateImageFile(selected);
+                  if (validationError) {
+                    setError(validationError);
+                    setFile(null);
+                    e.target.value = '';
+                    return;
+                  }
+                }
+                setFile(selected);
+                setError(null);
+              }}
             />
             <div className="flex items-center gap-3">
               <Button type="button" variant="outline" disabled={busy} onClick={() => fileInputRef.current?.click()}>

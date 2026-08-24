@@ -28,8 +28,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private readonly EntraAuthenticationService _authService;
     private readonly UsbSafetyValidationService _validator;
     private readonly BootImageDownloadService _downloader;
-    private readonly UsbPartitionProvisioningService _provisioner;
-    private readonly BootImageDeploymentService _deployer;
+    private readonly UsbPreparationService _preparation;
     private readonly BootImageCacheService _cache;
     private readonly UsbDeviceChangeWatcher? _deviceWatcher;
     private readonly Action _navigateBack;
@@ -59,8 +58,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         EntraAuthenticationService authService,
         UsbSafetyValidationService validator,
         BootImageDownloadService downloader,
-        UsbPartitionProvisioningService provisioner,
-        BootImageDeploymentService deployer,
+        UsbPreparationService preparation,
         BootImageCacheService cache,
         Action navigateBack,
         UsbDeviceChangeWatcher? deviceWatcher = null)
@@ -69,14 +67,13 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         _authService   = authService;
         _validator     = validator;
         _downloader    = downloader;
-        _provisioner   = provisioner;
-        _deployer      = deployer;
+        _preparation   = preparation;
         _cache         = cache;
         _navigateBack  = navigateBack;
         _deviceWatcher = deviceWatcher;
 
-        _downloader.ProgressChanged += OnDownloadProgress;
-        _deployer.ProgressChanged   += OnDeployProgress;
+        _downloader.ProgressChanged   += OnDownloadProgress;
+        _preparation.ProgressChanged  += OnPreparationProgress;
 
         // T071/FR-054: auto-refresh the disk list when a USB device is plugged/unplugged,
         // instead of relying solely on the manual Refresh button. Never disrupts an
@@ -347,41 +344,29 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
             _currentStage = "PRT";
             SetProgress("Partitioning USB device…", 60);
-            await _provisioner.ProvisionAsync(SelectedDisk.DiskNumber, SelectedDisk.Info.SizeBytes, msg => ProgressMessage = msg, ct);
 
-            var bootDrive = _provisioner.FindBootVolumeDriveLetter()
-                ?? throw new InvalidOperationException(
-                    "Could not locate the BOOT partition after provisioning the USB device.");
-
-            _currentStage = "BCF";
-            SetProgress("Deploying boot image to USB…", 70);
-            await _deployer.DeployAsync(wimPath, bootDrive, ct);
-
-            // T071a/FR-059: persist the preparation manifest to the BOOT partition so the
-            // Client can later detect a newer published boot image (T071b/FR-059a).
-            var cacheDrive = _provisioner.FindCacheVolumeDriveLetter();
-            var manifest = new UsbPreparationManifest
-            {
-                ManifestVersion = UsbPreparationManifest.ManifestSchemaVersion,
-                PreparedAt = DateTimeOffset.UtcNow,
-                ToolVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-                    ?? "unknown",
-                BootImageVersion = SelectedBootImage.Dto.Version,
-                SelectedDiskId = SelectedDisk.DiskNumber.ToString(CultureInfo.InvariantCulture),
-                PartitionSchema = new Dictionary<string, object>
-                {
-                    ["bootDriveLetter"] = bootDrive,
-                    ["cacheDriveLetter"] = cacheDrive ?? string.Empty,
-                    ["diskSizeBytes"] = SelectedDisk.Info.SizeBytes,
-                },
-                ValidationResults = new Dictionary<string, object>
-                {
-                    ["busType"] = SelectedDisk.Info.BusType,
-                    ["diskValidated"] = validation.Valid,
-                },
-                AutoStartConfigured = true,
-            };
-            await _deployer.WriteUsbPreparationManifestAsync(bootDrive, manifest, ct);
+            // Partitioning (diskpart.exe) and boot-partition activation (bootsect.exe) both
+            // require Administrator privileges. PrepareElevatedAsync transparently relaunches
+            // this executable elevated (one UAC prompt) for just that work when the current
+            // process isn't already Administrator — mirrors
+            // BootImageGenerationService.GenerateElevatedAsync for DISM image mounting. The
+            // boot image has already been downloaded to wimPath above (in this, non-elevated,
+            // process) so no Operator API/network calls are needed from the elevated worker.
+            // Partitioning, deployment, and the manifest write all happen as one atomic
+            // elevated step (see UsbPreparationService.PrepareAsync), so any failure here is
+            // attributed to the "PRT" stage rather than distinguishing partition vs. deploy.
+            var toolVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+                ?? "unknown";
+            var preparationParams = new UsbPreparationService.PreparationParams(
+                SelectedDisk.DiskNumber,
+                SelectedDisk.Info.SizeBytes,
+                wimPath,
+                SelectedBootImage.Dto.Version,
+                SelectedDisk.DiskNumber.ToString(CultureInfo.InvariantCulture),
+                SelectedDisk.Info.BusType,
+                validation.Valid,
+                toolVersion);
+            await _preparation.PrepareElevatedAsync(preparationParams, ct);
 
             SetProgress("USB device prepared successfully.", 100);
             StatusMessage = "The USB device is ready. Boot the target machine from it to start imaging.";
@@ -435,10 +420,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             $"Downloading boot image… {FormatBytes(e.Downloaded)} / {FormatBytes(e.Total)}");
     }
 
-    private void OnDeployProgress(object? sender, (string Message, int Percent) e)
+    private void OnPreparationProgress(object? sender, (string Message, int Percent) e)
     {
-        // Deployment occupies the 70–100% band of the overall workflow.
-        ProgressPercent = 70 + (int)(0.3 * e.Percent);
+        // UsbPreparationService already reports the overall 60–100% band for the
+        // partition/deploy/manifest workflow (including the "Requesting Administrator
+        // privileges" step at 58% when an elevation relaunch is required) — no remapping needed.
+        ProgressPercent = e.Percent;
         ProgressMessage = e.Message;
     }
 

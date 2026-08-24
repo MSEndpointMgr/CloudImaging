@@ -1,3 +1,4 @@
+using System.Windows;
 using System.Windows.Controls;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
@@ -85,5 +86,20 @@ public partial class MainWindow : FluentWindow
     public void NavigateTo(Page page)
     {
         NavigationFrame.Navigate(page);
+
+        // ProgressView hosts its own "View Log" button at the bottom of its step sidebar (it
+        // sits closer to hand and doesn't overlap the hero panel's progress bar/error area), so
+        // the floating global button is hidden while it's the active page.
+        ViewLogButton.Visibility = page is ProgressView ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Opens the read-only local log viewer (FR-066) — see <see cref="LogViewerWindow"/>.
+    /// Available from every screen since it's hosted on <see cref="MainWindow"/> itself rather
+    /// than any individual <see cref="Page"/>.
+    /// </summary>
+    private void ViewLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        new LogViewerWindow { Owner = this }.ShowDialog();
     }
 }

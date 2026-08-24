@@ -28,9 +28,33 @@
         <ui:TitleBar Grid.Row="0"
                      ShowMaximize="False" />
 
-        <Frame x:Name="NavigationFrame"
-               Grid.Row="1"
-               NavigationUIVisibility="Hidden"
-               Focusable="False" />
+        <Grid Grid.Row="1">
+            <Frame x:Name="NavigationFrame"
+                   NavigationUIVisibility="Hidden"
+                   Focusable="False" />
+
+            <!--
+                Always-available diagnostics access point (FR-066): every screen already logs
+                its requests/steps/payloads to the local rolling log, but WinPE has no
+                Explorer/Notepad to open the file with — this lets a technician view it without
+                leaving the app. Deliberately subtle (low opacity, corner-anchored) so it never
+                competes with the actual imaging workflow.
+            -->
+            <ui:Button x:Name="ViewLogButton"
+                       Appearance="Secondary"
+                       FontSize="11"
+                       Height="28"
+                       Padding="10,0"
+                       Opacity="0.7"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Bottom"
+                       Margin="0,0,16,16"
+                       Click="ViewLogButton_Click">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="DocumentText24" Margin="0,0,6,0" />
+                    <TextBlock Text="View Log" />
+                </StackPanel>
+            </ui:Button>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

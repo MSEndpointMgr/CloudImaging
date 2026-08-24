@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
@@ -7,7 +8,7 @@ namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
 /// Deploys a WinPE boot image to the FAT32 boot partition of a prepared USB drive (T071, FR-055).
-/// Copies WinPE boot files and configures BCD for automatic startup of Cloud Imaging Client.
+/// Copies boot.wim to the partition, then makes it bootable (BIOS + UEFI) via bcdboot.
 /// </summary>
 public sealed partial class BootImageDeploymentService
 {
@@ -21,7 +22,7 @@ public sealed partial class BootImageDeploymentService
 
     /// <summary>
     /// Deploys the WIM at <paramref name="wimPath"/> to the boot partition at
-    /// <paramref name="bootDriveLetter"/> using makewinpemedia / DISM.
+    /// <paramref name="bootDriveLetter"/> and configures it to be bootable via bcdboot.
     /// </summary>
     public async Task DeployAsync(
         string wimPath,
@@ -42,12 +43,10 @@ public sealed partial class BootImageDeploymentService
         File.Copy(wimPath, destWim, overwrite: true);
         ReportProgress("Boot WIM copied.", 50);
 
-        // Step 2: Configure BCD for WinPE autostart
-        await ConfigureBcdAsync(mediaRoot, ct);
-        ReportProgress("BCD configured for autostart.", 80);
-
-        // Step 3: Mark bootable (requires bootsect.exe from ADK)
-        await MakeBootableAsync(mediaRoot[0], ct);
+        // Step 2: Make the partition actually bootable (BIOS + UEFI) via bcdboot, sourced
+        // directly from the boot.wim we just copied — see ConfigureBootFilesAsync for details.
+        ReportProgress("Configuring boot files (bcdboot)…", 70);
+        await ConfigureBootFilesAsync(destWim, mediaRoot, ct);
         ReportProgress("USB boot partition activated.", 100);
 
         LogComplete(_logger, bootDriveLetter);
@@ -71,28 +70,83 @@ public sealed partial class BootImageDeploymentService
         LogManifestWritten(_logger, manifestPath, manifest.BootImageVersion);
     }
 
-    private static async Task ConfigureBcdAsync(string mediaRoot, CancellationToken ct)
+    /// <summary>
+    /// Makes the FAT32 boot partition actually bootable for both BIOS and UEFI firmware by
+    /// running <c>bcdboot</c> against the boot.wim just copied to <paramref name="mediaRoot"/>
+    /// — the same mechanism Windows Setup itself uses to build bootable media.
+    /// <para/>
+    /// WinPE auto-start (winpeshl.ini/startnet.cmd launching CloudImaging.Client.exe) is
+    /// configured inside boot.wim itself, while it's mounted during boot image generation
+    /// (see <c>BootImageGenerationService.ConfigureWinPeAutoStartAsync</c>) — not here.
+    /// <para/>
+    /// This method only needs to place <c>bootmgr</c>, <c>\Boot\BCD</c>, <c>\efi\boot\bootx64.efi</c>
+    /// and <c>\efi\microsoft\boot\BCD</c> on the boot partition and point the BCD's ramdisk
+    /// entry at <c>\sources\boot.wim</c>. Rather than hand-copying those files from a separately
+    /// packaged bundle (which would require repackaging the published artifact, and re-plumbing
+    /// upload/download/hash verification for it), <c>bcdboot</c> derives everything it needs
+    /// directly from the boot.wim's own embedded <c>\Windows\Boot\PCAT</c> and
+    /// <c>\Windows\Boot\EFI</c> folders — every WinPE image already contains these since it's
+    /// itself a small Windows OS. That keeps the published artifact a single hash-verified
+    /// boot.wim (FR-056) with nothing extra to package, cache, or verify — the true "bare
+    /// minimum" is zero additional files.
+    /// <para/>
+    /// Both <c>dism.exe</c> and <c>bcdboot.exe</c> ship with every Windows 10/11 installation
+    /// (<c>%windir%\System32</c>) — unlike <c>bootsect.exe</c>, no Windows ADK is required on
+    /// the machine running "Prepare USB Storage Device".
+    /// </summary>
+    private static async Task ConfigureBootFilesAsync(string wimPath, string mediaRoot, CancellationToken ct)
     {
-        // NOTE: WinPE auto-start (winpeshl.ini/startnet.cmd launching CloudImaging.Client.exe)
-        // is configured inside boot.wim itself, while it's mounted during boot image
-        // generation (see BootImageGenerationService.ConfigureWinPeAutoStartAsync) — not here.
-        // Files written directly onto this FAT32 boot partition (outside of \sources\boot.wim,
-        // \bootmgr and \Boot\BCD) have no effect at runtime: WinPE boots entirely from the
-        // mounted WIM, so a loose "Windows\System32\startnet.cmd" sitting beside it on the
-        // partition is never read.
-        await Task.CompletedTask;
+        var mountDir = Path.Combine(Path.GetTempPath(), $"ci-deploy-mount-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(mountDir);
+        var mounted = false;
+        try
+        {
+            await RunExternalAsync(
+                "dism.exe",
+                $"/Mount-Image /ImageFile:\"{wimPath}\" /Index:1 /MountDir:\"{mountDir}\" /ReadOnly",
+                ct);
+            mounted = true;
+
+            var windowsDir = Path.Combine(mountDir, "Windows");
+            if (!Directory.Exists(windowsDir))
+                throw new InvalidOperationException(
+                    $"The boot image does not contain a \\Windows directory at \"{windowsDir}\" — cannot configure boot files with bcdboot.");
+
+            // /f ALL writes both the legacy BIOS (bootmgr, \Boot\BCD) and UEFI
+            // (\efi\boot\bootx64.efi, \efi\microsoft\boot\BCD) boot-loader files, with the BCD
+            // ramdisk entry pointing at \sources\boot.wim on this same volume.
+            await RunExternalAsync("bcdboot.exe", $"\"{windowsDir}\" /s {mediaRoot} /f ALL", ct);
+        }
+        finally
+        {
+            if (mounted)
+            {
+                try
+                {
+                    await RunExternalAsync("dism.exe", $"/Unmount-Image /MountDir:\"{mountDir}\" /Discard", CancellationToken.None);
+                }
+                catch
+                {
+                    // Best effort — the mount was read-only, so there's nothing to lose by
+                    // leaving it mounted; ElevationHelper cleanup below still removes the folder.
+                }
+            }
+            ElevationHelper.TryDeleteDirectoryRecursive(mountDir);
+        }
     }
 
-
-    private static async Task MakeBootableAsync(char driveLetter, CancellationToken ct)
+    /// <summary>
+    /// Runs an external process to completion, capturing combined stdout/stderr for inclusion
+    /// in the thrown exception on a non-zero exit code (FR-058 clear failure diagnostics).
+    /// </summary>
+    private static async Task RunExternalAsync(string fileName, string arguments, CancellationToken ct)
     {
-        // bootsect /nt60 {driveLetter}: /mbr — makes the partition bootable
         using var process = new System.Diagnostics.Process
         {
             StartInfo = new System.Diagnostics.ProcessStartInfo
             {
-                FileName               = "bootsect.exe",
-                Arguments              = $"/nt60 {driveLetter}: /mbr",
+                FileName               = fileName,
+                Arguments              = arguments,
                 UseShellExecute        = false,
                 CreateNoWindow         = true,
                 RedirectStandardOutput = true,
@@ -100,14 +154,22 @@ public sealed partial class BootImageDeploymentService
             },
             EnableRaisingEvents = true,
         };
+
+        var output = new StringBuilder();
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) output.AppendLine(e.Data); };
+        process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) output.AppendLine(e.Data); };
+
         var tcs = new TaskCompletionSource<int>();
         process.Exited += (_, _) => tcs.TrySetResult(process.ExitCode);
         process.Start();
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        ct.Register(() => { try { process.Kill(); } catch { } });
-        // Ignore non-zero exit — bootsect may not be available in all environments
-        await tcs.Task;
+        using var ctReg = ct.Register(() => { try { process.Kill(entireProcessTree: true); } catch { /* best effort */ } });
+
+        var exitCode = await tcs.Task;
+        if (exitCode != 0)
+            throw new InvalidOperationException(
+                $"{fileName} exited with code {exitCode}.{(output.Length > 0 ? $" Output: {output}" : string.Empty)}");
     }
 
     private void ReportProgress(string message, int percent)

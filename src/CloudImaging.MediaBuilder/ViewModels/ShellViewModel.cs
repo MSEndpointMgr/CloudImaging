@@ -24,8 +24,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private readonly GitHubReleasesClient _gitHubReleasesClient;
     private readonly UsbSafetyValidationService _usbValidator;
     private readonly BootImageDownloadService _downloader;
-    private readonly UsbPartitionProvisioningService _provisioner;
-    private readonly BootImageDeploymentService _deployer;
+    private readonly UsbPreparationService _usbPreparation;
     private readonly BootImageCacheService _cache;
     private readonly UsbDeviceChangeWatcher? _deviceWatcher;
     private readonly BootMediaCertificateCheckService? _certCheckService;
@@ -49,8 +48,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         GitHubReleasesClient gitHubReleasesClient,
         UsbSafetyValidationService usbValidator,
         BootImageDownloadService downloader,
-        UsbPartitionProvisioningService provisioner,
-        BootImageDeploymentService deployer,
+        UsbPreparationService usbPreparation,
         BootImageCacheService cache,
         UsbDeviceChangeWatcher? deviceWatcher = null,
         BootMediaCertificateCheckService? certCheckService = null,
@@ -62,8 +60,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         _gitHubReleasesClient = gitHubReleasesClient;
         _usbValidator      = usbValidator;
         _downloader        = downloader;
-        _provisioner       = provisioner;
-        _deployer          = deployer;
+        _usbPreparation    = usbPreparation;
         _cache             = cache;
         _deviceWatcher     = deviceWatcher;
         _certCheckService  = certCheckService;
@@ -222,7 +219,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     public void GoPrepareUsb()
     {
         var viewModel = new PrepareStorageDeviceViewModel(
-            _operatorApiClient, _authService, _usbValidator, _downloader, _provisioner, _deployer, _cache, GoHome, _deviceWatcher);
+            _operatorApiClient, _authService, _usbValidator, _downloader, _usbPreparation, _cache, GoHome, _deviceWatcher);
         CurrentContent = new PrepareStorageDeviceView { DataContext = viewModel };
         CurrentSection = ShellSection.PrepareUsb;
         TrackBusyState(viewModel, () => viewModel.IsBusy);

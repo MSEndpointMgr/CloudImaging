@@ -57,6 +57,19 @@ public partial class App : System.Windows.Application
                 return;
             }
 
+            // Hidden elevated-worker mode for the "Prepare USB Storage Device" workflow: same
+            // relaunch-elevated pattern as above, used by UsbPreparationService.PrepareElevatedAsync
+            // for diskpart.exe partitioning and bootsect.exe boot-partition activation, both of
+            // which require Administrator privileges.
+            if (e.Args.Length == 5 && e.Args[0] == UsbPreparationService.ElevatedWorkerArg)
+            {
+                System.Threading.Tasks.Task.Run(() =>
+                        UsbPreparationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], e.Args[4], loggerFactory))
+                    .GetAwaiter().GetResult();
+                Shutdown(0);
+                return;
+            }
+
             var authService = new EntraAuthenticationService(
                 config.ClientId,
                 config.TenantId,
@@ -87,6 +100,11 @@ public partial class App : System.Windows.Application
             var gitHubReleasesClient = new GitHubReleasesClient(
                 gitHubHttpClient, loggerFactory.CreateLogger<GitHubReleasesClient>());
 
+            var usbPreparationService = new UsbPreparationService(
+                loggerFactory.CreateLogger<UsbPreparationService>(),
+                new UsbPartitionProvisioningService(loggerFactory.CreateLogger<UsbPartitionProvisioningService>()),
+                new BootImageDeploymentService(loggerFactory.CreateLogger<BootImageDeploymentService>()));
+
             var services = new AppServices(
                 authService,
                 operatorApiClient,
@@ -94,8 +112,7 @@ public partial class App : System.Windows.Application
                 gitHubReleasesClient,
                 new UsbSafetyValidationService(loggerFactory.CreateLogger<UsbSafetyValidationService>()),
                 new BootImageDownloadService(downloadHttpClient, loggerFactory.CreateLogger<BootImageDownloadService>()),
-                new UsbPartitionProvisioningService(loggerFactory.CreateLogger<UsbPartitionProvisioningService>()),
-                new BootImageDeploymentService(loggerFactory.CreateLogger<BootImageDeploymentService>()),
+                usbPreparationService,
                 new BootImageCacheService(loggerFactory.CreateLogger<BootImageCacheService>()),
                 new UsbDeviceChangeWatcher(loggerFactory.CreateLogger<UsbDeviceChangeWatcher>()),
                 new BootMediaCertificateCheckService(operatorApiClient, loggerFactory.CreateLogger<BootMediaCertificateCheckService>()),
@@ -209,8 +226,7 @@ public partial class App : System.Windows.Application
             svc.GitHubReleases,
             svc.UsbValidator,
             svc.Downloader,
-            svc.Provisioner,
-            svc.Deployer,
+            svc.UsbPreparation,
             svc.Cache,
             svc.DeviceWatcher,
             svc.CertCheck);
@@ -285,8 +301,7 @@ public partial class App : System.Windows.Application
         GitHubReleasesClient GitHubReleases,
         UsbSafetyValidationService UsbValidator,
         BootImageDownloadService Downloader,
-        UsbPartitionProvisioningService Provisioner,
-        BootImageDeploymentService Deployer,
+        UsbPreparationService UsbPreparation,
         BootImageCacheService Cache,
         UsbDeviceChangeWatcher DeviceWatcher,
         BootMediaCertificateCheckService CertCheck,

@@ -135,12 +135,14 @@ public sealed class PrepareStorageDeviceViewModelTests
         var downloader     = new BootImageDownloadService(http, NullLogger<BootImageDownloadService>.Instance);
         var provisioner    = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
         var deployer       = new BootImageDeploymentService(NullLogger<BootImageDeploymentService>.Instance);
+        var preparation    = new UsbPreparationService(
+            NullLogger<UsbPreparationService>.Instance, provisioner, deployer);
         var cache          = new BootImageCacheService(
             Path.Combine(Path.GetTempPath(), $"ci-cache-tests-{Guid.NewGuid():N}"),
             NullLogger<BootImageCacheService>.Instance);
 
         return new PrepareStorageDeviceViewModel(
-            operatorApi, authService, validator, downloader, provisioner, deployer, cache,
+            operatorApi, authService, validator, downloader, preparation, cache,
             navigateBack: () => { });
     }
 }

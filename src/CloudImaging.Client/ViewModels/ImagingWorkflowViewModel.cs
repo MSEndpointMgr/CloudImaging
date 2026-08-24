@@ -87,6 +87,12 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                 _loggerFactory.CreateLogger<Services.SasRefreshCoordinator>());
             _sasCoordinator.Start();
 
+            // Every Information-level log message the step services below emit (disk selection,
+            // "Starting DISM: ...", "Starting bcdboot ...", "Starting reagentc.exe ...", hash
+            // verification, etc.) is also surfaced in ProgressView's activity ticker, in addition
+            // to the rolling file log — FR-007's "light details around what's currently going on".
+            var pipelineLoggerFactory = new Services.ProgressActivityLoggerFactory(_loggerFactory, _progress.AppendActivity);
+
             var hash = _status.Sha256Hash ?? string.Empty;
             var scheme = _status.PartitioningScheme ?? PartitioningScheme.Default;
 
@@ -98,7 +104,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             Services.DiskFormatResult diskFormat;
             try
             {
-                var formatService = new Services.DiskFormatService(_loggerFactory.CreateLogger<Services.DiskFormatService>());
+                var formatService = new Services.DiskFormatService(pipelineLoggerFactory.CreateLogger<Services.DiskFormatService>());
                 diskFormat = await formatService.FormatTargetDiskAsync(scheme, ct);
             }
             catch (Exception ex)
@@ -121,7 +127,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
 
             var downloadService = new Services.ImageDownloadService(
                 new HttpClient(),
-                _loggerFactory.CreateLogger<Services.ImageDownloadService>(),
+                pipelineLoggerFactory.CreateLogger<Services.ImageDownloadService>(),
                 cacheMaintenance.CacheWriteEnabled ? cache : null);
 
             var destinationPath = Path.Combine(Path.GetTempPath(), $"ci-image-{_sessionId:N}.wim");
@@ -155,7 +161,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             _progress.StatusMessage = "Applying operating system image…";
             _progress.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress);
 
-            var applyService = new Services.ImageApplyService(_loggerFactory.CreateLogger<Services.ImageApplyService>());
+            var applyService = new Services.ImageApplyService(pipelineLoggerFactory.CreateLogger<Services.ImageApplyService>());
             try
             {
                 await applyService.ApplyAsync(
@@ -180,7 +186,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             _progress.UpdateStep(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress);
             await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress, ct: ct);
 
-            var bootConfigService = new Services.BootConfigurationService(_loggerFactory.CreateLogger<Services.BootConfigurationService>());
+            var bootConfigService = new Services.BootConfigurationService(pipelineLoggerFactory.CreateLogger<Services.BootConfigurationService>());
             try
             {
                 await bootConfigService.ConfigureAsync(diskFormat.WindowsVolume, diskFormat.EfiSystemVolume, ct);
@@ -201,7 +207,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, ct: ct);
 
             var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(ct);
-            var recoveryService = new Services.RecoveryImageService(_loggerFactory.CreateLogger<Services.RecoveryImageService>());
+            var recoveryService = new Services.RecoveryImageService(pipelineLoggerFactory.CreateLogger<Services.RecoveryImageService>());
 
             if (recoveryInfo is null)
             {

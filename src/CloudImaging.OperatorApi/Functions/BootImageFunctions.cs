@@ -51,8 +51,7 @@ public sealed partial class BootImageFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var coreResponse = await _coreClient.GetBootImagesAsync(context.CancellationToken);
-        // For simplicity, list all and filter — a GetById method can be added later
+        var coreResponse = await _coreClient.GetBootImageByIdAsync(bootImageId, context.CancellationToken);
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 

@@ -102,7 +102,19 @@ public sealed partial class RecoveryImageFunctions
         var sasExpiry = TimeSpan.FromMinutes(
             config.BootImageSasExpiryMinutes > 0 ? config.BootImageSasExpiryMinutes : 60);
 
-        var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
+        string sasUrl;
+        try
+        {
+            sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
+        }
+        catch (Exception ex)
+        {
+            LogSasGenerationFailed(_logger, imageId, ex);
+            var failure = req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+            await failure.WriteStringAsync(
+                "Recovery image download URL is temporarily unavailable. Please retry.", context.CancellationToken);
+            return failure;
+        }
 
         LogSasIssued(_logger, imageId);
 
@@ -121,20 +133,17 @@ public sealed partial class RecoveryImageFunctions
 
     private async Task<string> GenerateSasUrlAsync(string storagePath, TimeSpan expiry, CancellationToken cancellationToken)
     {
-        try
+        var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
+        if (slash < 0)
         {
-            var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
-            if (slash < 0)
-            {
-                return storagePath;
-            }
-
-            var container = storagePath[..slash];
-            var blobName = storagePath[(slash + 1)..];
-            return await BlobSasUrlGenerator.GenerateAsync(
-                _blobClient, container, blobName, BlobSasPermissions.Read, expiry, cancellationToken);
+            throw new InvalidOperationException(
+                $"Recovery image storage path '{storagePath}' is malformed — expected '<container>/<blobName>'.");
         }
-        catch { return storagePath; }
+
+        var container = storagePath[..slash];
+        var blobName = storagePath[(slash + 1)..];
+        return await BlobSasUrlGenerator.GenerateAsync(
+            _blobClient, container, blobName, BlobSasPermissions.Read, expiry, cancellationToken);
     }
 
     private static object MapToDto(RecoveryImage i) => new
@@ -152,4 +161,7 @@ public sealed partial class RecoveryImageFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Recovery image SAS issued for {RecoveryImageId}.")]
     private static partial void LogSasIssued(ILogger logger, Guid recoveryImageId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Recovery image SAS generation failed for {RecoveryImageId}.")]
+    private static partial void LogSasGenerationFailed(ILogger logger, Guid recoveryImageId, Exception ex);
 }

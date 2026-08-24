@@ -1,0 +1,87 @@
+<ui:FluentWindow x:Class="CloudImaging.Client.Views.LogViewerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="Cloud Imaging Client — Log"
+        Width="900" Height="600"
+        MinWidth="640" MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Topmost="True"
+        ExtendsContentIntoTitleBar="True"
+        WindowCornerPreference="Round">
+    <!--
+        FR-066: every screen already logs its requests/steps/payloads to the local rolling log
+        file, but WinPE has no Explorer/Notepad to open it with — this read-only viewer lets a
+        technician inspect it without leaving the app. Local-only: it only reads the file already
+        on disk and never uploads or transmits its contents (see Services.LogUploadService for the
+        separate, best-effort failure-path upload).
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0"
+                     Title="Cloud Imaging Client — Log"
+                     ShowMaximize="False" />
+
+        <Grid Grid.Row="1" Margin="16,8,16,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!--
+                Path shown in a read-only, selectable TextBox rather than a plain TextBlock, so its
+                left/right edges line up exactly with the log content Border below (both use the
+                same Grid.Column="0"/"*" width), and its text can be selected/copied directly in
+                addition to the "Copy Path" button.
+            -->
+            <Border Grid.Column="0"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="4"
+                    Margin="0,0,12,0">
+                <!-- Neutralize the TextBox template's focus/hover chrome (see the matching
+                     override in Media Builder's GenerateBootImageView log viewer) — out of place
+                     on a read-only, console-style field. -->
+                <Border.Resources>
+                    <SolidColorBrush x:Key="TextControlFocusedBorderBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                </Border.Resources>
+                <TextBox x:Name="LogPathText"
+                         IsReadOnly="True" IsReadOnlyCaretVisible="True"
+                         FontFamily="Consolas" FontSize="11"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         Background="Transparent" BorderThickness="0"
+                         Padding="8,6"
+                         VerticalAlignment="Center" VerticalContentAlignment="Center"
+                         TextWrapping="NoWrap"
+                         HorizontalScrollBarVisibility="Hidden" />
+            </Border>
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <ui:Button Content="Refresh" Appearance="Secondary" Click="RefreshButton_Click" />
+                <ui:Button Content="Copy Path" Appearance="Secondary"
+                           Margin="8,0,0,0" Click="CopyPathButton_Click" />
+            </StackPanel>
+        </Grid>
+
+
+        <Border Grid.Row="2" Margin="16,0,16,16"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1" CornerRadius="4">
+            <TextBox x:Name="LogTextBox"
+                     IsReadOnly="True"
+                     TextWrapping="NoWrap"
+                     FontFamily="Consolas" FontSize="12"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     Background="Transparent" BorderThickness="0"
+                     Padding="10" />
+        </Border>
+    </Grid>
+</ui:FluentWindow>

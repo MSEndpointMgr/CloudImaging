@@ -55,6 +55,25 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     public Guid    SessionId   => _sessionId;
     public string  Passcode    { get; }
 
+    /// <summary>
+    /// Passcode grouped into 3-digit chunks (e.g. "428913" → "428 913") so it's easier for an
+    /// operator to read back over the phone/radio than an unbroken 6-digit string.
+    /// </summary>
+    public string FormattedPasscode => FormatPasscode(Passcode);
+
+    private static string FormatPasscode(string passcode)
+    {
+        if (string.IsNullOrEmpty(passcode)) return passcode;
+
+        var sb = new System.Text.StringBuilder(passcode.Length + passcode.Length / 3);
+        for (var i = 0; i < passcode.Length; i++)
+        {
+            if (i > 0 && i % 3 == 0) sb.Append(' ');
+            sb.Append(passcode[i]);
+        }
+        return sb.ToString();
+    }
+
     public bool IsPolling
     {
         get => _isPolling;

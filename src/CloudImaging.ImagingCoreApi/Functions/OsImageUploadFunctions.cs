@@ -9,6 +9,7 @@ using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using System.IO;
 
 namespace CloudImaging.ImagingCoreApi.Functions;
 
@@ -64,8 +65,21 @@ public sealed partial class OsImageUploadFunctions
         var name = nameProp.GetString() ?? string.Empty;
         var version = versionProp.GetString() ?? string.Empty;
         var sha256Hash = hashProp.GetString() ?? string.Empty;
+        var extension = Path.GetExtension(name);
+
+        if (!BootImageValidationService.IsAllowedExtension(extension))
+        {
+            LogUnsupportedExtension(_logger, extension);
+            var rejected = req.CreateResponse(HttpStatusCode.BadRequest);
+            await rejected.WriteStringAsync(
+                $"Unsupported file extension '{extension}'. Only {string.Join(", ", BootImageValidationService.AllowedExtensions)} are allowed.",
+                context.CancellationToken);
+            return rejected;
+        }
+
         var uploadId = Guid.NewGuid().ToString("N");
-        var blobName = $"uploads/{uploadId}/{name.Replace(' ', '-')}-{version.Replace(' ', '-')}.wim";
+        var baseName = Path.GetFileNameWithoutExtension(name).Replace(' ', '-');
+        var blobName = $"uploads/{uploadId}/{baseName}-{version.Replace(' ', '-')}{extension}";
 
         // A single blob-level SAS with Create+Write covers every "stage block" call plus the
         // final "commit block list" call, so the browser can upload all blocks directly to Blob
@@ -125,9 +139,10 @@ public sealed partial class OsImageUploadFunctions
         // required (only the per-block PUTs from the browser needed the SAS).
         await blockBlobClient.CommitBlockListAsync(blockIds, cancellationToken: context.CancellationToken);
 
-        // Download and validate SHA-256 (mirrors BootImageUploadFunctions.PublishUpload)
-        var download = await blockBlobClient.OpenReadAsync(cancellationToken: context.CancellationToken);
-        var validation = await _validator.ValidateAsync(download, sha256Hash, context.CancellationToken);
+        // Validate the file signature (rejects renamed/spoofed files) and SHA-256 (mirrors
+        // BootImageUploadFunctions.PublishUpload).
+        var extension = Path.GetExtension(blobName);
+        var validation = await _validator.ValidateAsync(blockBlobClient, sha256Hash, extension, context.CancellationToken);
 
         if (!validation.Valid)
         {
@@ -139,7 +154,7 @@ public sealed partial class OsImageUploadFunctions
         }
 
         // Atomically publish: move blob to final path and create catalog entry
-        var finalBlobName = $"published/{Guid.NewGuid():N}/{name.Replace(' ', '-')}-{version.Replace(' ', '-')}.wim";
+        var finalBlobName = $"published/{Guid.NewGuid():N}/{Path.GetFileNameWithoutExtension(name).Replace(' ', '-')}-{version.Replace(' ', '-')}{extension}";
         var finalBlob = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
         await finalBlob.StartCopyFromUriAsync(blockBlobClient.Uri, cancellationToken: context.CancellationToken);
         await blockBlobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
@@ -172,4 +187,7 @@ public sealed partial class OsImageUploadFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "OS image published: {ImageId} {Name} v{Version}.")]
     private static partial void LogPublished(ILogger logger, Guid imageId, string name, string version);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "OS image upload rejected: unsupported extension '{Extension}'.")]
+    private static partial void LogUnsupportedExtension(ILogger logger, string extension);
 }

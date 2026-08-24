@@ -119,8 +119,8 @@ public sealed partial class BootImageGenerationService
         _logger                    = logger;
         _operatorApiClient         = operatorApiClient;
         _brandingLogoEmbedService  = brandingLogoEmbedService;
-        _isElevated                = isElevatedOverride ?? IsElevated;
-        _startElevatedProcess      = startElevatedProcessOverride ?? StartElevatedProcess;
+        _isElevated                = isElevatedOverride ?? ElevationHelper.IsElevated;
+        _startElevatedProcess      = startElevatedProcessOverride ?? ElevationHelper.StartElevatedProcess;
     }
 
     /// <summary>
@@ -505,25 +505,8 @@ public sealed partial class BootImageGenerationService
         }
     }
 
-    private static bool IsElevated()
-    {
-        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
-        var principal = new System.Security.Principal.WindowsPrincipal(identity);
-        return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
-    }
-
-    private static System.Diagnostics.Process StartElevatedProcess(string exePath, string args)
-    {
-        var startInfo = new System.Diagnostics.ProcessStartInfo
-        {
-            FileName        = exePath,
-            Arguments       = args,
-            UseShellExecute = true,
-            Verb            = "runas",
-        };
-        return System.Diagnostics.Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start the elevated boot image generation process.");
-    }
+    // IsElevated/StartElevatedProcess live in ElevationHelper, shared with UsbPreparationService
+    // (see that class's remarks for why both need this same relaunch-elevated pattern).
 
     /// <summary>
     /// Generates a WinPE boot image. <paramref name="pfxBytes"/>, <paramref name="logoBytes"/>,
@@ -1082,28 +1065,7 @@ public sealed partial class BootImageGenerationService
     /// run. Best-effort throughout: a cleanup failure must never mask the real generation
     /// result/error.
     /// </summary>
-    private static void TryDeleteDirectoryRecursive(string path)
-    {
-        try
-        {
-            if (!Directory.Exists(path))
-                return;
-
-            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
-            {
-                try
-                {
-                    var attrs = File.GetAttributes(file);
-                    if ((attrs & FileAttributes.ReadOnly) != 0)
-                        File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly);
-                }
-                catch { /* best effort — Directory.Delete below will surface anything that still blocks removal */ }
-            }
-
-            Directory.Delete(path, recursive: true);
-        }
-        catch { /* best-effort cleanup — never let this mask the real generation result/error */ }
-    }
+    private static void TryDeleteDirectoryRecursive(string path) => ElevationHelper.TryDeleteDirectoryRecursive(path);
 
 
     /// <summary>

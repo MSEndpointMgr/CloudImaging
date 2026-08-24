@@ -28,14 +28,18 @@ export interface UploadOptions {
 export async function startBootImageUpload(
   version: string,
   sha256Hash: string,
+  fileName: string,
 ): Promise<UploadSession> {
   const res = await apiFetch('/api/boot-images/upload/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ version, sha256Hash }),
+    body: JSON.stringify({ version, sha256Hash, fileName }),
   });
-  if (!res.ok) throw new Error(`Upload start failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    const msg = await res.text().catch(() => `HTTP ${res.status}`);
+    throw new Error(msg || `Upload start failed: HTTP ${res.status}`);
+  }
   return res.json() as Promise<UploadSession>;
 }
 

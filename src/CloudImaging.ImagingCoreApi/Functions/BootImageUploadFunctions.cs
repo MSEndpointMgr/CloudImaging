@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Text.Json;
 using Azure.Storage.Blobs;
@@ -47,15 +48,29 @@ public sealed partial class BootImageUploadFunctions
     {
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         if (!body.RootElement.TryGetProperty("version", out var versionProp)
-            || !body.RootElement.TryGetProperty("sha256Hash", out var hashProp))
+            || !body.RootElement.TryGetProperty("sha256Hash", out var hashProp)
+            || !body.RootElement.TryGetProperty("fileName", out var fileNameProp))
         {
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
         var version = versionProp.GetString() ?? string.Empty;
         var sha256Hash = hashProp.GetString() ?? string.Empty;
+        var fileName = fileNameProp.GetString() ?? string.Empty;
+        var extension = Path.GetExtension(fileName);
+
+        if (!BootImageValidationService.IsAllowedExtension(extension))
+        {
+            LogUnsupportedExtension(_logger, extension);
+            var rejected = req.CreateResponse(HttpStatusCode.BadRequest);
+            await rejected.WriteStringAsync(
+                $"Unsupported file extension '{extension}'. Only {string.Join(", ", BootImageValidationService.AllowedExtensions)} are allowed.",
+                context.CancellationToken);
+            return rejected;
+        }
+
         var uploadId = Guid.NewGuid().ToString("N");
-        var blobName = $"uploads/{uploadId}/{version.Replace(' ', '-')}.wim";
+        var blobName = $"uploads/{uploadId}/{version.Replace(' ', '-')}{extension}";
 
         // Generate a SAS URL with Write permission for the client to upload directly to Blob Storage
         var uploadUrl = await BlobSasUrlGenerator.GenerateAsync(
@@ -102,11 +117,11 @@ public sealed partial class BootImageUploadFunctions
         var sha256Hash = hashProp.GetString()!;
         var version = versionProp.GetString()!;
         var sizeBytes = sizeProp.GetInt64();
+        var extension = Path.GetExtension(blobName);
 
-        // Download blob and validate SHA-256 (T125a)
+        // Validate the file signature (rejects renamed/spoofed files) and SHA-256 (T125a)
         var blobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(blobName);
-        var download = await blobClient.OpenReadAsync(cancellationToken: context.CancellationToken);
-        var validation = await _validator.ValidateAsync(download, sha256Hash, context.CancellationToken);
+        var validation = await _validator.ValidateAsync(blobClient, sha256Hash, extension, context.CancellationToken);
 
         if (!validation.Valid)
         {
@@ -119,7 +134,7 @@ public sealed partial class BootImageUploadFunctions
         }
 
         // Atomically publish: move blob to final path and create catalog entry
-        var finalBlobName = $"published/{Guid.NewGuid():N}/{version.Replace(' ', '-')}.wim";
+        var finalBlobName = $"published/{Guid.NewGuid():N}/{version.Replace(' ', '-')}{extension}";
         var finalBlob = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
         await finalBlob.StartCopyFromUriAsync(blobClient.Uri, cancellationToken: context.CancellationToken);
         await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
@@ -152,4 +167,7 @@ public sealed partial class BootImageUploadFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image published: {BootImageId} v{Version}.")]
     private static partial void LogPublished(ILogger logger, Guid bootImageId, string version);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image upload rejected: unsupported extension '{Extension}'.")]
+    private static partial void LogUnsupportedExtension(ILogger logger, string extension);
 }

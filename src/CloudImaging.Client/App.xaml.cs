@@ -49,7 +49,8 @@ public partial class App : Application
             if (!string.IsNullOrEmpty(config.DeviceGatewayBaseUrl))
                 httpClient.BaseAddress = new Uri(config.DeviceGatewayBaseUrl);
 
-            var gatewayClient = new DeviceGatewayApiClient(httpClient, startupResult.Certificate);
+            var gatewayClient = new DeviceGatewayApiClient(
+                httpClient, startupResult.Certificate, loggerFactory.CreateLogger<DeviceGatewayApiClient>());
 
             // T071b/FR-059a: kick off the boot image self-update check in the background.
             // Fire-and-forget by design — it only affects the NEXT boot from this USB media
@@ -153,13 +154,15 @@ public partial class App : Application
     /// <summary>DEV-ONLY: ProgressView seeded with a representative mid-imaging state.</summary>
     private static ProgressView BuildSampleProgressView()
     {
-        var vm = new ProgressViewModel
-        {
-            OverallPercent = 45,
-            StatusMessage = "Downloading operating system image…",
-        };
+        var vm = new ProgressViewModel();
+        vm.StatusMessage = "Preparing the target disk…";
+        vm.AppendActivity("Target disk selected for formatting: disk 0.");
+        vm.AppendActivity("Disk 0 formatted and assigned drive D:.");
         vm.UpdateStep(CloudImaging.Contracts.Enums.ImagingStepName.FormatDisk, CloudImaging.Contracts.Enums.ImagingStepStatus.Completed);
         vm.UpdateStep(CloudImaging.Contracts.Enums.ImagingStepName.DownloadImage, CloudImaging.Contracts.Enums.ImagingStepStatus.InProgress);
+        vm.StatusMessage = "Downloading operating system image…";
+        vm.AppendActivity("Starting image download from https://cistoragedev.blob.core.windows.net/images/…");
+        vm.OverallPercent = 45;
         return new ProgressView { DataContext = vm };
     }
 #endif

@@ -114,6 +114,31 @@ public sealed class DeviceSessionRepository
     public IAsyncEnumerable<DeviceSession> QueryAllAsync(CancellationToken ct = default) =>
         _table.QueryAsync<TableEntity>(cancellationToken: ct).Select(FromEntity);
 
+    /// <summary>
+    /// List terminal-partition sessions whose <see cref="DeviceSession.PurgeAt"/> has already
+    /// elapsed as of <paramref name="asOf"/> — i.e. sessions due for deletion (FR-021).
+    /// </summary>
+    public IAsyncEnumerable<DeviceSession> QueryTerminalDueForPurgeAsync(
+        DateTimeOffset asOf, CancellationToken ct = default)
+    {
+        var filter = TableClient.CreateQueryFilter(
+            $"PartitionKey eq {TerminalPartition} and PurgeAt le {asOf}");
+        return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
+    }
+
+    /// <summary>Permanently deletes a terminal session record from Table Storage (FR-021).</summary>
+    public async Task DeletePurgedAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            await _table.DeleteEntityAsync(TerminalPartition, sessionId.ToString(), cancellationToken: ct);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Already deleted (e.g. a concurrent purge run) — nothing left to do.
+        }
+    }
+
     // ── Entity mapping ────────────────────────────────────────────────────────
 
     private static TableEntity ToEntity(DeviceSession s, string partition) => new(partition, s.SessionId.ToString())

@@ -4,6 +4,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CloudImaging.Client.Services;
 
@@ -11,11 +13,18 @@ namespace CloudImaging.Client.Services;
 /// Typed HTTP client for the Cloud Imaging Client → Device Gateway API calls (FR-001, FR-013).
 /// All requests are authenticated by the mTLS boot-media certificate on the <see cref="HttpClientHandler"/>.
 /// The device-session token Bearer is set on subsequent calls after session creation.
+///
+/// Every request/response is logged at Debug level to the local rolling log (FR-066: the log
+/// must capture every request call, step, and payload). Values that could be used to impersonate
+/// the device or session — the passcode, the device-session bearer token, proof-of-possession
+/// signatures, and SAS query strings — are NEVER written to the log; see
+/// <see cref="RedactSasUrl"/> and the redacted literals noted in each Log* message.
 /// </summary>
-public sealed class DeviceGatewayApiClient
+public sealed partial class DeviceGatewayApiClient
 {
     private readonly HttpClient _http;
     private readonly X509Certificate2? _signingCertificate;
+    private readonly ILogger<DeviceGatewayApiClient> _logger;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <param name="http">The mTLS-configured HTTP client.</param>
@@ -24,10 +33,18 @@ public sealed class DeviceGatewayApiClient
     /// proof-of-possession (FR-069). When null, no proof is attached (the Device Gateway will
     /// reject the request — this is intended only for tests/tools that provide their own payload).
     /// </param>
-    public DeviceGatewayApiClient(HttpClient http, X509Certificate2? signingCertificate = null)
+    /// <param name="logger">
+    /// Optional so existing tests/tools can keep constructing this client without a logging
+    /// pipeline wired up; defaults to a no-op logger.
+    /// </param>
+    public DeviceGatewayApiClient(
+        HttpClient http,
+        X509Certificate2? signingCertificate = null,
+        ILogger<DeviceGatewayApiClient>? logger = null)
     {
         _http = http;
         _signingCertificate = signingCertificate;
+        _logger = logger ?? NullLogger<DeviceGatewayApiClient>.Instance;
     }
 
     /// <summary>
@@ -39,9 +56,16 @@ public sealed class DeviceGatewayApiClient
         CancellationToken ct = default)
     {
         var signedPayload = SignPayload(payload);
+        LogCreateSessionRequest(_logger, payload.SerialNumber, payload.Manufacturer, payload.Model);
+
         var response = await _http.PostAsJsonAsync("/api/v1/sessions", signedPayload, JsonOptions, ct);
+        LogHttpResponse(_logger, "POST", "/api/v1/sessions", (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<CreateSessionResponse>(JsonOptions, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<CreateSessionResponse>(JsonOptions, ct);
+        if (result is not null)
+            LogCreateSessionResponse(_logger, result.SessionId, result.State);
+        return result;
     }
 
     /// <summary>
@@ -89,13 +113,22 @@ public sealed class DeviceGatewayApiClient
         Guid sessionId,
         CancellationToken ct = default)
     {
-        var response = await _http.GetAsync($"/api/v1/sessions/{sessionId}/status", ct);
+        var path = $"/api/v1/sessions/{sessionId}/status";
+        LogHttpRequest(_logger, "GET", path);
+        var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+
         if (!response.IsSuccessStatusCode)
         {
-            throw await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            var exception = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, exception.ProblemType);
+            throw exception;
         }
 
-        return await response.Content.ReadFromJsonAsync<SessionStatusResponse>(JsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<SessionStatusResponse>(JsonOptions, ct);
+        if (result is not null)
+            LogSessionStatusResponse(_logger, sessionId, result.State, result.CurrentStep, result.OverallProgressPercent);
+        return result;
     }
 
     /// <summary>
@@ -106,6 +139,7 @@ public sealed class DeviceGatewayApiClient
     {
         _http.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        LogSessionTokenSet(_logger);
     }
 
     /// <summary>POST /api/v1/sessions/{sessionId}/progress — Report imaging step progress.</summary>
@@ -114,8 +148,10 @@ public sealed class DeviceGatewayApiClient
         object payload,
         CancellationToken ct = default)
     {
-        var response = await _http.PostAsJsonAsync(
-            $"/api/v1/sessions/{sessionId}/progress", payload, JsonOptions, ct);
+        var path = $"/api/v1/sessions/{sessionId}/progress";
+        LogHttpRequest(_logger, "POST", path);
+        var response = await _http.PostAsJsonAsync(path, payload, JsonOptions, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
     }
 
@@ -128,8 +164,10 @@ public sealed class DeviceGatewayApiClient
         Guid sessionId,
         CancellationToken ct = default)
     {
-        var response = await _http.PostAsync(
-            $"/api/v1/sessions/{sessionId}/sas/refresh", null, ct);
+        var path = $"/api/v1/sessions/{sessionId}/sas/refresh";
+        LogHttpRequest(_logger, "POST", path);
+        var response = await _http.PostAsync(path, null, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
         response.EnsureSuccessStatusCode();
         using var doc = await System.Text.Json.JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
@@ -140,6 +178,8 @@ public sealed class DeviceGatewayApiClient
                 System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
                 ? parsed
                 : (DateTimeOffset?)null;
+        var redactedSasUrl = RedactSasUrl(url);
+        LogSasRefreshed(_logger, sessionId, redactedSasUrl, expiresAt);
         return new SasRefreshResult(url, expiresAt);
     }
 
@@ -154,11 +194,19 @@ public sealed class DeviceGatewayApiClient
     /// </summary>
     public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(CancellationToken ct = default)
     {
+        LogHttpRequest(_logger, "GET", "/api/v1/boot-image/latest");
         var response = await _http.GetAsync("/api/v1/boot-image/latest", ct);
+        LogHttpResponse(_logger, "GET", "/api/v1/boot-image/latest", (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
             return null;
 
-        return await response.Content.ReadFromJsonAsync<LatestBootImageInfo>(JsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<LatestBootImageInfo>(JsonOptions, ct);
+        if (result is not null)
+        {
+            var redactedSasUrl = RedactSasUrl(result.SasTokenUrl);
+            LogLatestBootImage(_logger, result.Version, result.Sha256Hash, redactedSasUrl);
+        }
+        return result;
     }
 
     /// <summary>
@@ -169,11 +217,19 @@ public sealed class DeviceGatewayApiClient
     /// </summary>
     public async Task<LatestRecoveryImageInfo?> GetLatestRecoveryImageAsync(CancellationToken ct = default)
     {
+        LogHttpRequest(_logger, "GET", "/api/v1/recovery-image/latest");
         var response = await _http.GetAsync("/api/v1/recovery-image/latest", ct);
+        LogHttpResponse(_logger, "GET", "/api/v1/recovery-image/latest", (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
             return null;
 
-        return await response.Content.ReadFromJsonAsync<LatestRecoveryImageInfo>(JsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<LatestRecoveryImageInfo>(JsonOptions, ct);
+        if (result is not null)
+        {
+            var redactedSasUrl = RedactSasUrl(result.SasTokenUrl);
+            LogLatestRecoveryImage(_logger, result.Version, result.Sha256Hash, redactedSasUrl);
+        }
+        return result;
     }
 
     /// <summary>
@@ -185,12 +241,72 @@ public sealed class DeviceGatewayApiClient
     /// </summary>
     public async Task<LogUploadUrlResponse?> RequestLogUploadUrlAsync(Guid sessionId, CancellationToken ct = default)
     {
-        var response = await _http.PostAsync($"/api/v1/sessions/{sessionId}/logs/upload-url", null, ct);
+        var path = $"/api/v1/sessions/{sessionId}/logs/upload-url";
+        LogHttpRequest(_logger, "POST", path);
+        var response = await _http.PostAsync(path, null, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
             return null;
 
-        return await response.Content.ReadFromJsonAsync<LogUploadUrlResponse>(JsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<LogUploadUrlResponse>(JsonOptions, ct);
+        if (result is not null)
+            LogLogUploadUrlIssued(_logger, sessionId, result.FileName);
+        return result;
     }
+
+    // ── Logging (FR-066: every request/step/payload — secrets are always redacted) ──────────────────
+
+    /// <summary>
+    /// Strips the query string (which carries the SAS signature) from a SAS URL before it is
+    /// logged, leaving only the scheme/host/path so the log still shows which blob was involved
+    /// without leaking a credential that grants direct access to it.
+    /// </summary>
+    private static string RedactSasUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return "(none)";
+        var queryIndex = url.IndexOf('?');
+        return queryIndex >= 0 ? url[..queryIndex] + "?<redacted>" : url;
+    }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "HTTP {Method} {Path} \u2192")]
+    private static partial void LogHttpRequest(ILogger logger, string method, string path);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "HTTP {Method} {Path} \u2190 {StatusCode}")]
+    private static partial void LogHttpResponse(ILogger logger, string method, string path, int statusCode);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "HTTP {Method} {Path} \u2190 {StatusCode} (problem type: {ProblemType}).")]
+    private static partial void LogHttpRequestFailed(ILogger logger, string method, string path, int statusCode, string? problemType);
+
+    [LoggerMessage(Level = LogLevel.Debug,
+        Message = "CreateSession request: serial={SerialNumber} manufacturer={Manufacturer} model={Model} (proof-of-possession signature omitted).")]
+    private static partial void LogCreateSessionRequest(ILogger logger, string serialNumber, string manufacturer, string model);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "CreateSession response: sessionId={SessionId} state={State} (passcode/device-session token omitted).")]
+    private static partial void LogCreateSessionResponse(ILogger logger, Guid sessionId, string state);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Device-session bearer token set for subsequent requests (value omitted).")]
+    private static partial void LogSessionTokenSet(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Debug,
+        Message = "SessionStatus response: sessionId={SessionId} state={State} currentStep={CurrentStep} progress={ProgressPercent}%.")]
+    private static partial void LogSessionStatusResponse(ILogger logger, Guid sessionId, string? state, string? currentStep, int progressPercent);
+
+    [LoggerMessage(Level = LogLevel.Debug,
+        Message = "SAS token refreshed for session {SessionId}: url={SasUrl} expiresAt={ExpiresAt} (signature omitted).")]
+    private static partial void LogSasRefreshed(ILogger logger, Guid sessionId, string sasUrl, DateTimeOffset? expiresAt);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Latest boot image: version={Version} sha256={Sha256Hash} url={SasUrl} (signature omitted).")]
+    private static partial void LogLatestBootImage(ILogger logger, string version, string sha256Hash, string sasUrl);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Latest recovery image: version={Version} sha256={Sha256Hash} url={SasUrl} (signature omitted).")]
+    private static partial void LogLatestRecoveryImage(ILogger logger, string version, string sha256Hash, string sasUrl);
+
+    [LoggerMessage(Level = LogLevel.Debug,
+        Message = "Log upload URL issued for session {SessionId}: fileName={FileName} (upload URL signature omitted).")]
+    private static partial void LogLogUploadUrlIssued(ILogger logger, Guid sessionId, string fileName);
 }
 
 /// <summary>

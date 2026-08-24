@@ -1,3 +1,4 @@
+using System.IO;
 using System.Net;
 using System.Text.Json;
 using Azure.Storage.Blobs;
@@ -53,14 +54,28 @@ public sealed partial class RecoveryImageUploadFunctions
     {
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         if (!body.RootElement.TryGetProperty("version", out var versionProp)
-            || !body.RootElement.TryGetProperty("sha256Hash", out _))
+            || !body.RootElement.TryGetProperty("sha256Hash", out _)
+            || !body.RootElement.TryGetProperty("fileName", out var fileNameProp))
         {
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
         var version = versionProp.GetString() ?? string.Empty;
+        var fileName = fileNameProp.GetString() ?? string.Empty;
+        var extension = Path.GetExtension(fileName);
+
+        if (!BootImageValidationService.IsAllowedExtension(extension))
+        {
+            LogUnsupportedExtension(_logger, extension);
+            var rejected = req.CreateResponse(HttpStatusCode.BadRequest);
+            await rejected.WriteStringAsync(
+                $"Unsupported file extension '{extension}'. Only {string.Join(", ", BootImageValidationService.AllowedExtensions)} are allowed.",
+                context.CancellationToken);
+            return rejected;
+        }
+
         var uploadId = Guid.NewGuid().ToString("N");
-        var blobName = $"uploads/{uploadId}/winre-{version.Replace(' ', '-')}.wim";
+        var blobName = $"uploads/{uploadId}/winre-{version.Replace(' ', '-')}{extension}";
 
         var uploadUrl = await BlobSasUrlGenerator.GenerateAsync(
             _blobClient,
@@ -114,8 +129,8 @@ public sealed partial class RecoveryImageUploadFunctions
 
         await blockBlobClient.CommitBlockListAsync(blockIds, cancellationToken: context.CancellationToken);
 
-        var download = await blockBlobClient.OpenReadAsync(cancellationToken: context.CancellationToken);
-        var validation = await _validator.ValidateAsync(download, sha256Hash, context.CancellationToken);
+        var extension = Path.GetExtension(blobName);
+        var validation = await _validator.ValidateAsync(blockBlobClient, sha256Hash, extension, context.CancellationToken);
 
         if (!validation.Valid)
         {
@@ -126,7 +141,7 @@ public sealed partial class RecoveryImageUploadFunctions
             return bad;
         }
 
-        var finalBlobName = $"published/{Guid.NewGuid():N}/winre-{version.Replace(' ', '-')}.wim";
+        var finalBlobName = $"published/{Guid.NewGuid():N}/winre-{version.Replace(' ', '-')}{extension}";
         var finalBlob = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
         await finalBlob.StartCopyFromUriAsync(blockBlobClient.Uri, cancellationToken: context.CancellationToken);
         await blockBlobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
@@ -189,4 +204,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Recovery image published: {RecoveryImageId} v{Version}.")]
     private static partial void LogPublished(ILogger logger, Guid recoveryImageId, string version);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Recovery image upload rejected: unsupported extension '{Extension}'.")]
+    private static partial void LogUnsupportedExtension(ILogger logger, string extension);
 }

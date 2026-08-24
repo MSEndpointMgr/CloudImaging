@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
+import { isAllowedImageFile, ALLOWED_IMAGE_EXTENSIONS } from '../utils/imageFileValidation.js';
 
 /**
  * Images router. OS image catalog CRUD proxy to the Operator API (T086, FR-036, FR-037).
@@ -31,6 +32,13 @@ router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request,
 
 router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // The client sends the original uploaded file's name as `name` (T086); it doubles as the
+    // catalog display name, so its extension is what's validated against the allow-list here.
+    const { name } = req.body as { name?: string };
+    if (!name || !isAllowedImageFile(name)) {
+      res.status(400).json({ error: `Only ${ALLOWED_IMAGE_EXTENSIONS.join(', ')} files are allowed.` });
+      return;
+    }
     res.json(await operatorApiClient.startOsImageUpload(req.body as unknown));
   } catch (err) { next(err); }
 });

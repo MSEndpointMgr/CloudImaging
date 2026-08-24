@@ -60,11 +60,20 @@
                               HorizontalAlignment="Stretch" />
 
                     <ui:Button Grid.Row="1" Grid.Column="1"
-                               Content="Refresh"
                                Style="{StaticResource AppButtonStyle}"
                                VerticalAlignment="Center"
                                Margin="12,0,0,0"
-                               Command="{Binding RefreshCommand}" />
+                               MinWidth="86"
+                               HorizontalContentAlignment="Center"
+                               Command="{Binding RefreshCommand}">
+                        <Grid>
+                            <TextBlock Text="Refresh"
+                                       Visibility="{Binding IsRefreshingBootImages, Converter={StaticResource InverseBoolToVisibility}}" />
+                            <ui:ProgressRing IsIndeterminate="True"
+                                             Width="16" Height="16"
+                                             Visibility="{Binding IsRefreshingBootImages, Converter={StaticResource BoolToVisibility}}" />
+                        </Grid>
+                    </ui:Button>
                 </Grid>
             </ui:Card>
 

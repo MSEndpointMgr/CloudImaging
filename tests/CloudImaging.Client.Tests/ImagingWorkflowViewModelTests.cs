@@ -22,16 +22,17 @@ public sealed class ImagingWorkflowViewModelTests
     }
 
     [Fact]
-    public void ProgressViewModel_UpdateStep_ChangesStepColor()
+    public void ProgressViewModel_UpdateStep_ChangesState()
     {
         var vm = new ProgressViewModel();
+        var formatStep = vm.Steps.Single(s => s.Step == ImagingStepName.FormatDisk);
 
         vm.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress);
-        vm.FormatStepColor.Should().NotBeNull("active step must have a non-null colour");
-        vm.FormatCompleted.Should().BeFalse("InProgress is not Completed");
+        formatStep.State.Should().Be(ProgressStepState.Active, "active step must report the Active state");
 
         vm.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.Completed);
-        vm.FormatCompleted.Should().BeTrue("Completed step must set FormatCompleted=true");
+        formatStep.State.Should().Be(ProgressStepState.Done, "Completed step must report the Done state");
+        formatStep.Caption.Should().Contain("Completed", "a completed step shows a duration caption");
     }
 
     [Fact]
@@ -43,9 +44,9 @@ public sealed class ImagingWorkflowViewModelTests
         vm.UpdateStep(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress);
         vm.UpdateStep(ImagingStepName.ApplyImage,    ImagingStepStatus.Pending);
 
-        vm.FormatCompleted.Should().BeTrue("FormatDisk is Completed");
-        vm.DownloadCompleted.Should().BeFalse("DownloadImage is InProgress, not Completed");
-        vm.ApplyCompleted.Should().BeFalse("ApplyImage is Pending");
+        vm.Steps.Single(s => s.Step == ImagingStepName.FormatDisk).State.Should().Be(ProgressStepState.Done, "FormatDisk is Completed");
+        vm.Steps.Single(s => s.Step == ImagingStepName.DownloadImage).State.Should().Be(ProgressStepState.Active, "DownloadImage is InProgress");
+        vm.Steps.Single(s => s.Step == ImagingStepName.ApplyImage).State.Should().Be(ProgressStepState.Pending, "ApplyImage is Pending");
     }
 
     // ── Background processing must not block UI thread ────────────────────────

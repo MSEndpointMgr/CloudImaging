@@ -108,4 +108,22 @@ public sealed class BootImageLifecycleIntegrationTests
         // HTTP 422 Unprocessable Entity indicates the upload was received but failed validation
         422.Should().Be(422, "checksum failure returns HTTP 422 Unprocessable Entity");
     }
+
+    // ── File-type allow-list (only genuine WIM/ISO images may be uploaded) ─────
+
+    [Theory]
+    [InlineData(".wim", true)]
+    [InlineData(".WIM", true)]
+    [InlineData(".iso", true)]
+    [InlineData(".ISO", true)]
+    [InlineData(".esd", false)]
+    [InlineData(".exe", false)]
+    [InlineData(".dll", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsAllowedExtension_OnlyAcceptsWimAndIso(string? extension, bool expected)
+    {
+        BootImageValidationService.IsAllowedExtension(extension).Should().Be(expected,
+            "only .wim and .iso files should ever be accepted for boot/recovery/OS image uploads");
+    }
 }

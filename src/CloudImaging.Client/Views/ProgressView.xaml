@@ -4,137 +4,187 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="Imaging in Progress">
     <!--
-        FR-007: 5-node horizontal step indicator: Format, Download, Apply, Configure Boot,
-        Apply Recovery. Transitions to ResultsView on Apply Recovery complete.
+        FR-007: split hero + step-sidebar layout. Left sidebar lists the 5-step pipeline
+        (Format, Download, Apply, Configure Boot, Apply Recovery) with a small dot + label +
+        caption per step (mirrors CloudImaging.MediaBuilder's GenerateBootImageView step list).
+        The right "hero" panel shows a determinate progress ring next to the current step's
+        title/subtitle, a short live-activity ticker underneath (the same StatusMessage strings
+        ImagingWorkflowViewModel already sets — no fabricated byte/speed telemetry, since the
+        pipeline doesn't expose any), and an overall progress bar. Sized to fit the fixed
+        800x600 WinPE window with no page-level scrolling (FR-002b).
     -->
-    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="820">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="32" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="24" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="24" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <!-- Header -->
-        <TextBlock Grid.Row="0" Text="Imaging in Progress"
-                   Style="{StaticResource TitleTextBlockStyle}"
-                   HorizontalAlignment="Center" />
+        <!-- Step sidebar -->
+        <Border Grid.Column="0"
+                Padding="24,24,18,24"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-        <!-- 5-node step indicator -->
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+                <StackPanel Grid.Row="0">
+                <TextBlock Text="Steps"
+                           Style="{StaticResource BodyStrongTextBlockStyle}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Margin="0,0,0,16" />
+                <ItemsControl ItemsSource="{Binding Steps}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                <Ellipse Width="12" Height="12" StrokeThickness="2"
+                                         VerticalAlignment="Top" Margin="0,3,10,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="Transparent" />
+                                            <Setter Property="Stroke" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding State}" Value="Active">
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemAccentColorBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Done">
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Failed">
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}" TextWrapping="Wrap" MaxWidth="146">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding State}" Value="Active">
+                                                        <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Done">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Failed">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Caption}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" MaxWidth="146"
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                               Margin="0,2,0,0" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                </StackPanel>
 
-            <!-- Format Disk node -->
-            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
-                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
-                         Fill="{Binding FormatStepColor}" />
-                <TextBlock Text="✓" FontSize="20" Foreground="White"
-                           HorizontalAlignment="Center" Margin="0,-36,0,0"
-                           Visibility="{Binding FormatCompleted, Converter={StaticResource BoolToVisibility}}" />
-                <TextBlock Text="Format" Style="{StaticResource CaptionTextBlockStyle}"
-                           HorizontalAlignment="Center" Margin="0,8,0,0" />
+                <ui:Button Grid.Row="2"
+                           Appearance="Secondary"
+                           HorizontalAlignment="Stretch"
+                           HorizontalContentAlignment="Center"
+                           FontSize="12"
+                           Padding="0,8"
+                           Margin="0,16,0,0"
+                           Click="ViewLogButton_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="DocumentText24" Margin="0,0,6,0" />
+                        <TextBlock Text="View Log" />
+                    </StackPanel>
+                </ui:Button>
+            </Grid>
+        </Border>
+
+        <!-- Hero panel -->
+        <Grid Grid.Column="1" Margin="32,24,32,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Ring + title/subtitle -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,18">
+                <Grid Width="52" Height="52" VerticalAlignment="Center">
+                    <ui:ProgressRing Progress="{Binding OverallPercent}"
+                                     IsIndeterminate="False"
+                                     Width="52" Height="52" />
+                    <TextBlock Text="{Binding OverallPercent, StringFormat='{}{0}%'}"
+                               FontSize="12" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Grid>
+                <StackPanel VerticalAlignment="Center" Margin="16,0,0,0">
+                    <TextBlock Text="{Binding CurrentStepTitle}" Style="{StaticResource TitleTextBlockStyle}" />
+                    <TextBlock Text="{Binding StepSubtitle}"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Margin="0,4,0,0" />
+                </StackPanel>
             </StackPanel>
 
-            <!-- Connector line -->
-            <Rectangle Grid.Column="1" Height="2" Width="60"
-                       Fill="{Binding DownloadStepColor}" VerticalAlignment="Center" />
+            <!-- Activity ticker -->
+            <Border Grid.Row="1"
+                    Margin="0,0,0,16"
+                    CornerRadius="6"
+                    BorderThickness="1"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Border.Resources>
+                    <SolidColorBrush x:Key="TextControlFocusedBorderBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+                </Border.Resources>
+                <TextBox x:Name="ActivityLogTextBox"
+                         Text="{Binding LogText, Mode=OneWay}"
+                         IsReadOnly="True"
+                         IsReadOnlyCaretVisible="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         Padding="12,10"
+                         FontFamily="Cascadia Mono, Consolas, monospace"
+                         FontSize="11.5"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         TextWrapping="NoWrap"
+                         AcceptsReturn="True"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto" />
+            </Border>
 
-            <!-- Download Image node -->
-            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
-                         Fill="{Binding DownloadStepColor}" />
-                <TextBlock Text="✓" FontSize="20" Foreground="White"
-                           HorizontalAlignment="Center" Margin="0,-36,0,0"
-                           Visibility="{Binding DownloadCompleted, Converter={StaticResource BoolToVisibility}}" />
-                <TextBlock Text="Download" Style="{StaticResource CaptionTextBlockStyle}"
-                           HorizontalAlignment="Center" Margin="0,8,0,0" />
+            <!-- Overall progress -->
+            <StackPanel Grid.Row="2" Margin="0,0,0,0">
+                <ProgressBar Value="{Binding OverallPercent}" Minimum="0" Maximum="100" Height="6" />
             </StackPanel>
 
-            <!-- Connector line -->
-            <Rectangle Grid.Column="3" Height="2" Width="60"
-                       Fill="{Binding ApplyStepColor}" VerticalAlignment="Center" />
-
-            <!-- Apply Image node -->
-            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
-                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
-                         Fill="{Binding ApplyStepColor}" />
-                <TextBlock Text="✓" FontSize="20" Foreground="White"
-                           HorizontalAlignment="Center" Margin="0,-36,0,0"
-                           Visibility="{Binding ApplyCompleted, Converter={StaticResource BoolToVisibility}}" />
-                <TextBlock Text="Apply" Style="{StaticResource CaptionTextBlockStyle}"
-                           HorizontalAlignment="Center" Margin="0,8,0,0" />
-            </StackPanel>
-
-            <!-- Connector line -->
-            <Rectangle Grid.Column="5" Height="2" Width="60"
-                       Fill="{Binding ConfigureBootStepColor}" VerticalAlignment="Center" />
-
-            <!-- Configure Boot node -->
-            <StackPanel Grid.Column="6" HorizontalAlignment="Center">
-                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
-                         Fill="{Binding ConfigureBootStepColor}" />
-                <TextBlock Text="✓" FontSize="20" Foreground="White"
-                           HorizontalAlignment="Center" Margin="0,-36,0,0"
-                           Visibility="{Binding ConfigureBootCompleted, Converter={StaticResource BoolToVisibility}}" />
-                <TextBlock Text="Boot Config" Style="{StaticResource CaptionTextBlockStyle}"
-                           HorizontalAlignment="Center" Margin="0,8,0,0" />
-            </StackPanel>
-
-            <!-- Connector line -->
-            <Rectangle Grid.Column="7" Height="2" Width="60"
-                       Fill="{Binding ApplyRecoveryStepColor}" VerticalAlignment="Center" />
-
-            <!-- Apply Recovery Image node -->
-            <StackPanel Grid.Column="8" HorizontalAlignment="Center">
-                <Ellipse Width="40" Height="40" HorizontalAlignment="Center"
-                         Fill="{Binding ApplyRecoveryStepColor}" />
-                <TextBlock Text="✓" FontSize="20" Foreground="White"
-                           HorizontalAlignment="Center" Margin="0,-36,0,0"
-                           Visibility="{Binding ApplyRecoveryCompleted, Converter={StaticResource BoolToVisibility}}" />
-                <TextBlock Text="Recovery" Style="{StaticResource CaptionTextBlockStyle}"
-                           HorizontalAlignment="Center" Margin="0,8,0,0" />
+            <!-- Error section -->
+            <StackPanel Grid.Row="3" Margin="0,14,0,0">
+                <ui:InfoBar Title="Imaging Failed"
+                            Message="{Binding ErrorMessage}"
+                            Severity="Error"
+                            IsOpen="{Binding HasError}"
+                            IsClosable="False" />
+                <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Error ref: {0}'}"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           FontFamily="Consolas"
+                           HorizontalAlignment="Center"
+                           Margin="0,8,0,0"
+                           Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
         </Grid>
-
-        <!-- Overall progress bar -->
-        <StackPanel Grid.Row="4">
-            <TextBlock Text="{Binding StatusMessage}"
-                       Style="{StaticResource BodyTextBlockStyle}"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       HorizontalAlignment="Center" Margin="0,0,0,10" />
-            <ProgressBar Value="{Binding OverallPercent}" Minimum="0" Maximum="100"
-                            Height="8" Width="500" />
-            <TextBlock Text="{Binding OverallPercent, StringFormat='{}{0}%'}"
-                       Style="{StaticResource CaptionTextBlockStyle}"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       HorizontalAlignment="Center" Margin="0,6,0,0" />
-        </StackPanel>
-
-        <!-- Error section -->
-        <ui:InfoBar Grid.Row="6"
-                    Title="Imaging Failed"
-                    Message="{Binding ErrorMessage}"
-                    Severity="Error"
-                    IsOpen="{Binding HasError}"
-                    IsClosable="False" />
-        <TextBlock Grid.Row="6"
-                   Text="{Binding SupportReferenceCode, StringFormat='Error ref: {0}'}"
-                   Style="{StaticResource CaptionTextBlockStyle}"
-                   FontFamily="Consolas"
-                   Margin="0,60,0,0"
-                   Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
     </Grid>
 </Page>

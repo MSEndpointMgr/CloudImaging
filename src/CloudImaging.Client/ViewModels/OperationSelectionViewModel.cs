@@ -225,9 +225,22 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         {
             using var searcher = new ManagementObjectSearcher("SELECT Caption, Size FROM Win32_DiskDrive");
             using var results  = searcher.Get();
-            return results.Cast<ManagementObject>()
-                .Select(d => $"{d["Caption"]}|{d["Size"]}")
-                .ToList();
+            var layout = new List<string>();
+            foreach (ManagementObject d in results.Cast<ManagementObject>())
+            {
+                var caption = d["Caption"]?.ToString() ?? "Unknown";
+                // Win32_DiskDrive.Size is a scripting-era string property, but be defensive
+                // against a differently-typed/boxed value (e.g. a raw numeric) rather than
+                // silently embedding an unparsed WMI type name in device telemetry.
+                var sizeBytes = d["Size"] switch
+                {
+                    string s when long.TryParse(s, out var parsed) => parsed,
+                    IConvertible c => Convert.ToInt64(c, System.Globalization.CultureInfo.InvariantCulture),
+                    _ => 0L,
+                };
+                layout.Add($"{caption}|{sizeBytes}");
+            }
+            return layout;
         }
         catch { return []; }
     }

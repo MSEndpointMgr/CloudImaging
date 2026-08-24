@@ -80,19 +80,17 @@ public sealed partial class DeviceSessionLifecycleService
     /// </summary>
     public async Task<int> PurgeTerminalSessionsAsync(CancellationToken ct = default)
     {
-        // This is a simplified implementation — in production the repository would expose
-        // a query over the "terminal" partition with a filter on TerminalAt.
-        // For the current repository implementation we iterate all active sessions
-        // (terminal sessions are in a separate partition and not returned by QueryActiveAsync).
         int purged = 0;
 
-        // Note: a production-ready version would call a dedicated QueryTerminalAsync that
-        // reads from the "terminal" Table Storage partition and filters by TerminalAt.
-        // This method records the intent and contract; the Timer Function can also purge
-        // via direct Table Storage queries on the "terminal" partition.
+        await foreach (var session in _sessionRepo.QueryTerminalDueForPurgeAsync(DateTimeOffset.UtcNow, ct))
+        {
+            await _sessionRepo.DeletePurgedAsync(session.SessionId, ct);
+            LogSessionPurged(_logger, session.SessionId, session.TerminalAt);
+            purged++;
+        }
 
         LogPurgeRun(_logger, purged);
-        return await Task.FromResult(purged);
+        return purged;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -132,6 +130,10 @@ public sealed partial class DeviceSessionLifecycleService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Inactivity expiry run complete: {Count} sessions expired.")]
     private static partial void LogExpiryRun(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Terminal session {SessionId} purged (was terminal since {TerminalAt}).")]
+    private static partial void LogSessionPurged(ILogger logger, Guid sessionId, DateTimeOffset? terminalAt);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Terminal purge run complete: {Count} sessions purged.")]
     private static partial void LogPurgeRun(ILogger logger, int count);
