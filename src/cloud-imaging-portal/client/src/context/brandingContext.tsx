@@ -37,13 +37,19 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
   const [isLoaded, setIsLoaded] = useState(false);
   const logoUrlRef = useRef<string | null>(null);
 
-  /** Replaces the current logo object URL, revoking the previous one to avoid leaks. */
+  /**
+   * Replaces the current logo object URL, revoking the previous one to avoid leaks, and keeps
+   * the browser tab favicon in sync with it — the portal logo is the only branding asset
+   * available for this, so it doubles as the favicon (falls back to the browser's default
+   * icon when no portal logo is configured, since there is no bundled default to fall back to).
+   */
   const setLogoObjectUrl = useCallback((url: string | null) => {
     if (logoUrlRef.current) {
       URL.revokeObjectURL(logoUrlRef.current);
     }
     logoUrlRef.current = url;
     setLogoUrl(url);
+    applyFavicon(url);
   }, []);
 
   const load = useCallback(async () => {
@@ -96,6 +102,28 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
 
 export function useBranding(): BrandingContextValue {
   return useContext(BrandingContext);
+}
+
+/**
+ * Points the browser tab's favicon at the given portal logo object URL, reusing the same
+ * <link rel="icon"> element across updates instead of appending a new one each time. When
+ * `url` is null (no portal logo configured, or it failed to load), the injected link is
+ * removed entirely so the browser falls back to its own default tab icon.
+ */
+function applyFavicon(url: string | null): void {
+  const existing = document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
+
+  if (!url) {
+    existing?.remove();
+    return;
+  }
+
+  const link = existing ?? document.createElement('link');
+  link.rel = 'icon';
+  link.href = url;
+  if (!existing) {
+    document.head.appendChild(link);
+  }
 }
 
 /**
