@@ -346,15 +346,10 @@ function SessionsPageImpl(): React.ReactElement {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">Enter a device&apos;s passcode to couple it, assign an OS image to coupled devices, and monitor deployment progress and status in real time.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
-            <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -390,21 +385,25 @@ function SessionsPageImpl(): React.ReactElement {
         </div>
       </div>
 
+      <p className="text-sm text-muted-foreground">Enter a device&apos;s passcode to couple it, assign an OS image to coupled devices, and monitor deployment progress and status in real time.</p>
+
       {view === 'pending' ? (
         <div className="space-y-5">
           <div className="rounded-md border border-border overflow-hidden">
-            <div className="border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">Available Devices</h3>
-              <p className="text-xs text-muted-foreground">Enter the passcode shown on the device to couple it.</p>
+              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">
+                {available.length}
+              </span>
             </div>
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[22%]" />
-                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[28%]" />
-                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[15%]" />
-                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[17%]" />
-                  <TableHead className="text-right">Passcode</TableHead>
+                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[26%]" />
+                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[14%]" />
+                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[16%]" />
+                  <TableHead className="w-[22%] text-right">Passcode</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -441,16 +440,18 @@ function SessionsPageImpl(): React.ReactElement {
 
           <div className="rounded-md border border-border overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <div>
-                <h3 className="text-sm font-semibold">Coupled Devices</h3>
-                <p className="text-xs text-muted-foreground">The selected OS image applies to all {coupled.length} coupled device{coupled.length !== 1 ? 's' : ''}.</p>
-              </div>
               <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold">Coupled Devices</h3>
+                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-semibold text-primary">
+                  {coupled.length}
+                </span>
+              </div>
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
                 <select
                   value={selectedImageId ?? ''}
                   onChange={e => setSelectedImageId(e.target.value || null)}
                   disabled={coupled.length === 0 || images.length === 0}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-8 w-40 min-w-0 max-w-full flex-1 truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-64 sm:flex-none"
                 >
                   <option value="">Select OS image…</option>
                   {images.map(img => (

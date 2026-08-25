@@ -53,8 +53,10 @@
                                    HorizontalAlignment="Center" Margin="0,12,0,0" />
 
                         <!-- Auto-restart countdown: drains from 100% to 0% over 10 seconds,
-                             then the device restarts automatically (see ResultsViewModel). -->
-                        <ProgressBar Value="{Binding RestartCountdownPercent}"
+                             then the device restarts automatically (see ResultsViewModel).
+                             Mode=OneWay is required: ProgressBar.Value binds TwoWay by default,
+                             but RestartCountdownPercent is a read-only computed property. -->
+                        <ProgressBar Value="{Binding RestartCountdownPercent, Mode=OneWay}"
                                      Minimum="0" Maximum="100" Height="6"
                                      Margin="0,24,0,0" />
                         <TextBlock Text="{Binding RestartCountdownSecondsRemaining, StringFormat='Restarting in {0}s…'}"
