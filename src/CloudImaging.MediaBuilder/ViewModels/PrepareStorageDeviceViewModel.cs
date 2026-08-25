@@ -615,7 +615,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
             var isoSizeBytes = new FileInfo(IsoOutputPath).Length;
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
-                $"Boot image v{SelectedBootImage.Dto.Version} was packaged into a {FormatBytes(isoSizeBytes)} bootable ISO file. Attach it to a Hyper-V VM's DVD drive (or burn it to physical media) to boot from it.");
+                $"Boot image v{SelectedBootImage.Dto.Version} ({FormatBytes(isoSizeBytes)}).");
             ResultFilePath = IsoOutputPath;
             IsComplete    = true;
         }

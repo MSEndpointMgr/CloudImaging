@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using CloudImaging.DeviceGatewayApi.Middleware;
 using CloudImaging.DeviceGatewayApi.Security;
 using CloudImaging.DeviceGatewayApi.Services;
@@ -5,7 +6,6 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Net.Http.Json;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication(builder =>

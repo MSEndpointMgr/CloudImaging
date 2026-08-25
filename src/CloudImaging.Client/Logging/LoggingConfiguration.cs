@@ -28,8 +28,17 @@ internal static class LoggingConfiguration
     /// <see cref="LoggerConfiguration.WriteTo"/> below (<c>cloud-imaging-client-{Date}.log</c>,
     /// daily rolling interval).
     /// </summary>
+    /// <remarks>
+    /// Uses <see cref="DateTime.Now"/> (local time), NOT <see cref="DateTime.UtcNow"/> — the
+    /// Serilog.Sinks.File <c>File()</c> overload used below has no <c>useUtcTimestamp</c> option
+    /// in this version and always rolls/names daily files by local time internally. Computing
+    /// this path from UTC instead would silently disagree with the file Serilog is actually
+    /// writing to whenever the machine's local time zone isn't UTC (common even in WinPE, which
+    /// keeps whatever time zone the image is configured with), making LogViewerWindow report
+    /// "No log file found yet" even though logging is working correctly.
+    /// </remarks>
     public static string CurrentLogFilePath =>
-        Path.Combine(LogDirectory, $"cloud-imaging-client-{DateTime.UtcNow:yyyyMMdd}.log");
+        Path.Combine(LogDirectory, $"cloud-imaging-client-{DateTime.Now:yyyyMMdd}.log");
 
     /// <summary>
     /// Builds and returns the Serilog logger to be used as the application log.

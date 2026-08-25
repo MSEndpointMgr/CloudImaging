@@ -384,7 +384,7 @@
                                      Text="{Binding ResultFilePath, Mode=OneWay}"
                                      FontFamily="Cascadia Mono, Consolas, monospace"
                                      FontSize="12"
-                                     Margin="0,16,0,0"
+                                     Margin="0,16,0,18"
                                      Visibility="{Binding HasResultFilePath, Converter={StaticResource BoolToVisibility}}" />
                         </StackPanel>
                     </ScrollViewer>
