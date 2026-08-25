@@ -40,6 +40,32 @@ public sealed class ResultsViewModelTests
         vm.SupportReferenceCode.Should().BeNull("no error reference is needed on success");
     }
 
+    [Fact]
+    public void Success_WithoutRestartCallback_StartsFullCountdownAndDoesNotThrow()
+    {
+        // No restartSystem callback is supplied (mirrors Build(...) used throughout this file) —
+        // the countdown must still expose sane initial values and never require a live Dispatcher.
+        var vm = Build(ResultsViewModel.Outcome.Success);
+
+        vm.RestartCountdownSecondsRemaining.Should().Be(10);
+        vm.RestartCountdownPercent.Should().Be(100);
+    }
+
+    [Fact]
+    public void Success_WithRestartCallback_StartsFullCountdownWithoutInvokingRestartImmediately()
+    {
+        var restarted = false;
+        var vm = new ResultsViewModel(
+            ResultsViewModel.Outcome.Success,
+            deviceSerialNumber: null,
+            errorDetail: null,
+            navigateToStart: () => { /* no-op for tests */ },
+            restartSystem: () => restarted = true);
+
+        vm.RestartCountdownSecondsRemaining.Should().Be(10);
+        restarted.Should().BeFalse("the restart callback must only fire once the countdown reaches zero");
+    }
+
     // ── Failure outcome ────────────────────────────────────────────────────────
 
     [Fact]

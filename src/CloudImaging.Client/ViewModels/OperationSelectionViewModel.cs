@@ -21,6 +21,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private static readonly TimeSpan NetworkWaitPollInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly DeviceGatewayApiClient _gatewayClient;
+    private readonly SystemClockSynchronizationService _clockSync;
     private readonly Action<CreateSessionResponse, string> _navigate;
     private string? _selectedOperation;
     private string? _statusMessage;
@@ -29,10 +30,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
-        Action<CreateSessionResponse, string> navigate)
+        Action<CreateSessionResponse, string> navigate,
+        SystemClockSynchronizationService? clockSync = null)
     {
         _gatewayClient = gatewayClient;
         _navigate      = navigate;
+        _clockSync     = clockSync ?? new SystemClockSynchronizationService();
 
         SelectOperationCommand = new RelayCommand(op => SelectedOperation = op?.ToString());
         ContinueCommand        = new RelayCommand(async _ => await ContinueAsync(), _ => CanContinue);
@@ -54,6 +57,25 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public bool CanContinue  => SelectedOperation is not null && !_isBusy;
 
     /// <summary>
+    /// True from the moment Continue is pressed until either navigation away from this view
+    /// occurs or an error is surfaced — drives the spinner shown on the Continue button.
+    /// </summary>
+    public bool IsBusy
+    {
+        get => _isBusy;
+        private set
+        {
+            _isBusy = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsNotBusy));
+            OnPropertyChanged(nameof(CanContinue));
+        }
+    }
+
+    /// <summary>Inverse of <see cref="IsBusy"/>, bound directly rather than via a value converter.</summary>
+    public bool IsNotBusy => !IsBusy;
+
+    /// <summary>
     /// True while waiting for a network adapter to come up (T032a). Distinct from
     /// <see cref="StatusMessage"/>/<see cref="HasError"/>, which are reserved for actual
     /// failures — this is an informational, non-error waiting state.
@@ -70,9 +92,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private async Task ContinueAsync()
     {
         if (SelectedOperation is null) return;
-        _isBusy = true;
+        IsBusy = true;
         StatusMessage = null;
-        OnPropertyChanged(nameof(CanContinue));
 
         try
         {
@@ -80,6 +101,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // initializing after this view appears; wait briefly for a routable adapter
             // before registering, instead of spuriously failing on a network error (T032a).
             await WaitForNetworkAsync();
+
+            // WinPE devices frequently boot with a wildly incorrect system clock (dead/unset
+            // RTC, never synced) — correct it against external NTP servers before signing the
+            // proof-of-possession challenge below, otherwise an entirely valid signature can be
+            // rejected as "Expired" by the Device Gateway API's clock-skew check (FR-069).
+            await _clockSync.TrySynchronizeAsync();
 
             // Collect hardware metadata silently (FR-001a)
             var hardware = await Task.Run(CollectHardwareMetadata);
@@ -116,8 +143,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         finally
         {
             IsWaitingForNetwork = false;
-            _isBusy = false;
-            OnPropertyChanged(nameof(CanContinue));
+            IsBusy = false;
         }
     }
 

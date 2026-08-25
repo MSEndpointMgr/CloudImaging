@@ -30,7 +30,7 @@ function initialsFrom(name: string): string {
  */
 export function Header(): React.ReactElement {
   const { theme, toggleTheme } = useTheme();
-  const { account, signOut } = useAuth();
+  const { account, avatarUrl, signOut } = useAuth();
   const { branding } = useBranding();
 
   const path = useLocation().pathname;
@@ -53,9 +53,13 @@ export function Header(): React.ReactElement {
         </Button>
 
         <div className="mx-1 flex items-center gap-2.5 rounded-full py-1 pl-1 pr-3">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
-            {initials}
-          </span>
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+          ) : (
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+              {initials}
+            </span>
+          )}
           <span className="hidden text-sm font-medium text-foreground sm:inline">{displayName}</span>
         </div>
 

@@ -176,7 +176,8 @@ public partial class App : Application
         view.DataContext = new OperationSelectionViewModel(
             gateway,
             (sessionResponse, serialNumber) =>
-                window.NavigateTo(BuildSessionInitView(window, gateway, lf, sessionResponse, serialNumber)));
+                window.NavigateTo(BuildSessionInitView(window, gateway, lf, sessionResponse, serialNumber)),
+            new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()));
         return view;
     }
 
@@ -236,12 +237,14 @@ public partial class App : Application
         string? explicitSupportReferenceCode = null)
     {
         var view = new ResultsView();
+        var restartService = new SystemRestartService(lf.CreateLogger<SystemRestartService>());
         view.DataContext = new ResultsViewModel(
             outcome,
             serialNumber,
             errorDetail,
             () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
-            explicitSupportReferenceCode);
+            explicitSupportReferenceCode,
+            restartSystem: restartService.Restart);
         return view;
     }
 

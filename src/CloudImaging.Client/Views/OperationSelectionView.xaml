@@ -151,13 +151,25 @@
                     IsOpen="{Binding HasError}"
                     IsClosable="False" />
 
-        <!-- Continue button -->
+        <!-- Continue button: shows an indeterminate spinner in place of the label while the
+             session-registration request (network wait + hardware scan + CreateSession call)
+             is in flight, so the operator gets feedback instead of a seemingly-unresponsive
+             button. Re-enabled (label restored) on error so Continue can be pressed again. -->
         <ui:Button Grid.Row="6"
-                   Content="Continue"
                    Appearance="Primary"
                    Width="200" Height="44" FontSize="15"
                    Command="{Binding ContinueCommand}"
                    HorizontalAlignment="Center"
-                   IsEnabled="{Binding CanContinue}" />
+                   IsEnabled="{Binding CanContinue}">
+            <Grid>
+                <TextBlock Text="Continue"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding IsNotBusy, Converter={StaticResource BoolToVisibility}}" />
+                <ui:ProgressRing IsIndeterminate="True"
+                                 Width="20" Height="20"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+            </Grid>
+        </ui:Button>
     </Grid>
 </Page>

@@ -51,6 +51,16 @@
                                    Style="{StaticResource BodyTextBlockStyle}"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                    HorizontalAlignment="Center" Margin="0,12,0,0" />
+
+                        <!-- Auto-restart countdown: drains from 100% to 0% over 10 seconds,
+                             then the device restarts automatically (see ResultsViewModel). -->
+                        <ProgressBar Value="{Binding RestartCountdownPercent}"
+                                     Minimum="0" Maximum="100" Height="6"
+                                     Margin="0,24,0,0" />
+                        <TextBlock Text="{Binding RestartCountdownSecondsRemaining, StringFormat='Restarting in {0}s…'}"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" Margin="0,8,0,0" />
                     </StackPanel>
 
                     <!-- FAILURE -->
@@ -70,11 +80,6 @@
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                  TextAlignment="Center"
                                  Margin="0,8,0,0" />
-                        <TextBlock Text="Include this reference when reporting the issue at github.com/MSEndpointMgr/CloudImaging."
-                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   TextWrapping="Wrap" TextAlignment="Center"
-                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
                         <ui:Button Content="Retry"
                                    Appearance="Danger"
                                    Width="160"
