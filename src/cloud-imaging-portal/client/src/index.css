@@ -94,4 +94,9 @@
     @apply bg-background text-foreground;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
+  /* Headings are structural labels, not data users need to select/copy — keep the
+     pointer as a plain arrow instead of the text I-beam when hovering over them. */
+  h1, h2, h3, h4, h5, h6 {
+    @apply select-none;
+  }
 }

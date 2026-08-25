@@ -4,7 +4,8 @@ export default function SessionsPage(): React.ReactElement {
 }
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -204,9 +205,15 @@ function SessionsPageImpl(): React.ReactElement {
   const [loading, setLoading]           = useState(false);
   const [downloadingLog, setDownloadingLog] = useState<string | null>(null);
   const [images, setImages]             = useState<OsImage[]>([]);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [startingImages, setStartingImages]   = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Imaging (and, by extension, the Start Imaging action) is impossible until at least one
+  // active OS image has been uploaded — surfaced via a persistent banner rather than a toast
+  // so technicians can't miss it while coupling devices ahead of an image being ready.
+  const hasOsImages = images.length > 0;
 
   const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'state' | 'registered'>('registered');
   const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'registered'>('registered');
@@ -221,6 +228,7 @@ function SessionsPageImpl(): React.ReactElement {
           setImages(data.filter(i => i.isActive));
         }
       } catch { /* leave list empty */ }
+      finally { setImagesLoaded(true); }
     })();
   }, []);
 
@@ -320,6 +328,10 @@ function SessionsPageImpl(): React.ReactElement {
   };
 
   const handleStartImaging = async () => {
+    if (!hasOsImages) {
+      notify({ status: 'error', title: 'Upload an OS image before starting imaging.' });
+      return;
+    }
     if (!selectedImageId || coupled.length === 0 || startingImages) return;
     setStartingImages(true);
     try {
@@ -346,12 +358,6 @@ function SessionsPageImpl(): React.ReactElement {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <Button variant="outline" size="sm" onClick={handleRefresh}>
-          <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
-        </Button>
-      </div>
-
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
           {([
@@ -383,12 +389,24 @@ function SessionsPageImpl(): React.ReactElement {
             );
           })}
         </div>
+        <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
+        </Button>
       </div>
 
       <p className="text-sm text-muted-foreground">Enter a device&apos;s passcode to couple it, assign an OS image to coupled devices, and monitor deployment progress and status in real time.</p>
 
       {view === 'pending' ? (
         <div className="space-y-5">
+          {imagesLoaded && !hasOsImages && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <p>
+                No OS images have been uploaded yet. Devices can still be coupled, but imaging cannot start until
+                you <Link to="/os-images" className="font-medium underline underline-offset-2">upload an OS image</Link>.
+              </p>
+            </div>
+          )}
           <div className="rounded-md border border-border overflow-hidden">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">Available Devices</h3>
@@ -419,7 +437,7 @@ function SessionsPageImpl(): React.ReactElement {
                   ))
                 ) : available.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="select-none py-12 text-center text-muted-foreground">
                       No devices waiting to be coupled.
                     </TableCell>
                   </TableRow>
@@ -451,9 +469,10 @@ function SessionsPageImpl(): React.ReactElement {
                   value={selectedImageId ?? ''}
                   onChange={e => setSelectedImageId(e.target.value || null)}
                   disabled={coupled.length === 0 || images.length === 0}
+                  title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
                   className="h-8 w-40 min-w-0 max-w-full flex-1 truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-64 sm:flex-none"
                 >
-                  <option value="">Select OS image…</option>
+                  <option value="">{hasOsImages ? 'Select OS image…' : 'No OS images uploaded'}</option>
                   {images.map(img => (
                     <option key={img.imageId} value={img.imageId}>{img.name} {img.version}</option>
                   ))}
@@ -462,6 +481,7 @@ function SessionsPageImpl(): React.ReactElement {
                   size="sm"
                   onClick={() => { void handleStartImaging(); }}
                   disabled={!selectedImageId || coupled.length === 0 || startingImages}
+                  title={!hasOsImages ? 'Upload an OS image before starting imaging.' : undefined}
                 >
                   {startingImages ? 'Starting…' : `Start Imaging (${coupled.length})`}
                 </Button>
@@ -478,8 +498,8 @@ function SessionsPageImpl(): React.ReactElement {
               <TableBody>
                 {coupled.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
-                      No devices coupled yet.
+                    <TableCell colSpan={3} className="select-none py-12 text-center text-muted-foreground">
+                      No devices ready for imaging.
                     </TableCell>
                   </TableRow>
                 ) : coupled.map(s => (

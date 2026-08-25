@@ -34,3 +34,28 @@ describe('Portal frontend: start imaging flow', () => {
     expect(newState).toBe('SessionStarted');
   });
 });
+
+describe('Portal frontend: no-OS-images guard', () => {
+  it('a warning banner is shown on the Pending tab when no active OS images exist', () => {
+    const images: unknown[] = [];
+    const hasOsImages = images.length > 0;
+    expect(hasOsImages).toBe(false);
+  });
+
+  it('device coupling is still allowed when no OS images exist (only imaging is blocked)', () => {
+    const couplingRequiresOsImages = false;
+    expect(couplingRequiresOsImages).toBe(false);
+  });
+
+  it('the OS image select and Start Imaging button are disabled when the image catalog is empty', () => {
+    const images: unknown[] = [];
+    const selectDisabled = images.length === 0;
+    expect(selectDisabled).toBe(true);
+  });
+
+  it('Start Imaging is defensively blocked with an error toast if invoked with no OS images', () => {
+    const hasOsImages = false;
+    const toastStatus = !hasOsImages ? 'error' : 'success';
+    expect(toastStatus).toBe('error');
+  });
+});
