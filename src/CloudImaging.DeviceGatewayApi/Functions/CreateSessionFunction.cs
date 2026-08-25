@@ -78,13 +78,18 @@ public sealed partial class CreateSessionFunction
         {
             payload = await JsonSerializer.DeserializeAsync<DeviceRegistrationPayload>(
                 req.Body,
-                cancellationToken: context.CancellationToken);
+                JsonOptions,
+                context.CancellationToken);
         }
         catch (JsonException ex)
         {
             LogInvalidPayload(_logger, ex);
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteStringAsync("Invalid registration payload.", context.CancellationToken);
+            // Include the parser's specific reason (e.g. which required property was missing)
+            // — not just a generic "invalid" — so the Cloud Imaging Client's local log (the only
+            // diagnostic surface a field technician has in WinPE) shows enough to fix a stale
+            // client/API contract mismatch without needing access to this API's own logs.
+            await bad.WriteStringAsync($"Invalid registration payload: {ex.Message}", context.CancellationToken);
             return bad;
         }
 

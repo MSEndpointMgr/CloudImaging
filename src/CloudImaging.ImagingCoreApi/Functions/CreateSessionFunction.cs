@@ -62,13 +62,14 @@ public sealed partial class CreateSessionFunction
         {
             payload = await JsonSerializer.DeserializeAsync<DeviceRegistrationPayload>(
                 req.Body,
-                cancellationToken: context.CancellationToken);
+                SchemeJsonOptions,
+                context.CancellationToken);
         }
         catch (JsonException ex)
         {
             LogInvalidPayload(_logger, ex);
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
-            await bad.WriteStringAsync("Invalid registration payload.", context.CancellationToken);
+            await bad.WriteStringAsync($"Invalid registration payload: {ex.Message}", context.CancellationToken);
             return bad;
         }
 
