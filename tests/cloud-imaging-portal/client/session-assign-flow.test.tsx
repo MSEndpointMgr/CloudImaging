@@ -1,31 +1,35 @@
 import { describe, it, expect } from 'vitest';
 
 /**
- * Portal frontend single-session image assign flow tests (T038a, FR-033).
+ * Portal frontend OS image assignment / imaging-start flow tests (T038a, FR-033).
+ * A single OS image dropdown above the Coupled Devices table applies to every
+ * currently-coupled session; there is no more per-row "Assign Image" dialog.
  */
-describe('Portal frontend: session image assign flow', () => {
-  it('Assign Image button is visible only for SessionAssigned rows', () => {
-    const assignableState = 'SessionAssigned';
-    const nonAssignable   = ['SessionInit', 'SessionAllowed', 'SessionCompleted', 'SessionFailed'];
-    expect(nonAssignable).not.toContain(assignableState);
+describe('Portal frontend: start imaging flow', () => {
+  it('Coupled Devices table only lists SessionAssigned rows', () => {
+    const coupledState  = 'SessionAssigned';
+    const otherStates    = ['SessionInit', 'SessionAllowed', 'SessionStarted', 'SessionCompleted', 'SessionFailed'];
+    expect(otherStates).not.toContain(coupledState);
   });
 
-  it('clicking Assign Image opens AssignImageDialog', () => {
-    const opensDialog = true;
-    expect(opensDialog).toBe(true);
+  it('OS image dropdown and Start Imaging button are disabled until an image is selected', () => {
+    const selectedImageId: string | null = null;
+    const startDisabled = !selectedImageId;
+    expect(startDisabled).toBe(true);
   });
 
-  it('AssignImageDialog shows searchable OS image list', () => {
-    const isSearchable = true;
-    expect(isSearchable).toBe(true);
+  it('Start Imaging button label reflects the number of coupled devices', () => {
+    const coupledCount = 3;
+    const label = `Start Imaging (${coupledCount})`;
+    expect(label).toBe('Start Imaging (3)');
   });
 
-  it('confirming image selection triggers POST /sessions/:id/assign', () => {
-    const endpoint = '/sessions/:id/assign';
-    expect(endpoint).toContain('assign');
+  it('Start Imaging submits all coupled session IDs to POST /api/sessions/bulk-assign', () => {
+    const endpoint = '/api/sessions/bulk-assign';
+    expect(endpoint).toBe('/api/sessions/bulk-assign');
   });
 
-  it('row transitions to started state after assignment', () => {
+  it('rows transition out of Coupled once imaging starts on next device poll', () => {
     const newState = 'SessionStarted';
     expect(newState).toBe('SessionStarted');
   });

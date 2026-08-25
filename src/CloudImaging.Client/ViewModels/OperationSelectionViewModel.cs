@@ -108,16 +108,28 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // rejected as "Expired" by the Device Gateway API's clock-skew check (FR-069).
             await _clockSync.TrySynchronizeAsync();
 
-            // Collect hardware metadata silently (FR-001a)
-            var hardware = await Task.Run(CollectHardwareMetadata);
-            var serialNumber = GetSerialNumber();
+            // Collect hardware metadata AND identity fields (serial/manufacturer/model/MAC) in a
+            // single background call. These are all synchronous WMI/COM queries — previously
+            // only CollectHardwareMetadata ran via Task.Run while GetSerialNumber/Manufacturer/
+            // Model ran directly on the UI thread right after, which blocked the dispatcher (and
+            // froze the just-shown spinner's indeterminate animation) for as long as those WMI
+            // round-trips took (FR-001a).
+            var (serialNumber, manufacturer, model, macAddress, hardware) = await Task.Run(() =>
+            {
+                var serial = GetSerialNumber();
+                var mfr    = GetManufacturer();
+                var mdl    = GetModel();
+                var mac    = GetMacAddress();
+                var hw     = CollectHardwareMetadata();
+                return (serial, mfr, mdl, mac, hw);
+            });
 
             var payload = new DeviceRegistrationPayload
             {
                 SerialNumber = serialNumber,
-                Manufacturer = GetManufacturer(),
-                Model        = GetModel(),
-                MacAddress   = GetMacAddress(),
+                Manufacturer = manufacturer,
+                Model        = model,
+                MacAddress   = macAddress,
                 Hardware     = hardware,
             };
 

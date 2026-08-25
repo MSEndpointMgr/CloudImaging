@@ -11,6 +11,7 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { formatDateTime } from '../lib/utils.ts';
 import {
   startRecoveryImageUpload,
   uploadRecoveryFileToBlobStorage,
@@ -145,7 +146,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                 <TableCell className="font-medium">{img.version}</TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{new Date(img.createdAt).toLocaleDateString()}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatDateTime(img.createdAt)}</TableCell>
                 <TableCell>
                   {img.isLatestPublished
                     ? <Badge variant="info" dot>Latest</Badge>

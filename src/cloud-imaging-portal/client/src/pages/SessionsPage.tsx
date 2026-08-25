@@ -3,12 +3,11 @@ export default function SessionsPage(): React.ReactElement {
   return <SessionsPageImpl />;
 }
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { RefreshCw, FileDown } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
-import { CoupleSessionDialog } from '../components/CoupleSessionDialog.tsx';
-import { AssignImageDialog } from '../components/AssignImageDialog.tsx';
 import { Button } from '../components/ui/button.tsx';
+import { Input } from '../components/ui/input.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { cn } from '../lib/utils.ts';
@@ -30,6 +29,7 @@ interface Session {
   deviceModel: string;
   overallProgressPercent: number;
   currentStep: string | null;
+  createdAt: string;
 }
 
 interface SessionLogEntry {
@@ -38,27 +38,30 @@ interface SessionLogEntry {
   uploadedAt: string;
 }
 
+interface OsImage {
+  imageId: string;
+  name: string;
+  version: string;
+  isActive: boolean;
+}
+
 // States for which the Client may have uploaded a diagnostic log on failure.
 const FAILED_STATES = new Set(['SessionFailed', 'SessionNotAuthorized']);
 
-
 type DeviceView = 'pending' | 'monitor';
 
-// Pending: devices coupled/authorized but whose imaging has not started yet.
-const PENDING_STATES = new Set(['SessionInit','SessionAllowed','SessionAssigned','SessionNotAuthorized']);
-// Monitor: devices whose imaging has started, completed, or failed.
-const MONITOR_STATES = new Set(['SessionStarted','SessionInProgress','SessionCompleted','SessionFailed']);
+// Available: newly-registered sessions awaiting a technician to enter the device's passcode.
+const AVAILABLE_STATES = new Set(['SessionInit', 'SessionAllowed']);
+// Coupled: passcode has been matched — eligible for OS image selection.
+const COUPLED_STATES = new Set(['SessionAssigned']);
+// Monitor: devices whose imaging has started, completed, failed, or were never authorized.
+const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress', 'SessionCompleted', 'SessionFailed', 'SessionNotAuthorized']);
 
 function deriveCounts(sessions: Session[]) {
   return {
-    pending: sessions.filter(s => PENDING_STATES.has(s.state)).length,
+    pending: sessions.filter(s => AVAILABLE_STATES.has(s.state) || COUPLED_STATES.has(s.state)).length,
     monitor: sessions.filter(s => MONITOR_STATES.has(s.state)).length,
   };
-}
-
-function applyView(sessions: Session[], view: DeviceView): Session[] {
-  const states = view === 'pending' ? PENDING_STATES : MONITOR_STATES;
-  return sessions.filter(s => states.has(s.state));
 }
 
 function stateLabel(state: string): string {
@@ -76,17 +79,150 @@ function stateBadgeVariant(state: string): BadgeProps['variant'] {
   }
 }
 
+function formatRegistered(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+}
+
+// ── Generic column sorting ────────────────────────────────────────────────
+
+type SortDir = 'asc' | 'desc';
+interface SortState<K extends string> {
+  key: K;
+  dir: SortDir;
+}
+
+function useSort<K extends string>(defaultKey: K): [SortState<K>, (key: K) => void] {
+  const [sort, setSort] = useState<SortState<K>>({ key: defaultKey, dir: 'asc' });
+  const toggle = useCallback((key: K) => {
+    setSort(prev => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  }, []);
+  return [sort, toggle];
+}
+
+function sortRows<T, K extends string>(
+  rows: T[],
+  sort: SortState<K>,
+  accessors: Record<K, (row: T) => string | number>,
+): T[] {
+  const accessor = accessors[sort.key];
+  return [...rows].sort((a, b) => {
+    const av = accessor(a);
+    const bv = accessor(b);
+    const cmp = typeof av === 'number' && typeof bv === 'number'
+      ? av - bv
+      : String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' });
+    return sort.dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+function SortableHead<K extends string>({ label, sortKey, sort, onSort, className }: {
+  label: string;
+  sortKey: K;
+  sort: SortState<K>;
+  onSort: (key: K) => void;
+  className?: string;
+}): React.ReactElement {
+  const active = sort.key === sortKey;
+  const Icon = active ? (sort.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-none"
+      >
+        {label}
+        <Icon size={12} className={active ? '' : 'opacity-30'} />
+      </button>
+    </TableHead>
+  );
+}
+
+// ── Inline passcode coupling (per Available row) ──────────────────────────
+
+function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.ReactElement {
+  const [passcode, setPasscode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const trimmed = passcode.trim();
+    if (trimmed.length !== 6) return;
+
+    let cancelled = false;
+    setBusy(true);
+    setError(null);
+    void (async () => {
+      try {
+        const res = await apiFetch('/api/sessions/couple', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ passcode: trimmed }),
+        });
+        if (cancelled) return;
+        if (res.status === 201) {
+          setPasscode('');
+          onCoupled();
+          return;
+        }
+        setError(res.status === 409 ? 'Already used.' : 'Invalid or expired.');
+      } catch {
+        if (!cancelled) setError('Network error.');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  // Re-validate only when the passcode itself changes; onCoupled is a stable callback.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passcode]);
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Input
+        type="text"
+        maxLength={6}
+        placeholder="Passcode"
+        value={passcode}
+        onChange={e => { setPasscode(e.target.value.toUpperCase()); setError(null); }}
+        disabled={busy}
+        className="h-8 w-28 text-center font-mono text-xs tracking-widest"
+      />
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </div>
+  );
+}
+
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
   const [sessions, setSessions]         = useState<Session[]>([]);
   const [view, setView]                 = useState<DeviceView>('pending');
-  const [checked, setChecked]           = useState<Set<string>>(new Set());
-  const [coupleOpen, setCoupleOpen]     = useState(false);
-  const [assignOpen, setAssignOpen]     = useState(false);
-  const [assignTarget, setAssignTarget] = useState<string | null>(null);
   const [loading, setLoading]           = useState(false);
   const [downloadingLog, setDownloadingLog] = useState<string | null>(null);
+  const [images, setImages]             = useState<OsImage[]>([]);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const [startingImages, setStartingImages]   = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'state' | 'registered'>('registered');
+  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'registered'>('registered');
+  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'state' | 'progress' | 'step'>('state');
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await apiFetch('/api/images', { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json() as OsImage[];
+          setImages(data.filter(i => i.isActive));
+        }
+      } catch { /* leave list empty */ }
+    })();
+  }, []);
 
   const handleDownloadLog = useCallback(async (sessionId: string) => {
     setDownloadingLog(sessionId);
@@ -147,33 +283,76 @@ function SessionsPageImpl(): React.ReactElement {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const visible  = applyView(sessions, view);
-  const counts   = deriveCounts(sessions);
-  const changeView   = (next: DeviceView) => { setView(next); setChecked(new Set()); };
-  const toggleRow    = (id: string) => setChecked(prev => { const n = new Set(prev); if (n.has(id)) { n.delete(id); } else { n.add(id); } return n; });
-  const selectAll    = () => setChecked(new Set(visible.map(s => s.sessionId)));
-  const deselectAll  = () => setChecked(new Set());
-  const allSelected  = visible.length > 0 && visible.every(s => checked.has(s.sessionId));
-  const someSelected = visible.some(s => checked.has(s.sessionId));
-  const eligibleCount = [...checked].filter(id => sessions.find(s => s.sessionId === id)?.state === 'SessionAssigned').length;
+  const counts    = deriveCounts(sessions);
+  const available = useMemo(() => sortRows(
+    sessions.filter(s => AVAILABLE_STATES.has(s.state)),
+    availableSort,
+    {
+      serial:     (s: Session) => s.deviceSerialNumber,
+      device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      state:      (s: Session) => stateLabel(s.state),
+      registered: (s: Session) => new Date(s.createdAt).getTime(),
+    },
+  ), [sessions, availableSort]);
+  const coupled = useMemo(() => sortRows(
+    sessions.filter(s => COUPLED_STATES.has(s.state)),
+    coupledSort,
+    {
+      serial:     (s: Session) => s.deviceSerialNumber,
+      device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      registered: (s: Session) => new Date(s.createdAt).getTime(),
+    },
+  ), [sessions, coupledSort]);
+  const monitor = useMemo(() => sortRows(
+    sessions.filter(s => MONITOR_STATES.has(s.state)),
+    monitorSort,
+    {
+      serial:   (s: Session) => s.deviceSerialNumber,
+      device:   (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      state:    (s: Session) => stateLabel(s.state),
+      progress: (s: Session) => s.overallProgressPercent,
+      step:     (s: Session) => s.currentStep ?? '',
+    },
+  ), [sessions, monitorSort]);
 
   const handleRefresh = () => {
     void (async () => { const data = await fetchSessions(); scheduleNextPoll(data); })();
   };
 
+  const handleStartImaging = async () => {
+    if (!selectedImageId || coupled.length === 0 || startingImages) return;
+    setStartingImages(true);
+    try {
+      const res = await apiFetch('/api/sessions/bulk-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ sessionIds: coupled.map(s => s.sessionId), osImageId: selectedImageId }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { assigned: number };
+        notify({ status: 'success', title: `Imaging started for ${data.assigned} device${data.assigned !== 1 ? 's' : ''}.` });
+        setSelectedImageId(null);
+        handleRefresh();
+      } else {
+        notify({ status: 'error', title: 'Failed to start imaging. Please try again.' });
+      }
+    } catch {
+      notify({ status: 'error', title: 'Network error. Please try again.' });
+    } finally {
+      setStartingImages(false);
+    }
+  };
+
   return (
-    <>
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-muted-foreground">Couple a device to start imaging, assign OS images to waiting devices, and monitor deployment progress and status in real time.</p>
+          <p className="text-sm text-muted-foreground">Enter a device&apos;s passcode to couple it, assign an OS image to coupled devices, and monitor deployment progress and status in real time.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
-          </Button>
-          <Button size="sm" onClick={() => setCoupleOpen(true)}>
-            Couple Device
           </Button>
         </div>
       </div>
@@ -188,7 +367,7 @@ function SessionsPageImpl(): React.ReactElement {
             return (
               <button
                 key={tab.key}
-                onClick={() => changeView(tab.key)}
+                onClick={() => setView(tab.key)}
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   isActive
@@ -211,44 +390,125 @@ function SessionsPageImpl(): React.ReactElement {
         </div>
       </div>
 
-      {eligibleCount > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm">
-          <span className="font-medium">{eligibleCount} Assigned session{eligibleCount !== 1 ? 's' : ''} selected</span>
-          <Button size="sm" onClick={() => { setAssignTarget(null); setAssignOpen(true); }}>
-            Bulk Assign Image
-          </Button>
-        </div>
-      )}
+      {view === 'pending' ? (
+        <div className="space-y-5">
+          <div className="rounded-md border border-border overflow-hidden">
+            <div className="border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold">Available Devices</h3>
+              <p className="text-xs text-muted-foreground">Enter the passcode shown on the device to couple it.</p>
+            </div>
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[22%]" />
+                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[28%]" />
+                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[15%]" />
+                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[17%]" />
+                  <TableHead className="text-right">Passcode</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading && sessions.length === 0 ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <TableRow key={`av-skeleton-${i}`} className="hover:bg-transparent">
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-32" /></TableCell>
+                    </TableRow>
+                  ))
+                ) : available.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
+                      No devices waiting to be coupled.
+                    </TableCell>
+                  </TableRow>
+                ) : available.map(s => (
+                  <TableRow key={s.sessionId}>
+                    <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
+                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
+                    <TableCell className="text-right">
+                      <PasscodeCouplingCell onCoupled={handleRefresh} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-      <div className="rounded-md border border-border overflow-hidden">
-        <Table className="table-fixed">
+          <div className="rounded-md border border-border overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <div>
+                <h3 className="text-sm font-semibold">Coupled Devices</h3>
+                <p className="text-xs text-muted-foreground">The selected OS image applies to all {coupled.length} coupled device{coupled.length !== 1 ? 's' : ''}.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedImageId ?? ''}
+                  onChange={e => setSelectedImageId(e.target.value || null)}
+                  disabled={coupled.length === 0 || images.length === 0}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Select OS image…</option>
+                  {images.map(img => (
+                    <option key={img.imageId} value={img.imageId}>{img.name} {img.version}</option>
+                  ))}
+                </select>
+                <Button
+                  size="sm"
+                  onClick={() => { void handleStartImaging(); }}
+                  disabled={!selectedImageId || coupled.length === 0 || startingImages}
+                >
+                  {startingImages ? 'Starting…' : `Start Imaging (${coupled.length})`}
+                </Button>
+              </div>
+            </div>
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
+                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[40%]" />
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {coupled.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={3} className="py-12 text-center text-muted-foreground">
+                      No devices coupled yet.
+                    </TableCell>
+                  </TableRow>
+                ) : coupled.map(s => (
+                  <TableRow key={s.sessionId}>
+                    <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
+                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border overflow-hidden">
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-10 px-4">
-                  <input
-                    type="checkbox"
-                    role="checkbox"
-                    aria-label={allSelected ? 'Deselect all sessions' : 'Select all sessions'}
-                    checked={allSelected}
-                    ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
-                    onChange={() => (allSelected ? deselectAll() : selectAll())}
-                    disabled={visible.length === 0}
-                    className="h-4 w-4 rounded border-input align-middle accent-primary disabled:opacity-40"
-                  />
-                </TableHead>
-                <TableHead className="w-[16%]">Serial</TableHead>
-                <TableHead className="w-[22%]">Device</TableHead>
-                <TableHead className="w-[13%]">State</TableHead>
-                <TableHead className="w-[19%]">Progress</TableHead>
-                <TableHead className="w-[16%]">Step</TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[22%]" />
+                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={`skeleton-${i}`} className="hover:bg-transparent">
-                    <TableCell className="px-4"><Skeleton className="h-4 w-4 rounded" /></TableCell>
+                  <TableRow key={`mon-skeleton-${i}`} className="hover:bg-transparent">
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
@@ -257,23 +517,14 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
                   </TableRow>
                 ))
-              ) : visible.length === 0 ? (
+              ) : monitor.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
-                    {view === 'pending' ? 'No devices waiting to be imaged.' : 'No imaging activity yet.'}
+                  <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                    No imaging activity yet.
                   </TableCell>
                 </TableRow>
-              ) : visible.map(s => (
-                <TableRow key={s.sessionId} data-state={checked.has(s.sessionId) ? 'selected' : undefined}>
-                  <TableCell className="px-4">
-                    <input
-                      type="checkbox"
-                      role="checkbox"
-                      checked={checked.has(s.sessionId)}
-                      onChange={() => toggleRow(s.sessionId)}
-                      className="h-4 w-4 rounded border-input align-middle accent-primary"
-                    />
-                  </TableCell>
+              ) : monitor.map(s => (
+                <TableRow key={s.sessionId}>
                   <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                   <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
                   <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
@@ -289,15 +540,6 @@ function SessionsPageImpl(): React.ReactElement {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
                   <TableCell className="text-right">
-                    {s.state === 'SessionAssigned' && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => { setAssignTarget(s.sessionId); setAssignOpen(true); }}
-                      >
-                        Assign Image
-                      </Button>
-                    )}
                     {FAILED_STATES.has(s.state) && (
                       <Button
                         variant="outline"
@@ -313,16 +555,8 @@ function SessionsPageImpl(): React.ReactElement {
               ))}
             </TableBody>
           </Table>
-      </div>
+        </div>
+      )}
     </div>
-
-      <CoupleSessionDialog open={coupleOpen} onClose={() => setCoupleOpen(false)} onCoupled={() => handleRefresh()} />
-      <AssignImageDialog
-        open={assignOpen}
-        sessionId={assignTarget ?? (checked.size > 0 ? [...checked][0] : null)}
-        onClose={() => { setAssignOpen(false); setAssignTarget(null); }}
-        onAssigned={() => handleRefresh()}
-      />
-    </>
   );
 }

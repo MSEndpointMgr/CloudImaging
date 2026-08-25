@@ -8,12 +8,15 @@ export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician
 
 /**
  * Delegated Microsoft Graph scope needed to read the signed-in user's own profile photo
- * (`GET /me/photo/$value`). Deliberately NOT requested at sign-in alongside the portal API
- * scope — acquiring it is always attempted silently (see AuthProvider below) and never
- * triggers an interactive consent prompt, so a tenant that hasn't consented to it behaves
- * exactly like a user with no photo set: Header falls back to the initials avatar.
+ * (`GET /me/photo/$value`). MSAL only ever returns a token for this scope from
+ * {@link AuthProvider}'s silent `acquireTokenSilent` call below if the user has already
+ * consented to it — which requires it to be included in the initial interactive sign-in
+ * request (see {@link ProtectedRoute}'s `useMsalAuthentication` scopes) alongside the portal
+ * API scope, so both are consented together in a single sign-in prompt. If a tenant admin has
+ * blocked user consent for this scope, silent acquisition simply fails and Header/AccessDenied
+ * fall back to the initials avatar — never an interactive prompt.
  */
-const GRAPH_PHOTO_SCOPE = 'User.Read';
+export const GRAPH_PHOTO_SCOPE = 'User.Read';
 
 interface AuthContextValue {
   account: AccountInfo | null;

@@ -27,48 +27,28 @@ test.describe('Cloud Imaging Portal: Critical E2E Paths', () => {
 
   // ── 1. Passcode coupling flow ─────────────────────────────────────────────
 
-  test('passcode coupling flow: Couple Device modal opens and closes on success', async ({ page }) => {
+  test('passcode coupling flow: inline passcode field is present on Available Devices rows', async ({ page }) => {
     await gotoSessions(page);
 
-    // Couple Device button must be always visible in the toolbar
-    const coupleBtn = page.getByRole('button', { name: /couple device/i });
-    await expect(coupleBtn).toBeVisible();
+    // Available Devices section header must be visible (no more toolbar "Couple Device" modal)
+    await expect(page.getByText('Available Devices')).toBeVisible();
 
-    await coupleBtn.click();
-
-    // Modal should open
-    const modal = page.getByRole('dialog');
-    await expect(modal).toBeVisible();
-
-    // Input should accept uppercase passcode
-    const input = page.getByPlaceholder(/e\.g\./i);
-    await input.fill('ABC123');
+    const input = page.getByPlaceholder('Passcode').first();
+    await expect(input).toBeVisible();
+    await input.fill('abc123');
     await expect(input).toHaveValue('ABC123');
-
-    // Cancel closes modal
-    await page.getByRole('button', { name: /cancel/i }).click();
-    await expect(modal).not.toBeVisible();
   });
 
   test('passcode coupling: inline error shown for invalid passcode', async ({ page }) => {
     await gotoSessions(page);
-    await page.getByRole('button', { name: /couple device/i }).click();
 
-    const input = page.getByPlaceholder(/e\.g\./i);
+    // Typing a 6-character passcode auto-validates — no submit button involved.
+    const input = page.getByPlaceholder('Passcode').first();
     await input.fill('XXXXXX');
-    await page.getByRole('button', { name: /couple device/i, exact: false }).last().click();
 
-    // Error message should appear (404 → invalid passcode)
-    // In offline mode without a real backend the button may be disabled
-    const errorMsg = page.getByText(/invalid|expired|not found/i);
-    const disabled = await page.getByRole('button', { name: /couple/i }).last().isDisabled();
-    if (!disabled) {
-      // With real backend expect error
-      await expect(errorMsg.or(page.getByRole('dialog'))).toBeVisible();
-    } else {
-      // In mock mode the button is disabled until 6 chars entered
-      expect(disabled).toBe(true);
-    }
+    // Error message should appear inline under the field (404 → invalid passcode)
+    const errorMsg = page.getByText(/invalid|expired|not found|network error/i);
+    await expect(errorMsg).toBeVisible();
   });
 
   // ── 2. Session state progression ─────────────────────────────────────────
@@ -84,11 +64,12 @@ test.describe('Cloud Imaging Portal: Critical E2E Paths', () => {
     }
   });
 
-  test('sessions page: select-all checkbox is present in the table header', async ({ page }) => {
+  test('sessions page: column headers are sortable', async ({ page }) => {
     await gotoSessions(page);
-    await expect(
-      page.getByRole('checkbox', { name: /select all sessions|deselect all sessions/i }),
-    ).toBeVisible();
+    const serialHeader = page.getByRole('button', { name: 'Serial' }).first();
+    await expect(serialHeader).toBeVisible();
+    await serialHeader.click(); // toggles asc/desc — should not throw or navigate away
+    await expect(page).toHaveURL(/sessions/);
   });
 
   test('sessions page: Refresh button is always visible', async ({ page }) => {
@@ -97,16 +78,15 @@ test.describe('Cloud Imaging Portal: Critical E2E Paths', () => {
     await expect(refreshBtn).toBeVisible();
   });
 
-  // ── 3. Bulk assignment ────────────────────────────────────────────────────
+  // ── 3. Start imaging (bulk assign) ────────────────────────────────────────
 
-  test('bulk assignment: BulkAssignPanel hidden when no Assigned-state rows selected', async ({ page }) => {
+  test('start imaging: Start Imaging button is disabled until an OS image is selected', async ({ page }) => {
     await gotoSessions(page);
-    // Bulk panel should not be visible when nothing is selected
-    const bulkPanel = page.getByText(/assign image to \d+ session/i);
-    const visible = await bulkPanel.isVisible().catch(() => false);
-    // In an empty session list this is false, that's expected
-    expect(visible).toBe(false);
+    const startBtn = page.getByRole('button', { name: /start imaging/i });
+    await expect(startBtn).toBeVisible();
+    await expect(startBtn).toBeDisabled();
   });
+
 
   // ── 4. Branding update with page reload ───────────────────────────────────
 

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Trash2, Pencil, Plus } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
+import { formatDateTime } from '../lib/utils.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
@@ -166,7 +167,7 @@ export default function OsImagesPage(): React.ReactElement {
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {new Date(img.uploadedAt).toLocaleDateString()}
+                  {formatDateTime(img.uploadedAt)}
                 </TableCell>
                 <TableCell>
                   {img.isInUse ? (

@@ -1,6 +1,6 @@
 import { useIsAuthenticated, useMsalAuthentication } from '@azure/msal-react';
 import { InteractionType } from '@azure/msal-browser';
-import { useAuth } from '../context/authContext.tsx';
+import { useAuth, GRAPH_PHOTO_SCOPE } from '../context/authContext.tsx';
 import { getApiScope } from '../lib/msal.ts';
 import { AccessDenied } from './AccessDenied.tsx';
 
@@ -17,9 +17,12 @@ export function ProtectedRoute({ children }: Props): React.ReactElement | null {
   const isAuthenticated = useIsAuthenticated();
   const { hasPortalAccess } = useAuth();
 
-  // Trigger interactive redirect login if not authenticated
+  // Trigger interactive redirect login if not authenticated. Requesting GRAPH_PHOTO_SCOPE here
+  // too (alongside the portal API scope) captures user consent for it during this same sign-in
+  // prompt, so AuthProvider's later silent acquireTokenSilent for the avatar photo succeeds
+  // instead of always failing with interaction_required (AADSTS65001) at the token endpoint.
   const { error } = useMsalAuthentication(InteractionType.Redirect, {
-    scopes: [getApiScope()],
+    scopes: [getApiScope(), GRAPH_PHOTO_SCOPE],
   });
 
   if (!isAuthenticated) {

@@ -11,6 +11,7 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { formatDateTime } from '../lib/utils.ts';
 import {
   startBootImageUpload,
   uploadFileToBlobStorage,
@@ -139,7 +140,7 @@ export default function BootImagesPage(): React.ReactElement {
                 <TableCell className="font-medium">{img.version}</TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{new Date(img.createdAt).toLocaleDateString()}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{formatDateTime(img.createdAt)}</TableCell>
                 <TableCell>
                   {img.isLatestPublished
                     ? <Badge variant="info" dot>Latest</Badge>
@@ -168,6 +169,7 @@ export default function BootImagesPage(): React.ReactElement {
       {uploadOpen && (
         <UploadBootImageDialog
           atCapacity={atCapacity}
+          existingVersions={images.map(img => img.version)}
           onClose={() => setUploadOpen(false)}
           onPublished={() => { setUploadOpen(false); void loadImages(); }}
         />
@@ -180,12 +182,14 @@ type UploadStage = 'form' | 'hashing' | 'uploading' | 'publishing';
 
 interface UploadBootImageDialogProps {
   atCapacity: boolean;
+  /** Versions already present in the catalog; the new version must not match any of these. */
+  existingVersions: string[];
   onClose: () => void;
   onPublished: () => void;
 }
 
 /** Staged boot image upload modal: hash → SAS upload → publish (T128, FR-063). */
-function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootImageDialogProps): React.ReactElement {
+function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublished }: UploadBootImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
   const [file, setFile]       = useState<File | null>(null);
   const [stage, setStage]     = useState<UploadStage>('form');
@@ -194,10 +198,17 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = stage !== 'form';
+  const trimmedVersion = version.trim();
+  const isDuplicateVersion = trimmedVersion.length > 0
+    && existingVersions.some(v => v.toLowerCase() === trimmedVersion.toLowerCase());
 
   const handleSubmit = async () => {
     if (!version.trim() || !file) {
       setError('Provide a version and select a .wim or .iso file.');
+      return;
+    }
+    if (isDuplicateVersion) {
+      setError(`Version "${trimmedVersion}" already exists. Choose a different version.`);
       return;
     }
     setError(null);
@@ -251,8 +262,12 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
               placeholder="e.g. 2026.07.1"
               value={version}
               disabled={busy}
+              aria-invalid={isDuplicateVersion}
               onChange={e => setVersion(e.target.value)}
             />
+            {isDuplicateVersion && (
+              <p className="text-xs text-destructive">Version "{trimmedVersion}" already exists.</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -294,7 +309,7 @@ function UploadBootImageDialog({ atCapacity, onClose, onPublished }: UploadBootI
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file}>
+            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || isDuplicateVersion}>
               {busy ? 'Working…' : 'Upload & publish'}
             </Button>
           </div>

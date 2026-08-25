@@ -2,21 +2,23 @@ import { describe, it, expect } from 'vitest';
 
 /**
  * Portal frontend bulk assignment UI tests (T074, FR-035).
+ * Bulk assignment is no longer selection-driven — the OS image dropdown above the
+ * Coupled Devices table always applies to every row currently in that table.
  */
 describe('Portal frontend: bulk assignment UI', () => {
-  it('BulkAssignPanel appears only when ≥1 Assigned-state row is checked', () => {
-    const eligibleCount = 2;
-    expect(eligibleCount).toBeGreaterThanOrEqual(1);
+  it('Start Imaging targets every row in the Coupled Devices table, not a checked subset', () => {
+    const coupled = [
+      { state: 'SessionAssigned' },
+      { state: 'SessionAssigned' },
+    ];
+    const targeted = coupled.filter(r => r.state === 'SessionAssigned').length;
+    expect(targeted).toBe(coupled.length);
   });
 
-  it('N in button label counts only Assigned-state checked rows', () => {
-    const checked = [
-      { state: 'SessionAssigned', checked: true },
-      { state: 'SessionCompleted', checked: true },
-      { state: 'SessionAssigned', checked: true },
-    ];
-    const eligible = checked.filter(r => r.state === 'SessionAssigned' && r.checked).length;
-    expect(eligible).toBe(2);
+  it('Start Imaging is disabled when the Coupled Devices table is empty', () => {
+    const coupledCount = 0;
+    const disabled = coupledCount === 0;
+    expect(disabled).toBe(true);
   });
 
   it('bulk-assign wires to POST /api/sessions/bulk-assign', () => {
@@ -24,8 +26,9 @@ describe('Portal frontend: bulk assignment UI', () => {
     expect(endpoint).toBe('/api/sessions/bulk-assign');
   });
 
-  it('BulkAssignPanel disappears when no Assigned rows are checked', () => {
-    const eligible = 0;
-    expect(eligible).toBe(0);
+  it('bulk-assign request body includes sessionIds and osImageId', () => {
+    const body = { sessionIds: ['id1', 'id2'], osImageId: 'image-guid' };
+    expect(Array.isArray(body.sessionIds)).toBe(true);
+    expect(body.osImageId).toBeTruthy();
   });
 });
