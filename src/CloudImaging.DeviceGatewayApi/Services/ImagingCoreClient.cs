@@ -53,4 +53,14 @@ public sealed class ImagingCoreClient
     /// <summary>Forward a session log upload URL request to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> RequestSessionLogUploadUrlAsync(Guid sessionId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/sessions/{sessionId}/logs/upload-url", null, ct);
+
+    /// <summary>
+    /// Fetch the active boot media certificate's metadata (thumbprint, validity window) from
+    /// ImagingCoreApi (FR-069). ImagingCoreApi's BootMediaCertificateRepository is the sole
+    /// owner/writer of the BootMediaCertificate table — the Device Gateway API must go through
+    /// this Private Link call rather than reading that table directly out of ImagingCoreApi's
+    /// storage account, the same way every other cross-service data need in this class does.
+    /// </summary>
+    public Task<HttpResponseMessage> GetActiveCertificateMetadataAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/cert/active", ct);
 }

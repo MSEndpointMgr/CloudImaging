@@ -12,6 +12,13 @@
       code from being compiled twice (main project + _wpftmp.csproj duplicate members).
     -->
     <UseWpfTempProject>false</UseWpfTempProject>
+    <!--
+      Only the English satellite resources for the .NET runtime/WPF itself are needed (the
+      Client's own UI has no localization). Without this, a self-contained publish bundles a
+      cs/, de/, es/, fr/, it/, ja/, ko/, pl/, pt-BR/, ru/, tr/, zh-Hans/, zh-Hant/ folder full of
+      runtime *.resources.dll files that are never loaded.
+    -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <!--

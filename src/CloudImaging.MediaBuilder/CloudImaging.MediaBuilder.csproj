@@ -14,6 +14,13 @@
     <UseWpfTempProject>false</UseWpfTempProject>
     <!-- App/window icon shown in the taskbar, Alt+Tab, and the exe's own file icon. -->
     <ApplicationIcon>Assets\taskbar.ico</ApplicationIcon>
+    <!--
+      Only the English satellite resources for the .NET runtime/WPF itself are needed (the
+      Media Builder's own UI has no localization). Without this, a self-contained publish
+      bundles a cs/, de/, es/, fr/, it/, ja/, ko/, pl/, pt-BR/, ru/, tr/, zh-Hans/, zh-Hant/
+      folder full of runtime *.resources.dll files that are never loaded.
+    -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <!--

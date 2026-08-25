@@ -2,6 +2,29 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <UserControl.Resources>
+        <!--
+            Renders the finished output path as a read-only TextBox (selectable/copyable) rather
+            than plain TextBlock text — same treatment PrepareStorageDeviceView gives its result
+            path/error details.
+        -->
+        <Style x:Key="SelectableMessageTextBoxStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="IsReadOnlyCaretVisible" Value="True" />
+            <Setter Property="IsUndoEnabled" Value="False" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Cursor" Value="IBeam" />
+        </Style>
+    </UserControl.Resources>
     <!--
         FR-051a, FR-051b: Source selection (GitHub auto-download or local path) and
         output folder confirmation. Once generation starts, the view swaps to a full
@@ -199,6 +222,20 @@
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            TextWrapping="Wrap"
                            Margin="0,4,0,0" />
+
+                <!--
+                    Full output WIM path, selectable/copyable but otherwise plain text (no
+                    "Output:" label, no boxed background) — the "Open folder" button in the
+                    footer below is the primary affordance for reaching it (FR-051b still
+                    requires the full path be shown somewhere on success, just not inlined into
+                    the subtitle sentence above).
+                -->
+                <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                         Text="{Binding OutputWimPath, Mode=OneWay}"
+                         FontFamily="Cascadia Mono, Consolas, monospace"
+                         FontSize="12"
+                         Margin="0,10,0,0"
+                         Visibility="{Binding HasOutputWimPath, Converter={StaticResource BoolToVisibility}}" />
             </StackPanel>
 
             <!--
@@ -433,6 +470,12 @@
                                        Margin="0,0,16,0" />
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <ui:Button Content="Open folder"
+                                           Appearance="Secondary"
+                                           Style="{StaticResource AppButtonStyle}"
+                                           Command="{Binding OpenOutputFolderCommand}"
+                                           Visibility="{Binding HasOutputWimPath, Converter={StaticResource BoolToVisibility}}"
+                                           Margin="0,0,8,0" />
                                 <ui:Button Content="Back to menu"
                                            Style="{StaticResource AppButtonStyle}"
                                            Command="{Binding BackCommand}"

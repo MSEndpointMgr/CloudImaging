@@ -102,6 +102,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         BrowseDriverRootCommand = new RelayCommand(_ => BrowseDriverRoot());
         BackCommand        = new RelayCommand(_ => _navigateBack(), _ => !IsGenerating);
         NewGenerationCommand = new RelayCommand(_ => ResetToConfiguration(), _ => !IsGenerating);
+        OpenOutputFolderCommand = new RelayCommand(_ => OpenOutputFolder(), _ => HasOutputWimPath);
     }
 
     public bool UseGitHubSource
@@ -219,8 +220,11 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public string? OutputWimPath
     {
         get => _outputWimPath;
-        private set { _outputWimPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressSubtitle)); }
+        private set { _outputWimPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressSubtitle)); OnPropertyChanged(nameof(HasOutputWimPath)); }
     }
+
+    /// <summary>Whether a finished WIM path is available to display/reveal (i.e. generation completed successfully).</summary>
+    public bool HasOutputWimPath => OutputWimPath is not null;
 
     public string? ErrorMessage
     {
@@ -300,7 +304,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// now that <see cref="ProgressTitle"/> and its icon convey the state itself.
     /// </summary>
     public string ProgressSubtitle =>
-        IsComplete    ? $"Output: {OutputWimPath}. Upload the WIM to the Cloud Imaging Portal (Boot Images) to publish it." :
+        IsComplete    ? "Boot image generated successfully. Upload the WIM to the Cloud Imaging Portal (Boot Images) to publish it." :
         HasError      ? ErrorMessage ?? "The boot image generation failed." :
         WasCancelled  ? "The boot image generation was cancelled and temporary files were cleaned up." :
         "Mounting the WinPE image and injecting the Cloud Imaging Client. This can take a few minutes.";
@@ -317,6 +321,28 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public ICommand BrowseDriverRootCommand { get; }
     public ICommand BackCommand         { get; }
     public ICommand NewGenerationCommand { get; }
+    public ICommand OpenOutputFolderCommand { get; }
+
+    /// <summary>
+    /// Opens File Explorer with the generated WIM pre-selected (same UX as
+    /// PrepareStorageDeviceViewModel.OpenResultFolder), rather than requiring the technician to
+    /// read/copy the full path from the subtitle text. Best-effort — a failure here is never
+    /// fatal, since FR-051b's output path is still shown (selectable) below the log.
+    /// </summary>
+    private void OpenOutputFolder()
+    {
+        if (OutputWimPath is null)
+            return;
+
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{OutputWimPath}\"")
+            {
+                UseShellExecute = true,
+            });
+        }
+        catch { /* best-effort */ }
+    }
 
     private async Task GenerateAsync()
     {

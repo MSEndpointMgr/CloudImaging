@@ -78,7 +78,8 @@ public sealed partial class UsbPreparationService
         string SelectedDiskId,
         string BusType,
         bool DiskValidated,
-        string ToolVersion);
+        string ToolVersion,
+        string? DiskLabel = null);
 
     public sealed record PreparationResult(string BootDriveLetter, string? CacheDriveLetter);
 
@@ -106,7 +107,10 @@ public sealed partial class UsbPreparationService
     public async Task<PreparationResult> PrepareAsync(PreparationParams p, CancellationToken ct)
     {
         ReportProgress("Partitioning USB device…", 60);
-        await _provisioner.ProvisionAsync(p.DiskNumber, p.DiskSizeBytes, msg => ReportProgress(msg, 60), ct);
+        void OnProvisionProgress(string message, int percent) =>
+            ReportProgress(message, 60 + (int)(0.10 * percent));
+        await _provisioner.ProvisionAsync(
+            p.DiskNumber, p.DiskSizeBytes, OnProvisionProgress, p.DiskLabel, ct);
 
         var bootDrive = _provisioner.FindBootVolumeDriveLetter()
             ?? throw new InvalidOperationException(

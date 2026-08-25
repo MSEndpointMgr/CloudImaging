@@ -11,52 +11,18 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
 
-        // Apply the theme once the window handle exists. WinPE may not expose the
-        // personalization registry keys (and access differs under elevation), so any
-        // failure falls back to Dark and never blocks startup (theme is cosmetic).
-        Loaded += (_, _) => ApplySystemThemeWithDarkFallback();
-    }
+        // FluentWindow's own OnSourceInitialized forces WindowStyle back to SingleBorderWindow
+        // and only hides the resulting native caption via a WindowChrome hack that's gated on
+        // DWM composition being enabled — which WinPE never has. Without composition, that
+        // leaves a native "Basic theme" title bar stacked above our own ui:TitleBar. Reassert
+        // None here (SourceInitialized fires after that base logic runs) to fully remove it.
+        SourceInitialized += (_, _) => WindowStyle = WindowStyle.None;
 
-    /// <summary>
-    /// Makes the app adhere to the OS light/dark setting. When the system theme
-    /// cannot be determined — e.g. under WinPE, where the HKCU personalization keys
-    /// are absent — the app defaults to Dark. On a real desktop the watcher then
-    /// tracks live OS theme changes; under WinPE the watcher is deliberately not
-    /// started so a spurious change notification can't flip the app back to Light.
-    /// </summary>
-    private void ApplySystemThemeWithDarkFallback()
-    {
-        SystemTheme systemTheme;
-        try
-        {
-            systemTheme = ApplicationThemeManager.GetSystemTheme();
-        }
-        catch
-        {
-            systemTheme = SystemTheme.Unknown;
-        }
-
-        switch (systemTheme)
-        {
-            case SystemTheme.Light:
-                SafeApply(ApplicationTheme.Light);
-                SafeWatch();
-                break;
-
-            // Dark and the dark-family default Windows themes.
-            case SystemTheme.Dark:
-            case SystemTheme.CapturedMotion:
-            case SystemTheme.Glow:
-            case SystemTheme.Sunrise:
-                SafeApply(ApplicationTheme.Dark);
-                SafeWatch();
-                break;
-
-            // Unknown / unreadable (WinPE) → Dark default, watcher left off.
-            default:
-                SafeApply(ApplicationTheme.Dark);
-                break;
-        }
+        // The Client only ever runs in WinPE (there is no OS light/dark setting to honor and
+        // no shell to raise a live theme-change notification for a SystemThemeWatcher to
+        // observe), so it always forces Dark — matching the XAML default in App.xaml — rather
+        // than querying/watching the system theme. Applied once the window handle exists.
+        Loaded += (_, _) => SafeApply(ApplicationTheme.Dark);
     }
 
     private static void SafeApply(ApplicationTheme theme)
@@ -68,18 +34,6 @@ public partial class MainWindow : FluentWindow
         catch
         {
             // Keep the XAML default (Dark) if applying fails.
-        }
-    }
-
-    private void SafeWatch()
-    {
-        try
-        {
-            SystemThemeWatcher.Watch(this);
-        }
-        catch
-        {
-            // Following live OS theme changes is a cosmetic enhancement; ignore.
         }
     }
 

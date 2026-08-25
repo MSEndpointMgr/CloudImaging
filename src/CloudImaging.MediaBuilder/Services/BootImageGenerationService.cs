@@ -554,6 +554,13 @@ public sealed partial class BootImageGenerationService
 
         try
         {
+            // Checked first, ahead of the ADK check: it depends only on the supplied client
+            // binaries folder (not on any locally installed tooling), so it fails fast and
+            // deterministically before any WinPE staging/DISM mount work — rather than letting
+            // a technician boot a VM/USB later and discover the client is missing its .NET
+            // runtime (see EnsureClientBinariesAreSelfContained doc comment).
+            EnsureClientBinariesAreSelfContained(clientBinariesPath);
+
             ReportProgress("Verifying ADK installation", 5);
             var adkPath = FindAdkPath();
             if (adkPath is null)
@@ -587,6 +594,28 @@ public sealed partial class BootImageGenerationService
 
             try
             {
+                // Base WinPE (from copype.cmd) does not include WMI — it's an optional
+                // component. Without it, System.Management queries the Client relies on for
+                // disk enumeration/formatting (DiskFormatService), hardware metadata collection
+                // (OperationSelectionViewModel) and the boot image self-update check
+                // (BootImageSelfUpdateService) all fail with a COMException ("class factory for
+                // component ... failed") the first time WMI is touched at runtime.
+                ReportProgress("Adding WinPE WMI support", 35);
+                await InjectWmiOptionalComponentAsync(adkPath, mountDir, ct);
+
+                // WinPE-WMI only provides the native WMI/COM infrastructure. The managed
+                // System.Management wrapper the Client actually calls additionally requires a
+                // .NET Framework installation on disk for its internal marshaling shim — WinPE
+                // never has one otherwise, so every ManagementObjectSearcher call instead fails
+                // with "System.PlatformNotSupportedException: Could not find an installation of
+                // .NET Framework v4.0.30319. System.Management requires...", silently collapsing
+                // serial/manufacturer/model down to "UNKNOWN" and disabling boot-image
+                // self-update. WinPE-NetFx (the .NET Framework 4.5 subset for WinPE) supplies
+                // that missing runtime; Microsoft's docs require WinPE-WMI to be installed first,
+                // which is why this comes right after it.
+                ReportProgress("Adding WinPE .NET Framework support", 37);
+                await InjectNetFxOptionalComponentAsync(adkPath, mountDir, ct);
+
                 ReportProgress("Injecting Cloud Imaging Client", 50);
                 var clientDestDir = Path.Combine(mountDir, "CloudImaging");
                 Directory.CreateDirectory(clientDestDir);
@@ -804,8 +833,12 @@ public sealed partial class BootImageGenerationService
     /// "The system cannot find the path specified." (exit code 1).
     ///
     /// Per FR-050a, detection MUST target copype.cmd and MakeWinPEMedia.cmd specifically.
+    ///
+    /// Internal (not private): also used by <see cref="IsoGenerationService"/>, which reuses
+    /// copype.cmd/MakeWinPEMedia.cmd from the same ADK install to package a downloaded boot
+    /// WIM into a bootable ISO for Hyper-V VMs.
     /// </summary>
-    private static string? FindAdkPath()
+    internal static string? FindAdkPath()
     {
         // Standard ADK install location
         var candidates = new[]
@@ -862,6 +895,112 @@ public sealed partial class BootImageGenerationService
             "older version than the WinPE add-on — they must be the SAME version. Re-run the ADK installer " +
             "(adksetup.exe) and update Deployment Tools to match the WinPE add-on version, then try again. " +
             "Download both (matching versions) from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
+    }
+
+    /// <summary>
+    /// Services the WinPE-WMI optional component into the mounted WIM (base package + its
+    /// en-us language pack, both required for DISM to accept it — FR-051/self-update, WMI
+    /// dependency).
+    ///
+    /// copype.cmd's base WinPE image does NOT include WMI; it's an optional add-on component
+    /// that ships alongside copype.cmd/MakeWinPEMedia.cmd under
+    /// <c>Windows Preinstallation Environment\{arch}\WinPE_OCs</c>. Without it, every
+    /// <c>System.Management</c> (<c>ManagementObjectSearcher</c>) call the Client makes at
+    /// runtime — disk enumeration/formatting (<c>DiskFormatService</c>), hardware metadata
+    /// collection (<c>OperationSelectionViewModel</c>), boot volume lookup
+    /// (<c>BootImageSelfUpdateService</c>) — fails with
+    /// <c>COMException (0x80040154): Retrieving the COM class factory for component ... failed</c>
+    /// the moment it's first touched, because the WMI COM infrastructure was never registered
+    /// into the image.
+    /// </summary>
+    private async Task InjectWmiOptionalComponentAsync(string adkPath, string mountDir, CancellationToken ct)
+    {
+        var ocsDir  = Path.Combine(adkPath, "Windows Preinstallation Environment", WinPeArch, "WinPE_OCs");
+        var baseCab = Path.Combine(ocsDir, "WinPE-WMI.cab");
+        var langCab = Path.Combine(ocsDir, "en-us", "WinPE-WMI_en-us.cab");
+
+        if (!File.Exists(baseCab) || !File.Exists(langCab))
+        {
+            RaiseLog($"FAILED: WinPE optional component package(s) not found under \"{ocsDir}\".");
+            throw new InvalidOperationException(
+                $"Could not find the WinPE-WMI optional component under \"{ocsDir}\" (expected " +
+                "\"WinPE-WMI.cab\" and \"en-us\\WinPE-WMI_en-us.cab\"). This ships alongside copype.cmd as " +
+                "part of the Windows ADK WinPE add-on — reinstall/repair the WinPE add-on " +
+                "(adkwinpesetup.exe) and try again.");
+        }
+
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+    }
+
+    /// <summary>
+    /// Services the WinPE-NetFx optional component into the mounted WIM (base package + its
+    /// en-us language pack), immediately after <see cref="InjectWmiOptionalComponentAsync"/>
+    /// (Microsoft requires WinPE-WMI to be installed first).
+    ///
+    /// WinPE-WMI alone only registers the native WMI/COM provider infrastructure. The
+    /// managed <c>System.Management</c> assembly the Client actually calls
+    /// (<c>ManagementObjectSearcher</c>) additionally needs a .NET Framework installation on
+    /// disk for its own marshaling shim. Base WinPE never has one, so without this component
+    /// every WMI-based lookup — hardware metadata (<c>OperationSelectionViewModel</c>), disk
+    /// enumeration/formatting (<c>DiskFormatService</c>), boot volume lookup
+    /// (<c>BootImageSelfUpdateService</c>) — fails at runtime with
+    /// <c>System.PlatformNotSupportedException: Could not find an installation of .NET
+    /// Framework v4.0.30319. System.Management requires...</c>, which silently degrades to
+    /// "UNKNOWN" hardware identity instead of throwing somewhere visible.
+    /// </summary>
+    private async Task InjectNetFxOptionalComponentAsync(string adkPath, string mountDir, CancellationToken ct)
+    {
+        var ocsDir  = Path.Combine(adkPath, "Windows Preinstallation Environment", WinPeArch, "WinPE_OCs");
+        var baseCab = Path.Combine(ocsDir, "WinPE-NetFx.cab");
+        var langCab = Path.Combine(ocsDir, "en-us", "WinPE-NetFx_en-us.cab");
+
+        if (!File.Exists(baseCab) || !File.Exists(langCab))
+        {
+            RaiseLog($"FAILED: WinPE optional component package(s) not found under \"{ocsDir}\".");
+            throw new InvalidOperationException(
+                $"Could not find the WinPE-NetFx optional component under \"{ocsDir}\" (expected " +
+                "\"WinPE-NetFx.cab\" and \"en-us\\WinPE-NetFx_en-us.cab\"). This ships alongside copype.cmd as " +
+                "part of the Windows ADK WinPE add-on — reinstall/repair the WinPE add-on " +
+                "(adkwinpesetup.exe) and try again.");
+        }
+
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+    }
+
+    /// <summary>
+    /// Fails fast, with an actionable message, when <paramref name="clientBinariesPath"/> looks
+    /// like a framework-dependent build (e.g. a plain <c>dotnet build</c>/<c>dotnet run</c>
+    /// output folder, or a <c>dotnet publish</c> without <c>--self-contained</c>) rather than a
+    /// genuine <c>dotnet publish -r win-x64 --self-contained</c> deployment.
+    ///
+    /// WinPE has no .NET runtime of its own — a framework-dependent Cloud Imaging Client copied
+    /// into the image boots into "You must install .NET Desktop Runtime to run this
+    /// application." instead of the client UI, which is otherwise only discovered later, on
+    /// real hardware or in a Hyper-V VM. Self-contained publishes always copy hostfxr.dll next
+    /// to the exe (it's what lets the exe run without a globally-installed runtime);
+    /// framework-dependent ones never do, since they expect one already installed under
+    /// Program Files\dotnet. The official release pipeline (.github/workflows/release.yml)
+    /// always publishes this way, so this only fires for hand-built "Use local path" sources.
+    /// </summary>
+    private static void EnsureClientBinariesAreSelfContained(string clientBinariesPath)
+    {
+        var clientExePath = Path.Combine(clientBinariesPath, "CloudImaging.Client.exe");
+        if (!File.Exists(clientExePath))
+            throw new InvalidOperationException(
+                $"\"{clientBinariesPath}\" does not contain CloudImaging.Client.exe. Point the local client " +
+                "binaries source at a folder produced by \"dotnet publish -r win-x64 --self-contained\" (or a " +
+                "downloaded CloudImaging.Client.zip release), not a plain build output folder.");
+
+        if (!File.Exists(Path.Combine(clientBinariesPath, "hostfxr.dll")))
+            throw new InvalidOperationException(
+                $"\"{clientBinariesPath}\" looks like a framework-dependent build (no hostfxr.dll present) " +
+                "rather than a self-contained publish. WinPE has no .NET runtime installed, so a " +
+                "framework-dependent Cloud Imaging Client will fail to boot with \"You must install .NET " +
+                "Desktop Runtime to run this application.\" Publish it with \"dotnet publish " +
+                "src\\CloudImaging.Client\\CloudImaging.Client.csproj -c Release -r win-x64 --self-contained\" " +
+                "(matching the release pipeline), or use \"Auto-download latest from GitHub Releases\" instead.");
     }
 
     private async Task CopyWinPeFilesAsync(string adkPath, string winPeRoot, CancellationToken ct)

@@ -35,10 +35,22 @@ public sealed partial class UsbPartitionProvisioningService
     /// resulting cache partition will meet the <see cref="MinimumCachePartitionBytes"/> minimum
     /// required by FR-055.
     /// </param>
+    /// <param name="onProgress">
+    /// Reports a friendly message plus a 0-100 percent completion of just this partitioning
+    /// step (the caller remaps that into its own overall-progress band). Three distinct stages
+    /// are reported — erase/initialize, boot partition, cache partition — instead of a single
+    /// flat "partitioning…" message, so the UI can show real sub-step detail.
+    /// </param>
+    /// <param name="diskLabel">
+    /// Friendly display name (e.g. the disk's <c>Caption</c>, "SanDisk Extreme Pro USB Device")
+    /// to use in progress messages instead of the bare disk number. Falls back to "disk N" when
+    /// not supplied.
+    /// </param>
     public async Task ProvisionAsync(
         uint diskNumber,
         long diskSizeBytes,
-        Action<string>? onProgress = null,
+        Action<string, int>? onProgress = null,
+        string? diskLabel = null,
         CancellationToken ct = default)
     {
         var bootPartitionBytes = BootPartitionSizeMb * 1024L * 1024L;
@@ -52,19 +64,32 @@ public sealed partial class UsbPartitionProvisioningService
                 "Use a larger USB device.");
         }
 
+        var label = string.IsNullOrWhiteSpace(diskLabel) ? $"disk {diskNumber}" : diskLabel;
         LogStarting(_logger, diskNumber);
-        onProgress?.Invoke($"Partitioning disk {diskNumber}…");
 
-        // Build a diskpart script for two-partition layout
-        var script = BuildDiskpartScript(diskNumber);
+        onProgress?.Invoke($"Erasing and initializing {label}…", 0);
+        await RunDiskpartScriptAsync(BuildCleanAndConvertScript(diskNumber), ct);
+
+        ct.ThrowIfCancellationRequested();
+        onProgress?.Invoke($"Creating boot partition (FAT32) on {label}…", 35);
+        await RunDiskpartScriptAsync(BuildBootPartitionScript(diskNumber), ct);
+
+        ct.ThrowIfCancellationRequested();
+        onProgress?.Invoke($"Creating cache partition (NTFS) on {label}…", 70);
+        await RunDiskpartScriptAsync(BuildCachePartitionScript(diskNumber), ct);
+
+        onProgress?.Invoke($"{label} partitioned successfully.", 100);
+        LogComplete(_logger, diskNumber);
+    }
+
+    /// <summary>Writes <paramref name="script"/> to a temp file and runs it via diskpart.exe.</summary>
+    private static async Task RunDiskpartScriptAsync(string script, CancellationToken ct)
+    {
         var scriptPath = Path.Combine(Path.GetTempPath(), $"ci-diskpart-{Guid.NewGuid():N}.txt");
-
         try
         {
             await File.WriteAllTextAsync(scriptPath, script, ct);
             await RunDiskpartAsync(scriptPath, ct);
-            onProgress?.Invoke("Disk partitioned successfully.");
-            LogComplete(_logger, diskNumber);
         }
         finally
         {
@@ -108,15 +133,30 @@ public sealed partial class UsbPartitionProvisioningService
         return null;
     }
 
-    private static string BuildDiskpartScript(uint diskNumber) =>
+    /// <summary>Stage 1: wipe any existing partition table and lay down a fresh MBR.</summary>
+    private static string BuildCleanAndConvertScript(uint diskNumber) =>
         $"""
          select disk {diskNumber}
          clean
          convert mbr
+         exit
+         """;
+
+    /// <summary>Stage 2: create, format (FAT32), activate, and assign the WinPE boot partition.</summary>
+    private static string BuildBootPartitionScript(uint diskNumber) =>
+        $"""
+         select disk {diskNumber}
          create partition primary size={BootPartitionSizeMb}
          format quick fs=fat32 label="BOOT"
          active
          assign
+         exit
+         """;
+
+    /// <summary>Stage 3: create, format (NTFS), and assign the OS image cache partition.</summary>
+    private static string BuildCachePartitionScript(uint diskNumber) =>
+        $"""
+         select disk {diskNumber}
          create partition primary
          format quick fs=ntfs label="CACHE"
          assign

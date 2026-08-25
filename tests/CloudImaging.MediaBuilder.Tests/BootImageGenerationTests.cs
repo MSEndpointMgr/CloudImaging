@@ -50,6 +50,62 @@ public sealed class BootImageGenerationTests
         }
     }
 
+    [Fact]
+    public async Task GenerateAsync_Throws_WhenClientBinariesFolderHasNoExe()
+    {
+        // Checked before the (environment-dependent) ADK check, so this is deterministic
+        // regardless of whether ADK happens to be installed on the machine running the test.
+        var svc = new BootImageGenerationService(NullLogger<BootImageGenerationService>.Instance);
+        var clientDir = Directory.CreateTempSubdirectory("ci-client-empty-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("ci-genoutput-").FullName;
+        try
+        {
+            Func<Task> act = async () => await svc.GenerateAsync(
+                clientBinariesPath: clientDir,
+                pfxBytes: null,
+                outputDirectory: outputDir);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*CloudImaging.Client.exe*");
+        }
+        finally
+        {
+            Directory.Delete(clientDir, recursive: true);
+            Directory.Delete(outputDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsync_Throws_WhenClientBinariesAreFrameworkDependent()
+    {
+        // A folder with CloudImaging.Client.exe but no hostfxr.dll looks exactly like a plain
+        // "dotnet build"/"dotnet publish" (framework-dependent) output — the scenario that
+        // produces "You must install .NET Desktop Runtime to run this application." once
+        // booted in WinPE, which has no runtime of its own. Checked before the (environment-
+        // dependent) ADK check, so this is deterministic regardless of whether ADK happens to
+        // be installed on the machine running the test.
+        var svc = new BootImageGenerationService(NullLogger<BootImageGenerationService>.Instance);
+        var clientDir = Directory.CreateTempSubdirectory("ci-client-fxdep-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("ci-genoutput-").FullName;
+        try
+        {
+            File.WriteAllText(Path.Combine(clientDir, "CloudImaging.Client.exe"), "fake exe");
+
+            Func<Task> act = async () => await svc.GenerateAsync(
+                clientBinariesPath: clientDir,
+                pfxBytes: null,
+                outputDirectory: outputDir);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*self-contained*");
+        }
+        finally
+        {
+            Directory.Delete(clientDir, recursive: true);
+            Directory.Delete(outputDir, recursive: true);
+        }
+    }
+
     // ── PFX embedding ─────────────────────────────────────────────────────────
 
     [Fact]

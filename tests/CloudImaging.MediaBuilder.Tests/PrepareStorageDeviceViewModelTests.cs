@@ -76,6 +76,83 @@ public sealed class PrepareStorageDeviceViewModelTests
         vm.ValidationMessage.Should().Be("System disk cannot be used.");
     }
 
+    // ── ISO generation target (dual USB/ISO Prepare workflow) ─────────────────
+
+    [Fact]
+    public void IsIsoGenerationAvailable_IsFalse_WhenAdkNotInstalled()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => false);
+        vm.IsIsoGenerationAvailable.Should().BeFalse("ISO generation requires the Windows ADK with the WinPE add-on");
+    }
+
+    [Fact]
+    public void IsIsoGenerationAvailable_IsTrue_WhenAdkInstalled()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+        vm.IsIsoGenerationAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsoOutputPath_DefaultsToCloudImagingMediaBuilderFolder_UnderDocuments()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        vm.IsoOutputPath.Should().NotBeNullOrWhiteSpace();
+        vm.IsoOutputPath.Should().StartWith(Path.Combine(documents, "Cloud Imaging Media Builder", "ISO Files"),
+            "the default ISO output location should mirror GenerateBootImageViewModel's default Boot Images folder under Documents");
+    }
+
+    [Fact]
+    public void CanPrepare_IsFalse_ForIsoTarget_WhenOutputPathMissing()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+        vm.SelectedBootImage = CreateBootImage();
+        vm.PrepareAsIso       = true;
+        vm.IsoOutputPath      = null; // IsoOutputPath otherwise defaults to a real path
+
+        vm.CanPrepare.Should().BeFalse("an ISO output path must be chosen before generating an ISO");
+    }
+
+    [Fact]
+    public void CanPrepare_IsTrue_ForIsoTarget_WhenOutputPathChosen()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+        vm.SelectedBootImage = CreateBootImage();
+        vm.PrepareAsIso       = true;
+        vm.IsoOutputPath      = Path.Combine(Path.GetTempPath(), "boot.iso");
+
+        vm.CanPrepare.Should().BeTrue("a boot image and an ISO output path satisfy all gates for the ISO target");
+    }
+
+    [Fact]
+    public void CanPrepare_IsIndependentOfDiskAndConfirmation_ForIsoTarget()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+        vm.SelectedBootImage = CreateBootImage();
+        vm.PrepareAsIso       = true;
+        vm.IsoOutputPath      = Path.Combine(Path.GetTempPath(), "boot.iso");
+        vm.SelectedDisk       = null;
+        vm.ConfirmErase       = false;
+
+        vm.CanPrepare.Should().BeTrue("the ISO target never touches a disk, so no disk selection or erase confirmation is required");
+    }
+
+    [Fact]
+    public void PrepareAsUsb_And_PrepareAsIso_AreMutuallyExclusive()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+
+        vm.PrepareAsUsb.Should().BeTrue("USB is the default target");
+        vm.PrepareAsIso.Should().BeFalse();
+
+        vm.PrepareAsIso = true;
+        vm.PrepareAsUsb.Should().BeFalse();
+
+        vm.PrepareAsUsb = true;
+        vm.PrepareAsIso.Should().BeFalse();
+    }
+
     // ── Support reference codes on failure (T160, FR-058) ─────────────────────
 
     [Fact]
@@ -124,7 +201,7 @@ public sealed class PrepareStorageDeviceViewModelTests
         new(0, "Disk 0: System", new UsbSafetyValidationService.DiskInfo(
             0, "System", 512_000_000_000, "NVMe", false, true), false, "System disk cannot be used.");
 
-    private static PrepareStorageDeviceViewModel CreateViewModel()
+    private static PrepareStorageDeviceViewModel CreateViewModel(Func<bool>? isAdkInstalled = null)
     {
         var http           = new HttpClient();
         var operatorApi    = new OperatorApiClient(http, NullLogger<OperatorApiClient>.Instance);
@@ -140,9 +217,13 @@ public sealed class PrepareStorageDeviceViewModelTests
         var cache          = new BootImageCacheService(
             Path.Combine(Path.GetTempPath(), $"ci-cache-tests-{Guid.NewGuid():N}"),
             NullLogger<BootImageCacheService>.Instance);
+        var isoGeneration  = new IsoGenerationService(NullLogger<IsoGenerationService>.Instance);
 
         return new PrepareStorageDeviceViewModel(
             operatorApi, authService, validator, downloader, preparation, cache,
-            navigateBack: () => { });
+            navigateBack: () => { },
+            deviceWatcher: null,
+            isoGeneration: isoGeneration,
+            isAdkInstalled: isAdkInstalled);
     }
 }

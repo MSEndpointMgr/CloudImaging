@@ -49,6 +49,9 @@
     <PackageVersion Include="System.Management"                   Version="9.0.0" />
     <!-- Fluent design for WPF desktop apps -->
     <PackageVersion Include="WPF-UI"                              Version="4.3.0" />
+    <!-- Server-side image resizing for uploaded branding logos (FR-038) -->
+    <PackageVersion Include="SkiaSharp"                           Version="4.151.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
 
     <!-- Test frameworks -->
     <PackageVersion Include="xunit"                               Version="2.9.0" />

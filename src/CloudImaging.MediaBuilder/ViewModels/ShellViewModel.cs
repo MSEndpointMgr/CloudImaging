@@ -26,6 +26,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private readonly BootImageDownloadService _downloader;
     private readonly UsbPreparationService _usbPreparation;
     private readonly BootImageCacheService _cache;
+    private readonly IsoGenerationService _isoGeneration;
     private readonly UsbDeviceChangeWatcher? _deviceWatcher;
     private readonly BootMediaCertificateCheckService? _certCheckService;
 
@@ -50,6 +51,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         BootImageDownloadService downloader,
         UsbPreparationService usbPreparation,
         BootImageCacheService cache,
+        IsoGenerationService isoGeneration,
         UsbDeviceChangeWatcher? deviceWatcher = null,
         BootMediaCertificateCheckService? certCheckService = null,
         Func<bool>? isAdkInstalled = null)
@@ -62,6 +64,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         _downloader        = downloader;
         _usbPreparation    = usbPreparation;
         _cache             = cache;
+        _isoGeneration     = isoGeneration;
         _deviceWatcher     = deviceWatcher;
         _certCheckService  = certCheckService;
 
@@ -219,7 +222,8 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     public void GoPrepareUsb()
     {
         var viewModel = new PrepareStorageDeviceViewModel(
-            _operatorApiClient, _authService, _usbValidator, _downloader, _usbPreparation, _cache, GoHome, _deviceWatcher);
+            _operatorApiClient, _authService, _usbValidator, _downloader, _usbPreparation, _cache, GoHome, _deviceWatcher,
+            _isoGeneration, isAdkInstalled: () => AdkAvailable);
         CurrentContent = new PrepareStorageDeviceView { DataContext = viewModel };
         CurrentSection = ShellSection.PrepareUsb;
         TrackBusyState(viewModel, () => viewModel.IsBusy);

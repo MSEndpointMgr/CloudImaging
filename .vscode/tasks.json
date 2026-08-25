@@ -158,6 +158,43 @@
       "detail": "Build both the Cloud Imaging Client and Media Builder WPF apps in Debug configuration."
     },
     {
+      "label": "Publish: Client WPF (self-contained win-x64)",
+      "type": "shell",
+      "command": "dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj -c Release -r win-x64 --self-contained -o publish/Client",
+      "problemMatcher": ["$msCompile"],
+      "group": "build",
+      "detail": "Publish CloudImaging.Client as a self-contained win-x64 deployment (bundles its own .NET runtime), matching the release pipeline. Required for WinPE boot images — a plain Build output is framework-dependent and fails inside WinPE with 'You must install .NET Desktop Runtime to run this application.' Output: publish/Client.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
+    },
+    {
+      "label": "Publish: Media Builder WPF (self-contained win-x64)",
+      "type": "shell",
+      "command": "dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj -c Release -r win-x64 --self-contained -o publish/MediaBuilder",
+      "problemMatcher": ["$msCompile"],
+      "group": "build",
+      "detail": "Publish CloudImaging.MediaBuilder as a self-contained win-x64 deployment (bundles its own .NET runtime), matching the release pipeline. Output: publish/MediaBuilder.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
+    },
+    {
+      "label": "Publish: Both WPF apps (self-contained win-x64)",
+      "dependsOn": [
+        "Publish: Client WPF (self-contained win-x64)",
+        "Publish: Media Builder WPF (self-contained win-x64)"
+      ],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "group": "build",
+      "detail": "Publish both the Cloud Imaging Client and Media Builder WPF apps as self-contained win-x64 deployments."
+    },
+    {
       "label": "Test: .NET Solution",
       "type": "shell",
       "command": "dotnet test CloudImaging.sln --configuration Release",

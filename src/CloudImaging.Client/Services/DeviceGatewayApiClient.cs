@@ -60,7 +60,17 @@ public sealed partial class DeviceGatewayApiClient
 
         var response = await _http.PostAsJsonAsync("/api/v1/sessions", signedPayload, JsonOptions, ct);
         LogHttpResponse(_logger, "POST", "/api/v1/sessions", (int)response.StatusCode);
-        response.EnsureSuccessStatusCode();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // Carries the real rejection reason (e.g. an mTLS/proof-of-possession detail from
+            // MtlsCertificateValidationMiddleware or CreateSessionFunction) into both the thrown
+            // exception's Message (shown on-screen by OperationSelectionViewModel) and the local
+            // log, instead of a generic "401 (Unauthorized)" that gives no clue why.
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "POST", "/api/v1/sessions", (int)response.StatusCode, failure.ProblemType, failure.Message);
+            throw failure;
+        }
 
         var result = await response.Content.ReadFromJsonAsync<CreateSessionResponse>(JsonOptions, ct);
         if (result is not null)
@@ -121,7 +131,7 @@ public sealed partial class DeviceGatewayApiClient
         if (!response.IsSuccessStatusCode)
         {
             var exception = await DeviceGatewayApiException.FromResponseAsync(response, ct);
-            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, exception.ProblemType);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, exception.ProblemType, exception.Message);
             throw exception;
         }
 
@@ -152,7 +162,12 @@ public sealed partial class DeviceGatewayApiClient
         LogHttpRequest(_logger, "POST", path);
         var response = await _http.PostAsJsonAsync(path, payload, JsonOptions, ct);
         LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "POST", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            throw failure;
+        }
     }
 
     /// <summary>
@@ -168,7 +183,12 @@ public sealed partial class DeviceGatewayApiClient
         LogHttpRequest(_logger, "POST", path);
         var response = await _http.PostAsync(path, null, ct);
         LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "POST", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            throw failure;
+        }
         using var doc = await System.Text.Json.JsonDocument.ParseAsync(
             await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var url = doc.RootElement.TryGetProperty("sasTokenUrl", out var p) ? p.GetString() : null;
@@ -198,7 +218,11 @@ public sealed partial class DeviceGatewayApiClient
         var response = await _http.GetAsync("/api/v1/boot-image/latest", ct);
         LogHttpResponse(_logger, "GET", "/api/v1/boot-image/latest", (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "GET", "/api/v1/boot-image/latest", (int)response.StatusCode, failure.ProblemType, failure.Message);
             return null;
+        }
 
         var result = await response.Content.ReadFromJsonAsync<LatestBootImageInfo>(JsonOptions, ct);
         if (result is not null)
@@ -221,7 +245,11 @@ public sealed partial class DeviceGatewayApiClient
         var response = await _http.GetAsync("/api/v1/recovery-image/latest", ct);
         LogHttpResponse(_logger, "GET", "/api/v1/recovery-image/latest", (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "GET", "/api/v1/recovery-image/latest", (int)response.StatusCode, failure.ProblemType, failure.Message);
             return null;
+        }
 
         var result = await response.Content.ReadFromJsonAsync<LatestRecoveryImageInfo>(JsonOptions, ct);
         if (result is not null)
@@ -246,7 +274,11 @@ public sealed partial class DeviceGatewayApiClient
         var response = await _http.PostAsync(path, null, ct);
         LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "POST", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
             return null;
+        }
 
         var result = await response.Content.ReadFromJsonAsync<LogUploadUrlResponse>(JsonOptions, ct);
         if (result is not null)
@@ -274,8 +306,8 @@ public sealed partial class DeviceGatewayApiClient
     [LoggerMessage(Level = LogLevel.Debug, Message = "HTTP {Method} {Path} \u2190 {StatusCode}")]
     private static partial void LogHttpResponse(ILogger logger, string method, string path, int statusCode);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "HTTP {Method} {Path} \u2190 {StatusCode} (problem type: {ProblemType}).")]
-    private static partial void LogHttpRequestFailed(ILogger logger, string method, string path, int statusCode, string? problemType);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "HTTP {Method} {Path} \u2190 {StatusCode} (problem type: {ProblemType}; detail: {Detail}).")]
+    private static partial void LogHttpRequestFailed(ILogger logger, string method, string path, int statusCode, string? problemType, string? detail);
 
     [LoggerMessage(Level = LogLevel.Debug,
         Message = "CreateSession request: serial={SerialNumber} manufacturer={Manufacturer} model={Model} (proof-of-possession signature omitted).")]
@@ -381,16 +413,33 @@ public sealed class DeviceGatewayApiException : Exception
     {
         string? problemType = null;
         string? detail = null;
+        string body = string.Empty;
         try
         {
-            using var doc = await System.Text.Json.JsonDocument.ParseAsync(
-                await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            problemType = doc.RootElement.TryGetProperty("type", out var t) ? t.GetString() : null;
-            detail = doc.RootElement.TryGetProperty("detail", out var d) ? d.GetString() : null;
+            body = await response.Content.ReadAsStringAsync(ct);
         }
         catch
         {
-            // Response body wasn't RFC7807 problem-details JSON — leave both null.
+            // Body unreadable (e.g. connection dropped mid-response) — leave it empty.
+        }
+
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                problemType = doc.RootElement.TryGetProperty("type", out var t) ? t.GetString() : null;
+                detail = doc.RootElement.TryGetProperty("detail", out var d) ? d.GetString() : null;
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Several Device Gateway endpoints (e.g. CreateSession's mTLS/proof-of-possession
+                // rejections) return a short plain-text reason instead of RFC7807 JSON — fall back
+                // to the raw body so that reason still reaches the log/UI instead of being silently
+                // dropped.
+            }
+
+            detail ??= body.Trim();
         }
 
         return new DeviceGatewayApiException(response.StatusCode, problemType, detail);

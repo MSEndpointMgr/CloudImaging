@@ -2,6 +2,29 @@
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+    <UserControl.Resources>
+        <!--
+            Renders an InfoBar's message as a read-only TextBox instead of using InfoBar's own
+            (plain, non-selectable) Message property, so technicians can select/copy failure
+            details and support reference codes straight out of the result modal.
+        -->
+        <Style x:Key="SelectableMessageTextBoxStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="IsReadOnlyCaretVisible" Value="True" />
+            <Setter Property="IsUndoEnabled" Value="False" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Cursor" Value="IBeam" />
+        </Style>
+    </UserControl.Resources>
     <!--
         FR-053/054/055/056/057: Prepare USB Storage Device workflow.
         Select a published boot image + an eligible USB disk, confirm the destructive
@@ -26,7 +49,7 @@
                    Style="{StaticResource TitleTextBlockStyle}"
                    Margin="0,0,0,24" />
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Focusable="False">
+        <ScrollViewer x:Name="ContentScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" Focusable="False">
         <StackPanel>
 
             <!-- Published boot image -->
@@ -55,7 +78,7 @@
                               ItemsSource="{Binding BootImages}"
                               SelectedItem="{Binding SelectedBootImage}"
                               DisplayMemberPath="Label"
-                              IsEnabled="{Binding HasBootImages}"
+                              IsEnabled="{Binding IsBootImageSelectionEnabled}"
                               VerticalAlignment="Center"
                               HorizontalAlignment="Stretch" />
 
@@ -77,8 +100,37 @@
                 </Grid>
             </ui:Card>
 
-            <!-- USB device -->
+            <!-- Target: USB device or ISO file -->
             <ui:Card Margin="0,0,0,16" Padding="20">
+                <StackPanel>
+                    <TextBlock Text="Target"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="Choose whether to write the boot image directly to a USB storage device, or package it as a bootable ISO file you can attach to a Hyper-V VM's DVD drive (or burn to physical media) instead."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
+
+                    <RadioButton Content="USB Storage Device"
+                                 IsChecked="{Binding PrepareAsUsb}"
+                                 IsEnabled="{Binding IsFormEnabled}"
+                                 Margin="0,0,0,8" />
+                    <RadioButton Content="ISO File (boot a Hyper-V VM or physical media)"
+                                 IsChecked="{Binding PrepareAsIso}"
+                                 IsEnabled="{Binding IsIsoGenerationAvailable}" />
+                    <TextBlock Text="Generating an ISO requires the Windows ADK with the WinPE add-on installed on this workstation."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="24,4,0,0"
+                               Visibility="{Binding IsIsoGenerationAvailable, Converter={StaticResource InverseBoolToVisibility}}" />
+                </StackPanel>
+            </ui:Card>
+
+            <!-- USB device -->
+            <ui:Card Margin="0,0,0,16" Padding="20"
+                     Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel>
                     <TextBlock Text="USB Device"
                                Style="{StaticResource BodyStrongTextBlockStyle}"
@@ -92,7 +144,7 @@
                     <ComboBox ItemsSource="{Binding Disks}"
                               SelectedItem="{Binding SelectedDisk}"
                               DisplayMemberPath="Label"
-                              IsEnabled="{Binding HasDisks}"
+                              IsEnabled="{Binding IsDiskSelectionEnabled}"
                               HorizontalAlignment="Stretch" />
 
                     <ui:InfoBar Title="Disk not eligible"
@@ -105,9 +157,45 @@
             </ui:Card>
 
             <!-- Destructive confirmation -->
-            <ui:Card Margin="0,0,0,16" Padding="16,14">
+            <ui:Card Margin="0,0,0,16" Padding="16,14"
+                     Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">
                 <CheckBox IsChecked="{Binding ConfirmErase}"
+                          IsEnabled="{Binding IsFormEnabled}"
                           Content="I understand that ALL data on the selected USB device will be permanently erased." />
+            </ui:Card>
+
+            <!-- ISO output path -->
+            <ui:Card Margin="0,0,0,16" Padding="20"
+                     Visibility="{Binding PrepareAsIso, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Output ISO File"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="Choose where to save the generated ISO file."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBox Grid.Column="0"
+                                 Text="{Binding IsoOutputPath, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 VerticalContentAlignment="Center"
+                                 IsEnabled="{Binding IsFormEnabled}" />
+
+                        <ui:Button Grid.Column="1" Content="Browse…"
+                                   Style="{StaticResource AppButtonStyle}"
+                                   Margin="8,0,0,0"
+                                   IsEnabled="{Binding IsFormEnabled}"
+                                   Command="{Binding BrowseIsoOutputCommand}" />
+                    </Grid>
+                </StackPanel>
             </ui:Card>
 
             <!-- Progress -->
@@ -120,30 +208,6 @@
                     <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}" Minimum="0" Maximum="100" Height="4" />
                 </StackPanel>
             </ui:Card>
-
-            <!-- Success -->
-            <ui:InfoBar Title="USB device prepared"
-                        Message="{Binding StatusMessage}"
-                        Severity="Success"
-                        IsOpen="{Binding IsComplete}"
-                        IsClosable="False"
-                        Margin="0,0,0,16" />
-
-            <!-- Error -->
-            <ui:InfoBar Title="{Binding ErrorTitle}"
-                        Message="{Binding ErrorMessage}"
-                        Severity="Error"
-                        IsOpen="{Binding HasError}"
-                        IsClosable="False"
-                        Margin="0,0,0,16" />
-
-            <!-- Cancelled -->
-            <ui:InfoBar Title="Preparation cancelled"
-                        Message="USB device preparation was cancelled and temporary files were cleaned up."
-                        Severity="Warning"
-                        IsOpen="{Binding WasCancelled}"
-                        IsClosable="False"
-                        Margin="0,0,0,16" />
 
         </StackPanel>
         </ScrollViewer>
@@ -197,14 +261,14 @@
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0"
-                               Text="Downloads (or reuses a cached copy of) the selected boot image, partitions the USB device, and deploys WinPE with auto-start onto it."
+                               Text="{Binding PrepareDescription}"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap"
                                VerticalAlignment="Center"
                                Margin="0,0,16,0" />
 
-                    <ui:Button Grid.Column="1" Content="Prepare USB Device"
+                    <ui:Button Grid.Column="1" Content="{Binding PrepareButtonLabel}"
                                Appearance="Primary"
                                Style="{StaticResource AppButtonStyle}"
                                Command="{Binding PrepareCommand}"
@@ -213,5 +277,137 @@
                 </Grid>
             </Grid>
         </Border>
+
+        <!--
+            Result modal — covers the whole page (all 3 rows) instead of competing for space
+            with the still-visible form as an inline InfoBar. Shown for any terminal outcome
+            (success, error, cancelled) via ShowResultDialog, and stays up until explicitly
+            dismissed so the outcome is impossible to miss. Closing it resets the workflow
+            (re-scans disks, clears the erase confirmation) so the next USB device can be
+            prepared immediately — easy back-to-back preparation without leaving this page.
+
+            "Accent strip" design (chosen over a boxed ui:InfoBar-per-state layout, which read
+            as too many nested boxes): a thin 4px colour strip along the card's top edge signals
+            the outcome instead of a full InfoBar banner, with a plain icon + title beneath it.
+            WPF-UI's InfoBar template renders Title/Message as plain, non-selectable TextBlocks
+            and has no ContentPresenter at all (a child element set via Content never renders),
+            so the message — and, for the ISO case, the saved-file path — are still shown via a
+            borderless read-only TextBox (SelectableMessageTextBoxStyle) so technicians can
+            select/copy failure details, support reference codes, and the output path straight
+            out of the modal. The path has no separate label or inline folder button; the single
+            "Open folder" button in the footer, next to "Close", is the only way to reveal it.
+
+            The card caps its own height (MaxHeight) and scrolls its content internally: long
+            failure output (e.g. ISO generation's copype.cmd/DISM console log) would otherwise
+            grow the card past the window's bottom edge, pushing the footer out of view/behind
+            the underlying form.
+        -->
+        <Grid Grid.Row="0" Grid.RowSpan="3"
+              Background="Transparent"
+              Visibility="{Binding ShowResultDialog, Converter={StaticResource BoolToVisibility}}">
+            <Border MaxWidth="480" MaxHeight="600"
+                    Margin="24"
+                    CornerRadius="8"
+                    Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid MinWidth="400">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="4" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Status accent strip — states are mutually exclusive, so only one is ever visible -->
+                    <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                            Background="{DynamicResource SystemFillColorSuccessBrush}"
+                            Visibility="{Binding IsComplete, Converter={StaticResource BoolToVisibility}}" />
+                    <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                            Background="{DynamicResource SystemFillColorCriticalBrush}"
+                            Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+                    <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                            Background="{DynamicResource SystemFillColorCautionBrush}"
+                            Visibility="{Binding WasCancelled, Converter={StaticResource BoolToVisibility}}" />
+
+                    <ScrollViewer Grid.Row="1"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="24,18,24,0">
+                        <StackPanel>
+                            <StackPanel Visibility="{Binding IsComplete, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="20" Margin="0,0,8,0"
+                                                   Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                                   VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding SuccessTitle}" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                         Text="{Binding StatusMessage, Mode=OneWay}"
+                                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                         Margin="0,8,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="20" Margin="0,0,8,0"
+                                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                                   VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding ErrorTitle}" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                         Text="{Binding ErrorMessage, Mode=OneWay}"
+                                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                         Margin="0,8,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Visibility="{Binding WasCancelled, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Warning24" FontSize="20" Margin="0,0,8,0"
+                                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                                   VerticalAlignment="Center" />
+                                    <TextBlock Text="Preparation cancelled" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                         Text="USB device preparation was cancelled and temporary files were cleaned up."
+                                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                         Margin="0,8,0,0" />
+                            </StackPanel>
+
+                            <!--
+                                Full saved-file path, selectable/copyable but otherwise plain text
+                                (no "Saved to" label, no boxed background, no inline folder icon —
+                                the "Open folder" button in the footer below is the only affordance
+                                needed to reveal it). Only shown for the ISO target.
+                            -->
+                            <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                     Text="{Binding ResultFilePath, Mode=OneWay}"
+                                     FontFamily="Cascadia Mono, Consolas, monospace"
+                                     FontSize="12"
+                                     Margin="0,16,0,0"
+                                     Visibility="{Binding HasResultFilePath, Converter={StaticResource BoolToVisibility}}" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Border Grid.Row="2"
+                            BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            Padding="24,16">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <ui:Button Content="Open folder"
+                                       Appearance="Secondary"
+                                       Style="{StaticResource AppButtonStyle}"
+                                       Margin="0,0,8,0"
+                                       Command="{Binding OpenResultFolderCommand}"
+                                       Visibility="{Binding HasResultFilePath, Converter={StaticResource BoolToVisibility}}" />
+                            <ui:Button Content="Close"
+                                       Appearance="Primary"
+                                       Style="{StaticResource AppButtonStyle}"
+                                       Command="{Binding DismissResultCommand}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

@@ -111,8 +111,12 @@ public sealed partial class CreateSessionFunction
             {
                 LogProofOfPossessionRejected(_logger, popResult.ToString(), payload.SerialNumber);
                 var denied = req.CreateResponse(HttpStatusCode.Unauthorized);
+                // Include the specific reason (not just "failed") so the Cloud Imaging Client's
+                // local log — the only diagnostic surface a field technician has in WinPE — shows
+                // enough to distinguish e.g. a clock-skew "Expired" from a genuine "InvalidSignature"
+                // without needing access to this API's own logs.
                 await denied.WriteStringAsync(
-                    "Proof-of-possession verification failed.", context.CancellationToken);
+                    $"Proof-of-possession verification failed ({popResult}).", context.CancellationToken);
                 return denied;
             }
 

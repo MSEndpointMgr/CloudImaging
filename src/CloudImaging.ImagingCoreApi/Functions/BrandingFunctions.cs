@@ -10,6 +10,7 @@ using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
+using SkiaSharp;
 
 namespace CloudImaging.ImagingCoreApi.Functions;
 
@@ -26,6 +27,15 @@ public sealed partial class BrandingFunctions
     private const int LogoSasMinutes = 60;
     private const string LogoContainer = "branding";
     private const int MaxLogoBytes = 1024 * 1024; // 1 MB decoded
+    /// <summary>
+    /// Longest-side target (px) that uploaded raster logos are normalized to (FR-038). The Cloud
+    /// Imaging Client renders the boot logo at 72x72 in WinPE, which often runs without GPU
+    /// acceleration; a source image far smaller than the render size forces a low-quality
+    /// upscale that looks grainy. Normalizing here means the Client only ever has to downscale.
+    /// </summary>
+    internal const int LogoCanonicalMaxDimension = 256;
+    /// <summary>Decoded pixel-dimension ceiling, rejected before resampling as a decompression-bomb guard.</summary>
+    internal const int LogoMaxDecodedDimension = 4096;
 
     private readonly BrandingRepository _brandingRepo;
     private readonly BlobServiceClient _blobClient;
@@ -229,6 +239,13 @@ public sealed partial class BrandingFunctions
             return await Text(req, HttpStatusCode.RequestEntityTooLarge, "Logo image exceeds the 1 MB limit.", ct);
         }
 
+        string normalizeError;
+        (bytes, contentType, normalizeError) = NormalizeLogoImage(bytes, contentType);
+        if (normalizeError.Length > 0)
+        {
+            return await Text(req, HttpStatusCode.BadRequest, normalizeError, ct);
+        }
+
         var branding = await _brandingRepo.GetAsync(ct);
         var extension = ResolveExtension(contentType, payload.FileName);
         var prefix = isPortal ? "portal-logo" : "logo";
@@ -287,6 +304,60 @@ public sealed partial class BrandingFunctions
         {
             // Ignore cleanup failures — the new logo is already committed.
         }
+    }
+
+    /// <summary>
+    /// Resizes a raster logo (proportionally) so its longest side is exactly
+    /// <see cref="LogoCanonicalMaxDimension"/> pixels, using high-quality cubic resampling, and
+    /// re-encodes it as PNG to preserve transparency. Vector images (SVG) are resolution-independent
+    /// and returned unchanged. Images SkiaSharp cannot decode (unrecognized/corrupt) are also
+    /// returned unchanged — a best-effort quality improvement must never block an upload the
+    /// existing content-type validation already accepted.
+    /// </summary>
+    /// <returns>The (possibly re-encoded) bytes/content-type, or a non-empty <c>Error</c> when the
+    /// decoded image's pixel dimensions exceed <see cref="LogoMaxDecodedDimension"/> (decompression-bomb guard).</returns>
+    internal static (byte[] Bytes, string ContentType, string Error) NormalizeLogoImage(byte[] bytes, string contentType)
+    {
+        if (contentType.Equals("image/svg+xml", StringComparison.OrdinalIgnoreCase))
+        {
+            return (bytes, contentType, string.Empty);
+        }
+
+        SKBitmap? original;
+        try { original = SKBitmap.Decode(bytes); }
+        catch { original = null; }
+
+        using var _ = original;
+        if (original is null)
+        {
+            return (bytes, contentType, string.Empty);
+        }
+
+        if (original.Width > LogoMaxDecodedDimension || original.Height > LogoMaxDecodedDimension)
+        {
+            return (bytes, contentType, $"Logo image dimensions exceed the {LogoMaxDecodedDimension}x{LogoMaxDecodedDimension} limit.");
+        }
+
+        var longestSide = Math.Max(original.Width, original.Height);
+        if (longestSide == LogoCanonicalMaxDimension)
+        {
+            return (bytes, contentType, string.Empty);
+        }
+
+        var scale = (double)LogoCanonicalMaxDimension / longestSide;
+        var width = Math.Max(1, (int)Math.Round(original.Width * scale));
+        var height = Math.Max(1, (int)Math.Round(original.Height * scale));
+
+        var resizeInfo = new SKImageInfo(width, height, original.ColorType, SKAlphaType.Premul);
+        using var resized = original.Resize(resizeInfo, new SKSamplingOptions(SKCubicResampler.Mitchell));
+        if (resized is null)
+        {
+            return (bytes, contentType, string.Empty);
+        }
+
+        using var image = SKImage.FromBitmap(resized);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        return (encoded.ToArray(), "image/png", string.Empty);
     }
 
     private static string StripDataUriPrefix(string data)

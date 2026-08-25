@@ -171,19 +171,25 @@
                 <ProgressBar Value="{Binding OverallPercent}" Minimum="0" Maximum="100" Height="6" />
             </StackPanel>
 
-            <!-- Error section -->
-            <StackPanel Grid.Row="3" Margin="0,14,0,0">
-                <ui:InfoBar Title="Imaging Failed"
-                            Message="{Binding ErrorMessage}"
-                            Severity="Error"
-                            IsOpen="{Binding HasError}"
-                            IsClosable="False" />
+            <!-- Error section — accent-strip design (icon + title, selectable message, no boxed InfoBar) -->
+            <StackPanel Grid.Row="3" Margin="0,14,0,0"
+                        Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="20" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock Text="Imaging Failed" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                         Text="{Binding ErrorMessage, Mode=OneWay}"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                         TextAlignment="Center"
+                         Margin="0,8,0,0" />
                 <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Error ref: {0}'}"
                            Style="{StaticResource CaptionTextBlockStyle}"
                            FontFamily="Consolas"
                            HorizontalAlignment="Center"
-                           Margin="0,8,0,0"
-                           Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
+                           Margin="0,8,0,0" />
             </StackPanel>
         </Grid>
     </Grid>

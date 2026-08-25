@@ -70,6 +70,19 @@ public partial class App : System.Windows.Application
                 return;
             }
 
+            // Hidden elevated-worker mode for ISO generation: same relaunch-elevated pattern as
+            // above, used by IsoGenerationService.GenerateElevatedAsync because copype.cmd's
+            // DISM mount step (staging the WinPE media template) requires Administrator
+            // privileges.
+            if (e.Args.Length == 5 && e.Args[0] == IsoGenerationService.ElevatedWorkerArg)
+            {
+                System.Threading.Tasks.Task.Run(() =>
+                        IsoGenerationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], e.Args[4], loggerFactory))
+                    .GetAwaiter().GetResult();
+                Shutdown(0);
+                return;
+            }
+
             var authService = new EntraAuthenticationService(
                 config.ClientId,
                 config.TenantId,
@@ -105,6 +118,8 @@ public partial class App : System.Windows.Application
                 new UsbPartitionProvisioningService(loggerFactory.CreateLogger<UsbPartitionProvisioningService>()),
                 new BootImageDeploymentService(loggerFactory.CreateLogger<BootImageDeploymentService>()));
 
+            var isoGenerationService = new IsoGenerationService(loggerFactory.CreateLogger<IsoGenerationService>());
+
             var services = new AppServices(
                 authService,
                 operatorApiClient,
@@ -114,6 +129,7 @@ public partial class App : System.Windows.Application
                 new BootImageDownloadService(downloadHttpClient, loggerFactory.CreateLogger<BootImageDownloadService>()),
                 usbPreparationService,
                 new BootImageCacheService(loggerFactory.CreateLogger<BootImageCacheService>()),
+                isoGenerationService,
                 new UsbDeviceChangeWatcher(loggerFactory.CreateLogger<UsbDeviceChangeWatcher>()),
                 new BootMediaCertificateCheckService(operatorApiClient, loggerFactory.CreateLogger<BootMediaCertificateCheckService>()),
                 loggerFactory);
@@ -154,11 +170,23 @@ public partial class App : System.Windows.Application
             // Never let error reporting itself crash shutdown.
         }
 
-        System.Windows.MessageBox.Show(
-            $"Cloud Imaging Media Builder failed to start.\n\n{ex?.Message}\n\n{ex}",
-            "Cloud Imaging Media Builder",
-            System.Windows.MessageBoxButton.OK,
-            System.Windows.MessageBoxImage.Error);
+        try
+        {
+            // Marshal onto the UI thread: this can be invoked from AppDomain.UnhandledException
+            // or TaskScheduler.UnobservedTaskException, neither of which guarantee the calling
+            // thread is the UI thread ShowDialog() requires.
+            Dispatcher.Invoke(() => new FatalErrorWindow(ex).ShowDialog());
+        }
+        catch
+        {
+            // Last-resort fallback if the custom window itself couldn't be shown — a native
+            // MessageBox needs nothing but Win32 to render, so the failure is never silent.
+            System.Windows.MessageBox.Show(
+                $"Cloud Imaging Media Builder failed to start.\n\n{ex?.Message}\n\n{ex}",
+                "Cloud Imaging Media Builder",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -228,6 +256,7 @@ public partial class App : System.Windows.Application
             svc.Downloader,
             svc.UsbPreparation,
             svc.Cache,
+            svc.IsoGeneration,
             svc.DeviceWatcher,
             svc.CertCheck);
         return view;
@@ -303,6 +332,7 @@ public partial class App : System.Windows.Application
         BootImageDownloadService Downloader,
         UsbPreparationService UsbPreparation,
         BootImageCacheService Cache,
+        IsoGenerationService IsoGeneration,
         UsbDeviceChangeWatcher DeviceWatcher,
         BootMediaCertificateCheckService CertCheck,
         ILoggerFactory LoggerFactory);

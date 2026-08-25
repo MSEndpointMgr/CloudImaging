@@ -25,22 +25,32 @@ public sealed class UsbPartitionDeploymentTests
     // ── Expected partition layout ─────────────────────────────────────────────
 
     [Fact]
-    public void BuildDiskpartScript_ProducesTwoPartitions_Fat32Boot_NtfsCache()
+    public void DiskpartScripts_ProduceTwoPartitions_Fat32Boot_NtfsCache()
     {
         // FR-055: two-partition layout — FAT32 boot (min 2 GB) + NTFS cache — asserted against
-        // the actual diskpart script UsbPartitionProvisioningService.ProvisionAsync executes,
-        // rather than a set of unrelated local constants.
-        var method = typeof(UsbPartitionProvisioningService).GetMethod(
-            "BuildDiskpartScript", BindingFlags.NonPublic | BindingFlags.Static)!;
-        var script = (string)method.Invoke(null, [3u])!;
+        // the actual diskpart scripts UsbPartitionProvisioningService.ProvisionAsync executes
+        // (split into 3 stages — erase/initialize, boot partition, cache partition — so the UI
+        // can report real sub-step progress instead of one flat "partitioning…" message).
+        var type = typeof(UsbPartitionProvisioningService);
+        string Build(string methodName, uint diskNumber) =>
+            (string)type.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)!
+                .Invoke(null, [diskNumber])!;
 
-        script.Should().Contain("select disk 3", "the script must target the exact disk number passed in");
-        script.Should().Contain($"size={UsbPartitionProvisioningService.BootPartitionSizeMb}",
+        var cleanScript = Build("BuildCleanAndConvertScript", 3u);
+        var bootScript  = Build("BuildBootPartitionScript", 3u);
+        var cacheScript = Build("BuildCachePartitionScript", 3u);
+
+        cleanScript.Should().Contain("select disk 3", "each stage must re-select the exact disk number passed in");
+        cleanScript.Should().Contain("clean");
+        cleanScript.Should().Contain("convert mbr");
+
+        bootScript.Should().Contain("select disk 3");
+        bootScript.Should().Contain($"size={UsbPartitionProvisioningService.BootPartitionSizeMb}",
             "the boot partition size must come from the shared BootPartitionSizeMb constant");
-        script.Should().Contain("fs=fat32", "boot partition must be FAT32 for WinPE compatibility (FR-055)");
-        script.Should().Contain("fs=ntfs", "cache partition must be NTFS (FR-055)");
-        script.Split("create partition", StringSplitOptions.None).Length.Should().Be(3,
-            "exactly two 'create partition' commands must appear (2 partitions total, FR-055)");
+        bootScript.Should().Contain("fs=fat32", "boot partition must be FAT32 for WinPE compatibility (FR-055)");
+
+        cacheScript.Should().Contain("select disk 3");
+        cacheScript.Should().Contain("fs=ntfs", "cache partition must be NTFS (FR-055)");
     }
 
     [Fact]

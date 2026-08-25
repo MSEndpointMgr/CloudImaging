@@ -5,6 +5,7 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Net.Http.Json;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication(builder =>
@@ -88,23 +89,36 @@ var host = new HostBuilder()
         });
 
         // Boot-media certificate thumbprint cache (60s TTL, FR-069)
-        // Loader reads the active thumbprint from Table Storage via the internal API client.
+        //
+        // Loader calls ImagingCoreApi's internal "GET /api/internal/cert/active" endpoint over
+        // Private Link via ImagingCoreClient — the SAME cross-service call pattern used for
+        // every other Device Gateway → Imaging Core data need in this file (sessions, boot
+        // images, recovery images, session logs). ImagingCoreApi's BootMediaCertificateRepository
+        // is the sole owner/writer of the BootMediaCertificate table in its OWN storage account;
+        // the Device Gateway API deliberately does NOT hold any data-plane RBAC grant on that
+        // storage account and must never read it directly — doing so would defeat the whole
+        // point of ImagingCoreApi being reachable only via Private Link (FR-020) and would
+        // silently break the moment ImagingCoreApi's storage schema/account changes.
+        //
+        // Resolves a fresh ImagingCoreClient from the root provider on every refresh (≤ once per
+        // 60s) rather than capturing one instance at startup, to avoid holding a typed HttpClient
+        // captive for the lifetime of this singleton.
         services.AddSingleton<BootMediaCertificateThumbprintCache>(sp =>
         {
-            var tableService = sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>();
             var logger = sp.GetRequiredService<ILogger<BootMediaCertificateThumbprintCache>>();
+            var jsonOptions = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
 
-            var tableClient = tableService.GetTableClient("BootMediaCertificate");
             async Task<string?> Loader(CancellationToken ct)
             {
-                await foreach (var entity in tableClient.QueryAsync<Azure.Data.Tables.TableEntity>(
-                    e => e.PartitionKey == "cert" && e.GetBoolean("IsActive") == true,
-                    maxPerPage: 1,
-                    cancellationToken: ct))
+                var coreClient = sp.GetRequiredService<ImagingCoreClient>();
+                using var response = await coreClient.GetActiveCertificateMetadataAsync(ct);
+                if (!response.IsSuccessStatusCode)
                 {
-                    return entity.RowKey;
+                    return null;
                 }
-                return null;
+
+                var metadata = await response.Content.ReadFromJsonAsync<ActiveCertMetadata>(jsonOptions, ct);
+                return metadata?.Thumbprint;
             }
 
             return new BootMediaCertificateThumbprintCache(Loader, logger);
@@ -116,3 +130,6 @@ var host = new HostBuilder()
     .Build();
 
 host.Run();
+
+/// <summary>Shape of the JSON body returned by ImagingCoreApi's GET /api/internal/cert/active.</summary>
+internal sealed record ActiveCertMetadata(string Thumbprint, DateTimeOffset NotBefore, DateTimeOffset NotAfter, bool IsActive, string KeyVaultSecretName);

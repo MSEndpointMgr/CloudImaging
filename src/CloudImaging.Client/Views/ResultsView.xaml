@@ -3,84 +3,116 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="Results">
-    <!-- FR-025, FR-026: Three terminal outcomes — Success, Failure, NotAuthorized -->
+    <!--
+        FR-025, FR-026: Three terminal outcomes — Success, Failure, NotAuthorized.
+
+        Accent-strip design (matches the Media Builder result dialog): a thin colour strip
+        along the card's top edge signals the outcome instead of a big Unicode glyph, and any
+        error/enrollment detail is shown as plain, borderless, selectable text (TextBox styled
+        via SelectableMessageTextBoxStyle) instead of inside a boxed ui:InfoBar — so technicians
+        can still select/copy failure details and support reference codes straight off screen.
+    -->
     <Grid>
-        <ui:Card HorizontalAlignment="Center" VerticalAlignment="Center" Padding="48,40">
-            <StackPanel Width="560">
+        <Border MaxWidth="640"
+                CornerRadius="8"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="6" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                <!-- SUCCESS -->
-                <StackPanel Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="✓" FontSize="64" FontWeight="Bold"
-                               Foreground="{DynamicResource SystemFillColorSuccessBrush}"
-                               HorizontalAlignment="Center" />
-                    <TextBlock Text="Imaging Complete"
-                               Style="{StaticResource TitleTextBlockStyle}"
-                               Foreground="{DynamicResource SystemFillColorSuccessBrush}"
-                               HorizontalAlignment="Center" Margin="0,16,0,0" />
-                    <TextBlock Text="The operating system has been successfully applied."
-                               Style="{StaticResource BodyTextBlockStyle}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                               HorizontalAlignment="Center" Margin="0,12,0,0" />
+                <!-- Status accent strip — states are mutually exclusive, so only one is ever visible -->
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorSuccessBrush}"
+                        Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}" />
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorCriticalBrush}"
+                        Visibility="{Binding IsFailure, Converter={StaticResource BoolToVisibility}}" />
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorCautionBrush}"
+                        Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}" />
+
+                <StackPanel Grid.Row="1" Width="560" Margin="48,36,48,40">
+
+                    <!-- SUCCESS -->
+                    <StackPanel Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}"
+                                HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="48"
+                                       Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                       HorizontalAlignment="Center" />
+                        <TextBlock Text="Imaging Complete"
+                                   Style="{StaticResource TitleTextBlockStyle}"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBlock Text="The operating system has been successfully applied."
+                                   Style="{StaticResource BodyTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" Margin="0,12,0,0" />
+                    </StackPanel>
+
+                    <!-- FAILURE -->
+                    <StackPanel Visibility="{Binding IsFailure, Converter={StaticResource BoolToVisibility}}"
+                                HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="48"
+                                       Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                       HorizontalAlignment="Center" />
+                        <TextBlock Text="Imaging Failed"
+                                   Style="{StaticResource TitleTextBlockStyle}"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Error reference: {0}'}"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                 Text="{Binding ErrorDetail, Mode=OneWay}"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                 TextAlignment="Center"
+                                 Margin="0,8,0,0" />
+                        <TextBlock Text="Include this reference when reporting the issue at github.com/MSEndpointMgr/CloudImaging."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap" TextAlignment="Center"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <ui:Button Content="Retry"
+                                   Appearance="Danger"
+                                   Width="160"
+                                   Command="{Binding RetryCommand}"
+                                   HorizontalAlignment="Center" Margin="0,24,0,0" />
+                    </StackPanel>
+
+                    <!-- NOT AUTHORIZED -->
+                    <StackPanel Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}"
+                                HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="Warning24" FontSize="48"
+                                       Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                       HorizontalAlignment="Center" />
+                        <TextBlock Text="Device Not Authorized"
+                                   Style="{StaticResource TitleTextBlockStyle}"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   FontFamily="Consolas"
+                                   HorizontalAlignment="Center" Margin="0,12,0,0" />
+                        <TextBlock Text="Enrollment required"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                 Text="This device is not enrolled in Windows Autopilot or the Intune Corporate Device Identifiers list. Enroll the device in your organization's device management system before imaging."
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                 TextAlignment="Center"
+                                 Margin="0,8,0,0" />
+                        <!-- FR-007b/FR-026: Exit/Close is the only available action on this outcome (no Retry). -->
+                        <ui:Button Content="Exit"
+                                   Appearance="Secondary"
+                                   Width="160"
+                                   Command="{Binding ExitCommand}"
+                                   HorizontalAlignment="Center" Margin="0,24,0,0" />
+                    </StackPanel>
+
                 </StackPanel>
-
-                <!-- FAILURE -->
-                <StackPanel Visibility="{Binding IsFailure, Converter={StaticResource BoolToVisibility}}"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="✕" FontSize="64" FontWeight="Bold"
-                               Foreground="{DynamicResource SystemFillColorCriticalBrush}"
-                               HorizontalAlignment="Center" />
-                    <TextBlock Text="Imaging Failed"
-                               Style="{StaticResource TitleTextBlockStyle}"
-                               Foreground="{DynamicResource SystemFillColorCriticalBrush}"
-                               HorizontalAlignment="Center" Margin="0,16,0,0" />
-                    <ui:InfoBar Title="{Binding SupportReferenceCode, StringFormat='Error reference: {0}'}"
-                                Message="{Binding ErrorDetail}"
-                                Severity="Error"
-                                IsOpen="True"
-                                IsClosable="False"
-                                Margin="0,16,0,0" />
-                    <TextBlock Text="Include this reference when reporting the issue at github.com/MSEndpointMgr/CloudImaging."
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap" TextAlignment="Center"
-                               HorizontalAlignment="Center" Margin="0,16,0,0" />
-                    <ui:Button Content="Retry"
-                               Appearance="Danger"
-                               Width="160"
-                               Command="{Binding RetryCommand}"
-                               HorizontalAlignment="Center" Margin="0,24,0,0" />
-                </StackPanel>
-
-                <!-- NOT AUTHORIZED -->
-                <StackPanel Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}"
-                            HorizontalAlignment="Center">
-                    <TextBlock Text="⊘" FontSize="64" FontWeight="Bold"
-                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
-                               HorizontalAlignment="Center" />
-                    <TextBlock Text="Device Not Authorized"
-                               Style="{StaticResource TitleTextBlockStyle}"
-                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
-                               HorizontalAlignment="Center" Margin="0,16,0,0" />
-                    <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               FontFamily="Consolas"
-                               HorizontalAlignment="Center" Margin="0,12,0,0" />
-                    <ui:InfoBar Title="Enrollment required"
-                                Message="This device is not enrolled in Windows Autopilot or the Intune Corporate Device Identifiers list. Enroll the device in your organization's device management system before imaging."
-                                Severity="Warning"
-                                IsOpen="True"
-                                IsClosable="False"
-                                Margin="0,16,0,0" />
-                    <!-- FR-007b/FR-026: Exit/Close is the only available action on this outcome (no Retry). -->
-                    <ui:Button Content="Exit"
-                               Appearance="Secondary"
-                               Width="160"
-                               Command="{Binding ExitCommand}"
-                               HorizontalAlignment="Center" Margin="0,24,0,0" />
-                </StackPanel>
-
-            </StackPanel>
-        </ui:Card>
+            </Grid>
+        </Border>
     </Grid>
 </Page>

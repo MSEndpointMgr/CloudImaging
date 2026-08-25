@@ -5,11 +5,12 @@ namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
 /// Shared helpers for the "relaunch this same executable elevated via one UAC prompt" pattern
-/// used by both <see cref="BootImageGenerationService"/> (DISM image mounting) and
-/// <see cref="UsbPreparationService"/> (diskpart partitioning + bootsect activation). Both
-/// operations require Administrator privileges, but the main Media Builder process must stay
-/// non-elevated so Entra ID sign-in can keep using MSAL's Windows broker (WAM), which does not
-/// work reliably from an elevated process.
+/// used by <see cref="BootImageGenerationService"/> (DISM image mounting),
+/// <see cref="UsbPreparationService"/> (diskpart partitioning + bootsect activation), and
+/// <see cref="IsoGenerationService"/> (copype.cmd's own DISM mount while staging WinPE media).
+/// All three operations require Administrator privileges, but the main Media Builder process
+/// must stay non-elevated so Entra ID sign-in can keep using MSAL's Windows broker (WAM), which
+/// does not work reliably from an elevated process.
 /// </summary>
 internal static class ElevationHelper
 {
