@@ -98,4 +98,16 @@ router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req
   }
 });
 
+// ── DELETE /api/sessions/:sessionId: remove a coupled session that was ───
+// aborted before imaging started (e.g. device/VM rebooted after coupling). ─
+
+router.delete('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await operatorApiClient.cancelSession(req.params['sessionId'] as string);
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 export { router as sessionsRouter };

@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
+import { EmptyState } from '../components/ui/empty-state';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
@@ -70,13 +71,8 @@ export default function BootImagesPage(): React.ReactElement {
 
   return (
     <>
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">
-            WinPE boot media published from the Media Builder app.
-          </p>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
         {isAdministrator && (
           <Button onClick={() => setUploadOpen(true)}>
             <Upload className="h-4 w-4" />
@@ -127,14 +123,22 @@ export default function BootImagesPage(): React.ReactElement {
               <TableHead>SHA-256</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Status</TableHead>
-              {isAdministrator && <TableHead className="text-right">Actions</TableHead>}
+              {isAdministrator && <TableHead>Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : images.length === 0 ? (
-              <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">No boot images.</TableCell></TableRow>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={isAdministrator ? 6 : 5} className="p-0">
+                  <EmptyState
+                    icon={HardDrive}
+                    title="No boot images"
+                    description="Publish a boot image from the Media Builder app to get started."
+                  />
+                </TableCell>
+              </TableRow>
             ) : images.map(img => (
               <TableRow key={img.bootImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
@@ -147,7 +151,7 @@ export default function BootImagesPage(): React.ReactElement {
                     : <Badge variant="muted" dot>Active</Badge>}
                 </TableCell>
                 {isAdministrator && (
-                  <TableCell className="text-right">
+                  <TableCell>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -191,6 +195,10 @@ interface UploadBootImageDialogProps {
 /** Staged boot image upload modal: hash → SAS upload → publish (T128, FR-063). */
 function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublished }: UploadBootImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
+  // Tracks whether the current `version` value was populated automatically from the
+  // selected file's name, so a subsequent file pick can safely replace it — but a
+  // manual edit to the field immediately "claims" it and stops any further auto-fill.
+  const [versionAutoFilled, setVersionAutoFilled] = useState(false);
   const [file, setFile]       = useState<File | null>(null);
   const [stage, setStage]     = useState<UploadStage>('form');
   const [percent, setPercent] = useState(0);
@@ -263,7 +271,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
               value={version}
               disabled={busy}
               aria-invalid={isDuplicateVersion}
-              onChange={e => setVersion(e.target.value)}
+              onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
             />
             {isDuplicateVersion && (
               <p className="text-xs text-destructive">Version "{trimmedVersion}" already exists.</p>
@@ -292,6 +300,16 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
                 }
                 setFile(selected);
                 setError(null);
+                // Auto-fill the version from a date embedded in the filename (e.g. the
+                // `cloud-imaging-boot-20260827-170846.wim` Media Builder produces), unless
+                // the operator has already typed their own version for this dialog session.
+                if (selected && (version.trim() === '' || versionAutoFilled)) {
+                  const suggested = suggestVersionFromFileName(selected.name, existingVersions);
+                  if (suggested) {
+                    setVersion(suggested);
+                    setVersionAutoFilled(true);
+                  }
+                }
               }}
             />
             <div className="flex items-center gap-3">
@@ -317,6 +335,32 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
       </Card>
     </div>
   );
+}
+
+/**
+ * Derives a `YYYY.MM.DD.V` version string from an `YYYYMMDD` date embedded in a boot-media
+ * filename (Media Builder names uploads e.g. `cloud-imaging-boot-20260827-170846.wim`).
+ * `V` starts at 1 and is bumped past any version already in `existingVersions` for the same
+ * date, so publishing a second boot image on the same day suggests `.2`, `.3`, etc.
+ * Returns `null` when no plausible date can be found in the filename.
+ */
+function suggestVersionFromFileName(fileName: string, existingVersions: string[]): string | null {
+  const match = /(\d{4})(\d{2})(\d{2})/.exec(fileName);
+  if (!match) return null;
+
+  const [, year, month, day] = match;
+  const monthNum = Number(month);
+  const dayNum = Number(day);
+  if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) return null;
+
+  const datePrefix = `${year}.${month}.${day}`;
+  const versionPattern = new RegExp(`^${datePrefix.replace(/\./g, '\\.')}\\.(\\d+)$`);
+  const usedVersionNumbers = existingVersions
+    .map(v => versionPattern.exec(v.trim())?.[1])
+    .filter((v): v is string => v !== undefined)
+    .map(Number);
+  const nextVersion = usedVersionNumbers.length > 0 ? Math.max(...usedVersionNumbers) + 1 : 1;
+  return `${datePrefix}.${nextVersion}`;
 }
 
 /** Computes the SHA-256 hash of a file and returns it as a lowercase hex string. */

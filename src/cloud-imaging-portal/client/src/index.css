@@ -91,12 +91,14 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground select-none cursor-default;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
-  /* Headings are structural labels, not data users need to select/copy — keep the
-     pointer as a plain arrow instead of the text I-beam when hovering over them. */
-  h1, h2, h3, h4, h5, h6 {
-    @apply select-none;
+  /* Nothing on the page is meant to be selected/copied by default (no clipboard-copy
+     feature exists anywhere), so a stray click/drag should never produce a text
+     selection highlight or a blinking text-entry caret. Real form controls are the
+     one exception — they need normal selection + caret behavior to be usable. */
+  input, textarea, [contenteditable='true'] {
+    @apply select-text cursor-text;
   }
 }

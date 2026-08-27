@@ -40,6 +40,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private bool _confirmErase;
     private bool _prepareAsIso;
     private string? _isoOutputPath = Path.Combine(GetDefaultIsoOutputFolder(), "cloud-imaging-boot.iso");
+    // True once the technician has explicitly chosen an ISO path via BrowseIsoOutputCommand —
+    // from that point on their choice of folder/filename is respected as-is, even if they later
+    // pick a different boot image. Until then, IsoOutputPath is a suggested default that stays
+    // in sync with SelectedBootImage so it is already version-specific without requiring a
+    // Browse click (matching the name Browse itself would suggest).
+    private bool _isoOutputPathCustomized;
     private bool _isBusy;
     private bool _isRefreshingBootImages;
     private bool _isComplete;
@@ -125,7 +131,26 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public BootImageChoice? SelectedBootImage
     {
         get => _selectedBootImage;
-        set { _selectedBootImage = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanPrepare)); }
+        set
+        {
+            _selectedBootImage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanPrepare));
+
+            // Keep the suggested ISO filename version-specific by default (FR: technicians who
+            // never click Browse should still get "cloud-imaging-boot-v{version}.iso" instead of
+            // the generic "cloud-imaging-boot.iso"), unless they've already picked a path
+            // themselves via the Browse dialog.
+            if (!_isoOutputPathCustomized)
+            {
+                var directory = !string.IsNullOrWhiteSpace(_isoOutputPath)
+                    ? Path.GetDirectoryName(_isoOutputPath)
+                    : null;
+                if (string.IsNullOrWhiteSpace(directory))
+                    directory = GetDefaultIsoOutputFolder();
+                IsoOutputPath = Path.Combine(directory, GetDefaultIsoFileName());
+            }
+        }
     }
 
     public DiskChoice? SelectedDisk
@@ -645,9 +670,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>Prompts for the ISO output file path via the standard Windows Save dialog.</summary>
     private void BrowseIsoOutput()
     {
-        var defaultName = SelectedBootImage is not null
-            ? $"cloud-imaging-boot-v{SelectedBootImage.Dto.Version}.iso"
-            : "cloud-imaging-boot.iso";
+        var defaultName = GetDefaultIsoFileName();
 
         // Defaults to the same folder as the currently-configured output path (initially the
         // "Cloud Imaging Media Builder\ISO Files" folder under Documents — see
@@ -669,8 +692,22 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             AddExtension     = true,
         };
         if (dialog.ShowDialog() == true)
+        {
             IsoOutputPath = dialog.FileName;
+            _isoOutputPathCustomized = true;
+        }
     }
+
+    /// <summary>
+    /// The default/suggested ISO filename for the currently selected boot image — version-specific
+    /// ("cloud-imaging-boot-v{version}.iso") once a boot image is selected, otherwise the generic
+    /// "cloud-imaging-boot.iso". Shared by the auto-updated <see cref="IsoOutputPath"/> default and
+    /// the Browse dialog's suggested filename so both stay consistent.
+    /// </summary>
+    private string GetDefaultIsoFileName() =>
+        SelectedBootImage is not null
+            ? $"cloud-imaging-boot-v{SelectedBootImage.Dto.Version}.iso"
+            : "cloud-imaging-boot.iso";
 
     /// <summary>
     /// Default ISO output location: a "Cloud Imaging Media Builder\ISO Files" subfolder under

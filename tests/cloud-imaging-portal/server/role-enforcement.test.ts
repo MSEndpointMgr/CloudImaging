@@ -35,6 +35,7 @@ describe('Portal backend: role enforcement', () => {
     'POST /api/sessions/couple',
     'POST /api/sessions/:id/assign',
     'POST /api/sessions/bulk-assign',
+    'DELETE /api/sessions/:id',
     'GET /api/images',
     'GET /api/boot-images',
     'GET /api/branding',

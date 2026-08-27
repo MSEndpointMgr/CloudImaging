@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Pencil, Plus } from 'lucide-react';
+import { Trash2, Pencil, Plus, ImageOff } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
+import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
 
@@ -141,7 +142,13 @@ export default function OsImagesPage(): React.ReactElement {
               ))
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={columnCount} className="py-8 text-center text-muted-foreground">No images found in the catalog.</TableCell>
+                <TableCell colSpan={columnCount} className="p-0">
+                  <EmptyState
+                    icon={ImageOff}
+                    title="No images found in the catalog"
+                    description="Upload an OS image to make it available for imaging."
+                  />
+                </TableCell>
               </TableRow>
             ) : images.map(img => (
               <TableRow

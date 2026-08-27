@@ -25,12 +25,18 @@ public partial class LogViewerWindow : FluentWindow
     {
         InitializeComponent();
 
-        // FluentWindow's own OnSourceInitialized forces WindowStyle back to SingleBorderWindow
-        // and only hides the resulting native caption via a WindowChrome hack that's gated on
-        // DWM composition being enabled — which WinPE never has. Without composition, that
-        // leaves a native "Basic theme" title bar stacked above our own ui:TitleBar. Reassert
-        // None here (SourceInitialized fires after that base logic runs) to fully remove it.
-        SourceInitialized += (_, _) => WindowStyle = WindowStyle.None;
+        // FluentWindow's own OnSourceInitialized unconditionally forces WindowStyle back to
+        // SingleBorderWindow and only hides the resulting native caption via a WindowChrome hack
+        // that's gated on DWM composition being enabled — which WinPE never has. Reasserting
+        // WindowStyle = None alone (even though SourceInitialized fires after that base logic
+        // runs) was verified NOT to reliably clear the native caption in real WinPE testing, so
+        // fall back to stripping the WS_CAPTION/WS_SYSMENU bits directly on the HWND — see
+        // NativeWindowChromeFix for the full explanation.
+        SourceInitialized += (_, _) =>
+        {
+            WindowStyle = WindowStyle.None;
+            NativeWindowChromeFix.RemoveNativeCaption(this);
+        };
 
         LoadLog();
     }

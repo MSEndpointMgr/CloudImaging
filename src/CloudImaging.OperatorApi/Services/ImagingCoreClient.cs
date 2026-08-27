@@ -32,6 +32,9 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> BulkAssignAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/sessions/bulk-assign", payload, JsonOptions, ct);
 
+    public Task<HttpResponseMessage> CancelSessionAsync(Guid sessionId, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/sessions/{sessionId}", ct);
+
     // ── OS image operations ────────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetImagesAsync(CancellationToken ct = default) =>

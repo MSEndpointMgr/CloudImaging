@@ -69,6 +69,10 @@ export class OperatorApiClient {
     return data;
   }
 
+  async cancelSession(sessionId: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/sessions/${sessionId}`);
+  }
+
   // ── OS image operations ────────────────────────────────────────────────────
 
   async getImages(): Promise<unknown> {

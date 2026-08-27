@@ -1,3 +1,5 @@
+using Azure.Storage.Blobs;
+using Azure.Storage.Sas;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
@@ -15,17 +17,20 @@ public sealed partial class BulkAssignmentService
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly OsImageRepository _imageRepo;
     private readonly PortalConfigurationRepository _configRepo;
+    private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BulkAssignmentService> _logger;
 
     public BulkAssignmentService(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
         PortalConfigurationRepository configRepo,
+        BlobServiceClient blobClient,
         ILogger<BulkAssignmentService> logger)
     {
         _sessionRepo = sessionRepo;
         _imageRepo = imageRepo;
         _configRepo = configRepo;
+        _blobClient = blobClient;
         _logger = logger;
     }
 
@@ -54,6 +59,13 @@ public sealed partial class BulkAssignmentService
         var config = await _configRepo.GetAsync(ct);
         var sasExpiry = TimeSpan.FromMinutes(
             config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+
+        // All sessions in this batch are assigned the same OS image, so one SAS token URL can be
+        // shared across every session — avoids one user-delegation-key round trip per device.
+        // Without this, sessions bulk-assigned from the Coupled Devices table never receive a
+        // SasTokenUrl at all, and the Client's ImagingWorkflowViewModel polls for one until it
+        // times out (5 minutes) because only the single-session /assign endpoint used to set it.
+        var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, ct);
 
         var assigned = new List<Guid>();
         var skipped = new List<Guid>();
@@ -86,6 +98,7 @@ public sealed partial class BulkAssignmentService
                 DeviceSessionToken = session.DeviceSessionToken,
                 DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
                 AssignedOsImageId = osImageId,
+                SasTokenUrl = sasUrl,
                 SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
                 OverallProgressPercent = 0,
                 CreatedAt = session.CreatedAt,
@@ -98,6 +111,29 @@ public sealed partial class BulkAssignmentService
 
         LogBulkAssignCompleted(_logger, assigned.Count, skipped.Count);
         return new BulkAssignResult(assigned.Count, skipped.Count, assigned, skipped);
+    }
+
+    private async Task<string> GenerateSasUrlAsync(string storagePath, TimeSpan expiry, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // storagePath format: {container}/{blobName}
+            var slash = storagePath.IndexOf('/', StringComparison.Ordinal);
+            if (slash < 0)
+            {
+                return storagePath;
+            }
+
+            var container = storagePath[..slash];
+            var blobName = storagePath[(slash + 1)..];
+
+            return await BlobSasUrlGenerator.GenerateAsync(
+                _blobClient, container, blobName, BlobSasPermissions.Read, expiry, cancellationToken);
+        }
+        catch
+        {
+            return storagePath; // Fallback — caller should handle auth separately
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information,

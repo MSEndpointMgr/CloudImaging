@@ -152,10 +152,18 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                         null);
                     break;
 
-                // FR-005/FR-009d: once the operator has coupled and assigned an image, hand off
-                // to the imaging pipeline instead of polling forever with no visible progress
-                // (previously, these three states fell into the generic "keep waiting" default).
+                // FR-005/FR-009d: hand off to the imaging pipeline once the operator has actually
+                // clicked "Start Imaging" and an OS image has been assigned server-side (state
+                // SessionStarted or later). SessionAssigned only means the device has been
+                // coupled by passcode — no image is selected yet and the session must NOT
+                // proceed to the imaging/progress view at that point (previously this case
+                // incorrectly grouped SessionAssigned with SessionStarted/SessionInProgress,
+                // causing the Client to jump into the Format Disk step immediately on coupling,
+                // before an operator ever pressed Start Imaging).
                 case SessionState.SessionAssigned:
+                    StatusMessage = "Device coupled — waiting for the operator to select an OS image and start imaging…";
+                    break;
+
                 case SessionState.SessionStarted:
                 case SessionState.SessionInProgress:
                     IsPolling = false;

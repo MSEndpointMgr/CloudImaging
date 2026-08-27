@@ -5,12 +5,13 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2 } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
+import { EmptyState } from '../components/ui/empty-state.tsx';
 import { cn } from '../lib/utils.ts';
 import { useToast } from '../context/toastContext.tsx';
 import {
@@ -183,7 +184,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
   }, [passcode]);
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-start gap-1">
       <Input
         type="text"
         maxLength={6}
@@ -327,6 +328,29 @@ function SessionsPageImpl(): React.ReactElement {
     void (async () => { const data = await fetchSessions(); scheduleNextPoll(data); })();
   };
 
+  const [removingSessionId, setRemovingSessionId] = useState<string | null>(null);
+
+  const handleRemoveCoupledSession = async (sessionId: string) => {
+    if (!confirm('Remove this coupled device? Use this if the device or VM was rebooted or aborted before imaging started.')) return;
+    setRemovingSessionId(sessionId);
+    try {
+      const res = await apiFetch(`/api/sessions/${sessionId}`, { method: 'DELETE', credentials: 'include' });
+      if (res.ok || res.status === 204) {
+        notify({ status: 'success', title: 'Coupled device removed.' });
+        handleRefresh();
+      } else if (res.status === 409) {
+        notify({ status: 'error', title: 'This device is no longer in a removable state. Refreshing…' });
+        handleRefresh();
+      } else {
+        notify({ status: 'error', title: 'Failed to remove device. Please try again.' });
+      }
+    } catch {
+      notify({ status: 'error', title: 'Network error. Please try again.' });
+    } finally {
+      setRemovingSessionId(null);
+    }
+  };
+
   const handleStartImaging = async () => {
     if (!hasOsImages) {
       notify({ status: 'error', title: 'Upload an OS image before starting imaging.' });
@@ -410,7 +434,7 @@ function SessionsPageImpl(): React.ReactElement {
           <div className="rounded-md border border-border overflow-hidden">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">Available Devices</h3>
-              <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">
+              <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">
                 {available.length}
               </span>
             </div>
@@ -418,10 +442,10 @@ function SessionsPageImpl(): React.ReactElement {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[22%]" />
-                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[26%]" />
+                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[32%]" />
                   <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[14%]" />
+                  <TableHead className="w-[16%]">Passcode</TableHead>
                   <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[16%]" />
-                  <TableHead className="w-[22%] text-right">Passcode</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -431,14 +455,18 @@ function SessionsPageImpl(): React.ReactElement {
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                      <TableCell><Skeleton className="h-8 w-28" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                      <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-32" /></TableCell>
                     </TableRow>
                   ))
                 ) : available.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5} className="select-none py-12 text-center text-muted-foreground">
-                      No devices waiting to be coupled.
+                    <TableCell colSpan={5} className="p-0">
+                      <EmptyState
+                        icon={Smartphone}
+                        title="No devices waiting to be coupled"
+                        description="Newly registered devices will appear here automatically."
+                      />
                     </TableCell>
                   </TableRow>
                 ) : available.map(s => (
@@ -446,10 +474,10 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell>
                       <PasscodeCouplingCell onCoupled={handleRefresh} />
                     </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -460,7 +488,7 @@ function SessionsPageImpl(): React.ReactElement {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-semibold">Coupled Devices</h3>
-                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-semibold text-primary">
+                <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-semibold text-primary">
                   {coupled.length}
                 </span>
               </div>
@@ -490,16 +518,21 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
-                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[40%]" />
-                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[27%]" />
+                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[36%]" />
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[27%]" />
+                  <TableHead className="w-[10%]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {coupled.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={3} className="select-none py-12 text-center text-muted-foreground">
-                      No devices ready for imaging.
+                    <TableCell colSpan={4} className="p-0">
+                      <EmptyState
+                        icon={CheckCircle2}
+                        title="No devices ready for imaging"
+                        description="Couple a device above using its passcode to see it here."
+                      />
                     </TableCell>
                   </TableRow>
                 ) : coupled.map(s => (
@@ -507,6 +540,18 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Remove this coupled device (e.g. if the device or VM was rebooted/aborted)"
+                        disabled={removingSessionId === s.sessionId}
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => void handleRemoveCoupledSession(s.sessionId)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -523,7 +568,7 @@ function SessionsPageImpl(): React.ReactElement {
                 <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
                 <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
                 <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -535,13 +580,17 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell className="text-right"><Skeleton className="ml-auto h-8 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-24" /></TableCell>
                   </TableRow>
                 ))
               ) : monitor.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
-                    No imaging activity yet.
+                  <TableCell colSpan={6} className="p-0">
+                    <EmptyState
+                      icon={Activity}
+                      title="No imaging activity yet"
+                      description="Sessions will appear here once imaging starts."
+                    />
                   </TableCell>
                 </TableRow>
               ) : monitor.map(s => (
@@ -560,7 +609,7 @@ function SessionsPageImpl(): React.ReactElement {
                     ) : <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
-                  <TableCell className="text-right">
+                  <TableCell>
                     {FAILED_STATES.has(s.state) && (
                       <Button
                         variant="outline"

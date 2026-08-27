@@ -139,6 +139,36 @@ public sealed class DeviceSessionRepository
         }
     }
 
+    /// <summary>
+    /// Immediately and permanently deletes a session record regardless of lifecycle state,
+    /// checking both partitions. Used for operator-initiated removal of a coupled session that
+    /// was aborted before imaging started (see CancelSessionFunction) — distinct from
+    /// <see cref="DeletePurgedAsync"/>, which only ever targets the terminal partition as part
+    /// of the scheduled purge sweep.
+    /// </summary>
+    public async Task DeleteAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        var key = sessionId.ToString();
+        try
+        {
+            await _table.DeleteEntityAsync(ActivePartition, key, cancellationToken: ct);
+            return;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Not in the active partition — fall through and check terminal.
+        }
+
+        try
+        {
+            await _table.DeleteEntityAsync(TerminalPartition, key, cancellationToken: ct);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Already gone from both partitions — nothing left to do.
+        }
+    }
+
     // ── Entity mapping ────────────────────────────────────────────────────────
 
     private static TableEntity ToEntity(DeviceSession s, string partition) => new(partition, s.SessionId.ToString())

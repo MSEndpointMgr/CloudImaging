@@ -104,6 +104,39 @@ public sealed class PrepareStorageDeviceViewModelTests
     }
 
     [Fact]
+    public void IsoOutputPath_BecomesVersionSpecific_WhenBootImageSelected_WithoutClickingBrowse()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+        var folderBeforeSelection = Path.GetDirectoryName(vm.IsoOutputPath);
+
+        vm.SelectedBootImage = CreateBootImage();
+
+        vm.IsoOutputPath.Should().Be(Path.Combine(folderBeforeSelection!, "cloud-imaging-boot-v1.0.0.iso"),
+            "the suggested ISO filename should already be version-specific by default, matching what Browse would suggest, without requiring a Browse click");
+    }
+
+    [Fact]
+    public void IsoOutputPath_UpdatesFilename_WhenSelectedBootImageChangesAgain()
+    {
+        var vm = CreateViewModel(isAdkInstalled: () => true);
+        vm.SelectedBootImage = CreateBootImage();
+
+        var otherImage = new PrepareStorageDeviceViewModel.BootImageChoice(Guid.NewGuid(), "v2.0.0", new BootImageDto
+        {
+            BootImageId       = Guid.NewGuid(),
+            Version           = "2.0.0",
+            SizeBytes         = 500_000_000,
+            Sha256Hash        = "def",
+            IsLatestPublished = true,
+            IsActive          = true,
+        });
+        vm.SelectedBootImage = otherImage;
+
+        vm.IsoOutputPath.Should().EndWith("cloud-imaging-boot-v2.0.0.iso",
+            "the suggested filename keeps tracking the selected boot image until the technician explicitly picks a path via Browse");
+    }
+
+    [Fact]
     public void CanPrepare_IsFalse_ForIsoTarget_WhenOutputPathMissing()
     {
         var vm = CreateViewModel(isAdkInstalled: () => true);

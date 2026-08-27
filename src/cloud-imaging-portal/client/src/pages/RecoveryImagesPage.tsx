@@ -5,6 +5,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
+import { EmptyState } from '../components/ui/empty-state';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
@@ -133,14 +134,22 @@ export default function RecoveryImagesPage(): React.ReactElement {
               <TableHead>SHA-256</TableHead>
               <TableHead>Created</TableHead>
               <TableHead>Status</TableHead>
-              {isAdministrator && <TableHead className="text-right">Actions</TableHead>}
+              {isAdministrator && <TableHead>Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">Loading…</TableCell></TableRow>
             ) : images.length === 0 ? (
-              <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">No recovery images.</TableCell></TableRow>
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={isAdministrator ? 6 : 5} className="p-0">
+                  <EmptyState
+                    icon={ShieldCheck}
+                    title="No recovery images"
+                    description="Publish a recovery image from the Media Builder app to get started."
+                  />
+                </TableCell>
+              </TableRow>
             ) : images.map(img => (
               <TableRow key={img.recoveryImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
@@ -153,7 +162,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                     : <Badge variant="muted" dot>Active</Badge>}
                 </TableCell>
                 {isAdministrator && (
-                  <TableCell className="text-right">
+                  <TableCell>
                     <Button
                       variant="ghost"
                       size="icon"
