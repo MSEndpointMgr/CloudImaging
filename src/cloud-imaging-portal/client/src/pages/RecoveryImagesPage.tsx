@@ -12,7 +12,9 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { computeSha256Streaming } from '../lib/sha256.ts';
 import { formatDateTime } from '../lib/utils.ts';
+import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
   startRecoveryImageUpload,
   uploadRecoveryFileToBlobStorage,
@@ -22,6 +24,7 @@ import {
 interface RecoveryImage {
   recoveryImageId: string;
   version: string;
+  description?: string | null;
   createdAt: string;
   sizeBytes: number;
   sha256Hash: string;
@@ -52,8 +55,10 @@ export default function RecoveryImagesPage(): React.ReactElement {
     setLoading(true);
     try {
       const res = await apiFetchWithRetry('/api/recovery-images', { credentials: 'include' });
-      if (res.ok) setImages(await res.json() as RecoveryImage[]);
-      else notify({ status: 'error', title: 'Failed to load recovery images.' });
+      if (res.ok) {
+        const data = await res.json() as RecoveryImage[];
+        setImages(data.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+      } else notify({ status: 'error', title: 'Failed to load recovery images.' });
     } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
   };
@@ -152,7 +157,12 @@ export default function RecoveryImagesPage(): React.ReactElement {
               </TableRow>
             ) : images.map(img => (
               <TableRow key={img.recoveryImageId}>
-                <TableCell className="font-medium">{img.version}</TableCell>
+                <TableCell className="font-medium">
+                  {img.version}
+                  {img.description && (
+                    <p className="mt-0.5 font-normal text-xs text-muted-foreground">{img.description}</p>
+                  )}
+                </TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{formatDateTime(img.createdAt)}</TableCell>
@@ -185,6 +195,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
       {uploadOpen && (
         <UploadRecoveryImageDialog
           atCapacity={atCapacity}
+          existingVersions={images.map(img => img.version)}
           onClose={() => setUploadOpen(false)}
           onPublished={() => { setUploadOpen(false); void loadImages(); }}
         />
@@ -197,13 +208,20 @@ type UploadStage = 'form' | 'hashing' | 'uploading' | 'publishing';
 
 interface UploadRecoveryImageDialogProps {
   atCapacity: boolean;
+  /** Versions already present in the catalog; the new version must not match any of these. */
+  existingVersions: string[];
   onClose: () => void;
   onPublished: () => void;
 }
 
 /** Staged recovery image upload modal: hash → SAS upload → publish. */
-function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadRecoveryImageDialogProps): React.ReactElement {
+function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPublished }: UploadRecoveryImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
+  // Tracks whether the current `version` value was populated automatically from the
+  // selected file's name, so a subsequent file pick can safely replace it — but a
+  // manual edit to the field immediately "claims" it and stops any further auto-fill.
+  const [versionAutoFilled, setVersionAutoFilled] = useState(false);
+  const [description, setDescription] = useState('');
   const [file, setFile]       = useState<File | null>(null);
   const [stage, setStage]     = useState<UploadStage>('form');
   const [percent, setPercent] = useState(0);
@@ -211,16 +229,23 @@ function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadR
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = stage !== 'form';
+  const trimmedVersion = version.trim();
+  const duplicateVersion = isDuplicateVersion(trimmedVersion, existingVersions);
 
   const handleSubmit = async () => {
     if (!version.trim() || !file) {
       setError('Provide a version and select a .wim or .iso file.');
       return;
     }
+    if (duplicateVersion) {
+      setError(`Version "${trimmedVersion}" already exists. Choose a different version.`);
+      return;
+    }
     setError(null);
     try {
       setStage('hashing');
-      const sha256Hash = await computeSha256(file);
+      setPercent(0);
+      const sha256Hash = await computeSha256Streaming(file, setPercent);
 
       const session = await startRecoveryImageUpload(version.trim(), sha256Hash, file.name);
 
@@ -229,7 +254,7 @@ function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadR
       await uploadRecoveryFileToBlobStorage(session.uploadUrl, file, setPercent);
 
       setStage('publishing');
-      await publishRecoveryImageUpload({ ...session, sha256Hash }, file.size, version.trim());
+      await publishRecoveryImageUpload({ ...session, sha256Hash }, file.size, version.trim(), description);
 
       onPublished();
     } catch (err) {
@@ -268,7 +293,22 @@ function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadR
               placeholder="e.g. 2026.07.1"
               value={version}
               disabled={busy}
-              onChange={e => setVersion(e.target.value)}
+              aria-invalid={duplicateVersion}
+              onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
+            />
+            {duplicateVersion && (
+              <p className="text-xs text-destructive">Version "{trimmedVersion}" already exists.</p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="recoveryImageDescription">Description (optional)</Label>
+            <Input
+              id="recoveryImageDescription"
+              placeholder="e.g. WinRE build for 24H2"
+              value={description}
+              disabled={busy}
+              onChange={e => setDescription(e.target.value)}
             />
           </div>
 
@@ -294,6 +334,15 @@ function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadR
                 }
                 setFile(selected);
                 setError(null);
+                // Auto-fill the version from a date embedded in the filename, unless the
+                // operator has already typed their own version for this dialog session.
+                if (selected && (version.trim() === '' || versionAutoFilled)) {
+                  const suggested = suggestVersionFromFileName(selected.name, existingVersions);
+                  if (suggested) {
+                    setVersion(suggested);
+                    setVersionAutoFilled(true);
+                  }
+                }
               }}
             />
             <div className="flex items-center gap-3">
@@ -306,12 +355,12 @@ function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadR
             </div>
           </div>
 
-          {busy && <UploadProgressBar percent={stage === 'uploading' ? percent : 100} label={stageLabel} />}
+          {busy && <UploadProgressBar percent={stage === 'publishing' ? 100 : percent} label={stageLabel} />}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file}>
+            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || duplicateVersion}>
               {busy ? 'Working…' : 'Upload & publish'}
             </Button>
           </div>
@@ -319,13 +368,4 @@ function UploadRecoveryImageDialog({ atCapacity, onClose, onPublished }: UploadR
       </Card>
     </div>
   );
-}
-
-/** Computes the SHA-256 hash of a file and returns it as a lowercase hex string. */
-async function computeSha256(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
 }

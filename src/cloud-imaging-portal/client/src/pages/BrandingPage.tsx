@@ -46,6 +46,9 @@ type LogoKind = 'portal' | 'boot';
 /** Maximum logo size accepted by the portal (keeps the request within the API body limit). */
 const MAX_LOGO_BYTES = 512 * 1024;
 
+/** Matches the server-side BrandingFunctions validation: a 6-digit hex color. */
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
 async function extractError(res: Response, fallback: string): Promise<string> {
   try {
@@ -68,6 +71,12 @@ export default function BrandingPage(): React.ReactElement {
     primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
   });
   const isDirty = !appearanceEquals(appearanceOf(config), savedAppearance);
+  const primaryColorError = HEX_COLOR_PATTERN.test(config.primaryColor) ? null : 'Must be a 6-digit hex color, e.g. #0078D4.';
+  const accentColorError = HEX_COLOR_PATTERN.test(config.accentColor) ? null : 'Must be a 6-digit hex color, e.g. #005A9E.';
+  const applicationNameError = config.applicationName.trim().length < 1 || config.applicationName.trim().length > 100
+    ? 'Must be between 1 and 100 characters.'
+    : null;
+  const hasValidationError = !!(primaryColorError || accentColorError || applicationNameError);
   const [loading, setLoading]         = useState(true);
   const [saveStatus, setSaveStatus]   = useState<ButtonStatus>('idle');
   const [uploadingKind, setUploadingKind] = useState<LogoKind | null>(null);
@@ -112,6 +121,7 @@ export default function BrandingPage(): React.ReactElement {
   }, []);
 
   const handleSave = async () => {
+    if (hasValidationError) return;
     setSaveStatus('loading');
     const toastId = notify({ status: 'loading', title: 'Saving branding settings…' });
     try {
@@ -370,7 +380,11 @@ export default function BrandingPage(): React.ReactElement {
               type="text"
               value={config.applicationName}
               onChange={e => setConfig({ ...config, applicationName: e.target.value })}
+              aria-invalid={!!applicationNameError}
             />
+            {applicationNameError && (
+              <p className="text-xs text-destructive">{applicationNameError}</p>
+            )}
           </div>
 
           <div className="flex gap-4">
@@ -389,8 +403,12 @@ export default function BrandingPage(): React.ReactElement {
                   value={config.primaryColor}
                   onChange={e => setConfig({ ...config, primaryColor: e.target.value })}
                   className="font-mono"
+                  aria-invalid={!!primaryColorError}
                 />
               </div>
+              {primaryColorError && (
+                <p className="text-xs text-destructive">{primaryColorError}</p>
+              )}
             </div>
             <div className="flex-1 space-y-1.5">
               <Label htmlFor="accentColor">Accent colour</Label>
@@ -407,8 +425,12 @@ export default function BrandingPage(): React.ReactElement {
                   value={config.accentColor}
                   onChange={e => setConfig({ ...config, accentColor: e.target.value })}
                   className="font-mono"
+                  aria-invalid={!!accentColorError}
                 />
               </div>
+              {accentColorError && (
+                <p className="text-xs text-destructive">{accentColorError}</p>
+              )}
             </div>
           </div>
         </CardContent>
@@ -419,7 +441,7 @@ export default function BrandingPage(): React.ReactElement {
           onClick={handleSave}
           status={saveStatus}
           variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
-          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
+          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle') || hasValidationError}
         >
           Save branding
         </Button>

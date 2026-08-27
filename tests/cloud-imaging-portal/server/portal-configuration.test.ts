@@ -9,7 +9,7 @@ describe('Portal backend: portal configuration route', () => {
       expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');
     });
     it('returns devicePreFlightAuthorizationEnabled', () => {
-      const res = { devicePreFlightAuthorizationEnabled: false, sasTokenUrlExpiryMinutes: 60 };
+      const res = { devicePreFlightAuthorizationEnabled: false, sasTokenUrlExpiryMinutes: 240 };
       expect(res).toHaveProperty('devicePreFlightAuthorizationEnabled');
     });
   });

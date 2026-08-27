@@ -64,7 +64,7 @@ public sealed partial class RefreshSasTokenFunction
         }
 
         var config = await _configRepo.GetAsync(context.CancellationToken);
-        var sasExpiry = TimeSpan.FromMinutes(config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+        var sasExpiry = TimeSpan.FromMinutes(config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
 
         // Only refresh if < 15 minutes remain on the current token
         bool needsRefresh = !session.SasTokenUrlExpiresAt.HasValue

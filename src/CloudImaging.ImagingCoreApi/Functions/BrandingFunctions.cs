@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -24,6 +25,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 public sealed partial class BrandingFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Regex HexColorPattern = new("^#[0-9a-fA-F]{6}$", RegexOptions.Compiled);
     private const int LogoSasMinutes = 60;
     private const string LogoContainer = "branding";
     private const int MaxLogoBytes = 1024 * 1024; // 1 MB decoded
@@ -77,6 +79,28 @@ public sealed partial class BrandingFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
+        if (!HexColorPattern.IsMatch(payload.PrimaryColor))
+        {
+            var invalid = req.CreateResponse(HttpStatusCode.BadRequest);
+            await invalid.WriteStringAsync("primaryColor must be a 6-digit hex color (e.g. #0078D4).", context.CancellationToken);
+            return invalid;
+        }
+
+        if (!HexColorPattern.IsMatch(payload.AccentColor))
+        {
+            var invalid = req.CreateResponse(HttpStatusCode.BadRequest);
+            await invalid.WriteStringAsync("accentColor must be a 6-digit hex color (e.g. #005A9E).", context.CancellationToken);
+            return invalid;
+        }
+
+        var trimmedName = payload.ApplicationName?.Trim() ?? string.Empty;
+        if (trimmedName.Length is < 1 or > 100)
+        {
+            var invalid = req.CreateResponse(HttpStatusCode.BadRequest);
+            await invalid.WriteStringAsync("applicationName must be between 1 and 100 characters.", context.CancellationToken);
+            return invalid;
+        }
+
         // Logo paths are owned by the dedicated upload endpoints — preserve them here so a
         // colour/name save cannot accidentally clear a configured logo.
         var existing = await _brandingRepo.GetAsync(context.CancellationToken);
@@ -86,7 +110,7 @@ public sealed partial class BrandingFunctions
             PortalLogoBlobPath = existing.PortalLogoBlobPath,
             PrimaryColor = payload.PrimaryColor,
             AccentColor = payload.AccentColor,
-            ApplicationName = payload.ApplicationName,
+            ApplicationName = trimmedName,
         };
         await _brandingRepo.UpsertAsync(merged, context.CancellationToken);
         LogBrandingUpdated(_logger);

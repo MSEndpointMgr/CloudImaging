@@ -6,6 +6,8 @@ import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
 import { Card, CardContent } from './ui/card.tsx';
 import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { computeSha256Streaming } from '../lib/sha256.ts';
+import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
   startChunkedUpload,
   uploadBlocks,
@@ -16,33 +18,69 @@ interface ChunkedUploadDialogProps {
   open:    boolean;
   onClose: () => void;
   onUploaded: (result: { blobName: string }) => void;
+  /** Versions already present in the catalog; the new version must not match any of these. */
+  existingVersions?: string[];
 }
 
-type UploadState = 'idle' | 'uploading' | 'finalizing' | 'done' | 'error' | 'cancelled';
+type UploadState = 'idle' | 'hashing' | 'uploading' | 'finalizing' | 'done' | 'error' | 'cancelled';
 
-export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUploadDialogProps): React.ReactElement | null {
+export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersions = [] }: ChunkedUploadDialogProps): React.ReactElement | null {
   const [file, setFile]           = useState<File | null>(null);
   const [version, setVersion]     = useState('');
   const [sha256, setSha256]       = useState('');
+  // Tracks the checksum computation, which starts as soon as a file is chosen (so it's usually
+  // already done by the time the operator finishes typing the version) rather than being
+  // something the operator has to know/enter manually.
+  const [hashProgress, setHashProgress] = useState(0);
   const [progress, setProgress]   = useState(0);
   const [state, setState]         = useState<UploadState>('idle');
   const [error, setError]         = useState<string | null>(null);
   const abortRef                  = useRef<AbortController | null>(null);
+  const hashRunId                 = useRef(0);
   const fileInputRef              = useRef<HTMLInputElement>(null);
 
   if (!open) return null;
 
-  const busy = state === 'uploading' || state === 'finalizing';
+  const busy = state === 'hashing' || state === 'uploading' || state === 'finalizing';
 
   const reset = () => {
-    setFile(null); setVersion(''); setSha256(''); setProgress(0);
+    hashRunId.current++; // invalidate any in-flight hashing so it doesn't clobber state after reset
+    setFile(null); setVersion(''); setSha256(''); setHashProgress(0); setProgress(0);
     setState('idle'); setError(null);
   };
 
   const handleClose = () => { reset(); onClose(); };
 
+  const handleFileSelected = (selected: File | null) => {
+    hashRunId.current++;
+    const runId = hashRunId.current;
+    setFile(selected);
+    setSha256('');
+    setHashProgress(0);
+
+    if (!selected) {
+      setState('idle');
+      return;
+    }
+
+    setState('hashing');
+    computeSha256Streaming(selected, percent => {
+      if (hashRunId.current === runId) setHashProgress(percent);
+    })
+      .then(hash => {
+        if (hashRunId.current !== runId) return; // superseded by a newer file selection / reset
+        setSha256(hash);
+        setState('idle');
+      })
+      .catch((err: unknown) => {
+        if (hashRunId.current !== runId) return;
+        setError(err instanceof Error ? err.message : 'Failed to compute file checksum.');
+        setState('error');
+      });
+  };
+
   const handleUpload = async () => {
-    if (!file || !version.trim() || sha256.trim().length !== 64) return;
+    if (!file || !version.trim() || sha256.length !== 64 || duplicateVersion) return;
     setState('uploading'); setError(null); setProgress(0);
 
     abortRef.current = new AbortController();
@@ -71,11 +109,12 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
   };
 
   const stageLabel =
-    state === 'uploading'  ? 'Uploading to storage…'
+    state === 'hashing'    ? 'Computing checksum…'
+    : state === 'uploading'  ? 'Uploading to storage…'
     : state === 'finalizing' ? 'Validating & publishing…'
     : '';
-
-  const canUpload = !!file && version.trim().length > 0 && sha256.trim().length === 64;
+  const duplicateVersion = isDuplicateVersion(version, existingVersions);
+  const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -94,9 +133,13 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
               id="osImageVersion"
               placeholder="e.g. Windows 11 24H2"
               value={version}
-              disabled={busy}
+              disabled={state === 'uploading' || state === 'finalizing'}
+              aria-invalid={duplicateVersion}
               onChange={e => setVersion(e.target.value)}
             />
+            {duplicateVersion && (
+              <p className="text-xs text-destructive">Version "{version.trim()}" already exists.</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -107,48 +150,48 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
               type="file"
               accept={IMAGE_FILE_ACCEPT}
               className="hidden"
-              disabled={busy}
+              disabled={state === 'uploading' || state === 'finalizing'}
               onChange={e => {
                 const selected = e.target.files?.[0] ?? null;
                 if (selected) {
                   const validationError = validateImageFile(selected);
                   if (validationError) {
                     setError(validationError);
-                    setFile(null);
                     e.target.value = '';
+                    handleFileSelected(null);
                     return;
                   }
                 }
-                setFile(selected);
                 setError(null);
+                handleFileSelected(selected);
               }}
             />
             <div className="flex items-center gap-3">
-              <Button type="button" variant="outline" disabled={busy} onClick={() => fileInputRef.current?.click()}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={state === 'uploading' || state === 'finalizing'}
+                onClick={() => fileInputRef.current?.click()}
+              >
                 Choose file
               </Button>
               <span className="truncate text-sm text-muted-foreground">
                 {file ? file.name : 'No file selected'}
               </span>
             </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="osImageSha256">SHA-256 hash</Label>
-            <Input
-              id="osImageSha256"
-              value={sha256}
-              disabled={busy}
-              onChange={e => setSha256(e.target.value)}
-              placeholder="64-character hex string"
-              className="font-mono"
-            />
-            {sha256 && sha256.length !== 64 && (
-              <p className="text-xs text-destructive">Must be exactly 64 hex characters.</p>
+            {/* The checksum is computed automatically from the selected file — the operator
+                never has to know or type it in. */}
+            {state === 'hashing' && (
+              <UploadProgressBar percent={hashProgress} label="Computing checksum…" />
+            )}
+            {state !== 'hashing' && sha256 && (
+              <p className="truncate font-mono text-xs text-muted-foreground" title={sha256}>
+                SHA-256: {sha256}
+              </p>
             )}
           </div>
 
-          {busy && (
+          {(state === 'uploading' || state === 'finalizing') && (
             <UploadProgressBar
               percent={state === 'finalizing' ? 100 : progress}
               label={stageLabel}
@@ -169,7 +212,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            {busy ? (
+            {state === 'uploading' || state === 'finalizing' ? (
               <Button variant="outline" onClick={handleCancel}>Cancel upload</Button>
             ) : (
               <>
@@ -178,7 +221,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
                 </Button>
                 {state !== 'done' && (
                   <Button onClick={() => void handleUpload()} disabled={!canUpload}>
-                    Upload & publish
+                    {state === 'hashing' ? 'Computing checksum…' : 'Upload & publish'}
                   </Button>
                 )}
               </>
@@ -189,3 +232,4 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded }: ChunkedUpload
     </div>
   );
 }
+

@@ -68,7 +68,6 @@ import { auth } from './middleware/auth.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { imagesRouter } from './routes/images.js';
 import { brandingRouter } from './routes/branding.js';
-import { configurationRouter } from './routes/configuration.js';
 import { bootImagesRouter } from './routes/boot-images.js';
 import { certRouter } from './routes/cert.js';
 import { portalConfigRouter } from './routes/portal-config.js';
@@ -84,10 +83,10 @@ app.use('/api', (req, res, next) => {
 app.use('/api/sessions',      sessionsRouter);
 app.use('/api/images',        imagesRouter);
 app.use('/api/branding',      brandingRouter);
-app.use('/api/configuration', configurationRouter);
 app.use('/api/boot-images',   bootImagesRouter);
 app.use('/api/cert',          certRouter);
-app.use('/api/portal-config',  portalConfigRouter);app.use('/api/partitioning-scheme', partitioningSchemeRouter);
+app.use('/api/portal-config',  portalConfigRouter);
+app.use('/api/partitioning-scheme', partitioningSchemeRouter);
 app.use('/api/recovery-images',     recoveryImagesRouter);
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

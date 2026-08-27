@@ -12,7 +12,9 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { computeSha256Streaming } from '../lib/sha256.ts';
 import { formatDateTime } from '../lib/utils.ts';
+import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
   startBootImageUpload,
   uploadFileToBlobStorage,
@@ -207,22 +209,22 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
 
   const busy = stage !== 'form';
   const trimmedVersion = version.trim();
-  const isDuplicateVersion = trimmedVersion.length > 0
-    && existingVersions.some(v => v.toLowerCase() === trimmedVersion.toLowerCase());
+  const duplicateVersion = isDuplicateVersion(trimmedVersion, existingVersions);
 
   const handleSubmit = async () => {
     if (!version.trim() || !file) {
       setError('Provide a version and select a .wim or .iso file.');
       return;
     }
-    if (isDuplicateVersion) {
+    if (duplicateVersion) {
       setError(`Version "${trimmedVersion}" already exists. Choose a different version.`);
       return;
     }
     setError(null);
     try {
       setStage('hashing');
-      const sha256Hash = await computeSha256(file);
+      setPercent(0);
+      const sha256Hash = await computeSha256Streaming(file, setPercent);
 
       const session = await startBootImageUpload(version.trim(), sha256Hash, file.name);
 
@@ -270,10 +272,10 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
               placeholder="e.g. 2026.07.1"
               value={version}
               disabled={busy}
-              aria-invalid={isDuplicateVersion}
+              aria-invalid={duplicateVersion}
               onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
             />
-            {isDuplicateVersion && (
+            {duplicateVersion && (
               <p className="text-xs text-destructive">Version "{trimmedVersion}" already exists.</p>
             )}
           </div>
@@ -322,12 +324,12 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
             </div>
           </div>
 
-          {busy && <UploadProgressBar percent={stage === 'uploading' ? percent : 100} label={stageLabel} />}
+          {busy && <UploadProgressBar percent={stage === 'publishing' ? 100 : percent} label={stageLabel} />}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || isDuplicateVersion}>
+            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || duplicateVersion}>
               {busy ? 'Working…' : 'Upload & publish'}
             </Button>
           </div>
@@ -335,40 +337,5 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
       </Card>
     </div>
   );
-}
-
-/**
- * Derives a `YYYY.MM.DD.V` version string from an `YYYYMMDD` date embedded in a boot-media
- * filename (Media Builder names uploads e.g. `cloud-imaging-boot-20260827-170846.wim`).
- * `V` starts at 1 and is bumped past any version already in `existingVersions` for the same
- * date, so publishing a second boot image on the same day suggests `.2`, `.3`, etc.
- * Returns `null` when no plausible date can be found in the filename.
- */
-function suggestVersionFromFileName(fileName: string, existingVersions: string[]): string | null {
-  const match = /(\d{4})(\d{2})(\d{2})/.exec(fileName);
-  if (!match) return null;
-
-  const [, year, month, day] = match;
-  const monthNum = Number(month);
-  const dayNum = Number(day);
-  if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) return null;
-
-  const datePrefix = `${year}.${month}.${day}`;
-  const versionPattern = new RegExp(`^${datePrefix.replace(/\./g, '\\.')}\\.(\\d+)$`);
-  const usedVersionNumbers = existingVersions
-    .map(v => versionPattern.exec(v.trim())?.[1])
-    .filter((v): v is string => v !== undefined)
-    .map(Number);
-  const nextVersion = usedVersionNumbers.length > 0 ? Math.max(...usedVersionNumbers) + 1 : 1;
-  return `${datePrefix}.${nextVersion}`;
-}
-
-/** Computes the SHA-256 hash of a file and returns it as a lowercase hex string. */
-async function computeSha256(file: File): Promise<string> {
-  const buffer = await file.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 

@@ -92,6 +92,21 @@ public sealed partial class BootImageLifecycleFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
+        var image = await _repo.GetByIdAsync(imageId, context.CancellationToken);
+        if (image is null)
+        {
+            return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+
+        if (image.IsLatestPublished)
+        {
+            var conflict = req.CreateResponse(HttpStatusCode.Conflict);
+            await conflict.WriteStringAsync(
+                "Cannot delete the currently published boot image. Publish a replacement first.",
+                context.CancellationToken);
+            return conflict;
+        }
+
         await _repo.DeleteAsync(imageId, context.CancellationToken);
         LogDeleted(_logger, imageId);
         return req.CreateResponse(HttpStatusCode.NoContent);

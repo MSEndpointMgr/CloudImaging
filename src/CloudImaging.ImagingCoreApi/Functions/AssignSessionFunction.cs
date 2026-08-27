@@ -97,7 +97,7 @@ public sealed partial class AssignSessionFunction
         // Read SAS expiry from portal configuration
         var config = await _configRepo.GetAsync(context.CancellationToken);
         var sasExpiry = TimeSpan.FromMinutes(
-            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
 
         // Generate SAS token URL for the OS image blob
         var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);

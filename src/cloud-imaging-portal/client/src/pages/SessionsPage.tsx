@@ -12,6 +12,7 @@ import { Input } from '../components/ui/input.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { cn } from '../lib/utils.ts';
 import { useToast } from '../context/toastContext.tsx';
 import {
@@ -223,6 +224,7 @@ function SessionsPageImpl(): React.ReactElement {
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [startingImages, setStartingImages]   = useState(false);
+  const [pendingBulkAssign, setPendingBulkAssign] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Imaging (and, by extension, the Start Imaging action) is impossible until at least one
@@ -371,6 +373,7 @@ function SessionsPageImpl(): React.ReactElement {
       return;
     }
     if (!selectedImageId || coupled.length === 0 || startingImages) return;
+    setPendingBulkAssign(false);
     setStartingImages(true);
     try {
       const res = await apiFetch('/api/sessions/bulk-assign', {
@@ -392,6 +395,17 @@ function SessionsPageImpl(): React.ReactElement {
     } finally {
       setStartingImages(false);
     }
+  };
+
+  const selectedImageLabel = images.find(i => i.imageId === selectedImageId);
+
+  const bulkAssignCopy: ConfirmImpactCopy = {
+    confirmTitle: `Start imaging on ${coupled.length} device${coupled.length !== 1 ? 's' : ''}?`,
+    impact: selectedImageLabel
+      ? `This assigns "${selectedImageLabel.name} ${selectedImageLabel.version}" to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`
+      : `This assigns the selected OS image to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`,
+    confirmLabel: 'Start Imaging',
+    destructive: false,
   };
 
   return (
@@ -521,7 +535,7 @@ function SessionsPageImpl(): React.ReactElement {
                 </select>
                 <Button
                   size="sm"
-                  onClick={() => { void handleStartImaging(); }}
+                  onClick={() => setPendingBulkAssign(true)}
                   disabled={!selectedImageId || coupled.length === 0 || startingImages}
                   title={!hasOsImages ? 'Upload an OS image before starting imaging.' : undefined}
                 >
@@ -643,6 +657,16 @@ function SessionsPageImpl(): React.ReactElement {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {pendingBulkAssign && (
+        <ConfirmImpactDialog
+          copy={bulkAssignCopy}
+          busy={startingImages}
+          onCancel={() => setPendingBulkAssign(false)}
+          onConfirm={() => { void handleStartImaging(); }}
+          titleId="bulk-assign-confirm-title"
+        />
       )}
     </div>
   );

@@ -73,6 +73,7 @@ export async function publishRecoveryImageUpload(
   session: RecoveryUploadSession,
   sizeBytes: number,
   version: string,
+  description?: string,
 ): Promise<unknown> {
   const res = await apiFetch(`/api/recovery-images/upload/${session.uploadId}/publish`, {
     method: 'POST',
@@ -83,6 +84,7 @@ export async function publishRecoveryImageUpload(
       sha256Hash: session.sha256Hash,
       version,
       sizeBytes,
+      description: description?.trim() || undefined,
     }),
   });
   if (!res.ok) {

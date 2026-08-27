@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/apiClient.ts';
+import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 
@@ -14,13 +15,15 @@ interface ImageEditorDialogProps {
   image: OsImage | null;
   onClose: () => void;
   onSaved: () => void;
+  /** Versions of other images in the catalog; the edited version must not match any of these. */
+  existingVersions?: string[];
 }
 
 /**
  * Modal for editing OS image metadata (T088, FR-037).
  * Sends PATCH /api/images/{imageId} with updated name, version, description.
  */
-export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialogProps): React.ReactElement | null {
+export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = [] }: ImageEditorDialogProps): React.ReactElement | null {
   const [name, setName]           = useState('');
   const [version, setVersion]     = useState('');
   const [description, setDesc]    = useState('');
@@ -38,7 +41,13 @@ export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialog
 
   if (!image) return null;
 
+  const duplicateVersion = isDuplicateVersion(version, existingVersions);
+
   const handleSave = async () => {
+    if (duplicateVersion) {
+      setError(`Version "${version.trim()}" already exists.`);
+      return;
+    }
     setSaving(true); setError(null);
     try {
       const res = await apiFetch(`/api/images/${image.imageId}`, {
@@ -65,7 +74,10 @@ export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialog
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Version</label>
-            <Input value={version} onChange={e => setVersion(e.target.value)} />
+            <Input value={version} aria-invalid={duplicateVersion} onChange={e => setVersion(e.target.value)} />
+            {duplicateVersion && (
+              <p className="text-xs text-destructive mt-1">Version "{version.trim()}" already exists.</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
@@ -80,7 +92,7 @@ export function ImageEditorDialog({ image, onClose, onSaved }: ImageEditorDialog
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving || !name.trim()}>
+          <Button onClick={handleSave} disabled={saving || !name.trim() || duplicateVersion}>
             {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         </div>

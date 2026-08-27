@@ -56,10 +56,10 @@ public sealed class AssignSessionIntegrationTests
     [Fact]
     public void SasTokenUrl_Expiry_RespectsSasTokenUrlExpiryMinutesConfig()
     {
-        // Default SasTokenUrlExpiryMinutes is 60
+        // Default SasTokenUrlExpiryMinutes is 240 (see PortalConfiguration.cs)
         var config         = new PortalConfiguration { SasTokenUrlExpiryMinutes = 120 };
         var sasExpiry      = TimeSpan.FromMinutes(
-            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
         var issued         = DateTimeOffset.UtcNow;
         var expiresAt      = issued + sasExpiry;
 
@@ -68,14 +68,14 @@ public sealed class AssignSessionIntegrationTests
     }
 
     [Fact]
-    public void SasTokenUrl_Expiry_DefaultsTo60Minutes_WhenConfigIsZero()
+    public void SasTokenUrl_Expiry_DefaultsTo240Minutes_WhenConfigIsZero()
     {
         var config    = new PortalConfiguration { SasTokenUrlExpiryMinutes = 0 };
         var sasExpiry = TimeSpan.FromMinutes(
-            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
 
-        sasExpiry.TotalMinutes.Should().Be(60,
-            "SAS expiry must default to 60 minutes when config value is 0");
+        sasExpiry.TotalMinutes.Should().Be(240,
+            "SAS expiry must default to 240 minutes (PortalConfiguration.SasTokenUrlExpiryMinutes' documented default) when config value is 0");
     }
 
     // ── Sha256Hash in response ────────────────────────────────────────────────

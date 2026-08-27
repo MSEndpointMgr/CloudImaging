@@ -13,8 +13,6 @@ describe('Portal backend: role enforcement', () => {
     'POST /api/boot-images/publish',
     'DELETE /api/boot-images/:id',
     'PUT /api/branding',
-    'GET /api/configuration',
-    'PUT /api/configuration',
     'GET /api/portal-config',
     'PUT /api/portal-config',
     'GET /api/cert/active',

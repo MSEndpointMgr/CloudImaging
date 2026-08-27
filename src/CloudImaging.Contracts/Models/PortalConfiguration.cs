@@ -5,8 +5,12 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class PortalConfiguration
 {
-    /// <summary>Enables or disables the device pre-flight authorization check globally (FR-026a).</summary>
-    public bool DevicePreFlightAuthorizationEnabled { get; init; } = true;
+    /// <summary>
+    /// Enables or disables the device pre-flight authorization check globally (FR-026a).
+    /// Default: false (disabled) — bare-metal imaging works without device pre-enrollment;
+    /// administrators opt in explicitly once device authorization records are in place.
+    /// </summary>
+    public bool DevicePreFlightAuthorizationEnabled { get; init; }
 
     /// <summary>
     /// OS image SAS token URL expiry in minutes (FR-022).

@@ -92,8 +92,8 @@ export default function DeploymentConfigPage(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<TabKey>('certificates');
   const DEFAULT_CONFIG: PortalConfig = {
     devicePreFlightAuthorizationEnabled: false,
-    sasTokenUrlExpiryMinutes:  60,
-    bootImageSasExpiryMinutes: 60,
+    sasTokenUrlExpiryMinutes:  240,
+    bootImageSasExpiryMinutes: 120,
     certValidityPeriodDays:    365,
     clockSkewToleranceSeconds: 30,
   };

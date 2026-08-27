@@ -58,7 +58,7 @@ public sealed partial class BulkAssignmentService
 
         var config = await _configRepo.GetAsync(ct);
         var sasExpiry = TimeSpan.FromMinutes(
-            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
 
         // All sessions in this batch are assigned the same OS image, so one SAS token URL can be
         // shared across every session — avoids one user-delegation-key round trip per device.

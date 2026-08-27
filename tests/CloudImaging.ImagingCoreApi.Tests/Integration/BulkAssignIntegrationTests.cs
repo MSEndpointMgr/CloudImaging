@@ -106,7 +106,7 @@ public sealed class BulkAssignIntegrationTests
     {
         var config    = new PortalConfiguration { SasTokenUrlExpiryMinutes = 120 };
         var sasExpiry = TimeSpan.FromMinutes(
-            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 60);
+            config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
         var issued    = DateTimeOffset.UtcNow;
         var expiresAt = issued + sasExpiry;
 

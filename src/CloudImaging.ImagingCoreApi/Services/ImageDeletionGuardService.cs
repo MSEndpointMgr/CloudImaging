@@ -41,6 +41,27 @@ public sealed partial class ImageDeletionGuardService
         return true;
     }
 
+    /// <summary>
+    /// Returns the set of OS image IDs currently referenced by an active session
+    /// (SessionStarted or SessionInProgress), for computing each catalog image's
+    /// <c>IsInUse</c> flag in a single active-session scan rather than one scan per image.
+    /// </summary>
+    public async Task<HashSet<Guid>> GetInUseImageIdsAsync(CancellationToken ct = default)
+    {
+        var inUse = new HashSet<Guid>();
+        await foreach (var session in _sessionRepo.QueryActiveAsync(ct))
+        {
+            if (session.AssignedOsImageId is { } imageId
+                && session.State is SessionState.SessionStarted
+                              or SessionState.SessionInProgress)
+            {
+                inUse.Add(imageId);
+            }
+        }
+
+        return inUse;
+    }
+
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "Delete blocked: image {ImageId} is referenced by active session {SessionId} (state={State}).")]
     private static partial void LogDeleteBlocked(

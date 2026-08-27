@@ -9,6 +9,7 @@ import { Badge } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
+import { ImageEditorDialog } from '../components/ImageEditorDialog.tsx';
 
 interface OsImage {
   imageId: string;
@@ -33,6 +34,7 @@ export default function OsImagesPage(): React.ReactElement {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [removing, setRemoving] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [editingImage, setEditingImage] = useState<OsImage | null>(null);
 
   const loadImages = async () => {
     setLoading(true);
@@ -187,7 +189,7 @@ export default function OsImagesPage(): React.ReactElement {
                   <div className="flex items-center gap-1">
                     {isAdministrator ? (
                       <>
-                        <button className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-primary" title="Edit">
+                        <button onClick={() => setEditingImage(img)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-primary" title="Edit">
                           <Pencil size={14} />
                         </button>
                         {!img.isInUse && (
@@ -212,6 +214,14 @@ export default function OsImagesPage(): React.ReactElement {
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onUploaded={() => { setUploadOpen(false); void loadImages(); }}
+        existingVersions={images.map(img => img.version)}
+      />
+
+      <ImageEditorDialog
+        image={editingImage}
+        onClose={() => setEditingImage(null)}
+        onSaved={() => void loadImages()}
+        existingVersions={images.filter(img => img.imageId !== editingImage?.imageId).map(img => img.version)}
       />
     </>
   );

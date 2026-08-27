@@ -100,7 +100,7 @@ public sealed partial class RecoveryImageFunctions
 
         var config = await _configRepo.GetAsync(context.CancellationToken);
         var sasExpiry = TimeSpan.FromMinutes(
-            config.BootImageSasExpiryMinutes > 0 ? config.BootImageSasExpiryMinutes : 60);
+            config.BootImageSasExpiryMinutes > 0 ? config.BootImageSasExpiryMinutes : 120);
 
         string sasUrl;
         try

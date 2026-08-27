@@ -2,7 +2,6 @@ using System.IO;
 using System.Net;
 using System.Text.Json;
 using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Sas;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
@@ -14,14 +13,16 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.ImagingCoreApi.Functions;
 
 /// <summary>
-/// Staged, direct-to-blob chunked upload for recovery (WinRE) images, mirroring
-/// <see cref="OsImageUploadFunctions"/>.
+/// Staged, direct-to-blob upload for recovery (WinRE) images, mirroring
+/// <see cref="BootImageUploadFunctions"/> (recovery images are boot-media-sized, not multi-GB
+/// like OS images, so a single whole-file PUT is used rather than OsImageUploadFunctions'
+/// block-staged chunked upload).
 ///
 /// POST /api/internal/recovery-images/upload/start           — start a staged upload; returns a
-///   write SAS URL valid for repeated "stage block" calls directly from the browser.
-/// POST /api/internal/recovery-images/upload/{uploadId}/publish — commits the block list
-///   server-side, validates SHA-256, and publishes the recovery image catalog entry
-///   (auto-promoted to isLatestPublished, mirroring the boot image convention).
+///   write SAS URL for a single direct-to-blob PUT from the browser.
+/// POST /api/internal/recovery-images/upload/{uploadId}/publish — validates the uploaded blob's
+///   SHA-256 and file signature, then publishes the recovery image catalog entry (auto-promoted
+///   to isLatestPublished, mirroring the boot image convention).
 /// </summary>
 public sealed partial class RecoveryImageUploadFunctions
 {
@@ -54,13 +55,14 @@ public sealed partial class RecoveryImageUploadFunctions
     {
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         if (!body.RootElement.TryGetProperty("version", out var versionProp)
-            || !body.RootElement.TryGetProperty("sha256Hash", out _)
+            || !body.RootElement.TryGetProperty("sha256Hash", out var hashProp)
             || !body.RootElement.TryGetProperty("fileName", out var fileNameProp))
         {
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
         var version = versionProp.GetString() ?? string.Empty;
+        var sha256Hash = hashProp.GetString() ?? string.Empty;
         var fileName = fileNameProp.GetString() ?? string.Empty;
         var extension = Path.GetExtension(fileName);
 
@@ -77,12 +79,15 @@ public sealed partial class RecoveryImageUploadFunctions
         var uploadId = Guid.NewGuid().ToString("N");
         var blobName = $"uploads/{uploadId}/winre-{version.Replace(' ', '-')}{extension}";
 
+        // Single write SAS for one whole-file PUT (BlobSasPermissions.Create|Write, not Add) —
+        // matches how the client (recoveryImageUploadService.ts) actually uploads: a single
+        // XHR PUT of the entire file, the same as Boot Images, not a chunked block-staged upload.
         var uploadUrl = await BlobSasUrlGenerator.GenerateAsync(
             _blobClient,
             UploadContainer,
             blobName,
             BlobSasPermissions.Create | BlobSasPermissions.Write,
-            TimeSpan.FromHours(8),
+            TimeSpan.FromHours(4),
             context.CancellationToken);
 
         LogUploadStarted(_logger, uploadId, version);
@@ -94,8 +99,8 @@ public sealed partial class RecoveryImageUploadFunctions
             uploadId,
             blobName,
             uploadUrl,
-            blockSize = 4 * 1024 * 1024,
-            expiresAt = DateTimeOffset.UtcNow.AddHours(8),
+            sha256Hash,
+            expiresAt = DateTimeOffset.UtcNow.AddHours(4),
         }, JsonOptions), context.CancellationToken);
         return response;
     }
@@ -110,7 +115,6 @@ public sealed partial class RecoveryImageUploadFunctions
     {
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         if (!body.RootElement.TryGetProperty("blobName", out var blobNameProp)
-            || !body.RootElement.TryGetProperty("blockIds", out var blockIdsProp)
             || !body.RootElement.TryGetProperty("sha256Hash", out var hashProp)
             || !body.RootElement.TryGetProperty("version", out var versionProp)
             || !body.RootElement.TryGetProperty("sizeBytes", out var sizeProp))
@@ -119,23 +123,22 @@ public sealed partial class RecoveryImageUploadFunctions
         }
 
         var blobName = blobNameProp.GetString()!;
-        var blockIds = blockIdsProp.EnumerateArray().Select(e => e.GetString()!).ToList();
         var sha256Hash = hashProp.GetString()!;
         var version = versionProp.GetString()!;
         var sizeBytes = sizeProp.GetInt64();
         var description = body.RootElement.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
-
-        var blockBlobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlockBlobClient(blobName);
-
-        await blockBlobClient.CommitBlockListAsync(blockIds, cancellationToken: context.CancellationToken);
-
         var extension = Path.GetExtension(blobName);
-        var validation = await _validator.ValidateAsync(blockBlobClient, sha256Hash, extension, context.CancellationToken);
+
+        // The client uploaded the whole file in a single PUT (see StartUpload), so there is no
+        // block list to commit here — just validate the already-complete blob directly, mirroring
+        // BootImageUploadFunctions.PublishUpload.
+        var blobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(blobName);
+        var validation = await _validator.ValidateAsync(blobClient, sha256Hash, extension, context.CancellationToken);
 
         if (!validation.Valid)
         {
             LogValidationFailed(_logger, blobName, validation.FailureReason ?? "unknown");
-            await blockBlobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
+            await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
             var bad = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
             await bad.WriteStringAsync(validation.FailureReason ?? "Checksum validation failed.", context.CancellationToken);
             return bad;
@@ -143,8 +146,8 @@ public sealed partial class RecoveryImageUploadFunctions
 
         var finalBlobName = $"published/{Guid.NewGuid():N}/winre-{version.Replace(' ', '-')}{extension}";
         var finalBlob = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
-        await finalBlob.StartCopyFromUriAsync(blockBlobClient.Uri, cancellationToken: context.CancellationToken);
-        await blockBlobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
+        await finalBlob.StartCopyFromUriAsync(blobClient.Uri, cancellationToken: context.CancellationToken);
+        await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
 
         var image = await _recoveryImageRepo.PublishAsync(new RecoveryImage
         {

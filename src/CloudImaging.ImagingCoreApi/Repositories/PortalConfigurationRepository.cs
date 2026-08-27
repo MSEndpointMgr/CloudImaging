@@ -70,8 +70,8 @@ public sealed partial class PortalConfigurationRepository
         new()
         {
             DevicePreFlightAuthorizationEnabled = e.GetBoolean(nameof(PortalConfiguration.DevicePreFlightAuthorizationEnabled)) ?? false,
-            SasTokenUrlExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)) ?? 60,
-            BootImageSasExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.BootImageSasExpiryMinutes)) ?? 60,
+            SasTokenUrlExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)) ?? 240,
+            BootImageSasExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.BootImageSasExpiryMinutes)) ?? 120,
             CertValidityPeriodDays = e.GetInt32(nameof(PortalConfiguration.CertValidityPeriodDays)) ?? 365,
             ClockSkewToleranceSeconds = e.GetInt32(nameof(PortalConfiguration.ClockSkewToleranceSeconds)) ?? 30,
         };
@@ -80,8 +80,8 @@ public sealed partial class PortalConfigurationRepository
         new()
         {
             DevicePreFlightAuthorizationEnabled = false,
-            SasTokenUrlExpiryMinutes = 60,
-            BootImageSasExpiryMinutes = 60,
+            SasTokenUrlExpiryMinutes = 240,
+            BootImageSasExpiryMinutes = 120,
             CertValidityPeriodDays = 365,
             ClockSkewToleranceSeconds = 30,
         };

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -23,15 +24,18 @@ public sealed partial class ImageCatalogFunctions
 
     private readonly OsImageRepository _imageRepo;
     private readonly DeviceSessionRepository _sessionRepo;
+    private readonly ImageDeletionGuardService _deletionGuard;
     private readonly ILogger<ImageCatalogFunctions> _logger;
 
     public ImageCatalogFunctions(
         OsImageRepository imageRepo,
         DeviceSessionRepository sessionRepo,
+        ImageDeletionGuardService deletionGuard,
         ILogger<ImageCatalogFunctions> logger)
     {
         _imageRepo = imageRepo;
         _sessionRepo = sessionRepo;
+        _deletionGuard = deletionGuard;
         _logger = logger;
     }
 
@@ -43,9 +47,12 @@ public sealed partial class ImageCatalogFunctions
         FunctionContext context)
     {
         var images = await _imageRepo.ListActiveAsync(context.CancellationToken).ToListAsync();
+        var inUseImageIds = await _deletionGuard.GetInUseImageIdsAsync(context.CancellationToken);
+        var withComputedInUse = images.Select(i => WithIsInUse(i, inUseImageIds.Contains(i.ImageId)));
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(images, JsonOptions), context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(withComputedInUse, JsonOptions), context.CancellationToken);
         return response;
     }
 
@@ -67,9 +74,13 @@ public sealed partial class ImageCatalogFunctions
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
 
+        var canDelete = await _deletionGuard.CanDeleteAsync(imageId, context.CancellationToken);
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(image, JsonOptions), context.CancellationToken);
+        await response.WriteStringAsync(
+            JsonSerializer.Serialize(WithIsInUse(image, !canDelete), JsonOptions),
+            context.CancellationToken);
         return response;
     }
 
@@ -169,7 +180,7 @@ public sealed partial class ImageCatalogFunctions
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
 
-        if (image.IsInUse)
+        if (!await _deletionGuard.CanDeleteAsync(imageId, context.CancellationToken))
         {
             LogDeleteBlockedInUse(_logger, imageId);
             var conflict = req.CreateResponse(HttpStatusCode.Conflict);
@@ -183,6 +194,21 @@ public sealed partial class ImageCatalogFunctions
         LogImageDeleted(_logger, imageId);
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
+
+    /// <summary>Returns a copy of <paramref name="image"/> with <c>IsInUse</c> set to <paramref name="isInUse"/>
+    /// (the stored value is never authoritative — it is always computed from active sessions at read time).</summary>
+    private static OsImage WithIsInUse(OsImage image, bool isInUse) => new()
+    {
+        ImageId = image.ImageId,
+        Name = image.Name,
+        Version = image.Version,
+        Description = image.Description,
+        SizeBytes = image.SizeBytes,
+        StoragePath = image.StoragePath,
+        UploadedAt = image.UploadedAt,
+        IsInUse = isInUse,
+        Sha256Hash = image.Sha256Hash,
+    };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Image {ImageId} created: {Name}.")]
     private static partial void LogImageCreated(ILogger logger, Guid imageId, string name);
