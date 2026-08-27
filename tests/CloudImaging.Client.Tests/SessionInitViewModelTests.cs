@@ -90,6 +90,21 @@ public sealed class SessionInitViewModelTests
         vm.IsPolling.Should().BeFalse("polling stops once handed off to the imaging pipeline");
     }
 
+    [Fact]
+    public async Task SessionExpired_NavigatesToResults_WithExpiredOutcome()
+    {
+        // FR-021: a session that timed out before an operator coupled it must present as a
+        // benign timeout (Outcome.Expired), never as Outcome.Failure ("Imaging Failed") — no
+        // imaging was ever attempted.
+        using var vm = CreateViewModel("SessionExpired", out var progressCalls, out var resultsCalls);
+
+        await WaitForAsync(() => resultsCalls.Count > 0);
+
+        progressCalls.Should().BeEmpty();
+        resultsCalls.Should().ContainSingle().Which.Outcome.Should().Be(ResultsViewModel.Outcome.Expired);
+        vm.IsPolling.Should().BeFalse("polling stops once a terminal state is reached");
+    }
+
     private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>

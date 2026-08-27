@@ -37,25 +37,39 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
     [InlineData(SessionState.SessionCompleted,  false)]
     [InlineData(SessionState.SessionFailed,     false)]
     [InlineData(SessionState.SessionNotAuthorized, false)]
+    [InlineData(SessionState.SessionExpired,    false)]
     public void ActiveStates_AreSubjectToInactivityExpiry(SessionState state, bool expectExpirable)
     {
         // Terminal states are NOT subject to inactivity expiry
         bool isActive = state is not (SessionState.SessionCompleted
                                      or SessionState.SessionFailed
-                                     or SessionState.SessionNotAuthorized);
+                                     or SessionState.SessionNotAuthorized
+                                     or SessionState.SessionExpired);
         isActive.Should().Be(expectExpirable,
             $"state {state} should {(expectExpirable ? "" : "not ")}be subject to inactivity expiry");
     }
 
     // ── State transition on expiry ────────────────────────────────────────────
 
-    [Fact]
-    public void ExpiredSession_TransitionsTo_SessionFailed()
+    [Theory]
+    [InlineData(SessionState.SessionInit,    SessionState.SessionExpired)]
+    [InlineData(SessionState.SessionAllowed, SessionState.SessionExpired)]
+    [InlineData(SessionState.SessionAssigned,   SessionState.SessionFailed)]
+    [InlineData(SessionState.SessionStarted,    SessionState.SessionFailed)]
+    [InlineData(SessionState.SessionInProgress, SessionState.SessionFailed)]
+    public void InactivityExpiry_TransitionsTo_ExpectedTerminalState(SessionState startState, SessionState expectedTransition)
     {
-        // An inactive session must transition to SessionFailed (not NotAuthorized)
-        var expectedTransition = SessionState.SessionFailed;
-        expectedTransition.Should().Be(SessionState.SessionFailed,
-            "inactivity expiry transitions the session to SessionFailed");
+        // Mirrors DeviceSessionLifecycleService.ExpireInactiveSessionsAsync's NeverCoupledStates
+        // check: sessions never coupled by an operator (Init/Allowed) resolve to SessionExpired
+        // (a benign timeout) rather than SessionFailed (a real, diagnosable failure) — since an
+        // operator was never involved, there is nothing to diagnose.
+        var neverCoupledStates = new[] { SessionState.SessionInit, SessionState.SessionAllowed };
+        var actualTransition = neverCoupledStates.Contains(startState)
+            ? SessionState.SessionExpired
+            : SessionState.SessionFailed;
+
+        actualTransition.Should().Be(expectedTransition,
+            $"a session in {startState} that times out from inactivity must transition to {expectedTransition}");
     }
 
     // ── Heartbeat semantics ───────────────────────────────────────────────────

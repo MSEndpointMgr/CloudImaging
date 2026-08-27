@@ -139,19 +139,59 @@ public sealed class ResultsViewModelTests
             "NotAuthorized is not an error — no support code is needed");
     }
 
+    // ── Expired outcome (FR-021) ──────────────────────────────────────────────
+
+    [Fact]
+    public void Expired_SetsCorrectFlags()
+    {
+        var vm = Build(ResultsViewModel.Outcome.Expired);
+
+        vm.IsExpired.Should().BeTrue();
+        vm.IsSuccess.Should().BeFalse();
+        vm.IsFailure.Should().BeFalse();
+        vm.IsNotAuthorized.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Expired_HasNoSupportReferenceCode()
+    {
+        // Expiring before coupling is a benign timeout, not a diagnosable failure — no support
+        // reference code is needed, same as NotAuthorized.
+        var vm = Build(ResultsViewModel.Outcome.Expired);
+        vm.SupportReferenceCode.Should().BeNull("a coupling timeout is not an error");
+    }
+
+    [Fact]
+    public void Expired_RetryCommandIsAvailable()
+    {
+        // Unlike NotAuthorized (which only allows Exit), Expired must still offer Retry so the
+        // technician can simply request a fresh session.
+        bool navigateCalled = false;
+        var vm = new ResultsViewModel(
+            ResultsViewModel.Outcome.Expired,
+            null, null,
+            navigateToStart: () => navigateCalled = true);
+
+        vm.RetryCommand.CanExecute(null).Should().BeTrue();
+        vm.RetryCommand.Execute(null);
+        navigateCalled.Should().BeTrue("Retry must invoke the navigateToStart callback");
+    }
+
     // ── Mutual exclusivity ────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(ResultsViewModel.Outcome.Success,       true,  false, false)]
-    [InlineData(ResultsViewModel.Outcome.Failure,       false, true,  false)]
-    [InlineData(ResultsViewModel.Outcome.NotAuthorized, false, false, true)]
+    [InlineData(ResultsViewModel.Outcome.Success,       true,  false, false, false)]
+    [InlineData(ResultsViewModel.Outcome.Failure,       false, true,  false, false)]
+    [InlineData(ResultsViewModel.Outcome.NotAuthorized, false, false, true,  false)]
+    [InlineData(ResultsViewModel.Outcome.Expired,       false, false, false, true)]
     public void Outcomes_AreExclusive(
         ResultsViewModel.Outcome outcome,
-        bool expectSuccess, bool expectFailure, bool expectNotAuthorized)
+        bool expectSuccess, bool expectFailure, bool expectNotAuthorized, bool expectExpired)
     {
         var vm = Build(outcome);
         vm.IsSuccess.Should().Be(expectSuccess);
         vm.IsFailure.Should().Be(expectFailure);
         vm.IsNotAuthorized.Should().Be(expectNotAuthorized);
+        vm.IsExpired.Should().Be(expectExpired);
     }
 }

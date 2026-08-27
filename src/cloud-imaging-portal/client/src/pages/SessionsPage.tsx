@@ -3,9 +3,9 @@ export default function SessionsPage(): React.ReactElement {
   return <SessionsPageImpl />;
 }
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2 } from 'lucide-react';
+import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -133,7 +133,10 @@ function SortableHead<K extends string>({ label, sortKey, sort, onSort, classNam
       <button
         type="button"
         onClick={() => onSort(sortKey)}
-        className="inline-flex items-center gap-1 hover:text-foreground focus-visible:outline-none"
+        // Tailwind's preflight resets `text-transform: none` on <button>, which would otherwise
+        // override the `uppercase` class inherited from the parent <th> (see table.tsx) — reassert
+        // it here so sortable headers render in the same ALL CAPS style as static ones.
+        className="inline-flex items-center gap-1 uppercase hover:text-foreground focus-visible:outline-none"
       >
         {label}
         <Icon size={12} className={active ? '' : 'opacity-30'} />
@@ -148,6 +151,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
   const [passcode, setPasscode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
 
   useEffect(() => {
     const trimmed = passcode.trim();
@@ -184,7 +188,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
   }, [passcode]);
 
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="relative inline-flex items-center">
       <Input
         type="text"
         maxLength={6}
@@ -192,9 +196,19 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
         value={passcode}
         onChange={e => { setPasscode(e.target.value.toUpperCase()); setError(null); }}
         disabled={busy}
-        className="h-8 w-28 text-center font-mono text-xs tracking-widest"
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        className={cn(
+          'h-8 w-28 text-center font-mono text-xs tracking-widest',
+          error && 'border-destructive pr-6 focus-visible:ring-destructive/40',
+        )}
       />
-      {error && <span className="text-xs text-destructive">{error}</span>}
+      {error && (
+        <span title={error} className="absolute right-1.5 flex text-destructive">
+          <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+          <span id={errorId} className="sr-only">{error}</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -518,10 +532,11 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[27%]" />
-                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[36%]" />
-                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[27%]" />
-                  <TableHead className="w-[10%]">Actions</TableHead>
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
+                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[40%]" />
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
+                  {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks. */}
+                  <TableHead className="w-[64px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -563,12 +578,14 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[22%]" />
-                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
-                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
-                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
-                <TableHead>Actions</TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[18%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[24%]" />
+                {/* State and Actions are fixed pixel widths (not %) so they never shrink below the
+                    space their badge/button needs — the other columns share whatever space remains. */}
+                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[140px]" />
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[21%]" />
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[18%]" />
+                <TableHead className="w-[150px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

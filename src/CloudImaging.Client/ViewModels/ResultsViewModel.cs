@@ -7,11 +7,11 @@ using CloudImaging.Contracts.Models;
 namespace CloudImaging.Client.ViewModels;
 
 /// <summary>
-/// View model for the ResultsView displaying all three terminal outcomes (T135, FR-025, FR-026).
+/// View model for the ResultsView displaying all four terminal outcomes (T135, FR-021, FR-025, FR-026).
 /// </summary>
 public sealed class ResultsViewModel : INotifyPropertyChanged
 {
-    public enum Outcome { Success, Failure, NotAuthorized }
+    public enum Outcome { Success, Failure, NotAuthorized, Expired }
 
     /// <summary>How long the Success outcome waits before automatically restarting the device.</summary>
     private const int RestartCountdownDurationSeconds = 10;
@@ -66,6 +66,13 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     public bool IsSuccess       => _outcome == Outcome.Success;
     public bool IsFailure       => _outcome == Outcome.Failure;
     public bool IsNotAuthorized => _outcome == Outcome.NotAuthorized;
+
+    /// <summary>
+    /// The session was never coupled before its passcode/inactivity window elapsed — a benign
+    /// timeout, not a diagnosable failure (FR-021). Shown with warning (not error) styling, and
+    /// still offers Retry so the technician can simply request a fresh session.
+    /// </summary>
+    public bool IsExpired      => _outcome == Outcome.Expired;
 
     public string? DeviceSerialNumber => _deviceSerialNumber;
     public string? SupportReferenceCode { get; }

@@ -4,7 +4,7 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="Results">
     <!--
-        FR-025, FR-026: Three terminal outcomes — Success, Failure, NotAuthorized.
+        FR-021, FR-025, FR-026: Four terminal outcomes — Success, Failure, NotAuthorized, Expired.
 
         Accent-strip design (matches the Media Builder result dialog): a thin colour strip
         along the card's top edge signals the outcome instead of a big Unicode glyph, and any
@@ -35,6 +35,9 @@
                 <Border Grid.Row="0" CornerRadius="8,8,0,0"
                         Background="{DynamicResource SystemFillColorCautionBrush}"
                         Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}" />
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorCautionBrush}"
+                        Visibility="{Binding IsExpired, Converter={StaticResource BoolToVisibility}}" />
 
                 <StackPanel Grid.Row="1" Width="560" Margin="48,36,48,40">
 
@@ -84,6 +87,30 @@
                                  Margin="0,8,0,0" />
                         <ui:Button Content="Retry"
                                    Appearance="Danger"
+                                   Width="160"
+                                   Command="{Binding RetryCommand}"
+                                   HorizontalAlignment="Center" Margin="0,24,0,0" />
+                    </StackPanel>
+
+                    <!-- EXPIRED — session never coupled before the passcode/inactivity window
+                         elapsed (FR-021). Warning-toned like NotAuthorized (not red/error, since
+                         this is a benign timeout), but still offers Retry like Failure. -->
+                    <StackPanel Visibility="{Binding IsExpired, Converter={StaticResource BoolToVisibility}}"
+                                HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="Warning24" FontSize="48"
+                                       Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                       HorizontalAlignment="Center" />
+                        <TextBlock Text="Session Expired"
+                                   Style="{StaticResource TitleTextBlockStyle}"
+                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <TextBlock Text="No operator entered the passcode before it timed out. Start again to request a new one."
+                                   Style="{StaticResource BodyTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center"
+                                   HorizontalAlignment="Center" Margin="0,12,0,0" />
+                        <ui:Button Content="Retry"
+                                   Appearance="Secondary"
                                    Width="160"
                                    Command="{Binding RetryCommand}"
                                    HorizontalAlignment="Center" Margin="0,24,0,0" />

@@ -10,7 +10,8 @@ namespace CloudImaging.Client.ViewModels;
 /// <summary>
 /// View model for the SessionInitView (T033, FR-031).
 /// Polls session status every 5 seconds with a manual refresh option.
-/// Transitions immediately to ResultsView on SessionNotAuthorized (FR-026).
+/// Transitions immediately to ResultsView on SessionNotAuthorized (FR-026) and on
+/// SessionExpired — a passcode that timed out before an operator coupled it (FR-021).
 /// Handles cert-error state for mTLS failures (FR-071).
 /// </summary>
 public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
@@ -147,6 +148,18 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.Failure,
+                        _deviceSerialNumber,
+                        null,
+                        null);
+                    break;
+
+                // FR-021: the session was never coupled before the passcode/inactivity window
+                // elapsed — a benign timeout, not a real failure, so it must not be presented as
+                // one (see ResultsViewModel.Outcome.Expired).
+                case SessionState.SessionExpired:
+                    IsPolling = false;
+                    _navigateToResults(
+                        ResultsViewModel.Outcome.Expired,
                         _deviceSerialNumber,
                         null,
                         null);

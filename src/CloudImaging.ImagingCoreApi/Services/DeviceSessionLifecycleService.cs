@@ -9,10 +9,15 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// Maintains session health by expiring inactive sessions and purging terminal records (T112, FR-021).
 ///
 /// Lifecycle rules:
-///   • Inactivity timeout: sessions in SessionInit / SessionAllowed / SessionAssigned / SessionStarted
-///     that have had no heartbeat within <see cref="InactivityTimeout"/> transition to SessionFailed.
-///   • Terminal purge: sessions in terminal state (Completed / Failed / NotAuthorized) that have been
-///     terminal for longer than <see cref="TerminalPurgeTtl"/> are deleted from Table Storage.
+///   • Inactivity timeout: sessions with no heartbeat within <see cref="InactivityTimeout"/> are
+///     expired. Sessions still in <see cref="SessionState.SessionInit"/>/<see cref="SessionState.SessionAllowed"/>
+///     (never coupled by an operator) transition to <see cref="SessionState.SessionExpired"/> — a
+///     benign timeout, not a failure. Sessions already coupled (<see cref="SessionState.SessionAssigned"/>/
+///     <see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>) transition
+///     to <see cref="SessionState.SessionFailed"/>, since an operator was already involved and the
+///     interruption has real diagnostic value.
+///   • Terminal purge: sessions in terminal state (Completed / Failed / Expired / NotAuthorized) that have
+///     been terminal for longer than <see cref="TerminalPurgeTtl"/> are deleted from Table Storage.
 ///
 /// Designed to be called by a Timer-triggered Azure Function on a regular schedule.
 /// </summary>
@@ -31,6 +36,15 @@ public sealed partial class DeviceSessionLifecycleService
         SessionState.SessionAssigned,
         SessionState.SessionStarted,
         SessionState.SessionInProgress,
+    ];
+
+    // Never-coupled states: an inactivity timeout here means the operator simply never entered
+    // the passcode in time — not a real failure, so it must resolve to SessionExpired rather
+    // than SessionFailed (see class remarks).
+    private static readonly SessionState[] NeverCoupledStates =
+    [
+        SessionState.SessionInit,
+        SessionState.SessionAllowed,
     ];
 
     private readonly DeviceSessionRepository _sessionRepo;
@@ -63,9 +77,12 @@ public sealed partial class DeviceSessionLifecycleService
             var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
             if (lastHeartbeat < cutoff)
             {
-                var failed = BuildTransition(session, SessionState.SessionFailed);
-                await _sessionRepo.UpdateAsync(failed, ct);
-                LogSessionExpired(_logger, session.SessionId, lastHeartbeat);
+                var terminalState = NeverCoupledStates.Contains(session.State)
+                    ? SessionState.SessionExpired
+                    : SessionState.SessionFailed;
+                var transitioned = BuildTransition(session, terminalState);
+                await _sessionRepo.UpdateAsync(transitioned, ct);
+                LogSessionExpired(_logger, session.SessionId, lastHeartbeat, terminalState);
                 expired++;
             }
         }
@@ -124,9 +141,9 @@ public sealed partial class DeviceSessionLifecycleService
     // ── Logging ───────────────────────────────────────────────────────────────
 
     [LoggerMessage(Level = LogLevel.Warning,
-        Message = "Session {SessionId} expired due to inactivity (lastHeartbeat={LastHeartbeat}).")]
+        Message = "Session {SessionId} expired due to inactivity (lastHeartbeat={LastHeartbeat}), transitioned to {TerminalState}.")]
     private static partial void LogSessionExpired(
-        ILogger logger, Guid sessionId, DateTimeOffset lastHeartbeat);
+        ILogger logger, Guid sessionId, DateTimeOffset lastHeartbeat, SessionState terminalState);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Inactivity expiry run complete: {Count} sessions expired.")]
     private static partial void LogExpiryRun(ILogger logger, int count);

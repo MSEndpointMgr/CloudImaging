@@ -80,9 +80,17 @@ public sealed partial class CreateSessionFunction
             return bad;
         }
 
-        // Read configuration
-        int passcodeTtlMinutes = _config.GetValue<int>("Security__PasscodeTtlMinutes", 10);
-        int sessionInactivityMinutes = _config.GetValue<int>("Security__SessionInactivityMinutes", 30);
+        // Read configuration. Azure Function App settings are surfaced as OS environment
+        // variables, which the environment-variables configuration provider re-keys from
+        // "Security__PasscodeTtlMinutes" to "Security:PasscodeTtlMinutes" — so the colon form
+        // must be queried first (falling back to the literal double-underscore form for
+        // local.settings.json, which is not re-keyed the same way).
+        int passcodeTtlMinutes = _config.GetValue<int?>("Security:PasscodeTtlMinutes")
+            ?? _config.GetValue<int?>("Security__PasscodeTtlMinutes")
+            ?? 10;
+        int sessionInactivityMinutes = _config.GetValue<int?>("Security:SessionInactivityMinutes")
+            ?? _config.GetValue<int?>("Security__SessionInactivityMinutes")
+            ?? 30;
 
         var passcodeTtl = TimeSpan.FromMinutes(passcodeTtlMinutes);
         var sessionInactivityTimeout = TimeSpan.FromMinutes(sessionInactivityMinutes);

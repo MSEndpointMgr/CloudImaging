@@ -62,7 +62,8 @@ public sealed class DeviceSessionRepository
         var key = session.SessionId.ToString();
         var isTerminal = session.State is SessionState.SessionCompleted
             or SessionState.SessionFailed
-            or SessionState.SessionNotAuthorized;
+            or SessionState.SessionNotAuthorized
+            or SessionState.SessionExpired;
 
         var targetPartition = isTerminal ? TerminalPartition : ActivePartition;
         var entity = ToEntity(session, targetPartition);

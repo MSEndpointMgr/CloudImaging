@@ -57,7 +57,8 @@ public sealed class SessionStatusPoller : IDisposable
             var lastState = _lastResult?.State;
             if (lastState is SessionState.SessionCompleted
                           or SessionState.SessionFailed
-                          or SessionState.SessionNotAuthorized)
+                          or SessionState.SessionNotAuthorized
+                          or SessionState.SessionExpired)
             {
                 break;
             }
