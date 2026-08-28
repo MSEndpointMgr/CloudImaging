@@ -88,8 +88,26 @@ public sealed partial class BootImageValidationService
                 $"File content does not match a valid {normalizedExt} file signature.");
         }
 
-        using var download = await blobClient.OpenReadAsync(cancellationToken: ct);
-        return await ValidateAsync(download, expectedHash, ct);
+        // Opens a read stream over the full blob to hash it. Not wrapped by the same try/catch
+        // as the header read above because this needs its own stream lifetime (`using`) — but it
+        // is just as capable of throwing (e.g. a resumed upload's blob became unreadable, or a
+        // transient storage fault mid-download of a multi-GB file), so it needs the same
+        // "return a validation failure, don't let it bubble to a generic 500" handling.
+        Stream download;
+        try
+        {
+            download = await blobClient.OpenReadAsync(cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            LogStreamOpenFailed(_logger, ex);
+            return new ValidationResult(false, null, "Failed to read file content for checksum validation.");
+        }
+
+        await using (download)
+        {
+            return await ValidateAsync(download, expectedHash, ct);
+        }
     }
 
     private static bool HasWimSignature(byte[] header) =>
@@ -160,6 +178,9 @@ public sealed partial class BootImageValidationService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to read blob header for file signature validation.")]
     private static partial void LogSignatureReadFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to open blob stream for checksum validation.")]
+    private static partial void LogStreamOpenFailed(ILogger logger, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "File signature validation failed for expected extension '{Extension}'.")]
     private static partial void LogSignatureMismatch(ILogger logger, string extension);
