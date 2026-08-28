@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/authContext.tsx';
 import { BrandingProvider } from './context/brandingContext.tsx';
 import { ThemeProvider } from './context/themeContext.tsx';
 import { ToastProvider } from './context/toastContext.tsx';
+import { UserPreferencesProvider } from './context/userPreferencesContext.tsx';
 import { ProtectedRoute } from './components/ProtectedRoute.tsx';
 
 // Lazy page stubs. Each section is a placeholder until the feature pages are built
@@ -20,6 +21,7 @@ const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx'));
 const ReportSessionOutcomesPage = lazy(() => import('./pages/ReportSessionOutcomesPage.tsx'));
 const ReportImageInventoryPage = lazy(() => import('./pages/ReportImageInventoryPage.tsx'));
 const ReportFailureDetailPage = lazy(() => import('./pages/ReportFailureDetailPage.tsx'));
+const LocationsPage = lazy(() => import('./pages/LocationsPage.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
@@ -38,6 +40,7 @@ export default function App(): React.ReactElement {
         <BrowserRouter>
           <AuthProvider>
             <BrandingProvider>
+              <UserPreferencesProvider>
               <ToastProvider>
                 <ProtectedRoute>
                   <Suspense fallback={<div className="p-6 text-muted-foreground">Loading…</div>}>
@@ -50,6 +53,7 @@ export default function App(): React.ReactElement {
                         <Route path="recovery-images"  element={<RecoveryImagesPage />} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
+                        <Route path="locations"                   element={<RequireAdmin><LocationsPage /></RequireAdmin>} />
                         <Route path="reports"                     element={<RequireAdmin><ReportsPage /></RequireAdmin>} />
                         <Route path="reports/session-outcomes"    element={<RequireAdmin><ReportSessionOutcomesPage /></RequireAdmin>} />
                         <Route path="reports/image-inventory"     element={<RequireAdmin><ReportImageInventoryPage /></RequireAdmin>} />
@@ -60,6 +64,7 @@ export default function App(): React.ReactElement {
                   </Suspense>
                 </ProtectedRoute>
               </ToastProvider>
+              </UserPreferencesProvider>
             </BrandingProvider>
           </AuthProvider>
         </BrowserRouter>

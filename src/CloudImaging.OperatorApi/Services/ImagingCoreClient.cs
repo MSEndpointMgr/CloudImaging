@@ -185,4 +185,23 @@ public sealed class ImagingCoreClient
 
     public Task<HttpResponseMessage> RotateCertAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/cert/rotate", payload, JsonOptions, ct);
+
+    // ── Location catalog ─────────────────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> GetLocationsAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/locations", ct);
+
+    public Task<HttpResponseMessage> CreateLocationAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/locations", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> DeleteLocationAsync(Guid locationId, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/locations/{locationId}", ct);
+
+    // ── User location preference ─────────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> GetUserLocationPreferenceAsync(string userId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/user-preferences/{Uri.EscapeDataString(userId)}", ct);
+
+    public Task<HttpResponseMessage> PutUserLocationPreferenceAsync(string userId, object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/user-preferences/{Uri.EscapeDataString(userId)}", payload, JsonOptions, ct);
 }

@@ -102,6 +102,8 @@ public sealed partial class DeviceGatewayApiClient
             Model        = payload.Model,
             MacAddress   = payload.MacAddress,
             Hardware     = payload.Hardware,
+            LocationId   = payload.LocationId,
+            LocationName = payload.LocationName,
             ProofOfPossession = new DeviceProofOfPossession
             {
                 Nonce        = nonce,

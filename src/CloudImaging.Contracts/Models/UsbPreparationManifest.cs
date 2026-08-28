@@ -25,6 +25,16 @@ public sealed class UsbPreparationManifest
     public required string BootImageVersion { get; init; }
     public required string SelectedDiskId { get; init; }
 
+    /// <summary>
+    /// Admin-defined location label selected in Media Builder when this media was prepared
+    /// (e.g. "Seattle HQ"). Null when no location catalog entry was selected — the Client and
+    /// portal treat this as "unspecified" rather than an error.
+    /// </summary>
+    public Guid? LocationId { get; init; }
+
+    /// <summary>Denormalized copy of the location's name at preparation time, for display.</summary>
+    public string? LocationName { get; init; }
+
     /// <summary>Two-partition layout details (drive letters, sizes, labels).</summary>
     public Dictionary<string, object> PartitionSchema { get; init; } = [];
 

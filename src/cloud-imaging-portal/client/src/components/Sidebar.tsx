@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3 } from 'lucide-react';
+import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin } from 'lucide-react';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { cn } from '../lib/utils.ts';
@@ -18,6 +18,7 @@ const navItems: NavItem[] = [
   { label: 'Boot Images', path: '/boot-images',   icon: <Disc      size={18} /> },
   { label: 'Recovery Images', path: '/recovery-images', icon: <LifeBuoy size={18} /> },
   { label: 'Reports',     path: '/reports',       icon: <BarChart3 size={18} />, adminOnly: true },
+  { label: 'Locations',   path: '/locations',     icon: <MapPin    size={18} />, adminOnly: true },
   { label: 'Branding',    path: '/branding',      icon: <Palette   size={18} />, adminOnly: true },
   { label: 'Configuration', path: '/configuration', icon: <Settings size={18} />, adminOnly: true },
 ];

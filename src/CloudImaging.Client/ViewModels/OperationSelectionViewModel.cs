@@ -1,9 +1,11 @@
 using System.ComponentModel;
+using System.IO;
 using System.Management;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows.Input;
 using CloudImaging.Contracts.Models;
 using CloudImaging.Client.Services;
@@ -114,14 +116,21 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // Model ran directly on the UI thread right after, which blocked the dispatcher (and
             // froze the just-shown spinner's indeterminate animation) for as long as those WMI
             // round-trips took (FR-001a).
-            var (serialNumber, manufacturer, model, macAddress, hardware) = await Task.Run(() =>
+            var (serialNumber, manufacturer, model, macAddress, hardware, locationId, locationName) = await Task.Run(() =>
             {
                 var serial = GetSerialNumber();
                 var mfr    = GetManufacturer();
                 var mdl    = GetModel();
                 var mac    = GetMacAddress();
                 var hw     = CollectHardwareMetadata();
-                return (serial, mfr, mdl, mac, hw);
+                // Location Labels feature: if this Client was booted from USB media that Media
+                // Builder tagged with a site label, thread it through registration so the device
+                // shows up already labeled in the portal (FR). Best-effort — no manifest, or no
+                // location recorded in it, just registers without one, same as before this
+                // feature. Read here (not on the UI thread) since it does blocking WMI + file I/O,
+                // same reasoning as the other calls in this batch.
+                var (locId, locName) = ReadLocationFromManifest();
+                return (serial, mfr, mdl, mac, hw, locId, locName);
             });
 
             var payload = new DeviceRegistrationPayload
@@ -131,6 +140,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
                 Model        = model,
                 MacAddress   = macAddress,
                 Hardware     = hardware,
+                LocationId   = locationId,
+                LocationName = locationName,
             };
 
             var sessionResponse = await _gatewayClient.CreateSessionAsync(payload);
@@ -198,6 +209,62 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     {
         var bytes = address.GetAddressBytes();
         return bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254;
+    }
+
+    // ── Location Labels feature: read the technician-selected location, if any, from the USB
+    //    preparation manifest Media Builder wrote to the BOOT volume ─────────────────────────
+
+    /// <summary>
+    /// Best-effort read of <see cref="UsbPreparationManifest.LocationId"/>/
+    /// <see cref="UsbPreparationManifest.LocationName"/> from the manifest on the BOOT volume
+    /// this Client is running from. Returns (null, null) on any failure (no BOOT volume, no
+    /// manifest, unreadable/corrupt JSON, no location recorded) — registration must never be
+    /// blocked by this.
+    /// </summary>
+    private static (Guid? LocationId, string? LocationName) ReadLocationFromManifest()
+    {
+        try
+        {
+            var bootDrive = FindBootVolumeDriveLetter();
+            if (bootDrive is null) return (null, null);
+
+            var manifestPath = Path.Combine(bootDrive, UsbPreparationManifest.FileName);
+            if (!File.Exists(manifestPath)) return (null, null);
+
+            var manifest = JsonSerializer.Deserialize<UsbPreparationManifest>(File.ReadAllText(manifestPath));
+            return manifest is null ? (null, null) : (manifest.LocationId, manifest.LocationName);
+        }
+        catch
+        {
+            return (null, null);
+        }
+    }
+
+    /// <summary>
+    /// Locates the BOOT-labelled FAT32 volume this Client is running from — mirrors
+    /// <c>BootImageSelfUpdateService.FindBootVolumeDriveLetter</c>/
+    /// <c>UsbPartitionProvisioningService.FindBootVolumeDriveLetter</c> in the Media Builder,
+    /// which creates and labels this same volume during USB preparation.
+    /// </summary>
+    private static string? FindBootVolumeDriveLetter()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='BOOT'");
+            using var results = searcher.Get();
+            foreach (ManagementObject volume in results)
+            {
+                var letter = volume["DriveLetter"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(letter))
+                    return letter;
+            }
+        }
+        catch (ManagementException)
+        {
+            // Treated the same as "not found" by the caller.
+        }
+        return null;
     }
 
     // ── Hardware metadata collection (runs on background thread) ─────────────

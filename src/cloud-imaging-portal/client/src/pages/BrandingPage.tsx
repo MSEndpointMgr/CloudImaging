@@ -388,6 +388,7 @@ export default function BrandingPage(): React.ReactElement {
   return (
     <>
     <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle>Portal logo</CardTitle>
@@ -481,6 +482,7 @@ export default function BrandingPage(): React.ReactElement {
           </div>
         </CardContent>
       </Card>
+      </div>
 
       <Card>
         <CardHeader>

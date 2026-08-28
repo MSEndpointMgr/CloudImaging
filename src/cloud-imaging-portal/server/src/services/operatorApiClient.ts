@@ -262,6 +262,34 @@ export class OperatorApiClient {
     const { data } = await this.http.delete<unknown>('/api/branding/portal-logo');
     return data;
   }
+
+  // ── Location catalog ──────────────────────────────────────────────────────
+
+  async getLocations(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/locations');
+    return data;
+  }
+
+  async createLocation(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/locations', payload);
+    return data;
+  }
+
+  async deleteLocation(locationId: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/locations/${locationId}`);
+  }
+
+  // ── User location preference ──────────────────────────────────────────────
+
+  async getUserLocationPreference(userId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/user-preferences/${encodeURIComponent(userId)}`);
+    return data;
+  }
+
+  async putUserLocationPreference(userId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>(`/api/user-preferences/${encodeURIComponent(userId)}`, payload);
+    return data;
+  }
 }
 
 /** Singleton instance, created on first import, configured at request time. */

@@ -79,7 +79,13 @@ public sealed partial class UsbPreparationService
         string BusType,
         bool DiskValidated,
         string ToolVersion,
-        string? DiskLabel = null);
+        string? DiskLabel = null,
+        // Location Labels feature (FR): optional site label the technician tagged this USB boot
+        // media with in the picker — written into the manifest below so the Client can surface it
+        // during device registration. Trailing/optional so this round-trips through the elevated
+        // worker's JSON IPC file with no changes needed there.
+        Guid? SelectedLocationId = null,
+        string? SelectedLocationName = null);
 
     public sealed record PreparationResult(string BootDriveLetter, string? CacheDriveLetter);
 
@@ -140,6 +146,8 @@ public sealed partial class UsbPreparationService
             ToolVersion      = p.ToolVersion,
             BootImageVersion = p.BootImageVersion,
             SelectedDiskId   = p.SelectedDiskId,
+            LocationId       = p.SelectedLocationId,
+            LocationName     = p.SelectedLocationName,
             PartitionSchema  = new Dictionary<string, object>
             {
                 ["bootDriveLetter"]  = bootDrive,

@@ -128,6 +128,28 @@
                 </StackPanel>
             </ui:Card>
 
+            <!-- Location (Location Labels feature) — only meaningful for the USB target, since
+                 ISO-generated media never carries a UsbPreparationManifest. -->
+            <ui:Card Margin="0,0,0,16" Padding="20"
+                     Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Location (optional)"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="Tag this USB boot media with the site it will be used at, so devices imaged with it are labeled with a location in the portal."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
+
+                    <ComboBox ItemsSource="{Binding Locations}"
+                              SelectedItem="{Binding SelectedLocation}"
+                              DisplayMemberPath="Name"
+                              IsEnabled="{Binding IsFormEnabled}"
+                              HorizontalAlignment="Stretch" />
+                </StackPanel>
+            </ui:Card>
+
             <!-- USB device -->
             <ui:Card Margin="0,0,0,16" Padding="20"
                      Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">

@@ -17,6 +17,18 @@ public sealed class DeviceSession
     public required string DeviceModel { get; init; }
     public DeviceHardwareMetadata? HardwareMetadata { get; init; }
 
+    /// <summary>
+    /// Location the device was registered from, carried from the USB boot media's preparation
+    /// manifest (Media Builder) through the registration payload. Null when unspecified.
+    /// </summary>
+    public Guid? LocationId { get; init; }
+
+    /// <summary>
+    /// Denormalized location name captured at session-creation time — stored (not just the id)
+    /// so historical sessions still display a location after the catalog entry is deleted.
+    /// </summary>
+    public string? LocationName { get; init; }
+
     // Pre-flight result
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 

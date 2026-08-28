@@ -15,6 +15,7 @@ import { EmptyState } from '../components/ui/empty-state.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { cn } from '../lib/utils.ts';
 import { useToast } from '../context/toastContext.tsx';
+import { useUserPreferences } from '../context/userPreferencesContext.tsx';
 import {
   Table,
   TableHeader,
@@ -30,6 +31,8 @@ interface Session {
   deviceSerialNumber: string;
   deviceManufacturer: string;
   deviceModel: string;
+  locationId: string | null;
+  locationName: string | null;
   overallProgressPercent: number;
   currentStep: string | null;
   createdAt: string;
@@ -216,8 +219,13 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
 
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
+  const { preferredLocationId, preferredLocationName } = useUserPreferences();
   const [sessions, setSessions]         = useState<Session[]>([]);
   const [view, setView]                 = useState<DeviceView>('pending');
+  // Hard filter to the signed-in user's preferred location (FR: technicians at a 50+ site
+  // customer should not see, and cannot accidentally couple, devices registered elsewhere).
+  // Defaults to filtered ON whenever a preference is set; always OFF (and hidden) otherwise.
+  const [showAllLocations, setShowAllLocations] = useState(false);
   const [loading, setLoading]           = useState(false);
   const [downloadingLog, setDownloadingLog] = useState<string | null>(null);
   const [images, setImages]             = useState<OsImage[]>([]);
@@ -319,9 +327,14 @@ function SessionsPageImpl(): React.ReactElement {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const counts    = deriveCounts(sessions);
+  const locationFiltered = useMemo(() => (
+    !preferredLocationId || showAllLocations
+      ? sessions
+      : sessions.filter(s => s.locationId === preferredLocationId)
+  ), [sessions, preferredLocationId, showAllLocations]);
+  const counts    = deriveCounts(locationFiltered);
   const available = useMemo(() => sortRows(
-    sessions.filter(s => AVAILABLE_STATES.has(s.state)),
+    locationFiltered.filter(s => AVAILABLE_STATES.has(s.state)),
     availableSort,
     {
       serial:     (s: Session) => s.deviceSerialNumber,
@@ -329,18 +342,18 @@ function SessionsPageImpl(): React.ReactElement {
       state:      (s: Session) => stateLabel(s.state),
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
-  ), [sessions, availableSort]);
+  ), [locationFiltered, availableSort]);
   const coupled = useMemo(() => sortRows(
-    sessions.filter(s => COUPLED_STATES.has(s.state)),
+    locationFiltered.filter(s => COUPLED_STATES.has(s.state)),
     coupledSort,
     {
       serial:     (s: Session) => s.deviceSerialNumber,
       device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
-  ), [sessions, coupledSort]);
+  ), [locationFiltered, coupledSort]);
   const monitor = useMemo(() => sortRows(
-    sessions.filter(s => MONITOR_STATES.has(s.state)),
+    locationFiltered.filter(s => MONITOR_STATES.has(s.state)),
     monitorSort,
     {
       serial:   (s: Session) => s.deviceSerialNumber,
@@ -349,7 +362,7 @@ function SessionsPageImpl(): React.ReactElement {
       progress: (s: Session) => s.overallProgressPercent,
       step:     (s: Session) => s.currentStep ?? '',
     },
-  ), [sessions, monitorSort]);
+  ), [locationFiltered, monitorSort]);
 
   const handleRefresh = () => {
     void (async () => { const data = await fetchSessions(); scheduleNextPoll(data); })();
@@ -466,9 +479,25 @@ function SessionsPageImpl(): React.ReactElement {
             );
           })}
         </div>
-        <Button variant="outline" size="sm" onClick={handleRefresh}>
-          <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          {preferredLocationId && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showAllLocations}
+                onChange={e => setShowAllLocations(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-input"
+              />
+              Show all locations
+              {!showAllLocations && preferredLocationName && (
+                <span className="font-medium text-foreground">(filtered to {preferredLocationName})</span>
+              )}
+            </label>
+          )}
+          <Button variant="outline" size="sm" onClick={handleRefresh}>
+            <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
+          </Button>
+        </div>
       </div>
 
       <p className="text-sm text-muted-foreground">Enter a device&apos;s passcode to couple it, assign an OS image to coupled devices, and monitor deployment progress and status in real time.</p>
@@ -494,11 +523,12 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[22%]" />
-                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[32%]" />
-                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[14%]" />
-                  <TableHead className="w-[16%]">Passcode</TableHead>
-                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[16%]" />
+                  <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[18%]" />
+                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[24%]" />
+                  <TableHead className="w-[16%]">Location</TableHead>
+                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[12%]" />
+                  <TableHead className="w-[13%]">Passcode</TableHead>
+                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[13%]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -507,6 +537,7 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableRow key={`av-skeleton-${i}`} className="hover:bg-transparent">
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                       <TableCell><Skeleton className="h-8 w-28" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
@@ -514,7 +545,7 @@ function SessionsPageImpl(): React.ReactElement {
                   ))
                 ) : available.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5} className="p-0">
+                    <TableCell colSpan={6} className="p-0">
                       <EmptyState
                         icon={Smartphone}
                         title="No devices waiting to be coupled"
@@ -526,6 +557,7 @@ function SessionsPageImpl(): React.ReactElement {
                   <TableRow key={s.sessionId}>
                     <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                     <TableCell>
                       <PasscodeCouplingCell onCoupled={handleRefresh} />
@@ -571,9 +603,10 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[26%]" />
-                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[36%]" />
-                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[26%]" />
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[22%]" />
+                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[28%]" />
+                  <TableHead className="w-[18%]">Location</TableHead>
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[20%]" />
                   {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
                       The other columns above intentionally leave headroom (don't sum to 100%) so this
                       fixed column doesn't push the table wider than its container. */}
@@ -583,7 +616,7 @@ function SessionsPageImpl(): React.ReactElement {
               <TableBody>
                 {coupled.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4} className="p-0">
+                    <TableCell colSpan={5} className="p-0">
                       <EmptyState
                         icon={CheckCircle2}
                         title="No devices ready for imaging"
@@ -595,6 +628,7 @@ function SessionsPageImpl(): React.ReactElement {
                   <TableRow key={s.sessionId}>
                     <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
                     <TableCell>
                       <Button
@@ -619,13 +653,14 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[18%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[24%]" />
+                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
+                <TableHead className="w-[13%]">Location</TableHead>
                 {/* State and Actions are fixed pixel widths (not %) so they never shrink below the
                     space their badge/button needs — the other columns share whatever space remains. */}
                 <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[140px]" />
-                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[21%]" />
-                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[18%]" />
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[17%]" />
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
                 <TableHead className="w-[150px]">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -635,6 +670,7 @@ function SessionsPageImpl(): React.ReactElement {
                   <TableRow key={`mon-skeleton-${i}`} className="hover:bg-transparent">
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
@@ -643,7 +679,7 @@ function SessionsPageImpl(): React.ReactElement {
                 ))
               ) : monitor.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="p-0">
+                  <TableCell colSpan={7} className="p-0">
                     <EmptyState
                       icon={Activity}
                       title="No imaging activity yet"
@@ -655,6 +691,7 @@ function SessionsPageImpl(): React.ReactElement {
                 <TableRow key={s.sessionId}>
                   <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
                   <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                   <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                   <TableCell>
                     {s.overallProgressPercent > 0 ? (

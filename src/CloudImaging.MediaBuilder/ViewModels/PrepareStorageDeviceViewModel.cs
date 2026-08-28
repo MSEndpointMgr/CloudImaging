@@ -37,6 +37,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     private BootImageChoice? _selectedBootImage;
     private DiskChoice? _selectedDisk;
+    private LocationChoice? _selectedLocation;
     private bool _confirmErase;
     private bool _prepareAsIso;
     private string? _isoOutputPath = Path.Combine(GetDefaultIsoOutputFolder(), "cloud-imaging-boot.iso");
@@ -124,6 +125,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     public ObservableCollection<BootImageChoice> BootImages { get; } = [];
     public ObservableCollection<DiskChoice> Disks { get; } = [];
+    public ObservableCollection<LocationChoice> Locations { get; } = [];
 
     public bool HasBootImages => BootImages.Count > 0;
     public bool HasDisks => Disks.Count > 0;
@@ -164,6 +166,18 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged(nameof(HasValidationMessage));
             OnPropertyChanged(nameof(CanPrepare));
         }
+    }
+
+    /// <summary>
+    /// The site label (Location Labels feature) the technician has optionally tagged this USB
+    /// boot media with — threaded through the prepared manifest and, eventually, the device's
+    /// registration payload so operators can filter/group devices by location in the portal.
+    /// Entirely optional: leaving it unset does not block <see cref="CanPrepare"/>.
+    /// </summary>
+    public LocationChoice? SelectedLocation
+    {
+        get => _selectedLocation;
+        set { _selectedLocation = value; OnPropertyChanged(); }
     }
 
     public bool ConfirmErase
@@ -381,6 +395,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         try
         {
             await LoadBootImagesAsync();
+            await LoadLocationsAsync();
         }
         catch (Exception ex)
         {
@@ -447,6 +462,38 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         StatusMessage = BootImages.Count > 0
             ? "Confirm the destructive action, then prepare the USB device."
             : "No published boot images are available in the portal.";
+    }
+
+    /// <summary>
+    /// Loads the admin-managed location catalog (Location Labels feature) so the technician can
+    /// optionally tag this USB boot media with a site label. Best-effort: an empty catalog (or a
+    /// failed fetch) just leaves <see cref="SelectedLocation"/> unset — location is never required
+    /// to prepare a device.
+    /// </summary>
+    private async Task LoadLocationsAsync()
+    {
+        try
+        {
+            var token = await _authService.GetAccessTokenAsync();
+            if (token is null) return;
+
+            _operatorApi.SetAccessToken(token);
+            var locations = await _operatorApi.GetLocationsAsync();
+
+            var previouslySelectedId = SelectedLocation?.Id;
+            Locations.Clear();
+            foreach (var location in locations.OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase))
+                Locations.Add(new LocationChoice(location.LocationId, location.Name, location));
+
+            SelectedLocation = previouslySelectedId is Guid id
+                ? Locations.FirstOrDefault(l => l.Id == id)
+                : null;
+        }
+        catch
+        {
+            // Best-effort — location tagging is optional, so a failed fetch here should never
+            // block the rest of the Prepare workflow.
+        }
     }
 
     // ── Prepare (destructive) ──────────────────────────────────────────────────
@@ -534,7 +581,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 SelectedDisk.Info.BusType,
                 validation.Valid,
                 toolVersion,
-                SelectedDisk.Info.Caption);
+                SelectedDisk.Info.Caption,
+                SelectedLocation?.Id,
+                SelectedLocation?.Name);
             await _preparation.PrepareElevatedAsync(preparationParams, ct);
 
             SetProgress("USB device prepared successfully.", 100);
@@ -869,4 +918,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>A selectable published boot image.</summary>
     public sealed record BootImageChoice(Guid Id, string Label, BootImageDto Dto);
+
+    /// <summary>A selectable entry from the admin-managed location catalog (Location Labels feature).</summary>
+    public sealed record LocationChoice(Guid Id, string Name, LocationDto Dto);
 }

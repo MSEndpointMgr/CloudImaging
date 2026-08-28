@@ -28,6 +28,7 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
             "GetBootMediaCertificateMetadata",
             "GetBootMediaCertificatePfx",
             "GetEndpointConfiguration",
+            "GetLocations",
         };
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)

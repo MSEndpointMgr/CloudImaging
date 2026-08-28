@@ -18,6 +18,16 @@ public sealed class DeviceRegistrationPayload
     public DeviceHardwareMetadata? Hardware { get; init; }
 
     /// <summary>
+    /// Location label read from the USB preparation manifest's <c>LocationId</c>/<c>LocationName</c>
+    /// (set in Media Builder when the boot media was prepared). Null when the media was prepared
+    /// without selecting a location, or against an older manifest schema.
+    /// </summary>
+    public Guid? LocationId { get; init; }
+
+    /// <summary>Denormalized location name at manifest-preparation time, for display.</summary>
+    public string? LocationName { get; init; }
+
+    /// <summary>
     /// Application-layer proof-of-possession of the boot-media certificate's private key (FR-069).
     /// Required by the Device Gateway API for session bootstrap; the client signs a fresh challenge
     /// so a spoofed <c>X-ARR-ClientCert</c> header carrying only the (non-secret) public certificate

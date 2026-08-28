@@ -126,6 +126,8 @@ public sealed partial class CreateSessionFunction
             DeviceManufacturer = session.DeviceManufacturer,
             DeviceModel = session.DeviceModel,
             HardwareMetadata = session.HardwareMetadata,
+            LocationId = session.LocationId,
+            LocationName = session.LocationName,
             PreFlightAuthorizationResult = preFlightResult,
             Passcode = session.Passcode,
             PasscodeExpiresAt = session.PasscodeExpiresAt,

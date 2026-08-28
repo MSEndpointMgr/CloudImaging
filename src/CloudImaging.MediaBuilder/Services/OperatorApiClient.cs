@@ -92,6 +92,20 @@ public sealed partial class OperatorApiClient
             ?? throw new InvalidOperationException("Empty endpoint configuration response from Operator API.");
     }
 
+    // ── Locations ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Retrieves the admin-managed location catalog (Location Labels feature) so the technician
+    /// can optionally tag the USB boot media being prepared with a site label.
+    /// </summary>
+    public async Task<IReadOnlyList<LocationDto>> GetLocationsAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/api/locations", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<List<LocationDto>>(JsonOptions, ct)
+            ?? [];
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Operator API request: {Method} {Path}.")]
     private static partial void LogRequest(ILogger logger, string method, string path);
 }
@@ -134,4 +148,11 @@ public sealed class BootMediaCertificateMetadataDto
     public DateTimeOffset? IssuedAt  { get; init; }
     public DateTimeOffset? ExpiresAt { get; init; }
     public bool IsActive             { get; init; }
+}
+
+/// <summary>A selectable entry from the admin-managed location catalog (Location Labels feature).</summary>
+public sealed class LocationDto
+{
+    public Guid   LocationId { get; init; }
+    public string Name       { get; init; } = string.Empty;
 }
