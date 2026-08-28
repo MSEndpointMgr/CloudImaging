@@ -31,6 +31,18 @@ var host = new HostBuilder()
                 ?? throw new InvalidOperationException("ImagingCoreApi__BaseUrl is not configured.");
             client.BaseAddress = new Uri(baseUrl);
             client.DefaultRequestHeaders.Add("Accept", "application/json");
+
+            // The default HttpClient.Timeout (100s) is shorter than the portal server's own
+            // timeout for boot/recovery/OS image "publish" calls (see portal server's
+            // PUBLISH_TIMEOUT_MS), which download the whole staged blob to verify its SHA-256
+            // hash and copy it to its published path — this scales with image size and can
+            // legitimately take well over 100s for multi-GB OS images (5-10 GB typical). Leaving
+            // the default here meant this hop timed out and threw an unhandled exception BEFORE
+            // the portal server's own timeout could ever be reached, surfacing as a generic 500
+            // on every sufficiently large publish. Keep this comfortably below the portal
+            // server's timeout so, if a publish genuinely never completes, this hop is the one
+            // that reports it (rather than the portal server timing out first and masking it).
+            client.Timeout = TimeSpan.FromSeconds(280);
         });
 
         // Table Storage
