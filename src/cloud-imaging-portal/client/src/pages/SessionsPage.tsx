@@ -571,10 +571,12 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
-                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[40%]" />
-                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[30%]" />
-                  {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks. */}
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[26%]" />
+                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[36%]" />
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[26%]" />
+                  {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
+                      The other columns above intentionally leave headroom (don't sum to 100%) so this
+                      fixed column doesn't push the table wider than its container. */}
                   <TableHead className="w-[64px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
