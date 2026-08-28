@@ -5,7 +5,7 @@
  * bootImageUploadService.ts.
  */
 
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
 
 export interface RecoveryUploadSession {
   uploadId: string;
@@ -30,8 +30,7 @@ export async function startRecoveryImageUpload(
     body: JSON.stringify({ version, sha256Hash, fileName }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `HTTP ${res.status}`);
-    throw new Error(msg || `Upload start failed: HTTP ${res.status}`);
+    throw new Error(await extractErrorDetail(res, `Upload start failed: HTTP ${res.status}`));
   }
   return res.json() as Promise<RecoveryUploadSession>;
 }
@@ -88,8 +87,7 @@ export async function publishRecoveryImageUpload(
     }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `HTTP ${res.status}`);
-    throw new Error(msg);
+    throw new Error(await extractErrorDetail(res, `Publish failed: HTTP ${res.status}`));
   }
   return res.json();
 }

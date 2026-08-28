@@ -120,12 +120,18 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     // Upstream responded with an error status. Forward it (and its problem
     // details when present) so the client sees the real cause (e.g. 403, 400).
     const status = err.response.status;
-    const upstream = err.response.data as Record<string, unknown> | undefined;
+    const data: unknown = err.response.data;
+    // OperatorApi's proxy forwards its own plain-text error bodies (e.g. checksum
+    // validation, stale/expired staged-upload blocks) as-is rather than wrapping them in
+    // ProblemDetails JSON, so `data` here is sometimes a raw string rather than an object.
+    const upstream = data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined;
+    const plainTextDetail = typeof data === 'string' && data.trim().length > 0 ? data : undefined;
     res.status(status).json({
       type: (upstream?.['type'] as string | undefined) ?? 'https://cloudimaging.io/errors/upstream-error',
       title: (upstream?.['title'] as string | undefined) ?? 'The backend API returned an error.',
       status,
       detail: (upstream?.['detail'] as string | undefined) ??
+        plainTextDetail ??
         `The Operator API responded with status ${String(status)}.`,
     });
     return;

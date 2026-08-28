@@ -69,10 +69,14 @@ public sealed partial class BootImageLifecycleFunctions
         CancellationToken ct)
     {
         var response = req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
-        if (coreResponse.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+        // Forward the body regardless of content type — plain-text error messages were previously
+        // dropped here because only "json" content types were forwarded, so the browser saw the
+        // right status code but an empty/generic body.
+        var body = await coreResponse.Content.ReadAsStringAsync(ct);
+        if (!string.IsNullOrEmpty(body))
         {
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(await coreResponse.Content.ReadAsStringAsync(ct), ct);
+            response.Headers.Add("Content-Type", coreResponse.Content.Headers.ContentType?.MediaType ?? "text/plain");
+            await response.WriteStringAsync(body, ct);
         }
         return response;
     }

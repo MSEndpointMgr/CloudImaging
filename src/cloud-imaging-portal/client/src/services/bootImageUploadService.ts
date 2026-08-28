@@ -4,7 +4,7 @@
  * to Azure Blob Storage, and finally call the publish endpoint.
  */
 
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
 
 export interface UploadSession {
   uploadId: string;
@@ -37,8 +37,7 @@ export async function startBootImageUpload(
     body: JSON.stringify({ version, sha256Hash, fileName }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `HTTP ${res.status}`);
-    throw new Error(msg || `Upload start failed: HTTP ${res.status}`);
+    throw new Error(await extractErrorDetail(res, `Upload start failed: HTTP ${res.status}`));
   }
   return res.json() as Promise<UploadSession>;
 }
@@ -93,8 +92,7 @@ export async function publishBootImageUpload(
     }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `HTTP ${res.status}`);
-    throw new Error(msg);
+    throw new Error(await extractErrorDetail(res, `Publish failed: HTTP ${res.status}`));
   }
   return res.json();
 }

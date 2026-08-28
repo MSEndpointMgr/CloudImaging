@@ -124,3 +124,25 @@ export async function apiFetchWithRetry(input: RequestInfo | URL, init: RequestI
   // Unreachable in practice (loop always returns/throws above); satisfies control-flow analysis.
   throw lastError instanceof Error ? lastError : new Error('apiFetchWithRetry exhausted retries');
 }
+
+/**
+ * Extracts a human-readable message from a failed API response body. The portal server
+ * wraps upstream (Operator API / Imaging Core API) errors as an RFC 7807-ish ProblemDetails
+ * JSON object (`{ type, title, status, detail }`); older/plain-text upstream error bodies
+ * are also handled by falling back to the raw text. Without this, callers that just did
+ * `await res.text()` on a ProblemDetails response would display the raw
+ * `{"type":"...","detail":"..."}` JSON blob to the operator instead of a readable message.
+ * Never throws — always returns a usable string.
+ */
+export async function extractErrorDetail(res: Response, fallback: string): Promise<string> {
+  const text = await res.text().catch(() => '');
+  if (!text) return fallback;
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown; title?: unknown };
+    if (typeof parsed.detail === 'string' && parsed.detail.length > 0) return parsed.detail;
+    if (typeof parsed.title === 'string' && parsed.title.length > 0) return parsed.title;
+  } catch {
+    // Not JSON — the raw text itself is the message (a plain-text error body).
+  }
+  return text;
+}

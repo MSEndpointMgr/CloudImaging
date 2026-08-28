@@ -201,8 +201,8 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
 
           {resumable && !resuming && state === 'idle' && (
             <div className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
-              <p>
-                A previous upload of <span className="font-medium">{resumable.fileName}</span> ({resumable.version}) was
+              <p className="break-words">
+                A previous upload of <span className="font-medium break-all">{resumable.fileName}</span> ({resumable.version}) was
                 interrupted. Re-select the same file to resume it, or discard the partial upload.
               </p>
               <button type="button" onClick={handleDiscardResumable} className="text-xs text-primary hover:underline">

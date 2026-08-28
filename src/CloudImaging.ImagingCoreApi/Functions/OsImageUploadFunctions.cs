@@ -148,8 +148,29 @@ public sealed partial class OsImageUploadFunctions
         var blockBlobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlockBlobClient(blobName);
 
         // Commit the staged blocks — this call uses the Function's own managed identity, no SAS
-        // required (only the per-block PUTs from the browser needed the SAS).
-        await blockBlobClient.CommitBlockListAsync(blockIds, cancellationToken: context.CancellationToken);
+        // required (only the per-block PUTs from the browser needed the SAS). A resumed upload
+        // (browser tab closed/reloaded mid-upload, then re-selected the same file later) replays
+        // a client-persisted list of block IDs it believes are already staged — if any of those
+        // blocks were never actually committed to Azure Storage, or fell outside the ~7-day
+        // uncommitted-block retention window, Azure rejects the whole commit (e.g.
+        // InvalidBlockList) rather than partially succeeding, so this can't silently publish a
+        // corrupt/incomplete image. Surface that as a clear, actionable error instead of letting
+        // an unhandled RequestFailedException fall through to the generic 500 from
+        // ProblemDetailsMiddleware, which left the operator unable to tell a stale resume
+        // checkpoint apart from any other backend failure.
+        try
+        {
+            await blockBlobClient.CommitBlockListAsync(blockIds, cancellationToken: context.CancellationToken);
+        }
+        catch (Azure.RequestFailedException ex)
+        {
+            LogCommitBlockListFailed(_logger, blobName, ex);
+            var staleBlocks = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+            await staleBlocks.WriteStringAsync(
+                "One or more previously staged blocks are missing or expired. Discard this upload and start again.",
+                context.CancellationToken);
+            return staleBlocks;
+        }
 
         // Validate the file signature (rejects renamed/spoofed files) and SHA-256 (mirrors
         // BootImageUploadFunctions.PublishUpload).
@@ -243,4 +264,7 @@ public sealed partial class OsImageUploadFunctions
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "OS image upload rejected: catalog at capacity ({ActiveCount} active entries).")]
     private static partial void LogCatalogAtCapacity(ILogger logger, int activeCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "OS image upload commit-block-list failed for {BlobName} (likely a stale/expired resume checkpoint).")]
+    private static partial void LogCommitBlockListFailed(ILogger logger, string blobName, Exception ex);
 }

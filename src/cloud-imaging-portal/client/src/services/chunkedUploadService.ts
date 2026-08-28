@@ -6,7 +6,7 @@
  * block list + validate SHA-256 + register the OS image catalog entry.
  */
 
-import { apiFetch } from '../lib/apiClient.ts';
+import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
 
 export interface ChunkedUploadSession {
   uploadId:  string;
@@ -30,7 +30,7 @@ export async function startChunkedUpload(
     credentials: 'include',
     body: JSON.stringify({ name, version, sha256Hash }),
   });
-  if (!res.ok) throw new Error(`Failed to start upload: HTTP ${res.status}`);
+  if (!res.ok) throw new Error(await extractErrorDetail(res, `Failed to start upload: HTTP ${res.status}`));
   return res.json() as Promise<ChunkedUploadSession>;
 }
 
@@ -176,8 +176,8 @@ export async function finalizeChunkedUpload(
     body: JSON.stringify({ blobName: session.blobName, blockIds, name, version, sha256Hash, sizeBytes }),
   });
   if (!res.ok) {
-    const msg = await res.text().catch(() => `HTTP ${res.status}`);
-    throw new Error(msg || `Finalize failed: HTTP ${res.status}`);
+    const msg = await extractErrorDetail(res, `Finalize failed: HTTP ${res.status}`);
+    throw new Error(msg);
   }
   return res.json();
 }
