@@ -89,6 +89,8 @@ interface StatCard {
   icon: React.ReactNode;
   /** Drill-down destination for this tile. */
   to: string;
+  /** Whether to show the trend pill/sparkline for this card. Off for catalogs that aren't expected to change often. */
+  showTrend: boolean;
 }
 
 /** Duration (ms) of the stat-card count-up animation. */
@@ -123,10 +125,10 @@ function AnimatedNumber({ value }: { value: number }): React.ReactElement {
 }
 
 const STAT_CARDS: StatCard[] = [
-  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions' },
-  { key: 'completedSessions', label: 'Completed Sessions', icon: <CheckCircle2 size={16} />, to: '/sessions' },
-  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images' },
-  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images' },
+  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions',    showTrend: true },
+  { key: 'completedSessions', label: 'Completed Sessions', icon: <CheckCircle2 size={16} />, to: '/sessions',    showTrend: true },
+  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images',   showTrend: false },
+  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images', showTrend: false },
 ];
 
 interface NavCard {
@@ -236,7 +238,10 @@ export default function DashboardPage(): React.ReactElement {
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STAT_CARDS.map(card => {
-          const trend = trends?.[card.key];
+          const trend = card.showTrend ? trends?.[card.key] : undefined;
+          // A trend pill comparing against zero is meaningless (e.g. "0%"/"New" next to a 0 count) —
+          // only show it once there's an actual count to contextualize.
+          const showPill = trend != null && !!stats && stats[card.key] > 0;
           const badgeVariant = trend?.changePct == null ? 'muted' : trend.changePct > 0 ? 'success' : trend.changePct < 0 ? 'negative' : 'muted';
           const TrendIcon = trend?.changePct == null || trend.changePct === 0 ? Minus : trend.changePct > 0 ? TrendingUp : TrendingDown;
           return (
@@ -253,7 +258,7 @@ export default function DashboardPage(): React.ReactElement {
                     ) : (
                       <Skeleton className="h-9 w-16" />
                     )}
-                    {trend && (
+                    {showPill && trend && (
                       <Badge variant={badgeVariant} title={`vs. previous ${TREND_DAYS} days`}>
                         <TrendIcon size={11} />
                         {trend.changePct == null ? 'New' : `${Math.abs(trend.changePct)}%`}
@@ -261,7 +266,7 @@ export default function DashboardPage(): React.ReactElement {
                     )}
                   </div>
                   <div className="mt-3 h-10">
-                    {trend ? (
+                    {!card.showTrend ? null : trend ? (
                       <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={trend.series.map(v => ({ v }))}>
                           <defs>
