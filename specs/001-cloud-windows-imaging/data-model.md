@@ -118,20 +118,29 @@ Deployment-wide portal configuration settings. Singleton per deployment.
 
 ## Entity: BrandingConfiguration
 
-Runtime UI branding configuration.
+Runtime UI branding configuration. Colours are 6-digit hex strings (not HSL),
+matching `CloudImaging.Contracts.Models.BrandingConfiguration`. Each portal
+surface (sidebar, header, card, page) has independent light/dark values since
+the neutral shadcn theme differs significantly between the two.
 
-**Suggested table**: `Configuration`
+**Table**: `BrandingConfiguration`
 - `PartitionKey`: `branding`
 - `RowKey`: `default`
 
 | Field | Type | Description |
 |------|------|-------------|
-| applicationName | string | App name shown in UI. |
-| logoUrl | string? | Logo blob URL. |
-| primaryColorHsl | string | Primary color token. |
-| accentColorHsl | string | Accent color token. |
-| updatedAt | datetime | Last update timestamp. |
-| updatedBy | string | Operator identity reference. |
+| logoBlobPath | string? | Blob path of the boot-media logo, embedded into boot media by the Media Builder and served via a time-limited SAS URL. |
+| portalLogoBlobPath | string? | Blob path of the portal header/sidebar logo, streamed directly to the browser (no SAS). |
+| primaryColor | string | Primary brand colour (hex), drives the portal-wide `primary` design token. Default `#0078d4`. |
+| accentColor | string | Accent brand colour (hex). Default `#005a9e`. |
+| applicationName | string | App name shown in the portal UI (1-100 chars). Default `Cloud Imaging`. |
+| sidebarBackgroundLight / sidebarBackgroundDark | string | Sidebar background colour (hex) per theme. |
+| cardBackgroundLight / cardBackgroundDark | string | Card surface background colour (hex) per theme. |
+| pageBackgroundLight / pageBackgroundDark | string | Page background colour (hex) per theme. |
+| headerBackgroundLight / headerBackgroundDark | string | Header bar background colour (hex) per theme. |
+
+Table Storage's built-in `Timestamp` property tracks the last write; there is
+no separate `updatedAt`/`updatedBy` field.
 
 ## Value Object: SupportReferenceCode (Transient)
 

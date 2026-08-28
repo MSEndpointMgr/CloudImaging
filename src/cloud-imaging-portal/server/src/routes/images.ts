@@ -50,6 +50,14 @@ router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator
   } catch (err) { next(err); }
 });
 
+// Best-effort cleanup for a cancelled/discarded upload — deletes the uncommitted staged blob.
+router.post('/upload/:uploadId/abandon', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await operatorApiClient.abandonOsImageUpload(req.params['uploadId'] as string, req.body as unknown);
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
 // ── PATCH /api/images/:id: update metadata (Administrator) ───────────────────
 
 router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {

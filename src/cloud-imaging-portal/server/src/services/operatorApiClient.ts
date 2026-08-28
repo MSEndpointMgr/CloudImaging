@@ -69,6 +69,14 @@ export class OperatorApiClient {
     return data;
   }
 
+  async getSessionHistory(from?: string, to?: string): Promise<unknown> {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    const { data } = await this.http.get<unknown>('/api/session-history', { params });
+    return data;
+  }
+
   async cancelSession(sessionId: string): Promise<void> {
     await this.http.delete<unknown>(`/api/sessions/${sessionId}`);
   }
@@ -103,6 +111,10 @@ export class OperatorApiClient {
     const { data } = await this.http.post<unknown>(
       `/api/images/upload/${uploadId}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
     return data;
+  }
+
+  async abandonOsImageUpload(uploadId: string, payload: unknown): Promise<void> {
+    await this.http.post<unknown>(`/api/images/upload/${uploadId}/abandon`, payload);
   }
 
   // ── Boot image operations ────────────────────────────────────────────────────

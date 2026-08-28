@@ -58,6 +58,7 @@ public sealed partial class PortalConfigurationRepository
             [nameof(PortalConfiguration.BootImageSasExpiryMinutes)] = config.BootImageSasExpiryMinutes,
             [nameof(PortalConfiguration.CertValidityPeriodDays)] = config.CertValidityPeriodDays,
             [nameof(PortalConfiguration.ClockSkewToleranceSeconds)] = config.ClockSkewToleranceSeconds,
+            [nameof(PortalConfiguration.SessionHistoryRetentionDays)] = config.SessionHistoryRetentionDays,
         };
 
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -74,6 +75,7 @@ public sealed partial class PortalConfigurationRepository
             BootImageSasExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.BootImageSasExpiryMinutes)) ?? 120,
             CertValidityPeriodDays = e.GetInt32(nameof(PortalConfiguration.CertValidityPeriodDays)) ?? 365,
             ClockSkewToleranceSeconds = e.GetInt32(nameof(PortalConfiguration.ClockSkewToleranceSeconds)) ?? 30,
+            SessionHistoryRetentionDays = e.GetInt32(nameof(PortalConfiguration.SessionHistoryRetentionDays)) ?? 90,
         };
 
     private static PortalConfiguration PortalConfigurationDefaults() =>
@@ -84,6 +86,7 @@ public sealed partial class PortalConfigurationRepository
             BootImageSasExpiryMinutes = 120,
             CertValidityPeriodDays = 365,
             ClockSkewToleranceSeconds = 30,
+            SessionHistoryRetentionDays = 90,
         };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No PortalConfiguration row found — returning defaults.")]

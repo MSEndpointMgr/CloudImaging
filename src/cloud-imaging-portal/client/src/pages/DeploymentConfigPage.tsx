@@ -21,6 +21,7 @@ interface PortalConfig {
   bootImageSasExpiryMinutes: number;
   certValidityPeriodDays: number;
   clockSkewToleranceSeconds: number;
+  sessionHistoryRetentionDays: number;
 }
 
 interface CertMeta {
@@ -46,7 +47,8 @@ function portalConfigEquals(a: PortalConfig, b: PortalConfig): boolean {
     && a.sasTokenUrlExpiryMinutes === b.sasTokenUrlExpiryMinutes
     && a.bootImageSasExpiryMinutes === b.bootImageSasExpiryMinutes
     && a.certValidityPeriodDays === b.certValidityPeriodDays
-    && a.clockSkewToleranceSeconds === b.clockSkewToleranceSeconds;
+    && a.clockSkewToleranceSeconds === b.clockSkewToleranceSeconds
+    && a.sessionHistoryRetentionDays === b.sessionHistoryRetentionDays;
 }
 
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
@@ -96,6 +98,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
     bootImageSasExpiryMinutes: 120,
     certValidityPeriodDays:    365,
     clockSkewToleranceSeconds: 30,
+    sessionHistoryRetentionDays: 90,
   };
   const [config, setConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
   /** Snapshot of the config as last loaded/saved. Used to detect unsaved changes. */
@@ -279,6 +282,8 @@ export default function DeploymentConfigPage(): React.ReactElement {
               'How long a generated download link for an operating system image stays valid before it must be regenerated.')}
             {numField('bootImageSasExpiryMinutes', 15, 1440, 'Boot image download link expiry (minutes)',
               'How long a generated download link for a boot image stays valid before it must be regenerated.')}
+            {numField('sessionHistoryRetentionDays', 1, 3650, 'Session history retention (days)',
+              'How long completed session outcomes are kept for reporting before being purged.')}
           </CardContent>
         </Card>
       )}

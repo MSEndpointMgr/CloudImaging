@@ -28,15 +28,21 @@ public sealed partial class ReportProgressFunction
 {
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ImagingStepRepository _stepRepo;
+    private readonly SessionHistoryRepository _historyRepo;
+    private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<ReportProgressFunction> _logger;
 
     public ReportProgressFunction(
         DeviceSessionRepository sessionRepo,
         ImagingStepRepository stepRepo,
+        SessionHistoryRepository historyRepo,
+        PortalConfigurationRepository configRepo,
         ILogger<ReportProgressFunction> logger)
     {
         _sessionRepo = sessionRepo;
         _stepRepo = stepRepo;
+        _historyRepo = historyRepo;
+        _configRepo = configRepo;
         _logger = logger;
     }
 
@@ -124,6 +130,27 @@ public sealed partial class ReportProgressFunction
 
         await _sessionRepo.UpdateAsync(updated, context.CancellationToken);
         LogProgressReceived(_logger, sessionGuid, payload.StepName, payload.Status, overallPercent);
+
+        if (anyFailed || allCompleted)
+        {
+            var failedStep = allSteps.FirstOrDefault(s => s.Status == ImagingStepStatus.Failed);
+            var config = await _configRepo.GetAsync(context.CancellationToken);
+            var history = new SessionHistoryRecord
+            {
+                SessionId = updated.SessionId,
+                FinalState = updated.State,
+                DeviceSerialNumber = updated.DeviceSerialNumber,
+                DeviceManufacturer = updated.DeviceManufacturer,
+                DeviceModel = updated.DeviceModel,
+                PreFlightAuthorizationResult = updated.PreFlightAuthorizationResult,
+                AssignedOsImageId = updated.AssignedOsImageId,
+                FailedStepName = failedStep?.StepName,
+                ErrorDetail = failedStep?.ErrorDetail,
+                CreatedAt = updated.CreatedAt,
+                TerminalAt = updated.TerminalAt ?? DateTimeOffset.UtcNow,
+            };
+            await _historyRepo.CreateAsync(history, config.SessionHistoryRetentionDays, context.CancellationToken);
+        }
 
         var response = req.CreateResponse(HttpStatusCode.NoContent);
         return response;

@@ -43,6 +43,14 @@ public sealed class BrandingRepository
             ["PrimaryColor"] = branding.PrimaryColor,
             ["AccentColor"] = branding.AccentColor,
             ["ApplicationName"] = branding.ApplicationName,
+            ["SidebarBackgroundLight"] = branding.SidebarBackgroundLight,
+            ["SidebarBackgroundDark"] = branding.SidebarBackgroundDark,
+            ["CardBackgroundLight"] = branding.CardBackgroundLight,
+            ["CardBackgroundDark"] = branding.CardBackgroundDark,
+            ["PageBackgroundLight"] = branding.PageBackgroundLight,
+            ["PageBackgroundDark"] = branding.PageBackgroundDark,
+            ["HeaderBackgroundLight"] = branding.HeaderBackgroundLight,
+            ["HeaderBackgroundDark"] = branding.HeaderBackgroundDark,
         };
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
     }
@@ -54,5 +62,13 @@ public sealed class BrandingRepository
         PrimaryColor = e.GetString("PrimaryColor") ?? "#0078d4",
         AccentColor = e.GetString("AccentColor") ?? "#005a9e",
         ApplicationName = e.GetString("ApplicationName") ?? "Cloud Imaging",
+        SidebarBackgroundLight = e.GetString("SidebarBackgroundLight") ?? "#f8fafc",
+        SidebarBackgroundDark = e.GetString("SidebarBackgroundDark") ?? "#0d1321",
+        CardBackgroundLight = e.GetString("CardBackgroundLight") ?? "#ffffff",
+        CardBackgroundDark = e.GetString("CardBackgroundDark") ?? "#0c121f",
+        PageBackgroundLight = e.GetString("PageBackgroundLight") ?? "#ffffff",
+        PageBackgroundDark = e.GetString("PageBackgroundDark") ?? "#080c16",
+        HeaderBackgroundLight = e.GetString("HeaderBackgroundLight") ?? "#ffffff",
+        HeaderBackgroundDark = e.GetString("HeaderBackgroundDark") ?? "#080c16",
     };
 }

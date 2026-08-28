@@ -101,6 +101,27 @@ public sealed partial class BrandingFunctions
             return invalid;
         }
 
+        var surfaceColors = new (string Name, string Value)[]
+        {
+            ("sidebarBackgroundLight", payload.SidebarBackgroundLight),
+            ("sidebarBackgroundDark", payload.SidebarBackgroundDark),
+            ("cardBackgroundLight", payload.CardBackgroundLight),
+            ("cardBackgroundDark", payload.CardBackgroundDark),
+            ("pageBackgroundLight", payload.PageBackgroundLight),
+            ("pageBackgroundDark", payload.PageBackgroundDark),
+            ("headerBackgroundLight", payload.HeaderBackgroundLight),
+            ("headerBackgroundDark", payload.HeaderBackgroundDark),
+        };
+        foreach (var (name, value) in surfaceColors)
+        {
+            if (!HexColorPattern.IsMatch(value))
+            {
+                var invalid = req.CreateResponse(HttpStatusCode.BadRequest);
+                await invalid.WriteStringAsync($"{name} must be a 6-digit hex color (e.g. #FFFFFF).", context.CancellationToken);
+                return invalid;
+            }
+        }
+
         // Logo paths are owned by the dedicated upload endpoints — preserve them here so a
         // colour/name save cannot accidentally clear a configured logo.
         var existing = await _brandingRepo.GetAsync(context.CancellationToken);
@@ -111,6 +132,14 @@ public sealed partial class BrandingFunctions
             PrimaryColor = payload.PrimaryColor,
             AccentColor = payload.AccentColor,
             ApplicationName = trimmedName,
+            SidebarBackgroundLight = payload.SidebarBackgroundLight,
+            SidebarBackgroundDark = payload.SidebarBackgroundDark,
+            CardBackgroundLight = payload.CardBackgroundLight,
+            CardBackgroundDark = payload.CardBackgroundDark,
+            PageBackgroundLight = payload.PageBackgroundLight,
+            PageBackgroundDark = payload.PageBackgroundDark,
+            HeaderBackgroundLight = payload.HeaderBackgroundLight,
+            HeaderBackgroundDark = payload.HeaderBackgroundDark,
         };
         await _brandingRepo.UpsertAsync(merged, context.CancellationToken);
         LogBrandingUpdated(_logger);

@@ -16,6 +16,10 @@ const BootImagesPage  = lazy(() => import('./pages/BootImagesPage.tsx'));
 const RecoveryImagesPage = lazy(() => import('./pages/RecoveryImagesPage.tsx'));
 const BrandingPage    = lazy(() => import('./pages/BrandingPage.tsx'));
 const DeploymentConfigPage = lazy(() => import('./pages/DeploymentConfigPage.tsx'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx'));
+const ReportSessionOutcomesPage = lazy(() => import('./pages/ReportSessionOutcomesPage.tsx'));
+const ReportImageInventoryPage = lazy(() => import('./pages/ReportImageInventoryPage.tsx'));
+const ReportFailureDetailPage = lazy(() => import('./pages/ReportFailureDetailPage.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
@@ -46,6 +50,10 @@ export default function App(): React.ReactElement {
                         <Route path="recovery-images"  element={<RecoveryImagesPage />} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
+                        <Route path="reports"                     element={<RequireAdmin><ReportsPage /></RequireAdmin>} />
+                        <Route path="reports/session-outcomes"    element={<RequireAdmin><ReportSessionOutcomesPage /></RequireAdmin>} />
+                        <Route path="reports/image-inventory"     element={<RequireAdmin><ReportImageInventoryPage /></RequireAdmin>} />
+                        <Route path="reports/failures"            element={<RequireAdmin><ReportFailureDetailPage /></RequireAdmin>} />
                         <Route path="*"                element={<Navigate to="/" replace />} />
                       </Route>
                     </Routes>

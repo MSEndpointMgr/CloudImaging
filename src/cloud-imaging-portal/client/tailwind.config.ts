@@ -13,7 +13,7 @@ export default {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'rgb(var(--color-primary) / <alpha-value>)',
-        background: 'hsl(var(--background))',
+        background: 'rgb(var(--brand-page-bg) / <alpha-value>)',
         foreground: 'hsl(var(--foreground))',
         primary: {
           DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
@@ -40,15 +40,18 @@ export default {
           foreground: 'hsl(var(--popover-foreground))',
         },
         card: {
-          DEFAULT: 'hsl(var(--card))',
+          DEFAULT: 'rgb(var(--brand-card-bg) / <alpha-value>)',
           foreground: 'hsl(var(--card-foreground))',
         },
         sidebar: {
-          DEFAULT: 'hsl(var(--sidebar))',
+          DEFAULT: 'rgb(var(--brand-sidebar-bg) / <alpha-value>)',
           foreground: 'hsl(var(--sidebar-foreground))',
           accent: 'hsl(var(--sidebar-accent))',
           'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
           border: 'hsl(var(--sidebar-border))',
+        },
+        header: {
+          DEFAULT: 'rgb(var(--brand-header-bg) / <alpha-value>)',
         },
         // Runtime-branded accent (FR-038), kept separate from shadcn neutral `accent`.
         brand: {

@@ -26,6 +26,11 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
 }
 
+// Per specs/001-cloud-windows-imaging/plan.md, the OS image catalog is sized for up to 500
+// entries — a much larger ceiling than the Boot/Recovery media's 5-entry rotation, so it's
+// enforced as a hard reject (see OsImageRepository.MaxActiveEntries) rather than an auto-demote.
+const MAX_OS_IMAGES = 500;
+
 /** OS Images management page (T087, FR-036, FR-037). */
 export default function OsImagesPage(): React.ReactElement {
   const { isAdministrator } = useAuth();
@@ -80,17 +85,27 @@ export default function OsImagesPage(): React.ReactElement {
 
   const columnCount = isAdministrator ? 8 : 7;
   const selectedCount = checked.size;
+  const atCapacity = images.length >= MAX_OS_IMAGES;
 
   return (
     <>
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">
+          {images.length} / {MAX_OS_IMAGES} active images
+        </span>
         {isAdministrator && (
-          <Button onClick={() => setUploadOpen(true)}>
+          <Button onClick={() => setUploadOpen(true)} disabled={atCapacity} title={atCapacity ? 'Catalog is at capacity' : undefined}>
             <Plus size={14} /> Upload Image
           </Button>
         )}
       </div>
+
+      {isAdministrator && atCapacity && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+          The OS image catalog is at capacity ({MAX_OS_IMAGES} images). Remove an unused image before uploading another.
+        </p>
+      )}
 
       {isAdministrator && selectedCount > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm">
@@ -215,6 +230,7 @@ export default function OsImagesPage(): React.ReactElement {
         onClose={() => setUploadOpen(false)}
         onUploaded={() => { setUploadOpen(false); void loadImages(); }}
         existingVersions={images.map(img => img.version)}
+        atCapacity={atCapacity}
       />
 
       <ImageEditorDialog

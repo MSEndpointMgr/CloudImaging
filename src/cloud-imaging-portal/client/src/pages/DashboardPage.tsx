@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Area, AreaChart, ResponsiveContainer } from 'recharts';
 import {
   Monitor,
   HardDrive,
@@ -9,18 +10,27 @@ import {
   CheckCircle2,
   LayoutDashboard,
   ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from 'lucide-react';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { useAuth } from '../context/authContext.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
 import { Card, CardContent } from '../components/ui/card.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
+import { Badge } from '../components/ui/badge.tsx';
 
-interface SessionLike { state: string }
+interface SessionLike { state: string; createdAt: string }
+interface TimestampedLike { createdAt?: string; uploadedAt?: string }
+interface SessionHistoryLike { finalState: string; terminalAt: string }
 
 const ACTIVE_STATES = new Set([
   'SessionInit', 'SessionAllowed', 'SessionAssigned', 'SessionStarted', 'SessionInProgress',
 ]);
+
+/** Number of trailing days each stat card's sparkline covers. */
+const TREND_DAYS = 7;
 
 interface DashboardStats {
   activeSessions: number;
@@ -29,17 +39,94 @@ interface DashboardStats {
   bootImages: number;
 }
 
+interface Trend {
+  /** Per-day counts for the last `TREND_DAYS` days, oldest first. */
+  series: number[];
+  /** Percent change vs. the previous `TREND_DAYS`-day period, or null if there's no baseline to compare against. */
+  changePct: number | null;
+}
+
+type DashboardTrends = Record<keyof DashboardStats, Trend>;
+
+function startOfDay(date: Date): Date {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+/**
+ * Buckets timestamps into two consecutive `days`-long windows (previous, then current)
+ * and returns the current window's daily counts plus the percent change vs. the previous
+ * window. Used to derive trend sparklines for each stat card. The Completed Sessions card
+ * sources its timestamps from the durable SessionHistory audit table (`/api/session-history`);
+ * the other cards still derive theirs from the existing list endpoints, which is sufficient
+ * since active sessions and image catalogs aren't purged the way completed sessions are.
+ */
+function computeTrend(timestamps: string[], days: number): Trend {
+  const buckets = new Array(days * 2).fill(0) as number[];
+  const today = startOfDay(new Date());
+  for (const raw of timestamps) {
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) continue;
+    const diffDays = Math.round((today.getTime() - startOfDay(date).getTime()) / 86_400_000);
+    const idx = days * 2 - 1 - diffDays;
+    if (idx >= 0 && idx < days * 2) buckets[idx] += 1;
+  }
+  const previous = buckets.slice(0, days);
+  const current = buckets.slice(days);
+  const sum = (values: number[]) => values.reduce((total, v) => total + v, 0);
+  const prevSum = sum(previous);
+  const currSum = sum(current);
+  const changePct = prevSum === 0
+    ? (currSum === 0 ? 0 : null)
+    : Math.round(((currSum - prevSum) / prevSum) * 100);
+  return { series: current, changePct };
+}
+
 interface StatCard {
   key: keyof DashboardStats;
   label: string;
   icon: React.ReactNode;
+  /** Drill-down destination for this tile. */
+  to: string;
+}
+
+/** Duration (ms) of the stat-card count-up animation. */
+const COUNT_UP_DURATION_MS = 800;
+
+/**
+ * Animates a number counting up from 0 to `value` the first time it becomes available.
+ * Respects `prefers-reduced-motion` by rendering the final value immediately.
+ */
+function AnimatedNumber({ value }: { value: number }): React.ReactElement {
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion || value <= 0) {
+      setDisplay(value);
+      return;
+    }
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const progress = Math.min((now - start) / COUNT_UP_DURATION_MS, 1);
+      const eased = 1 - (1 - progress) ** 3; // ease-out cubic: fast start, gentle settle
+      setDisplay(Math.round(eased * value));
+      if (progress < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+
+  return <>{display}</>;
 }
 
 const STAT_CARDS: StatCard[] = [
-  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} /> },
-  { key: 'completedSessions', label: 'Completed Sessions', icon: <CheckCircle2 size={16} /> },
-  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} /> },
-  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} /> },
+  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions' },
+  { key: 'completedSessions', label: 'Completed Sessions', icon: <CheckCircle2 size={16} />, to: '/sessions' },
+  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images' },
+  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images' },
 ];
 
 interface NavCard {
@@ -93,6 +180,7 @@ export default function DashboardPage(): React.ReactElement {
   const { isAdministrator } = useAuth();
   const { branding } = useBranding();
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [trends, setTrends] = useState<DashboardTrends | null>(null);
 
   const appName = branding.applicationName ?? 'Cloud Imaging';
 
@@ -100,20 +188,39 @@ export default function DashboardPage(): React.ReactElement {
     let cancelled = false;
     void (async () => {
       try {
-        const [sRes, iRes, bRes] = await Promise.all([
+        const historyFrom = new Date(Date.now() - TREND_DAYS * 2 * 86_400_000).toISOString();
+        const [sRes, iRes, bRes, hRes] = await Promise.all([
           apiFetchWithRetry('/api/sessions',    { credentials: 'include' }),
           apiFetchWithRetry('/api/images',      { credentials: 'include' }),
           apiFetchWithRetry('/api/boot-images', { credentials: 'include' }),
+          apiFetchWithRetry(`/api/session-history?from=${encodeURIComponent(historyFrom)}`, { credentials: 'include' }),
         ]);
-        const sessions   = sRes.ok ? (await sRes.json() as SessionLike[]) : [];
-        const osImages   = iRes.ok ? (await iRes.json() as unknown[])     : [];
-        const bootImages = bRes.ok ? (await bRes.json() as unknown[])     : [];
+        const sessions   = sRes.ok ? (await sRes.json() as SessionLike[])   : [];
+        const osImages   = iRes.ok ? (await iRes.json() as TimestampedLike[]) : [];
+        const bootImages = bRes.ok ? (await bRes.json() as TimestampedLike[]) : [];
+        // Completed-session counts/trends are sourced from the durable SessionHistory audit
+        // table rather than the live `/api/sessions` list, which only ever reflects sessions
+        // still within the (much shorter) live-session purge window — using it here would
+        // silently undercount completions older than that window (Reports feature, Phase 7).
+        const history = hRes.ok ? (await hRes.json() as SessionHistoryLike[]) : [];
+        const completedTerminalAts = history
+          .filter(h => h.finalState === 'SessionCompleted')
+          .map(h => h.terminalAt);
+        const cutoff = Date.now() - TREND_DAYS * 86_400_000;
         if (cancelled) return;
         setStats({
           activeSessions:    sessions.filter(s => ACTIVE_STATES.has(s.state)).length,
-          completedSessions: sessions.filter(s => s.state === 'SessionCompleted').length,
+          completedSessions: completedTerminalAts.filter(t => new Date(t).getTime() >= cutoff).length,
           osImages:          osImages.length,
           bootImages:        bootImages.length,
+        });
+        const timestampsOf = (items: TimestampedLike[]) =>
+          items.map(i => i.createdAt ?? i.uploadedAt).filter((d): d is string => !!d);
+        setTrends({
+          activeSessions:    computeTrend(sessions.filter(s => ACTIVE_STATES.has(s.state)).map(s => s.createdAt), TREND_DAYS),
+          completedSessions: computeTrend(completedTerminalAts, TREND_DAYS),
+          osImages:          computeTrend(timestampsOf(osImages), TREND_DAYS),
+          bootImages:        computeTrend(timestampsOf(bootImages), TREND_DAYS),
         });
       } catch {
         if (!cancelled) setStats({ activeSessions: 0, completedSessions: 0, osImages: 0, bootImages: 0 });
@@ -128,23 +235,62 @@ export default function DashboardPage(): React.ReactElement {
     <div className="space-y-8">
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {STAT_CARDS.map(card => (
-          <Card key={card.key}>
-            <CardContent className="p-5">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {card.icon}
-                <span>{card.label}</span>
-              </div>
-              <div className="mt-3">
-                {stats ? (
-                  <p className="text-3xl font-semibold tabular-nums">{stats[card.key]}</p>
-                ) : (
-                  <Skeleton className="h-9 w-16" />
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {STAT_CARDS.map(card => {
+          const trend = trends?.[card.key];
+          const badgeVariant = trend?.changePct == null ? 'muted' : trend.changePct > 0 ? 'success' : trend.changePct < 0 ? 'negative' : 'muted';
+          const TrendIcon = trend?.changePct == null || trend.changePct === 0 ? Minus : trend.changePct > 0 ? TrendingUp : TrendingDown;
+          return (
+            <Link key={card.key} to={card.to} className="group block">
+              <Card className="transition-colors hover:border-primary/50 hover:bg-accent/40">
+                <CardContent className="p-5">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    {card.icon}
+                    <span>{card.label}</span>
+                  </div>
+                  <div className="mt-3 flex items-end justify-between gap-2">
+                    {stats ? (
+                      <p className="text-3xl font-semibold tabular-nums"><AnimatedNumber value={stats[card.key]} /></p>
+                    ) : (
+                      <Skeleton className="h-9 w-16" />
+                    )}
+                    {trend && (
+                      <Badge variant={badgeVariant} title={`vs. previous ${TREND_DAYS} days`}>
+                        <TrendIcon size={11} />
+                        {trend.changePct == null ? 'New' : `${Math.abs(trend.changePct)}%`}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-3 h-10">
+                    {trend ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={trend.series.map(v => ({ v }))}>
+                          <defs>
+                            <linearGradient id={`spark-${card.key}`} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="currentColor" stopOpacity={0.35} />
+                              <stop offset="95%" stopColor="currentColor" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <Area
+                            type="monotone"
+                            dataKey="v"
+                            stroke="currentColor"
+                            strokeWidth={1.5}
+                            fill={`url(#spark-${card.key})`}
+                            className="text-primary"
+                            isAnimationActive={false}
+                            dot={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <Skeleton className="h-full w-full" />
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Welcome / intro */}

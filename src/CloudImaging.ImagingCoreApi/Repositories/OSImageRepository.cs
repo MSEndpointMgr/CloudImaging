@@ -7,11 +7,15 @@ namespace CloudImaging.ImagingCoreApi.Repositories;
 /// <summary>
 /// Table Storage repository for OS image catalog (FR-036, FR-037).
 /// PartitionKey: "catalog" | RowKey: imageId.
+/// Enforces a maximum of 500 active entries (per plan.md capacity budget) — unlike the Boot/
+/// Recovery catalogs' 5-entry cap, the limit here is a generous ceiling rather than an
+/// auto-demote-oldest rotation, since OS images are typically retained deliberately.
 /// </summary>
 public sealed class OsImageRepository
 {
     private const string TableName = "OSImages";
     private const string Partition = "catalog";
+    public const int MaxActiveEntries = 500;
     private readonly TableClient _table;
 
     public OsImageRepository(TableServiceClient tableServiceClient) =>
@@ -19,6 +23,10 @@ public sealed class OsImageRepository
 
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
+
+    /// <summary>Number of active catalog entries, used to enforce <see cref="MaxActiveEntries"/>.</summary>
+    public async Task<int> GetActiveCountAsync(CancellationToken ct = default) =>
+        await ListActiveAsync(ct).CountAsync(ct);
 
     public async Task CreateAsync(OsImage image, CancellationToken ct = default) =>
         await _table.AddEntityAsync(ToEntity(image), ct);

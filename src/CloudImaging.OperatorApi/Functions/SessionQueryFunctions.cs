@@ -15,6 +15,7 @@ namespace CloudImaging.OperatorApi.Functions;
 /// GET /api/sessions/{id}   — get a single device session summary
 /// GET /api/sessions/{id}/logs                    — list uploaded diagnostic logs for a session
 /// GET /api/sessions/{id}/logs/{fileName}/download-url — issue a short-lived download URL
+/// GET /api/session-history — list durable terminal-outcome records for the Reports section
 /// </summary>
 public sealed partial class SessionQueryFunctions
 {
@@ -87,6 +88,17 @@ public sealed partial class SessionQueryFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    [Function("GetSessionHistory")]
+    public async Task<HttpResponseData> GetSessionHistory(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "session-history")] HttpRequestData req,
+        FunctionContext context)
+    {
+        var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var coreResponse = await _coreClient.GetSessionHistoryAsync(qs.Get("from"), qs.Get("to"), context.CancellationToken);
+        LogSessionHistoryProxy(_logger, (int)coreResponse.StatusCode);
+        return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
     private static async Task<HttpResponseData> ProxyJsonAsync(
         HttpRequestData req, HttpResponseMessage upstream, CancellationToken ct)
     {
@@ -105,4 +117,7 @@ public sealed partial class SessionQueryFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Get session {SessionId} proxy returned HTTP {StatusCode}.")]
     private static partial void LogSessionProxy(ILogger logger, Guid sessionId, int statusCode);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Session history proxy returned HTTP {StatusCode}.")]
+    private static partial void LogSessionHistoryProxy(ILogger logger, int statusCode);
 }

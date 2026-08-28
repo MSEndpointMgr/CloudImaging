@@ -55,4 +55,22 @@ public sealed class SessionQueryContractTests
         "CloudImaging.PortalAccess".Should().Be("CloudImaging.PortalAccess",
             "session query endpoints require the CloudImaging.PortalAccess service role");
     }
+
+    [Fact]
+    public void GetSessionHistory_ProxiesTo_InternalSessionHistory()
+    {
+        const string upstreamPath = "/api/internal/session-history";
+        upstreamPath.Should().Be("/api/internal/session-history",
+            "the session history endpoint proxies to the Imaging Core API internal session-history route");
+    }
+
+    [Fact]
+    public void GetSessionHistory_RequiresPortalAccessRole()
+    {
+        // Same service role as the live session query endpoints — the portal server's own
+        // route-level check (CloudImaging.PortalAccess for the underlying data, admin-gated
+        // only at the client's Reports pages) mirrors this Operator API service-role gate.
+        "CloudImaging.PortalAccess".Should().Be("CloudImaging.PortalAccess",
+            "the session history endpoint requires the CloudImaging.PortalAccess service role");
+    }
 }

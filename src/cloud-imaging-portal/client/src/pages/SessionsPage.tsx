@@ -226,6 +226,9 @@ function SessionsPageImpl(): React.ReactElement {
   const [startingImages, setStartingImages]   = useState(false);
   const [pendingBulkAssign, setPendingBulkAssign] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Consecutive failed /api/sessions polls, used to back off the poll interval (see
+  // scheduleNextPoll); reset to 0 the moment a poll succeeds again.
+  const consecutiveFailuresRef = useRef(0);
 
   // Imaging (and, by extension, the Start Imaging action) is impossible until at least one
   // active OS image has been uploaded — surfaced via a persistent banner rather than a toast
@@ -286,9 +289,11 @@ function SessionsPageImpl(): React.ReactElement {
       if (res.ok) {
         const fetched = await res.json() as Session[];
         setSessions(fetched);
+        consecutiveFailuresRef.current = 0;
         return fetched;
       }
-    } catch { /* retain previous */ }
+      consecutiveFailuresRef.current += 1;
+    } catch { consecutiveFailuresRef.current += 1; /* retain previous */ }
     finally { setLoading(false); }
     return data ?? [];
   }, []);
@@ -296,10 +301,16 @@ function SessionsPageImpl(): React.ReactElement {
   const scheduleNextPoll = useCallback((data: Session[]) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     const hasHot = data.some(s => s.state === 'SessionStarted' || s.state === 'SessionInProgress');
+    const baseInterval = hasHot ? 5_000 : 30_000;
+    // Back off exponentially after consecutive failed polls (transient network blips, upstream
+    // 5xx, etc.) so we don't hammer a struggling backend — capped at 5 minutes, and reset to the
+    // normal cadence as soon as a poll succeeds again.
+    const failures = consecutiveFailuresRef.current;
+    const interval = failures > 0 ? Math.min(baseInterval * 2 ** failures, 300_000) : baseInterval;
     timerRef.current = setTimeout(async () => {
       const next = await fetchSessions(data);
       scheduleNextPoll(next);
-    }, hasHot ? 5_000 : 30_000);
+    }, interval);
   }, [fetchSessions]);
 
   useEffect(() => {
@@ -383,8 +394,22 @@ function SessionsPageImpl(): React.ReactElement {
         body: JSON.stringify({ sessionIds: coupled.map(s => s.sessionId), osImageId: selectedImageId }),
       });
       if (res.ok) {
-        const data = await res.json() as { assigned: number };
-        notify({ status: 'success', title: `Imaging started for ${data.assigned} device${data.assigned !== 1 ? 's' : ''}.` });
+        const data = await res.json() as { assigned: number; skipped: number; assignedIds: string[]; skippedIds: string[] };
+        const assignedTitle = `Imaging started for ${data.assigned} device${data.assigned !== 1 ? 's' : ''}.`;
+        if (data.skipped > 0) {
+          const skippedSerials = coupled
+            .filter(s => data.skippedIds.includes(s.sessionId))
+            .map(s => s.deviceSerialNumber);
+          notify({
+            status: data.assigned > 0 ? 'info' : 'error',
+            title: assignedTitle,
+            description: skippedSerials.length > 0
+              ? `${data.skipped} skipped (no longer coupled or already assigned): ${skippedSerials.join(', ')}.`
+              : `${data.skipped} device${data.skipped !== 1 ? 's' : ''} skipped (no longer coupled or already assigned).`,
+          });
+        } else {
+          notify({ status: 'success', title: assignedTitle });
+        }
         setSelectedImageId(null);
         handleRefresh();
       } else {

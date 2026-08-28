@@ -35,6 +35,17 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> CancelSessionAsync(Guid sessionId, CancellationToken ct = default) =>
         _http.DeleteAsync($"/api/internal/sessions/{sessionId}", ct);
 
+    public Task<HttpResponseMessage> GetSessionHistoryAsync(string? from, string? to, CancellationToken ct = default)
+    {
+        var query = string.Join('&', new[]
+        {
+            from is not null ? $"from={Uri.EscapeDataString(from)}" : null,
+            to is not null ? $"to={Uri.EscapeDataString(to)}" : null,
+        }.Where(p => p is not null));
+        var url = query.Length > 0 ? $"/api/internal/session-history?{query}" : "/api/internal/session-history";
+        return _http.GetAsync(url, ct);
+    }
+
     // ── OS image operations ────────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetImagesAsync(CancellationToken ct = default) =>
@@ -54,6 +65,9 @@ public sealed class ImagingCoreClient
 
     public Task<HttpResponseMessage> PublishOsImageUploadAsync(string uploadId, object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync($"/api/internal/images/upload/{uploadId}/publish", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> AbandonOsImageUploadAsync(string uploadId, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/images/upload/{uploadId}/abandon", payload, JsonOptions, ct);
 
     // ── Boot image operations ──────────────────────────────────────────────────
 

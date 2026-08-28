@@ -100,6 +100,16 @@ public sealed partial class ImageCatalogFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
+        var activeCount = await _imageRepo.GetActiveCountAsync(context.CancellationToken);
+        if (activeCount >= OsImageRepository.MaxActiveEntries)
+        {
+            var full = req.CreateResponse(HttpStatusCode.Conflict);
+            await full.WriteStringAsync(
+                $"OS image catalog is at capacity ({OsImageRepository.MaxActiveEntries}). Remove an unused image before adding another.",
+                context.CancellationToken);
+            return full;
+        }
+
         var newImage = new OsImage
         {
             ImageId = image.ImageId == Guid.Empty ? Guid.NewGuid() : image.ImageId,

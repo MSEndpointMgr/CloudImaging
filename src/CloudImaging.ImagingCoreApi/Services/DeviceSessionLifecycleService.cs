@@ -48,13 +48,19 @@ public sealed partial class DeviceSessionLifecycleService
     ];
 
     private readonly DeviceSessionRepository _sessionRepo;
+    private readonly SessionHistoryRepository _historyRepo;
+    private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<DeviceSessionLifecycleService> _logger;
 
     public DeviceSessionLifecycleService(
         DeviceSessionRepository sessionRepo,
+        SessionHistoryRepository historyRepo,
+        PortalConfigurationRepository configRepo,
         ILogger<DeviceSessionLifecycleService> logger)
     {
         _sessionRepo = sessionRepo;
+        _historyRepo = historyRepo;
+        _configRepo = configRepo;
         _logger = logger;
     }
 
@@ -82,6 +88,7 @@ public sealed partial class DeviceSessionLifecycleService
                     : SessionState.SessionFailed;
                 var transitioned = BuildTransition(session, terminalState);
                 await _sessionRepo.UpdateAsync(transitioned, ct);
+                await WriteHistoryAsync(transitioned, ct);
                 LogSessionExpired(_logger, session.SessionId, lastHeartbeat, terminalState);
                 expired++;
             }
@@ -108,6 +115,54 @@ public sealed partial class DeviceSessionLifecycleService
 
         LogPurgeRun(_logger, purged);
         return purged;
+    }
+
+    /// <summary>
+    /// Purges SessionHistory (Reports audit) records whose retention window has elapsed.
+    /// Independent of <see cref="PurgeTerminalSessionsAsync"/> — history retention is
+    /// administrator-configurable and typically much longer than the live session TTL.
+    /// Returns the number of history records purged.
+    /// </summary>
+    public async Task<int> PurgeSessionHistoryAsync(CancellationToken ct = default)
+    {
+        int purged = 0;
+
+        await foreach (var (sessionId, _) in _historyRepo.QueryDueForPurgeAsync(DateTimeOffset.UtcNow, ct))
+        {
+            await _historyRepo.DeletePurgedAsync(sessionId, ct);
+            purged++;
+        }
+
+        LogHistoryPurgeRun(_logger, purged);
+        return purged;
+    }
+
+    /// <summary>
+    /// Records a SessionHistory (Reports audit) entry for an inactivity-driven terminal
+    /// transition. FailedStepName is intentionally left unset here — unlike
+    /// <c>ReportProgressFunction</c>, this path doesn't have direct access to the per-step
+    /// records, only the session's free-text <see cref="DeviceSession.CurrentStep"/> snapshot.
+    /// ErrorDetail instead captures a synthesized, still-diagnostically-useful reason.
+    /// </summary>
+    private async Task WriteHistoryAsync(DeviceSession s, CancellationToken ct)
+    {
+        var config = await _configRepo.GetAsync(ct);
+        var history = new SessionHistoryRecord
+        {
+            SessionId = s.SessionId,
+            FinalState = s.State,
+            DeviceSerialNumber = s.DeviceSerialNumber,
+            DeviceManufacturer = s.DeviceManufacturer,
+            DeviceModel = s.DeviceModel,
+            PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
+            AssignedOsImageId = s.AssignedOsImageId,
+            ErrorDetail = s.State == SessionState.SessionFailed
+                ? $"Session inactivity timeout while in progress (last step: {s.CurrentStep ?? "unknown"})."
+                : null,
+            CreatedAt = s.CreatedAt,
+            TerminalAt = s.TerminalAt ?? DateTimeOffset.UtcNow,
+        };
+        await _historyRepo.CreateAsync(history, config.SessionHistoryRetentionDays, ct);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -154,4 +209,7 @@ public sealed partial class DeviceSessionLifecycleService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Terminal purge run complete: {Count} sessions purged.")]
     private static partial void LogPurgeRun(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "SessionHistory purge run complete: {Count} history records purged.")]
+    private static partial void LogHistoryPurgeRun(ILogger logger, int count);
 }

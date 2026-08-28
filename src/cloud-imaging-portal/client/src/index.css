@@ -5,10 +5,8 @@
 @layer base {
   :root {
     /* shadcn/ui neutral design tokens (HSL), light theme */
-    --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
 
-    --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
 
     --popover: 0 0% 100%;
@@ -37,7 +35,6 @@
     --radius: 0.5rem;
 
     /* Sidebar surface tokens */
-    --sidebar: 210 40% 98%;
     --sidebar-foreground: 215.4 25% 26.9%;
     --sidebar-accent: 214.3 31.8% 91.4%;
     --sidebar-accent-foreground: 222.2 47.4% 11.2%;
@@ -46,13 +43,18 @@
     /* Brand colors as RGB triples, overridden at runtime by brandingContext (FR-038). */
     --color-primary: 37 99 235;   /* blue-600 default */
     --color-accent:  30 64 175;   /* blue-800 default */
+
+    /* Brand-overridable surface backgrounds (RGB triples), theme-specific defaults matching
+       the previous static shadcn "slate" fills. Overridden at runtime by brandingContext. */
+    --brand-sidebar-bg: 248 250 252; /* #f8fafc */
+    --brand-card-bg:    255 255 255; /* #ffffff */
+    --brand-page-bg:    255 255 255; /* #ffffff */
+    --brand-header-bg:  255 255 255; /* #ffffff */
   }
 
   .dark {
-    --background: 222.2 47% 6%;
     --foreground: 210 40% 98%;
 
-    --card: 222.2 44% 8.5%;
     --card-foreground: 210 40% 98%;
 
     --popover: 222.2 47% 6%;
@@ -78,11 +80,15 @@
     --border: 217.2 32.6% 20%;
     --input: 217.2 32.6% 20%;
 
-    --sidebar: 222.2 45% 9%;
     --sidebar-foreground: 215 20.2% 75%;
     --sidebar-accent: 217.2 32.6% 17.5%;
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217.2 32.6% 20%;
+
+    --brand-sidebar-bg: 13 19 33; /* #0d1321 */
+    --brand-card-bg:    12 18 31; /* #0c121f */
+    --brand-page-bg:    8 12 22;  /* #080c16 */
+    --brand-header-bg:  8 12 22;  /* #080c16 */
   }
 }
 

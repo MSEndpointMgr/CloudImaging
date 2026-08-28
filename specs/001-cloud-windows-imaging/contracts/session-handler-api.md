@@ -312,21 +312,35 @@ Delete an OS image. Blocked when `activeSessionCount > 0`.
 
 ## Branding Endpoints
 
+All colour values are 6-digit hex strings (e.g. `#0078D4`), not HSL -- this
+matches `CloudImaging.Contracts.Models.BrandingConfiguration` and the CSS
+custom-property scheme used by the portal client (RGB triples derived from
+hex at runtime). Logo blob paths are managed exclusively by the dedicated
+upload/delete endpoints below and are never accepted on `PUT /branding`.
+
 ### GET /branding
 
 Return current branding configuration.
 
-**Required role**: `AdminPortal`
+**Required role**: `CloudImaging.PortalAccess`
 
 **Response 200 OK**
 
 ```json
 {
-  "applicationName": "string",
-  "logoUrl": "string | null",
-  "primaryColorHsl": "string",
-  "accentColorHsl": "string",
-  "updatedAt": "datetime"
+  "logoBlobPath": "string | null",
+  "portalLogoBlobPath": "string | null",
+  "primaryColor": "#0078d4",
+  "accentColor": "#005a9e",
+  "applicationName": "Cloud Imaging",
+  "sidebarBackgroundLight": "#f8fafc",
+  "sidebarBackgroundDark": "#0d1321",
+  "cardBackgroundLight": "#ffffff",
+  "cardBackgroundDark": "#0c121f",
+  "pageBackgroundLight": "#ffffff",
+  "pageBackgroundDark": "#080c16",
+  "headerBackgroundLight": "#ffffff",
+  "headerBackgroundDark": "#080c16"
 }
 ```
 
@@ -334,21 +348,57 @@ Return current branding configuration.
 
 ### PUT /branding
 
-Replace the branding configuration. Logo upload is a separate operation (the
-Admin Portal backend uploads to Blob Storage and then sends the resulting URL
-in this payload).
+Replace the colour/name portion of the branding configuration. `logoBlobPath`
+and `portalLogoBlobPath` are preserved server-side from the existing record --
+a colour/name save can never clear a configured logo.
 
-**Required role**: `AdminPortal`
+**Required role**: `CloudImaging.Administrator`
 
-**Request body**
+**Request body** -- all 11 fields are required; each colour is validated
+against `^#[0-9a-fA-F]{6}$` and `applicationName` must be 1-100 characters
+after trimming.
 
 ```json
 {
-  "applicationName": "string",
-  "logoUrl": "string | null",
-  "primaryColorHsl": "string",
-  "accentColorHsl": "string"
+  "primaryColor": "#0078d4",
+  "accentColor": "#005a9e",
+  "applicationName": "Cloud Imaging",
+  "sidebarBackgroundLight": "#f8fafc",
+  "sidebarBackgroundDark": "#0d1321",
+  "cardBackgroundLight": "#ffffff",
+  "cardBackgroundDark": "#0c121f",
+  "pageBackgroundLight": "#ffffff",
+  "pageBackgroundDark": "#080c16",
+  "headerBackgroundLight": "#ffffff",
+  "headerBackgroundDark": "#080c16"
 }
 ```
 
-**Response 200 OK** -- returns full branding object with `updatedAt`.
+**Response 204 No Content**
+
+**Errors**
+- `400 Bad Request` -- a colour is not a valid 6-digit hex string, or
+  `applicationName` is out of range
+
+---
+
+### Logo management
+
+Two independent logos are supported: the **boot image logo** (embedded into
+boot media by the Media Builder, downloaded via a time-limited SAS URL) and
+the **portal logo** (shown in the portal header/sidebar, streamed directly
+through the backend with no SAS).
+
+- `PUT /branding/logo` / `PUT /branding/portal-logo` -- body
+  `{ "fileName": "string", "contentType": "string", "dataBase64": "string" }`
+  (max 512 KB decoded); raster images are normalized server-side to a
+  256px-longest-side canonical size. Returns the updated branding object.
+- `GET /branding/logo/content` / `GET /branding/portal-logo/content` -- streams
+  the current logo bytes.
+- `GET /branding/logo/sas` -- issues a SAS URL for the boot image logo
+  (consumed by the Media Builder); `404 Not Found` if no logo is configured.
+- `DELETE /branding/logo` / `DELETE /branding/portal-logo` -- clears the
+  respective logo, reverting to the built-in default artwork.
+
+**Required role**: `CloudImaging.Administrator` for all logo mutations;
+`CloudImaging.PortalAccess` for reads.

@@ -124,6 +124,14 @@ export interface BrandingConfiguration {
   primaryColor: string;
   accentColor: string;
   applicationName: string;
+  sidebarBackgroundLight: string;
+  sidebarBackgroundDark: string;
+  cardBackgroundLight: string;
+  cardBackgroundDark: string;
+  pageBackgroundLight: string;
+  pageBackgroundDark: string;
+  headerBackgroundLight: string;
+  headerBackgroundDark: string;
 }
 "@
     Set-Content (Join-Path $OutputDir $FileName) $ts

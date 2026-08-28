@@ -133,6 +133,18 @@ public sealed partial class OsImageUploadFunctions
         var version = versionProp.GetString()!;
         var sizeBytes = sizeProp.GetInt64();
 
+        // Reject before committing any blocks so the caller isn't left holding an orphaned blob.
+        var activeCount = await _imageRepo.GetActiveCountAsync(context.CancellationToken);
+        if (activeCount >= OsImageRepository.MaxActiveEntries)
+        {
+            LogCatalogAtCapacity(_logger, activeCount);
+            var full = req.CreateResponse(HttpStatusCode.Conflict);
+            await full.WriteStringAsync(
+                $"OS image catalog is at capacity ({OsImageRepository.MaxActiveEntries}). Remove an unused image before uploading another.",
+                context.CancellationToken);
+            return full;
+        }
+
         var blockBlobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlockBlobClient(blobName);
 
         // Commit the staged blocks — this call uses the Function's own managed identity, no SAS
@@ -179,8 +191,46 @@ public sealed partial class OsImageUploadFunctions
         return response;
     }
 
+    // ── POST /api/internal/images/upload/{uploadId}/abandon ───────────────────
+
+    /// <summary>
+    /// Deletes the uncommitted staged blob for a cancelled/abandoned upload (T128a). Best-effort
+    /// cleanup called by the portal when the operator cancels mid-upload or discards a resumable
+    /// checkpoint — without this, staged blocks would otherwise only be reclaimed by Azure
+    /// Storage's ~7-day uncommitted-block garbage collection.
+    /// </summary>
+    [Function("AbandonOsImageUpload")]
+    public async Task<HttpResponseData> AbandonUpload(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/images/upload/{uploadId}/abandon")] HttpRequestData req,
+        string uploadId,
+        FunctionContext context)
+    {
+        using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        if (!body.RootElement.TryGetProperty("blobName", out var blobNameProp))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var blobName = blobNameProp.GetString() ?? string.Empty;
+        // Defense-in-depth: only ever delete a blob under this upload's own staging prefix, so a
+        // malformed/forged blobName can't be used to delete an unrelated published image blob.
+        if (!blobName.StartsWith($"uploads/{uploadId}/", StringComparison.Ordinal))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var blockBlobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlockBlobClient(blobName);
+        await blockBlobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
+        LogUploadAbandoned(_logger, uploadId);
+
+        return req.CreateResponse(HttpStatusCode.NoContent);
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "OS image upload started: id={UploadId} name={Name} version={Version}.")]
     private static partial void LogUploadStarted(ILogger logger, string uploadId, string name, string version);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "OS image upload abandoned and staged blob cleaned up: {UploadId}.")]
+    private static partial void LogUploadAbandoned(ILogger logger, string uploadId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "OS image validation failed for {BlobName}: {Reason}.")]
     private static partial void LogValidationFailed(ILogger logger, string blobName, string reason);
@@ -190,4 +240,7 @@ public sealed partial class OsImageUploadFunctions
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "OS image upload rejected: unsupported extension '{Extension}'.")]
     private static partial void LogUnsupportedExtension(ILogger logger, string extension);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "OS image upload rejected: catalog at capacity ({ActiveCount} active entries).")]
+    private static partial void LogCatalogAtCapacity(ILogger logger, int activeCount);
 }

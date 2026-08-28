@@ -17,6 +17,14 @@ interface BrandingConfig {
   primaryColor: string;
   accentColor: string;
   applicationName: string;
+  sidebarBackgroundLight: string;
+  sidebarBackgroundDark: string;
+  cardBackgroundLight: string;
+  cardBackgroundDark: string;
+  pageBackgroundLight: string;
+  pageBackgroundDark: string;
+  headerBackgroundLight: string;
+  headerBackgroundDark: string;
 }
 
 /** The subset of branding fields the "Save branding" button actually persists. */
@@ -24,6 +32,14 @@ interface AppearanceFields {
   primaryColor: string;
   accentColor: string;
   applicationName: string;
+  sidebarBackgroundLight: string;
+  sidebarBackgroundDark: string;
+  cardBackgroundLight: string;
+  cardBackgroundDark: string;
+  pageBackgroundLight: string;
+  pageBackgroundDark: string;
+  headerBackgroundLight: string;
+  headerBackgroundDark: string;
 }
 
 function appearanceOf(config: BrandingConfig): AppearanceFields {
@@ -31,13 +47,29 @@ function appearanceOf(config: BrandingConfig): AppearanceFields {
     primaryColor: config.primaryColor,
     accentColor: config.accentColor,
     applicationName: config.applicationName,
+    sidebarBackgroundLight: config.sidebarBackgroundLight,
+    sidebarBackgroundDark: config.sidebarBackgroundDark,
+    cardBackgroundLight: config.cardBackgroundLight,
+    cardBackgroundDark: config.cardBackgroundDark,
+    pageBackgroundLight: config.pageBackgroundLight,
+    pageBackgroundDark: config.pageBackgroundDark,
+    headerBackgroundLight: config.headerBackgroundLight,
+    headerBackgroundDark: config.headerBackgroundDark,
   };
 }
 
 function appearanceEquals(a: AppearanceFields, b: AppearanceFields): boolean {
   return a.primaryColor === b.primaryColor
     && a.accentColor === b.accentColor
-    && a.applicationName === b.applicationName;
+    && a.applicationName === b.applicationName
+    && a.sidebarBackgroundLight === b.sidebarBackgroundLight
+    && a.sidebarBackgroundDark === b.sidebarBackgroundDark
+    && a.cardBackgroundLight === b.cardBackgroundLight
+    && a.cardBackgroundDark === b.cardBackgroundDark
+    && a.pageBackgroundLight === b.pageBackgroundLight
+    && a.pageBackgroundDark === b.pageBackgroundDark
+    && a.headerBackgroundLight === b.headerBackgroundLight
+    && a.headerBackgroundDark === b.headerBackgroundDark;
 }
 
 /** Which logo an upload targets. */
@@ -49,6 +81,18 @@ const MAX_LOGO_BYTES = 512 * 1024;
 /** Matches the server-side BrandingFunctions validation: a 6-digit hex color. */
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
+/** Defaults mirrored from CloudImaging.Contracts.Models.BrandingConfiguration. */
+const DEFAULT_PRIMARY_COLOR = '#0078d4';
+const DEFAULT_ACCENT_COLOR = '#005a9e';
+const DEFAULT_SIDEBAR_BG_LIGHT = '#f8fafc';
+const DEFAULT_SIDEBAR_BG_DARK = '#0d1321';
+const DEFAULT_CARD_BG_LIGHT = '#ffffff';
+const DEFAULT_CARD_BG_DARK = '#0c121f';
+const DEFAULT_PAGE_BG_LIGHT = '#ffffff';
+const DEFAULT_PAGE_BG_DARK = '#080c16';
+const DEFAULT_HEADER_BG_LIGHT = '#ffffff';
+const DEFAULT_HEADER_BG_DARK = '#080c16';
+
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
 async function extractError(res: Response, fallback: string): Promise<string> {
   try {
@@ -59,16 +103,69 @@ async function extractError(res: Response, fallback: string): Promise<string> {
   }
 }
 
+interface ColorFieldProps {
+  id: string;
+  label: string;
+  value: string;
+  defaultValue: string;
+  error: string | null;
+  onChange: (hex: string) => void;
+}
+
+/** A hex colour swatch + text input + "reset to default" button, shared by every colour field on this page. */
+function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFieldProps): React.ReactElement {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-2">
+        <input
+          id={id}
+          type="color"
+          value={HEX_COLOR_PATTERN.test(value) ? value : defaultValue}
+          onChange={e => onChange(e.target.value)}
+          className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-transparent"
+        />
+        <Input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="font-mono"
+          aria-invalid={!!error}
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => onChange(defaultValue)}
+          disabled={value.toLowerCase() === defaultValue.toLowerCase()}
+          title="Reset to default"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+      </div>
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 /** Branding settings page (T095, FR-038). Administrator-only writes. */
 export default function BrandingPage(): React.ReactElement {
   const { logoUrl, refresh } = useBranding();
   const { notify, update } = useToast();
   const [config, setConfig] = useState<BrandingConfig>({
-    primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
+    primaryColor: DEFAULT_PRIMARY_COLOR, accentColor: DEFAULT_ACCENT_COLOR, applicationName: 'Cloud Imaging',
+    sidebarBackgroundLight: DEFAULT_SIDEBAR_BG_LIGHT, sidebarBackgroundDark: DEFAULT_SIDEBAR_BG_DARK,
+    cardBackgroundLight: DEFAULT_CARD_BG_LIGHT, cardBackgroundDark: DEFAULT_CARD_BG_DARK,
+    pageBackgroundLight: DEFAULT_PAGE_BG_LIGHT, pageBackgroundDark: DEFAULT_PAGE_BG_DARK,
+    headerBackgroundLight: DEFAULT_HEADER_BG_LIGHT, headerBackgroundDark: DEFAULT_HEADER_BG_DARK,
   });
   /** Snapshot of the appearance fields as last loaded/saved. Used to detect unsaved changes. */
   const [savedAppearance, setSavedAppearance] = useState<AppearanceFields>({
-    primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging',
+    primaryColor: DEFAULT_PRIMARY_COLOR, accentColor: DEFAULT_ACCENT_COLOR, applicationName: 'Cloud Imaging',
+    sidebarBackgroundLight: DEFAULT_SIDEBAR_BG_LIGHT, sidebarBackgroundDark: DEFAULT_SIDEBAR_BG_DARK,
+    cardBackgroundLight: DEFAULT_CARD_BG_LIGHT, cardBackgroundDark: DEFAULT_CARD_BG_DARK,
+    pageBackgroundLight: DEFAULT_PAGE_BG_LIGHT, pageBackgroundDark: DEFAULT_PAGE_BG_DARK,
+    headerBackgroundLight: DEFAULT_HEADER_BG_LIGHT, headerBackgroundDark: DEFAULT_HEADER_BG_DARK,
   });
   const isDirty = !appearanceEquals(appearanceOf(config), savedAppearance);
   const primaryColorError = HEX_COLOR_PATTERN.test(config.primaryColor) ? null : 'Must be a 6-digit hex color, e.g. #0078D4.';
@@ -76,7 +173,17 @@ export default function BrandingPage(): React.ReactElement {
   const applicationNameError = config.applicationName.trim().length < 1 || config.applicationName.trim().length > 100
     ? 'Must be between 1 and 100 characters.'
     : null;
-  const hasValidationError = !!(primaryColorError || accentColorError || applicationNameError);
+  const surfaceColorFields: (keyof BrandingConfig)[] = [
+    'sidebarBackgroundLight', 'sidebarBackgroundDark', 'cardBackgroundLight', 'cardBackgroundDark',
+    'pageBackgroundLight', 'pageBackgroundDark', 'headerBackgroundLight', 'headerBackgroundDark',
+  ];
+  const surfaceColorErrors = Object.fromEntries(
+    surfaceColorFields.map(key => [key, HEX_COLOR_PATTERN.test(config[key] as string) ? null : 'Must be a 6-digit hex color, e.g. #FFFFFF.']),
+  ) as Record<keyof BrandingConfig, string | null>;
+  const hasValidationError = !!(
+    primaryColorError || accentColorError || applicationNameError
+    || surfaceColorFields.some(key => surfaceColorErrors[key])
+  );
   const [loading, setLoading]         = useState(true);
   const [saveStatus, setSaveStatus]   = useState<ButtonStatus>('idle');
   const [uploadingKind, setUploadingKind] = useState<LogoKind | null>(null);
@@ -133,6 +240,14 @@ export default function BrandingPage(): React.ReactElement {
           primaryColor: config.primaryColor,
           accentColor: config.accentColor,
           applicationName: config.applicationName,
+          sidebarBackgroundLight: config.sidebarBackgroundLight,
+          sidebarBackgroundDark: config.sidebarBackgroundDark,
+          cardBackgroundLight: config.cardBackgroundLight,
+          cardBackgroundDark: config.cardBackgroundDark,
+          pageBackgroundLight: config.pageBackgroundLight,
+          pageBackgroundDark: config.pageBackgroundDark,
+          headerBackgroundLight: config.headerBackgroundLight,
+          headerBackgroundDark: config.headerBackgroundDark,
         }),
       });
       if (res.ok || res.status === 204) {
@@ -388,51 +503,71 @@ export default function BrandingPage(): React.ReactElement {
           </div>
 
           <div className="flex gap-4">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="primaryColor">Primary colour</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="primaryColor"
-                  type="color"
-                  value={config.primaryColor}
-                  onChange={e => setConfig({ ...config, primaryColor: e.target.value })}
-                  className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-transparent"
-                />
-                <Input
-                  type="text"
-                  value={config.primaryColor}
-                  onChange={e => setConfig({ ...config, primaryColor: e.target.value })}
-                  className="font-mono"
-                  aria-invalid={!!primaryColorError}
-                />
-              </div>
-              {primaryColorError && (
-                <p className="text-xs text-destructive">{primaryColorError}</p>
-              )}
+            <div className="flex-1">
+              <ColorField
+                id="primaryColor"
+                label="Primary colour"
+                value={config.primaryColor}
+                defaultValue={DEFAULT_PRIMARY_COLOR}
+                error={primaryColorError}
+                onChange={hex => setConfig({ ...config, primaryColor: hex })}
+              />
             </div>
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="accentColor">Accent colour</Label>
-              <div className="flex items-center gap-2">
-                <input
-                  id="accentColor"
-                  type="color"
-                  value={config.accentColor}
-                  onChange={e => setConfig({ ...config, accentColor: e.target.value })}
-                  className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-transparent"
-                />
-                <Input
-                  type="text"
-                  value={config.accentColor}
-                  onChange={e => setConfig({ ...config, accentColor: e.target.value })}
-                  className="font-mono"
-                  aria-invalid={!!accentColorError}
-                />
-              </div>
-              {accentColorError && (
-                <p className="text-xs text-destructive">{accentColorError}</p>
-              )}
+            <div className="flex-1">
+              <ColorField
+                id="accentColor"
+                label="Accent colour"
+                value={config.accentColor}
+                defaultValue={DEFAULT_ACCENT_COLOR}
+                error={accentColorError}
+                onChange={hex => setConfig({ ...config, accentColor: hex })}
+              />
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Surface colours</CardTitle>
+          <CardDescription>
+            Background colours for the sidebar, header bar, and cards. Each has an independent
+            light- and dark-theme value, since the portal switches between the two.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {([
+            { title: 'Sidebar background', lightKey: 'sidebarBackgroundLight', darkKey: 'sidebarBackgroundDark', lightDefault: DEFAULT_SIDEBAR_BG_LIGHT, darkDefault: DEFAULT_SIDEBAR_BG_DARK },
+            { title: 'Header background', lightKey: 'headerBackgroundLight', darkKey: 'headerBackgroundDark', lightDefault: DEFAULT_HEADER_BG_LIGHT, darkDefault: DEFAULT_HEADER_BG_DARK },
+            { title: 'Card background', lightKey: 'cardBackgroundLight', darkKey: 'cardBackgroundDark', lightDefault: DEFAULT_CARD_BG_LIGHT, darkDefault: DEFAULT_CARD_BG_DARK },
+            { title: 'Page background', lightKey: 'pageBackgroundLight', darkKey: 'pageBackgroundDark', lightDefault: DEFAULT_PAGE_BG_LIGHT, darkDefault: DEFAULT_PAGE_BG_DARK },
+          ] as const).map(surface => (
+            <div key={surface.title} className="space-y-1.5 border-t border-border pt-4 first:border-t-0 first:pt-0">
+              <p className="text-sm font-medium">{surface.title}</p>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <ColorField
+                    id={surface.lightKey}
+                    label="Light theme"
+                    value={config[surface.lightKey]}
+                    defaultValue={surface.lightDefault}
+                    error={surfaceColorErrors[surface.lightKey]}
+                    onChange={hex => setConfig({ ...config, [surface.lightKey]: hex })}
+                  />
+                </div>
+                <div className="flex-1">
+                  <ColorField
+                    id={surface.darkKey}
+                    label="Dark theme"
+                    value={config[surface.darkKey]}
+                    defaultValue={surface.darkDefault}
+                    error={surfaceColorErrors[surface.darkKey]}
+                    onChange={hex => setConfig({ ...config, [surface.darkKey]: hex })}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
 

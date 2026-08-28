@@ -44,7 +44,7 @@ export function Header(): React.ReactElement {
   const initials = initialsFrom(displayName) || 'U';
 
   return (
-    <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/95 px-6 backdrop-blur">
+    <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b border-border bg-header/95 px-6 backdrop-blur">
       <h1 className="text-base font-semibold text-foreground">{title}</h1>
 
       <div className="flex items-center gap-1">

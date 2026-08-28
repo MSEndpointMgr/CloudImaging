@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { UploadProgressBar } from './UploadProgressBar.tsx';
 import { Button } from './ui/button.tsx';
@@ -12,6 +12,13 @@ import {
   startChunkedUpload,
   uploadBlocks,
   finalizeChunkedUpload,
+  abandonChunkedUpload,
+  savePersistedUpload,
+  loadPersistedUpload,
+  clearPersistedUpload,
+  matchesPersistedUpload,
+  type ChunkedUploadSession,
+  type PersistedUploadState,
 } from '../services/chunkedUploadService.ts';
 
 interface ChunkedUploadDialogProps {
@@ -20,11 +27,13 @@ interface ChunkedUploadDialogProps {
   onUploaded: (result: { blobName: string }) => void;
   /** Versions already present in the catalog; the new version must not match any of these. */
   existingVersions?: string[];
+  /** When true, the OS image catalog is full — uploads are blocked until an image is removed. */
+  atCapacity?: boolean;
 }
 
 type UploadState = 'idle' | 'hashing' | 'uploading' | 'finalizing' | 'done' | 'error' | 'cancelled';
 
-export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersions = [] }: ChunkedUploadDialogProps): React.ReactElement | null {
+export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersions = [], atCapacity = false }: ChunkedUploadDialogProps): React.ReactElement | null {
   const [file, setFile]           = useState<File | null>(null);
   const [version, setVersion]     = useState('');
   const [sha256, setSha256]       = useState('');
@@ -35,9 +44,19 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const [progress, setProgress]   = useState(0);
   const [state, setState]         = useState<UploadState>('idle');
   const [error, setError]         = useState<string | null>(null);
+  // A checkpoint left behind by a previous browser session that closed/reloaded mid-upload
+  // (see chunkedUploadService's localStorage persistence) — offered back to the operator so the
+  // already-staged blocks don't have to be re-uploaded.
+  const [resumable, setResumable] = useState<PersistedUploadState | null>(null);
+  const [resuming, setResuming]   = useState(false);
   const abortRef                  = useRef<AbortController | null>(null);
+  const sessionRef                = useRef<ChunkedUploadSession | null>(null);
   const hashRunId                 = useRef(0);
   const fileInputRef              = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) setResumable(loadPersistedUpload());
+  }, [open]);
 
   if (!open) return null;
 
@@ -46,10 +65,17 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const reset = () => {
     hashRunId.current++; // invalidate any in-flight hashing so it doesn't clobber state after reset
     setFile(null); setVersion(''); setSha256(''); setHashProgress(0); setProgress(0);
-    setState('idle'); setError(null);
+    setState('idle'); setError(null); setResuming(false);
+    sessionRef.current = null;
   };
 
   const handleClose = () => { reset(); onClose(); };
+
+  const handleDiscardResumable = () => {
+    if (resumable) void abandonChunkedUpload(resumable);
+    clearPersistedUpload();
+    setResumable(null);
+  };
 
   const handleFileSelected = (selected: File | null) => {
     hashRunId.current++;
@@ -60,9 +86,22 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
 
     if (!selected) {
       setState('idle');
+      setResuming(false);
       return;
     }
 
+    // Re-selecting the same file (by name/size/last-modified) that a persisted checkpoint was
+    // staged from lets us skip re-hashing and resume from the already-staged blocks instead of
+    // restarting the whole upload.
+    if (resumable && matchesPersistedUpload(resumable, selected)) {
+      setSha256(resumable.sha256);
+      setVersion(resumable.version);
+      setResuming(true);
+      setState('idle');
+      return;
+    }
+
+    setResuming(false);
     setState('hashing');
     computeSha256Streaming(selected, percent => {
       if (hashRunId.current === runId) setHashProgress(percent);
@@ -81,16 +120,37 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
 
   const handleUpload = async () => {
     if (!file || !version.trim() || sha256.length !== 64 || duplicateVersion) return;
-    setState('uploading'); setError(null); setProgress(0);
+    setState('uploading'); setError(null);
 
     abortRef.current = new AbortController();
     try {
-      const session = await startChunkedUpload(file.name, version, sha256);
+      const session: ChunkedUploadSession = resuming && resumable
+        ? resumable
+        : await startChunkedUpload(file.name, version, sha256);
+      sessionRef.current = session;
 
-      const blockIds = await uploadBlocks(session, file, setProgress, abortRef.current.signal);
+      const persist = (stagedBlockIds: string[]) => {
+        savePersistedUpload({
+          ...session,
+          version, sha256,
+          fileName: file.name, fileSize: file.size, fileLastModified: file.lastModified,
+          stagedBlockIds,
+        });
+      };
+
+      const resumeBlockIds = resuming && resumable ? resumable.stagedBlockIds : undefined;
+      setProgress(resumeBlockIds ? Math.round((resumeBlockIds.length * session.blockSize / file.size) * 100) : 0);
+      if (!resuming) persist([]);
+
+      const blockIds = await uploadBlocks(session, file, setProgress, abortRef.current.signal, {
+        resumeBlockIds,
+        onBlockStaged: persist,
+      });
 
       setState('finalizing');
       const result = await finalizeChunkedUpload(session, blockIds, file.name, version, sha256, file.size);
+      clearPersistedUpload();
+      setResumable(null);
       setState('done');
       onUploaded(result as { blobName: string });
     } catch (err) {
@@ -105,6 +165,12 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
 
   const handleCancel = () => {
     abortRef.current?.abort();
+    // An explicit cancel (unlike an accidental tab close) is a clear signal the operator no
+    // longer wants this upload — clean up the now-orphaned staged blob immediately and drop the
+    // resume checkpoint rather than leaving it to Azure's ~7-day uncommitted-block GC.
+    if (sessionRef.current) void abandonChunkedUpload(sessionRef.current);
+    clearPersistedUpload();
+    setResumable(null);
     setState('cancelled');
   };
 
@@ -114,7 +180,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
     : state === 'finalizing' ? 'Validating & publishing…'
     : '';
   const duplicateVersion = isDuplicateVersion(version, existingVersions);
-  const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion;
+  const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion && !atCapacity;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -127,13 +193,31 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
             </Button>
           </div>
 
+          {atCapacity && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              The OS image catalog is at capacity. Remove an unused image before uploading another.
+            </p>
+          )}
+
+          {resumable && !resuming && state === 'idle' && (
+            <div className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+              <p>
+                A previous upload of <span className="font-medium">{resumable.fileName}</span> ({resumable.version}) was
+                interrupted. Re-select the same file to resume it, or discard the partial upload.
+              </p>
+              <button type="button" onClick={handleDiscardResumable} className="text-xs text-primary hover:underline">
+                Discard partial upload
+              </button>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="osImageVersion">Version</Label>
             <Input
               id="osImageVersion"
               placeholder="e.g. Windows 11 24H2"
               value={version}
-              disabled={state === 'uploading' || state === 'finalizing'}
+              disabled={state === 'uploading' || state === 'finalizing' || resuming}
               aria-invalid={duplicateVersion}
               onChange={e => setVersion(e.target.value)}
             />
@@ -179,6 +263,11 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
                 {file ? file.name : 'No file selected'}
               </span>
             </div>
+            {resuming && (
+              <p className="text-xs text-primary">
+                Matches the interrupted upload — resuming from where it left off, checksum reused.
+              </p>
+            )}
             {/* The checksum is computed automatically from the selected file — the operator
                 never has to know or type it in. */}
             {state === 'hashing' && (

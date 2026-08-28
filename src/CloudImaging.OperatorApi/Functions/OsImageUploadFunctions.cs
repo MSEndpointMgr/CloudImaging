@@ -11,6 +11,7 @@ namespace CloudImaging.OperatorApi.Functions;
 /// OS image upload proxy endpoints (mirrors BootImageUploadFunctions).
 /// POST /api/images/upload/start             → ImagingCore start upload
 /// POST /api/images/upload/{uploadId}/publish → ImagingCore commit + validate + publish
+/// POST /api/images/upload/{uploadId}/abandon → ImagingCore delete uncommitted staged blob
 /// </summary>
 public sealed partial class OsImageUploadFunctions
 {
@@ -43,6 +44,18 @@ public sealed partial class OsImageUploadFunctions
         using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
         var core = await _coreClient.PublishOsImageUploadAsync(uploadId, payload!, context.CancellationToken);
+        return await ProxyAsync(req, core, context.CancellationToken);
+    }
+
+    [Function("AbandonOsImageUpload")]
+    public async Task<HttpResponseData> AbandonUpload(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "images/upload/{uploadId}/abandon")] HttpRequestData req,
+        string uploadId,
+        FunctionContext context)
+    {
+        using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var core = await _coreClient.AbandonOsImageUploadAsync(uploadId, payload!, context.CancellationToken);
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 

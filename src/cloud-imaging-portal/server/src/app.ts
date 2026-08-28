@@ -73,6 +73,7 @@ import { certRouter } from './routes/cert.js';
 import { portalConfigRouter } from './routes/portal-config.js';
 import { partitioningSchemeRouter } from './routes/partitioning-scheme.js';
 import { recoveryImagesRouter } from './routes/recovery-images.js';
+import { sessionHistoryRouter } from './routes/session-history.js';
 
 // Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
@@ -88,6 +89,7 @@ app.use('/api/cert',          certRouter);
 app.use('/api/portal-config',  portalConfigRouter);
 app.use('/api/partitioning-scheme', partitioningSchemeRouter);
 app.use('/api/recovery-images',     recoveryImagesRouter);
+app.use('/api/session-history',     sessionHistoryRouter);
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error', err);

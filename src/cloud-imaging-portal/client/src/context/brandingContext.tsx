@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
+import { useTheme } from './themeContext.tsx';
 
 interface BrandingConfig {
   primaryColor?: string;
@@ -9,6 +10,15 @@ interface BrandingConfig {
   logoBlobPath?: string;
   /** Portal header/sidebar logo blob path (streamed to the browser). */
   portalLogoBlobPath?: string;
+  /** Surface background colours (FR-038 extension) — independent light/dark values per surface. */
+  sidebarBackgroundLight?: string;
+  sidebarBackgroundDark?: string;
+  cardBackgroundLight?: string;
+  cardBackgroundDark?: string;
+  pageBackgroundLight?: string;
+  pageBackgroundDark?: string;
+  headerBackgroundLight?: string;
+  headerBackgroundDark?: string;
 }
 
 interface BrandingContextValue {
@@ -36,6 +46,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
   const [logoUrl, setLogoUrl]   = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const logoUrlRef = useRef<string | null>(null);
+  const { theme } = useTheme();
 
   /**
    * Replaces the current logo object URL, revoking the previous one to avoid leaks, and keeps
@@ -58,7 +69,6 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
       if (res.ok) {
         const data = await res.json() as BrandingConfig;
         setBranding(data);
-        applyBrandingCssVariables(data);
 
         if (data.portalLogoBlobPath) {
           try {
@@ -85,6 +95,10 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
   }, [setLogoObjectUrl]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Re-applies branding CSS variables whenever the branding config or the active light/dark
+  // theme changes, so surface-colour overrides pick the correct per-theme value immediately.
+  useEffect(() => { applyBrandingCssVariables(branding, theme); }, [branding, theme]);
 
   // Revoke the last object URL on unmount.
   useEffect(() => () => {
@@ -130,17 +144,22 @@ function applyFavicon(url: string | null): void {
  * Injects portal branding into CSS custom properties on the root element (FR-038).
  * All Tailwind `primary` / `accent` colour tokens reference these variables.
  */
-function applyBrandingCssVariables(cfg: BrandingConfig): void {
+function applyBrandingCssVariables(cfg: BrandingConfig, theme: 'light' | 'dark'): void {
   const root = document.documentElement;
 
-  if (cfg.primaryColor) {
-    const [r, g, b] = hexToRgb(cfg.primaryColor);
-    root.style.setProperty('--color-primary', `${r} ${g} ${b}`);
-  }
-  if (cfg.accentColor) {
-    const [r, g, b] = hexToRgb(cfg.accentColor);
-    root.style.setProperty('--color-accent', `${r} ${g} ${b}`);
-  }
+  const setColor = (varName: string, hex?: string): void => {
+    if (!hex) return;
+    const [r, g, b] = hexToRgb(hex);
+    root.style.setProperty(varName, `${r} ${g} ${b}`);
+  };
+
+  setColor('--color-primary', cfg.primaryColor);
+  setColor('--color-accent', cfg.accentColor);
+  setColor('--brand-sidebar-bg', theme === 'dark' ? cfg.sidebarBackgroundDark : cfg.sidebarBackgroundLight);
+  setColor('--brand-card-bg',    theme === 'dark' ? cfg.cardBackgroundDark    : cfg.cardBackgroundLight);
+  setColor('--brand-page-bg',    theme === 'dark' ? cfg.pageBackgroundDark    : cfg.pageBackgroundLight);
+  setColor('--brand-header-bg',  theme === 'dark' ? cfg.headerBackgroundDark  : cfg.headerBackgroundLight);
+
   if (cfg.applicationName) {
     document.title = cfg.applicationName;
   }

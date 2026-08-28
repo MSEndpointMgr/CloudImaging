@@ -61,10 +61,18 @@ export async function uploadBlocks(
   file:       File,
   onProgress: (percent: number) => void,
   signal?:    AbortSignal,
+  options?: {
+    /** Block IDs already staged in a previous attempt (resume across a tab close/reload). */
+    resumeBlockIds?: string[];
+    /** Invoked after each block is staged so the caller can checkpoint progress for resume. */
+    onBlockStaged?: (blockIds: string[]) => void;
+  },
 ): Promise<string[]> {
-  const blockIds: string[] = [];
-  let offset = 0;
-  let blockIndex = 0;
+  const blockIds: string[] = options?.resumeBlockIds ? [...options.resumeBlockIds] : [];
+  let blockIndex = blockIds.length;
+  let offset = blockIndex * BLOCK_SIZE;
+
+  if (offset > 0) onProgress(Math.round((offset / file.size) * 100));
 
   while (offset < file.size) {
     if (signal?.aborted) throw new DOMException('Upload cancelled', 'AbortError');
@@ -78,9 +86,78 @@ export async function uploadBlocks(
     offset += chunk.size;
     blockIndex++;
     onProgress(Math.round((offset / file.size) * 100));
+    options?.onBlockStaged?.(blockIds);
   }
 
   return blockIds;
+}
+
+/**
+ * Best-effort cleanup for a cancelled/discarded upload: deletes the uncommitted staged blob so
+ * it doesn't linger in the container until Azure Storage's ~7-day uncommitted-block GC kicks in.
+ * Never throws — cleanup failures shouldn't block the operator from dismissing the dialog.
+ */
+export async function abandonChunkedUpload(session: Pick<ChunkedUploadSession, 'uploadId' | 'blobName'>): Promise<void> {
+  try {
+    await apiFetch(`/api/images/upload/${session.uploadId}/abandon`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ blobName: session.blobName }),
+    });
+  } catch {
+    // Best-effort — the uncommitted blocks will be garbage-collected by Azure Storage regardless.
+  }
+}
+
+// ── Resumable-upload checkpoint (localStorage) ───────────────────────────────
+// Persists just enough state to resume a staged upload after the browser tab is closed/reloaded:
+// the SAS session details, the file identity to match against re-selection, and which blocks were
+// already staged. The File object itself can never be persisted, so resuming requires the operator
+// to re-select the same file — matched by name + size + last-modified timestamp.
+
+const PERSISTED_UPLOAD_KEY = 'ci-os-image-upload-session';
+
+export interface PersistedUploadState extends ChunkedUploadSession {
+  version: string;
+  sha256: string;
+  fileName: string;
+  fileSize: number;
+  fileLastModified: number;
+  stagedBlockIds: string[];
+}
+
+export function savePersistedUpload(state: PersistedUploadState): void {
+  try { localStorage.setItem(PERSISTED_UPLOAD_KEY, JSON.stringify(state)); }
+  catch { /* localStorage unavailable/full — resume just won't be offered next time */ }
+}
+
+/** Loads a persisted upload checkpoint, discarding it if its staging SAS URL has already expired. */
+export function loadPersistedUpload(): PersistedUploadState | null {
+  try {
+    const raw = localStorage.getItem(PERSISTED_UPLOAD_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedUploadState;
+    if (new Date(parsed.expiresAt).getTime() <= Date.now()) {
+      clearPersistedUpload();
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPersistedUpload(): void {
+  try { localStorage.removeItem(PERSISTED_UPLOAD_KEY); }
+  catch { /* ignore */ }
+}
+
+/** True when `file` is (almost certainly) the same file the persisted checkpoint was staged from. */
+export function matchesPersistedUpload(state: PersistedUploadState, file: File): boolean {
+  return state.fileName === file.name
+    && state.fileSize === file.size
+    && state.fileLastModified === file.lastModified;
 }
 
 /** Finalizes the upload: commits the block list, validates SHA-256, and registers the catalog entry. */

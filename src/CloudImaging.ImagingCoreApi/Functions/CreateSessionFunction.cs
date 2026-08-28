@@ -33,6 +33,7 @@ public sealed partial class CreateSessionFunction
     private readonly DevicePreFlightAuthorizationService _preFlight;
     private readonly PortalConfigurationRepository _configRepo;
     private readonly PartitioningSchemeRepository _partitioningSchemeRepo;
+    private readonly SessionHistoryRepository _historyRepo;
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
@@ -41,6 +42,7 @@ public sealed partial class CreateSessionFunction
         DevicePreFlightAuthorizationService preFlight,
         PortalConfigurationRepository configRepo,
         PartitioningSchemeRepository partitioningSchemeRepo,
+        SessionHistoryRepository historyRepo,
         IConfiguration config,
         ILogger<CreateSessionFunction> logger)
     {
@@ -48,6 +50,7 @@ public sealed partial class CreateSessionFunction
         _preFlight = preFlight;
         _configRepo = configRepo;
         _partitioningSchemeRepo = partitioningSchemeRepo;
+        _historyRepo = historyRepo;
         _config = config;
         _logger = logger;
     }
@@ -135,6 +138,24 @@ public sealed partial class CreateSessionFunction
 
         await _sessionRepo.CreateAsync(finalSession, context.CancellationToken);
         LogSessionCreated(_logger, finalSession.SessionId, targetState, preFlightResult);
+
+        if (targetState == SessionState.SessionNotAuthorized)
+        {
+            var portalConfig = await _configRepo.GetAsync(context.CancellationToken);
+            var history = new SessionHistoryRecord
+            {
+                SessionId = finalSession.SessionId,
+                FinalState = finalSession.State,
+                DeviceSerialNumber = finalSession.DeviceSerialNumber,
+                DeviceManufacturer = finalSession.DeviceManufacturer,
+                DeviceModel = finalSession.DeviceModel,
+                PreFlightAuthorizationResult = finalSession.PreFlightAuthorizationResult,
+                AssignedOsImageId = finalSession.AssignedOsImageId,
+                CreatedAt = finalSession.CreatedAt,
+                TerminalAt = DateTimeOffset.UtcNow,
+            };
+            await _historyRepo.CreateAsync(history, portalConfig.SessionHistoryRetentionDays, context.CancellationToken);
+        }
 
         // Return session info including the PLAIN passcode (only returned at creation)
         var responseBody = new

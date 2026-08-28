@@ -36,5 +36,13 @@ public sealed class PortalConfiguration
     /// </summary>
     public int ClockSkewToleranceSeconds { get; init; } = 30;
 
+    /// <summary>
+    /// How long completed session outcomes are retained in the SessionHistory audit table
+    /// (Reports feature) before being purged. Default: 90 days. Applied once, at the time a
+    /// history record is written — changing this value is not retroactive; already-written
+    /// records keep the retention that was in effect when they were created.
+    /// </summary>
+    public int SessionHistoryRetentionDays { get; init; } = 90;
+
     public DateTimeOffset LastModifiedAt { get; init; }
 }

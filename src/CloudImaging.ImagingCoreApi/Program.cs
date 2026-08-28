@@ -41,6 +41,7 @@ var host = new HostBuilder()
         services.AddSingleton<PartitioningSchemeRepository>();
         services.AddSingleton<RecoveryImageRepository>();
         services.AddSingleton<BootMediaCertificateRepository>();
+        services.AddSingleton<SessionHistoryRepository>();
 
         // Key Vault certificate service (FR-068)
         services.AddSingleton<KeyVaultCertificateService>();
@@ -98,6 +99,7 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<PartitioningSchemeRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<RecoveryImageRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<BootMediaCertificateRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<SessionHistoryRepository>().EnsureTableExistsAsync(ct);
 }
 
 host.Run();
