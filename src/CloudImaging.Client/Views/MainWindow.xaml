@@ -10,7 +10,21 @@
         ResizeMode="CanMinimize"
         Topmost="True"
         ExtendsContentIntoTitleBar="True"
-        WindowCornerPreference="Round">
+        WindowCornerPreference="Round"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="Grayscale">
+    <!--
+        Sharpens every glyph rendered inside this window, including the WPF-UI SymbolIcon glyphs
+        (Fluent icon font) on every hosted page: Display formatting mode pixel-snaps glyphs
+        instead of WPF's default sub-pixel-positioned "Ideal" mode (which looks fuzzy at the
+        small sizes used here), Grayscale rendering avoids ClearType color fringing on WinPE
+        (no Themes/font-smoothing service, same reason WindowStyle=None is needed above), and
+        UseLayoutRounding snaps control edges to whole device pixels. These are attached,
+        inherited properties, so setting them once here is enough for every Page navigated into
+        NavigationFrame below and every dialog Window owned by this one — the same one-shot
+        approach as BrandingLogo's RenderOptions.BitmapScalingMode="HighQuality".
+    -->
     <!--
         Fixed layout sized to fit the smallest default WinPE screen resolution:
         800×600 (also fits 1024×768 and larger, centered on display). No page-level
@@ -55,7 +69,9 @@
                        Margin="0,0,16,16"
                        Click="ViewLogButton_Click">
                 <StackPanel Orientation="Horizontal">
-                    <ui:SymbolIcon Symbol="DocumentText24" Margin="0,0,6,0" />
+                    <!-- Explicit FontSize so the icon glyph isn't shrunk down to the button's
+                         tiny 11pt label size (which otherwise renders as an indistinct blob). -->
+                    <ui:SymbolIcon Symbol="DocumentText24" FontSize="16" Margin="0,0,6,0" />
                     <TextBlock Text="View Log" />
                 </StackPanel>
             </ui:Button>

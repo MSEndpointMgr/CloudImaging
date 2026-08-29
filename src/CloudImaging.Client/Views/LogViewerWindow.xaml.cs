@@ -26,12 +26,12 @@ public partial class LogViewerWindow : FluentWindow
         InitializeComponent();
 
         // FluentWindow's own OnSourceInitialized unconditionally forces WindowStyle back to
-        // SingleBorderWindow and only hides the resulting native caption via a WindowChrome hack
-        // that's gated on DWM composition being enabled — which WinPE never has. Reasserting
+        // SingleBorderWindow and only hides the resulting native chrome via a WindowChrome hack
+        // that's gated on DWM composition being enabled, which WinPE never has. Reasserting
         // WindowStyle = None alone (even though SourceInitialized fires after that base logic
-        // runs) was verified NOT to reliably clear the native caption in real WinPE testing, so
-        // fall back to stripping the WS_CAPTION/WS_SYSMENU bits directly on the HWND — see
-        // NativeWindowChromeFix for the full explanation.
+        // runs) was verified NOT to reliably clear the native chrome in real WinPE testing, so
+        // strip the caption/border style bits directly on the HWND and collapse the non-client
+        // area outright. See NativeWindowChromeFix for the full explanation.
         SourceInitialized += (_, _) =>
         {
             WindowStyle = WindowStyle.None;

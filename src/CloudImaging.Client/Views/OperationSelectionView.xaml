@@ -192,7 +192,9 @@
                        Margin="0,0,8,0"
                        Click="ConnectWifiButton_Click">
                 <StackPanel Orientation="Horizontal">
-                    <ui:SymbolIcon Symbol="Wifi124" Margin="0,0,6,0" />
+                    <!-- Explicit FontSize so the icon glyph isn't shrunk down to the button's
+                         tiny 11pt label size (which otherwise renders as an indistinct blob). -->
+                    <ui:SymbolIcon Symbol="Wifi124" FontSize="16" Margin="0,0,6,0" />
                     <TextBlock Text="Connect to Wi-Fi" />
                 </StackPanel>
             </ui:Button>
@@ -206,7 +208,9 @@
                        Command="{Binding LaunchCommandPromptCommand}"
                        Visibility="{Binding IsCommandPromptAvailable, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel Orientation="Horizontal">
-                    <ui:SymbolIcon Symbol="WindowConsole20" Margin="0,0,6,0" />
+                    <!-- Explicit FontSize so the icon glyph isn't shrunk down to the button's
+                         tiny 11pt label size (which otherwise renders as an indistinct blob). -->
+                    <ui:SymbolIcon Symbol="WindowConsole20" FontSize="16" Margin="0,0,6,0" />
                     <TextBlock Text="Command Prompt" />
                 </StackPanel>
             </ui:Button>
