@@ -28,4 +28,11 @@ public sealed class BootImageManifest
 
     /// <summary>Additional deployment metadata (e.g. driver packages injected, ADK path used).</summary>
     public Dictionary<string, object> DeploymentMetadata { get; init; } = [];
+
+    /// <summary>
+    /// Whether this boot image was built with the Media Builder's "Enable command prompt
+    /// access" opt-in checked (FR-051d) — provenance/audit visibility for whoever inspects
+    /// this manifest later, independent of the Client's own <c>appsettings.json</c> stamp.
+    /// </summary>
+    public bool SupportToolsEnabled { get; init; }
 }

@@ -57,6 +57,28 @@
 
 ---
 
+### Symptom: Device has no wired network / needs Wi-Fi to reach the Device Gateway
+
+**Resolution**: On the Operation Selection screen, click **Connect to Wi-Fi** (always available,
+no opt-in required) to scan and connect to an Open or WPA2/WPA3-Personal network via `netsh wlan`.
+Enterprise/802.1X networks are listed but cannot be connected to via this flow. No credential is
+persisted — see [self-hosting-guide.md](self-hosting-guide.md#client-support-tools).
+
+---
+
+### Symptom: Need an interactive shell on the device for advanced troubleshooting
+
+**Cause**: The **Command Prompt** button on the Operation Selection screen only appears when the
+boot image was built with **Enable command prompt access** checked in Media Builder (off by
+default, per boot image).
+
+**Resolution**: Regenerate the boot image with that checkbox enabled (Media Builder → Generate
+Boot Image → Support Tools) and re-prepare the USB drive. See
+[self-hosting-guide.md](self-hosting-guide.md#client-support-tools) for the security
+considerations before enabling it broadly.
+
+---
+
 ## 2. Certificate Management
 
 ### Rotating the Boot Media Certificate

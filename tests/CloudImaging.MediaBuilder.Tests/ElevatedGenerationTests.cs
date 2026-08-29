@@ -142,4 +142,39 @@ public sealed class ElevatedGenerationTests
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*elevation was cancelled*");
     }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_ThreadsEnableCommandPromptAccess_IntoElevatedWorkerParams()
+    {
+        // FR-051d: the "Enable command prompt access" opt-in must reach the elevated worker via
+        // the same params.json IPC file used for driverRootPath/pfx/logo/deviceGatewayBaseUrl.
+        string? capturedParamsJson = null;
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: (_, args) =>
+            {
+                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
+                var paramsFile = files[0];
+                var resultFile = files[2];
+                capturedParamsJson = File.ReadAllText(paramsFile);
+                File.WriteAllText(resultFile,
+                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
+
+                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow  = true,
+                })!;
+            });
+
+        await svc.GenerateElevatedAsync(
+            clientBinariesPath: @"C:\DoesNotExist",
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath(),
+            enableCommandPromptAccess: true);
+
+        capturedParamsJson.Should().NotBeNull();
+        capturedParamsJson.Should().Contain("\"EnableCommandPromptAccess\":true");
+    }
 }

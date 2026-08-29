@@ -332,8 +332,10 @@ the parts specific to Cloud Imaging are:
 2. Sign in with your Entra ID credentials (must have `CloudImaging.Administrator` or `CloudImaging.Technician` role)
 3. Select **Generate Boot Image**
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path
-5. Click **Generate** — the wizard produces a `.wim` file
-6. Upload the WIM to the portal: **Boot Images** → **Upload**
+5. Optionally check **Enable command prompt access** under **Support Tools** (see
+   [Client support tools](#client-support-tools) below) — off by default
+6. Click **Generate** — the wizard produces a `.wim` file
+7. Upload the WIM to the portal: **Boot Images** → **Upload**
 
 > **Device Gateway URL is resolved automatically.** The Media Builder looks up the live Device
 > Gateway API URL from the Operator API and stamps it into the Client's `appsettings.json` while
@@ -341,7 +343,31 @@ the parts specific to Cloud Imaging are:
 > the current URL even if the Device Gateway was redeployed or renamed since the Client binaries
 > were built.
 
+### Client support tools
+
+The Operation Selection screen offers two troubleshooting tools, both accessible without leaving
+the always-on-top Cloud Imaging Client window:
+
+- **Connect to Wi-Fi** — always available (no opt-in required). Opens a dedicated window that
+  scans for visible networks via `netsh wlan` and lets the technician connect to an
+  Open or WPA2/WPA3-Personal network by SSID + passphrase. Enterprise/802.1X networks are shown
+  (greyed out, labeled "Not supported") but cannot be connected to via this flow. No Wi-Fi
+  credential is ever persisted — the temporary WLAN profile (which embeds the passphrase in
+  plain text, per the netsh profile schema) is deleted immediately after the connect attempt.
+- **Command Prompt** — hidden unless the boot image was built with **Enable command prompt
+  access** checked (off by default, per boot image). Launches an interactive `cmd.exe` for
+  advanced troubleshooting, temporarily dropping the Client window's always-on-top behavior so
+  the console isn't hidden behind it; the Client returns to always-on-top automatically once the
+  console is closed.
+
+> **Security note:** only enable command prompt access for boot images used in trusted,
+> supervised environments (e.g. IT staging) — an interactive shell in WinPE has full access to
+> local disks and the network. Leave it unchecked for boot images that may be used unattended or
+> by end users.
+
 ---
+
+
 
 ## Step 9 — Prepare USB Media
 

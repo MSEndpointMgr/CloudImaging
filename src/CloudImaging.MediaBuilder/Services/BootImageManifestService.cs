@@ -35,7 +35,8 @@ public static class BootImageManifestService
         int driversInjectedCount,
         string? driverRootPath,
         byte[]? logoBytes,
-        byte[]? pfxBytes)
+        byte[]? pfxBytes,
+        bool commandPromptEnabled = false)
     {
         var componentChecksums = new Dictionary<string, string>();
         string? clientVersion = null;
@@ -66,6 +67,7 @@ public static class BootImageManifestService
                 ["driverPackagesInjected"] = driversInjectedCount,
                 ["driverRootPath"] = driverRootPath ?? string.Empty,
             },
+            SupportToolsEnabled = commandPromptEnabled,
         };
     }
 

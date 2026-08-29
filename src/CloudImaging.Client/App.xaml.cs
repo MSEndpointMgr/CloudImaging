@@ -172,12 +172,16 @@ public partial class App : Application
         DeviceGatewayApiClient gateway,
         ILoggerFactory lf)
     {
+        var config = LoadConfiguration();
         var view = new OperationSelectionView();
         view.DataContext = new OperationSelectionViewModel(
             gateway,
             (sessionResponse, serialNumber) =>
                 window.NavigateTo(BuildSessionInitView(window, gateway, lf, sessionResponse, serialNumber)),
-            new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()));
+            new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()),
+            commandPromptEnabled: config.CommandPromptEnabled ?? false,
+            setMainWindowTopmost: window.SetTopmost,
+            commandPromptLauncher: new CommandPromptLauncherService(lf.CreateLogger<CommandPromptLauncherService>()));
         return view;
     }
 
@@ -265,7 +269,7 @@ public partial class App : Application
     {
         var settingsPath = Path.Combine(AppContext.BaseDirectory, fileName);
         if (!File.Exists(settingsPath))
-            return new ClientConfig(string.Empty);
+            return new ClientConfig(string.Empty, null);
 
         try
         {
@@ -275,19 +279,26 @@ public partial class App : Application
                 .TryGetProperty("DeviceGatewayApi", out var gw) && gw.TryGetProperty("BaseUrl", out var bu)
                     ? bu.GetString() ?? string.Empty
                     : string.Empty;
-            return new ClientConfig(baseUrl);
+            var commandPromptEnabled = doc.RootElement
+                .TryGetProperty("SupportTools", out var st) && st.TryGetProperty("CommandPromptEnabled", out var cpe)
+                && cpe.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? cpe.GetBoolean()
+                    : (bool?)null;
+            return new ClientConfig(baseUrl, commandPromptEnabled);
         }
         catch
         {
-            return new ClientConfig(string.Empty);
+            return new ClientConfig(string.Empty, null);
         }
     }
 
-    // Non-empty values from the overlay replace the corresponding base values.
+    // Non-empty/non-null values from the overlay replace the corresponding base values.
     private static ClientConfig Overlay(ClientConfig baseConfig, ClientConfig overlay) =>
-        new(string.IsNullOrWhiteSpace(overlay.DeviceGatewayBaseUrl)
-            ? baseConfig.DeviceGatewayBaseUrl
-            : overlay.DeviceGatewayBaseUrl);
+        new(
+            string.IsNullOrWhiteSpace(overlay.DeviceGatewayBaseUrl)
+                ? baseConfig.DeviceGatewayBaseUrl
+                : overlay.DeviceGatewayBaseUrl,
+            overlay.CommandPromptEnabled ?? baseConfig.CommandPromptEnabled);
 
-    private sealed record ClientConfig(string DeviceGatewayBaseUrl);
+    private sealed record ClientConfig(string DeviceGatewayBaseUrl, bool? CommandPromptEnabled);
 }

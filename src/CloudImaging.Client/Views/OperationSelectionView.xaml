@@ -7,7 +7,8 @@
         FR-001: Device boot into WinPE, operator selects Imaging or Decommissioning.
         Imaging selection triggers silent hardware metadata collection before registration.
     -->
-    <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="720">
+    <Grid>
+        <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="720">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="28" />
@@ -171,5 +172,44 @@
                                  Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
             </Grid>
         </ui:Button>
+        </Grid>
+
+        <!--
+            Support tools (FR-051d): advanced/diagnostic actions, deliberately subtle (low
+            opacity, corner-anchored) so they never compete with the guided imaging workflow —
+            mirrors MainWindow's "View Log" button styling. Only shown on this screen, not
+            globally, since they're only useful before a session/imaging operation starts.
+        -->
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                    Margin="16,0,0,16">
+            <ui:Button x:Name="ConnectWifiButton"
+                       Appearance="Secondary"
+                       FontSize="11"
+                       Height="28"
+                       Padding="10,0"
+                       Opacity="0.7"
+                       Margin="0,0,8,0"
+                       Click="ConnectWifiButton_Click">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Wifi124" Margin="0,0,6,0" />
+                    <TextBlock Text="Connect to Wi-Fi" />
+                </StackPanel>
+            </ui:Button>
+
+            <ui:Button x:Name="CommandPromptButton"
+                       Appearance="Secondary"
+                       FontSize="11"
+                       Height="28"
+                       Padding="10,0"
+                       Opacity="0.7"
+                       Command="{Binding LaunchCommandPromptCommand}"
+                       Visibility="{Binding IsCommandPromptAvailable, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="WindowConsole20" Margin="0,0,6,0" />
+                    <TextBlock Text="Command Prompt" />
+                </StackPanel>
+            </ui:Button>
+        </StackPanel>
     </Grid>
 </Page>

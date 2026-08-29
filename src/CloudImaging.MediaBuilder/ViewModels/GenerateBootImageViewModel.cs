@@ -42,6 +42,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private string _localSourcePath = string.Empty;
     private string _outputFolderPath = GetDefaultOutputFolder();
     private string _driverRootPath = string.Empty;
+    private bool _enableCommandPromptAccess;
     private bool _isGenerating;
     private bool _isCancelling;
     private bool _isComplete;
@@ -137,6 +138,19 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     {
         get => _driverRootPath;
         set { _driverRootPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
+    }
+
+    /// <summary>
+    /// Opt-in (default off, FR-051d). When enabled, stamps <c>SupportTools:CommandPromptEnabled</c>
+    /// into the Client's appsettings.json, which shows a "Command Prompt" button on the
+    /// Operation Selection screen granting full unrestricted WinPE shell access. A deliberate
+    /// technician support/diagnostics capability, not enabled by default since it bypasses the
+    /// entire guided imaging workflow.
+    /// </summary>
+    public bool EnableCommandPromptAccess
+    {
+        get => _enableCommandPromptAccess;
+        set { _enableCommandPromptAccess = value; OnPropertyChanged(); }
     }
 
     public bool IsGenerating
@@ -387,6 +401,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 pfxBytes: null,
                 _outputFolderPath,
                 driverRootPath: string.IsNullOrWhiteSpace(_driverRootPath) ? null : _driverRootPath,
+                enableCommandPromptAccess: _enableCommandPromptAccess,
                 ct: _cts.Token);
 
             OutputWimPath = result.WimPath;

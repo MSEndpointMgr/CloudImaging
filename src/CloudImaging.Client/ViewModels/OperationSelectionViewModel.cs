@@ -25,22 +25,45 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private readonly DeviceGatewayApiClient _gatewayClient;
     private readonly SystemClockSynchronizationService _clockSync;
     private readonly Action<CreateSessionResponse, string> _navigate;
+    private readonly Action<bool>? _setMainWindowTopmost;
+    private readonly CommandPromptLauncherService _commandPromptLauncher;
     private string? _selectedOperation;
     private string? _statusMessage;
     private bool _isWaitingForNetwork;
     private bool _isBusy;
 
+    /// <param name="gatewayClient">Device Gateway API client used to register the session.</param>
+    /// <param name="navigate">Invoked with the session response once registration succeeds.</param>
+    /// <param name="clockSync">Optional override; defaults to a real NTP sync service.</param>
+    /// <param name="commandPromptEnabled">
+    /// Whether this boot image was built with the "Enable command prompt access" opt-in
+    /// (FR-051d) — drives <see cref="IsCommandPromptAvailable"/>. Off by default.
+    /// </param>
+    /// <param name="setMainWindowTopmost">
+    /// Callback bound to the real <see cref="Views.MainWindow"/> instance, used to toggle
+    /// Topmost off/on around an interactive command prompt session (see
+    /// <see cref="Services.CommandPromptLauncherService"/>). Optional only for simpler test
+    /// construction — required in practice whenever <paramref name="commandPromptEnabled"/> is true.
+    /// </param>
+    /// <param name="commandPromptLauncher">Optional override; defaults to a real launcher.</param>
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
         Action<CreateSessionResponse, string> navigate,
-        SystemClockSynchronizationService? clockSync = null)
+        SystemClockSynchronizationService? clockSync = null,
+        bool commandPromptEnabled = false,
+        Action<bool>? setMainWindowTopmost = null,
+        CommandPromptLauncherService? commandPromptLauncher = null)
     {
-        _gatewayClient = gatewayClient;
-        _navigate      = navigate;
-        _clockSync     = clockSync ?? new SystemClockSynchronizationService();
+        _gatewayClient          = gatewayClient;
+        _navigate               = navigate;
+        _clockSync              = clockSync ?? new SystemClockSynchronizationService();
+        IsCommandPromptAvailable = commandPromptEnabled;
+        _setMainWindowTopmost   = setMainWindowTopmost;
+        _commandPromptLauncher  = commandPromptLauncher ?? new CommandPromptLauncherService();
 
-        SelectOperationCommand = new RelayCommand(op => SelectedOperation = op?.ToString());
-        ContinueCommand        = new RelayCommand(async _ => await ContinueAsync(), _ => CanContinue);
+        SelectOperationCommand   = new RelayCommand(op => SelectedOperation = op?.ToString());
+        ContinueCommand          = new RelayCommand(async _ => await ContinueAsync(), _ => CanContinue);
+        LaunchCommandPromptCommand = new RelayCommand(_ => LaunchCommandPrompt(), _ => IsCommandPromptAvailable);
     }
 
     public string? SelectedOperation
@@ -88,8 +111,23 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         private set { _isWaitingForNetwork = value; OnPropertyChanged(); }
     }
 
-    public ICommand SelectOperationCommand { get; }
-    public ICommand ContinueCommand        { get; }
+    /// <summary>
+    /// True when this boot image was built with the "Enable command prompt access" opt-in
+    /// (FR-051d) — drives visibility of the Command Prompt support-tool button.
+    /// </summary>
+    public bool IsCommandPromptAvailable { get; }
+
+    public ICommand SelectOperationCommand   { get; }
+    public ICommand ContinueCommand          { get; }
+    public ICommand LaunchCommandPromptCommand { get; }
+
+    private void LaunchCommandPrompt()
+    {
+        if (_setMainWindowTopmost is null)
+            return;
+
+        _commandPromptLauncher.Launch(_setMainWindowTopmost);
+    }
 
     private async Task ContinueAsync()
     {

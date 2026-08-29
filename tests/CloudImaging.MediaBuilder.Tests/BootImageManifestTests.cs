@@ -119,6 +119,36 @@ public sealed class BootImageManifestTests
     }
 
     [Fact]
+    public void Build_RecordsSupportToolsEnabled_FalseByDefault()
+    {
+        var manifest = BootImageManifestService.Build(
+            clientDestDir: Directory.CreateTempSubdirectory("ci-manifest-test-").FullName,
+            imageVersion: "20260101-000000",
+            driversInjectedCount: 0,
+            driverRootPath: null,
+            logoBytes: null,
+            pfxBytes: null);
+
+        manifest.SupportToolsEnabled.Should().BeFalse(
+            "the Media Builder's \"Enable command prompt access\" opt-in defaults to off (FR-051d)");
+    }
+
+    [Fact]
+    public void Build_RecordsSupportToolsEnabled_WhenCommandPromptOptInIsChecked()
+    {
+        var manifest = BootImageManifestService.Build(
+            clientDestDir: Directory.CreateTempSubdirectory("ci-manifest-test-").FullName,
+            imageVersion: "20260101-000000",
+            driversInjectedCount: 0,
+            driverRootPath: null,
+            logoBytes: null,
+            pfxBytes: null,
+            commandPromptEnabled: true);
+
+        manifest.SupportToolsEnabled.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task EmbedAsync_WritesManifestJson_ToMountDirRoot()
     {
         var mountDir = Directory.CreateTempSubdirectory("ci-manifest-mount-").FullName;

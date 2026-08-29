@@ -139,6 +139,22 @@
                     </StackPanel>
                 </ui:Card>
 
+                <!-- Support tools (opt-in, FR-051d) -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Support Tools (optional)"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Adds a Command Prompt button to the Operation Selection screen, granting full unrestricted WinPE shell access for advanced troubleshooting. This bypasses the guided imaging workflow entirely, so it is off by default — only enable it for boot media you trust technicians with full shell access on."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <CheckBox Content="Enable command prompt access"
+                                  IsChecked="{Binding EnableCommandPromptAccess}" />
+                    </StackPanel>
+                </ui:Card>
+
             </StackPanel>
             </ScrollViewer>
 

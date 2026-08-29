@@ -135,7 +135,7 @@ public sealed partial class BootImageGenerationService
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     private sealed record ElevatedGenerationParams(
-        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl);
+        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess);
 
     private sealed record ElevatedGenerationResult(
         bool Success, string? WimPath, string? Sha256Hash, string? Error);
@@ -159,6 +159,7 @@ public sealed partial class BootImageGenerationService
         byte[]? pfxBytes,
         string outputDirectory,
         string? driverRootPath = null,
+        bool enableCommandPromptAccess = false,
         CancellationToken ct = default)
     {
         // Resolve the boot media certificate, branding logo, and Device Gateway URL HERE, in
@@ -181,9 +182,9 @@ public sealed partial class BootImageGenerationService
             : null;
 
         if (_isElevated())
-            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, logoBytes, deviceGatewayBaseUrl, ct);
+            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, ct);
 
-        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, ct);
+        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, enableCommandPromptAccess, ct);
     }
 
     /// <summary>
@@ -249,7 +250,7 @@ public sealed partial class BootImageGenerationService
     }
 
     private async Task<GenerationResult> RunElevatedChildProcessAsync(
-        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, CancellationToken ct)
+        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, bool enableCommandPromptAccess, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
@@ -281,7 +282,7 @@ public sealed partial class BootImageGenerationService
                 await File.WriteAllBytesAsync(logoFilePath, logoBytes, ct);
             }
 
-            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl);
+            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl, enableCommandPromptAccess);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -458,7 +459,7 @@ public sealed partial class BootImageGenerationService
             svc.LogMessage      += (_, line) => Append($"L\t{line}");
             svc.LogHeartbeat    += (_, line) => Append($"H\t{line}");
 
-            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, logoBytes, p.DeviceGatewayBaseUrl, cts.Token);
+            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, cts.Token);
 
             await File.WriteAllTextAsync(resultFile,
                 JsonSerializer.Serialize(new ElevatedGenerationResult(true, result.WimPath, result.Sha256Hash, null)));
@@ -525,6 +526,12 @@ public sealed partial class BootImageGenerationService
     /// </param>
     /// <param name="logoBytes">Branding logo bytes to embed at <c>branding\logo.png</c> (FR-002a). Optional — a missing logo is never fatal.</param>
     /// <param name="deviceGatewayBaseUrl">Live Device Gateway URL stamped into the Client's appsettings.json (FR-062). Only null in the test/dev seam where no <see cref="OperatorApiClient"/> was provided.</param>
+    /// <param name="enableCommandPromptAccess">
+    /// Opt-in (default off). When true, stamps <c>SupportTools:CommandPromptEnabled=true</c> into
+    /// the Client's appsettings.json, which shows a "Command Prompt" button on the Operation
+    /// Selection screen granting full unrestricted WinPE shell access — a deliberate technician
+    /// support/diagnostics capability, not enabled by default.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<GenerationResult> GenerateAsync(
         string clientBinariesPath,
@@ -533,6 +540,7 @@ public sealed partial class BootImageGenerationService
         string? driverRootPath = null,
         byte[]? logoBytes = null,
         string? deviceGatewayBaseUrl = null,
+        bool enableCommandPromptAccess = false,
         CancellationToken ct = default)
     {
         // Sweep up whatever a previous run left behind if the process was killed/crashed
@@ -642,6 +650,13 @@ public sealed partial class BootImageGenerationService
                     LogDeviceGatewayUrlStamped(_logger, deviceGatewayBaseUrl);
                 }
 
+                // Always stamped (unlike the URL above) so the resulting appsettings.json
+                // deterministically reflects this build's checkbox state, regardless of what a
+                // previously-built local client binaries source happened to ship with (FR-051d).
+                ReportProgress("Configuring support tools", 54);
+                await StampSupportToolsConfigAsync(clientDestDir, enableCommandPromptAccess, ct);
+                LogSupportToolsStamped(_logger, enableCommandPromptAccess);
+
                 // Embed boot media certificate PFX if provided (FR-070)
                 if (pfxBytes is { Length: > 0 })
                 {
@@ -662,7 +677,8 @@ public sealed partial class BootImageGenerationService
                 // replacement for the old "signed manifest" claim; see BootImageManifest's remarks.
                 ReportProgress("Embedding boot image manifest", 64);
                 var manifest = BootImageManifestService.Build(
-                    clientDestDir, timestamp, driversInjected, driverRootPath, logoBytes, pfxBytes);
+                    clientDestDir, timestamp, driversInjected, driverRootPath, logoBytes, pfxBytes,
+                    commandPromptEnabled: enableCommandPromptAccess);
                 await BootImageManifestService.EmbedAsync(mountDir, manifest, ct);
                 LogManifestEmbedded(_logger, timestamp, driversInjected);
 
@@ -1274,6 +1290,32 @@ public sealed partial class BootImageGenerationService
             ct);
     }
 
+    /// <summary>
+    /// Patches <c>SupportTools:CommandPromptEnabled</c> in the Client's <c>appsettings.json</c>
+    /// (staged inside the mounted WIM) to reflect this build's "Enable command prompt access"
+    /// checkbox (FR-051d). Unlike <see cref="StampDeviceGatewayBaseUrlAsync"/>, this always writes
+    /// (there is no "nothing to write" case for a bool) so the value is deterministic per build.
+    /// No-op only when <c>appsettings.json</c> isn't present (unexpected Client binaries layout).
+    /// Public so it can be unit tested directly against a staging folder without needing ADK/DISM.
+    /// </summary>
+    public static async Task StampSupportToolsConfigAsync(string clientDestDir, bool enableCommandPromptAccess, CancellationToken ct)
+    {
+        var appSettingsPath = Path.Combine(clientDestDir, "appsettings.json");
+        if (!File.Exists(appSettingsPath))
+            return;
+
+        var json = await File.ReadAllTextAsync(appSettingsPath, ct);
+        var root = JsonNode.Parse(json)?.AsObject() ?? [];
+        var supportToolsSection = root["SupportTools"]?.AsObject() ?? [];
+        supportToolsSection["CommandPromptEnabled"] = enableCommandPromptAccess;
+        root["SupportTools"] = supportToolsSection;
+
+        await File.WriteAllTextAsync(
+            appSettingsPath,
+            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }),
+            ct);
+    }
+
     private void ReportProgress(string message, int percent)
     {
         ProgressChanged?.Invoke(this, (message, percent));
@@ -1321,6 +1363,9 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Device Gateway URL stamped into Client appsettings.json: {BaseUrl}.")]
     private static partial void LogDeviceGatewayUrlStamped(ILogger logger, string baseUrl);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Support tools configuration stamped into Client appsettings.json (commandPromptEnabled={CommandPromptEnabled}).")]
+    private static partial void LogSupportToolsStamped(ILogger logger, bool commandPromptEnabled);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
     private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);

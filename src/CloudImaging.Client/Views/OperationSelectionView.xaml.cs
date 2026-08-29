@@ -19,6 +19,17 @@ public partial class OperationSelectionView : Page
     }
 
     /// <summary>
+    /// Opens the "Connect to Wi-Fi" support tool (FR-051d companion feature). Always available
+    /// (unlike Command Prompt, not gated by any Media Builder opt-in) — a code-behind click
+    /// handler, matching <c>MainWindow.ViewLogButton_Click</c>'s precedent, since opening a
+    /// Window is a View-layer concern.
+    /// </summary>
+    private void ConnectWifiButton_Click(object sender, RoutedEventArgs e)
+    {
+        new WifiConnectionWindow { Owner = Window.GetWindow(this) }.ShowDialog();
+    }
+
+    /// <summary>
     /// Shows the portal-provided branding logo embedded in the boot image
     /// (<c>branding\logo.png</c> next to the exe). When no logo was configured through the
     /// portal, a default vector logo (<see cref="OperationSelectionView.BrandingLogoFallback"/>,

@@ -54,6 +54,22 @@ public partial class MainWindow : FluentWindow
     }
 
     /// <summary>
+    /// Toggles the window's Topmost state (FR-051d support tools). Used by
+    /// <see cref="Services.CommandPromptLauncherService"/> to drop this always-on-top window
+    /// (see the XAML remarks on <c>Topmost="True"</c> above) while an interactive command
+    /// prompt is open, restoring it once that process exits. Thread-safe: <see
+    /// cref="System.Diagnostics.Process.Exited"/> fires on a thread-pool thread, so this
+    /// marshals onto the UI thread when called from anywhere else.
+    /// </summary>
+    public void SetTopmost(bool topmost)
+    {
+        if (Dispatcher.CheckAccess())
+            Topmost = topmost;
+        else
+            Dispatcher.Invoke(() => Topmost = topmost);
+    }
+
+    /// <summary>
     /// Opens the read-only local log viewer (FR-066) — see <see cref="LogViewerWindow"/>.
     /// Available from every screen since it's hosted on <see cref="MainWindow"/> itself rather
     /// than any individual <see cref="Page"/>.

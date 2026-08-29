@@ -56,10 +56,14 @@ public sealed partial class LocationFunctions
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/locations")] HttpRequestData req,
         FunctionContext context)
     {
-        Location? payload;
+        // Deserialize into a plain DTO rather than the `Location` entity directly: `Location.LocationId`
+        // is a `required` member, and callers (the portal) only ever send `{ "name": "..." }` — System.Text.Json
+        // throws JsonException for a missing required property, which was surfacing as an unconditional
+        // 400 Bad Request for every create attempt.
+        CreateLocationRequest? payload;
         try
         {
-            payload = await JsonSerializer.DeserializeAsync<Location>(req.Body, JsonOptions, context.CancellationToken);
+            payload = await JsonSerializer.DeserializeAsync<CreateLocationRequest>(req.Body, JsonOptions, context.CancellationToken);
         }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
@@ -72,7 +76,7 @@ public sealed partial class LocationFunctions
 
         var toCreate = new Location
         {
-            LocationId = payload.LocationId == Guid.Empty ? Guid.NewGuid() : payload.LocationId,
+            LocationId = payload.LocationId is null || payload.LocationId == Guid.Empty ? Guid.NewGuid() : payload.LocationId.Value,
             Name = payload.Name.Trim(),
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -110,4 +114,12 @@ public sealed partial class LocationFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Location {LocationId} deleted.")]
     private static partial void LogDeleted(ILogger logger, Guid locationId);
+}
+
+/// <summary>Request body accepted by <see cref="LocationFunctions.CreateLocation"/>: <c>{ "name": "..." }</c>.
+/// <see cref="LocationId"/> is optional and normally omitted — the server assigns a new one.</summary>
+internal sealed class CreateLocationRequest
+{
+    public Guid? LocationId { get; init; }
+    public string? Name { get; init; }
 }

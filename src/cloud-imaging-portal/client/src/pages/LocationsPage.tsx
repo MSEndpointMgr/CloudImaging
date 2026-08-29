@@ -98,15 +98,6 @@ export default function LocationsPage(): React.ReactElement {
     <div className="space-y-4">
       <Card>
         <CardContent className="flex flex-col gap-3 py-5 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3 sm:w-52">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <MapPin className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Location labels</p>
-              <p className="text-2xl font-semibold tabular-nums">{locations.length}</p>
-            </div>
-          </div>
           <div className="flex flex-1 items-center gap-2">
             <Input
               placeholder="e.g. Seattle HQ"
@@ -120,6 +111,15 @@ export default function LocationsPage(): React.ReactElement {
               <Plus className="h-4 w-4" />
               Add location
             </Button>
+          </div>
+          <div className="flex items-center gap-3 sm:justify-end">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <MapPin className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Location labels</p>
+              <p className="text-2xl font-semibold tabular-nums">{locations.length}</p>
+            </div>
           </div>
         </CardContent>
       </Card>
