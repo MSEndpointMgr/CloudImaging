@@ -112,6 +112,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         DismissResultCommand = new RelayCommand(_ => CloseResultDialog());
         BrowseIsoOutputCommand = new RelayCommand(_ => BrowseIsoOutput());
         OpenResultFolderCommand = new RelayCommand(_ => OpenResultFolder(), _ => ResultFilePath is not null);
+        ClearLocationCommand = new RelayCommand(_ => SelectedLocation = null, _ => IsFormEnabled && HasSelectedLocation);
 
         // Load the eligible USB disk list (fast, local WMI) and kick off the published boot
         // image list from the portal as soon as this view is reached, instead of requiring a
@@ -177,8 +178,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public LocationChoice? SelectedLocation
     {
         get => _selectedLocation;
-        set { _selectedLocation = value; OnPropertyChanged(); }
+        set { _selectedLocation = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedLocation)); }
     }
+
+    /// <summary>Whether a location is currently selected, so the Clear button next to the picker can be disabled when there is nothing to clear.</summary>
+    public bool HasSelectedLocation => SelectedLocation is not null;
 
     public bool ConfirmErase
     {
@@ -383,6 +387,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public ICommand DismissResultCommand { get; }
     public ICommand BrowseIsoOutputCommand { get; }
     public ICommand OpenResultFolderCommand { get; }
+    public ICommand ClearLocationCommand { get; }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
 

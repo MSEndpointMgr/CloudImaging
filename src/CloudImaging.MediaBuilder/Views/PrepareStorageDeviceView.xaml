@@ -142,11 +142,28 @@
                                TextWrapping="Wrap"
                                Margin="0,0,0,12" />
 
-                    <ComboBox ItemsSource="{Binding Locations}"
-                              SelectedItem="{Binding SelectedLocation}"
-                              DisplayMemberPath="Name"
-                              IsEnabled="{Binding IsFormEnabled}"
-                              HorizontalAlignment="Stretch" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <ComboBox Grid.Column="0"
+                                  ItemsSource="{Binding Locations}"
+                                  SelectedItem="{Binding SelectedLocation}"
+                                  DisplayMemberPath="Name"
+                                  IsEnabled="{Binding IsFormEnabled}"
+                                  HorizontalAlignment="Stretch" />
+
+                        <ui:Button Grid.Column="1"
+                                   Appearance="Secondary"
+                                   ToolTip="Clear selected location"
+                                   Margin="8,0,0,0"
+                                   Padding="8"
+                                   Command="{Binding ClearLocationCommand}">
+                            <ui:SymbolIcon Symbol="Dismiss24" />
+                        </ui:Button>
+                    </Grid>
                 </StackPanel>
             </ui:Card>
 
