@@ -27,18 +27,29 @@ const PARTITION_LABELS: Record<PartitionType, string> = {
 };
 
 const PARTITION_DESCRIPTIONS: Record<PartitionType, string> = {
-  EfiSystem: 'Holds the UEFI boot loader (FAT32). Microsoft minimum: 100 MB (300 MB on 4K-sector drives).',
+  EfiSystem: 'Holds the UEFI boot loader (FAT32). Microsoft requires at least 200 MB, or 300 MB on 4K-native drives. 500 MB is the common enterprise default and leaves headroom for OEM firmware capsule updates and multiple boot loaders.',
   Msr: 'Reserved by Windows for internal use. No drive letter or filesystem. Microsoft minimum: 16 MB (fixed).',
   Windows: 'The main OS partition. Always fills whatever space remains on the disk.',
   Recovery: 'Holds the WinRE recovery image. Microsoft recommends 990 MB (winre.wim is typically 500-700 MB).',
 };
 
 /**
- * Microsoft's documented recommended size for each partition (`null` for Windows, which always
- * fills whatever space remains). Source: Microsoft Learn, "UEFI/GPT-based hard drive partitions".
+ * Recommended size for each partition (`null` for Windows, which always fills whatever space
+ * remains).
+ *
+ * ESP is set to 500 MB rather than the 100 MB that Windows Setup creates interactively. Microsoft's
+ * current OEM guidance puts the floor at 200 MB (300 MB on 4K-native drives), and their own
+ * CreatePartitions-UEFI.txt sample uses `create partition efi size=200`. 500 MB is what MDT and
+ * Configuration Manager task sequences have long defaulted to, and what most enterprises and OEMs
+ * ship, because the ESP also has to absorb OEM firmware capsule updates and any additional boot
+ * loaders over the life of the device. The extra few hundred megabytes cost nothing on a modern
+ * disk, whereas an undersized ESP is painful to grow after the fact.
+ *
+ * MSR and Recovery follow Microsoft Learn, "UEFI/GPT-based hard drive partitions" (16 MB, and a
+ * 990 MB recommended minimum for custom diskpart-created recovery partitions).
  */
 const PARTITION_RECOMMENDED_MB: Record<PartitionType, number | null> = {
-  EfiSystem: 100,
+  EfiSystem: 500,
   Msr: 16,
   Windows: null,
   Recovery: 990,
@@ -46,7 +57,7 @@ const PARTITION_RECOMMENDED_MB: Record<PartitionType, number | null> = {
 
 const DEFAULT_SCHEME: PartitioningScheme = {
   partitions: [
-    { partitionType: 'EfiSystem', sizeMb: 100, order: 0 },
+    { partitionType: 'EfiSystem', sizeMb: 500, order: 0 },
     { partitionType: 'Msr', sizeMb: 16, order: 1 },
     { partitionType: 'Windows', sizeMb: 0, order: 2 },
     { partitionType: 'Recovery', sizeMb: 990, order: 3 },
