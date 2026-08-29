@@ -27,9 +27,10 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         _wifiService    = wifiService ?? new WirelessConnectionService();
         _closeRequested = closeRequested;
 
-        RefreshCommand = new RelayCommand(async _ => await RefreshAsync(), _ => !IsScanning && !IsConnecting);
-        ConnectCommand = new RelayCommand(async password => await ConnectAsync(password as string), _ => CanConnect);
-        CloseCommand   = new RelayCommand(_ => _closeRequested?.Invoke());
+        RefreshCommand       = new RelayCommand(async _ => await RefreshAsync(), _ => !IsScanning && !IsConnecting);
+        ConnectCommand        = new RelayCommand(async password => await ConnectAsync(password as string), _ => CanConnect);
+        ClearSelectionCommand = new RelayCommand(_ => SelectedNetwork = null, _ => SelectedNetwork is not null && !IsConnecting);
+        CloseCommand          = new RelayCommand(_ => _closeRequested?.Invoke());
 
         _ = RefreshAsync();
     }
@@ -39,11 +40,28 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     public WifiNetwork? SelectedNetwork
     {
         get => _selectedNetwork;
-        set { _selectedNetwork = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanConnect)); }
+        set
+        {
+            _selectedNetwork = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanConnect));
+            OnPropertyChanged(nameof(HasSelection));
+            OnPropertyChanged(nameof(ShowPasswordField));
+            // Picking a (different) network starts the connect flow fresh rather than carrying
+            // over a stale error/success message left over from whatever was selected before.
+            StatusMessage = null;
+            HasSucceeded  = false;
+        }
     }
 
     /// <summary>True only when a supported (Open/Personal-PSK) network is selected and no scan/connect is already in flight.</summary>
     public bool CanConnect => SelectedNetwork is { IsSupported: true } && !IsScanning && !IsConnecting;
+
+    /// <summary>True once a network is picked from the list — reveals the inline connect panel (mirrors the Windows Wi-Fi flyout's per-network expand).</summary>
+    public bool HasSelection => SelectedNetwork is not null;
+
+    /// <summary>True when the selected network needs a passphrase (WPA/WPA2/WPA3-Personal). Open networks show no password field at all.</summary>
+    public bool ShowPasswordField => SelectedNetwork?.AuthKind == WifiAuthKind.PersonalPsk;
 
     public bool IsScanning
     {
@@ -75,6 +93,7 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
 
     public ICommand RefreshCommand { get; }
     public ICommand ConnectCommand { get; }
+    public ICommand ClearSelectionCommand { get; }
     public ICommand CloseCommand { get; }
 
     private async Task RefreshAsync()

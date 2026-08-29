@@ -30,6 +30,23 @@ public sealed record WifiNetwork(string Ssid, int SignalPercent, WifiAuthKind Au
 {
     /// <summary>Empty when supported; a short explanatory suffix otherwise (bound directly in the UI, no converter needed).</summary>
     public string NotSupportedLabel => IsSupported ? string.Empty : " — Not supported (Enterprise/802.1X)";
+
+    /// <summary>True for any network that requires a passphrase/certificate (i.e. not Open) — drives the lock glyph shown next to the network name in the list.</summary>
+    public bool IsSecured => AuthKind != WifiAuthKind.Open;
+
+    /// <summary>
+    /// Tiered Wi-Fi bar-count glyph matching <see cref="SignalPercent"/> (bound directly in the
+    /// UI, no converter needed — see the wpftmp source-generator note in
+    /// wpf-temp-project-workaround.md for why a new local IValueConverter is avoided here).
+    /// Mirrors how Windows' own network flyout renders signal strength as bars, not a percentage.
+    /// </summary>
+    public Wpf.Ui.Controls.SymbolRegular SignalSymbol => SignalPercent switch
+    {
+        >= 80 => Wpf.Ui.Controls.SymbolRegular.Wifi424,
+        >= 55 => Wpf.Ui.Controls.SymbolRegular.Wifi324,
+        >= 30 => Wpf.Ui.Controls.SymbolRegular.Wifi224,
+        _     => Wpf.Ui.Controls.SymbolRegular.Wifi124,
+    };
 }
 
 /// <summary>Outcome of <see cref="WirelessConnectionService.ConnectAsync"/>.</summary>

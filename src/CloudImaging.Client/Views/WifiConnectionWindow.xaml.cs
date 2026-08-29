@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Windows;
 using CloudImaging.Client.Services;
 using CloudImaging.Client.ViewModels;
@@ -24,7 +25,19 @@ public partial class WifiConnectionWindow : FluentWindow
             NativeWindowChromeFix.RemoveNativeCaption(this);
         };
 
-        DataContext = new WifiConnectionViewModel(new WirelessConnectionService(), closeRequested: Close);
+        var viewModel = new WifiConnectionViewModel(new WirelessConnectionService(), closeRequested: Close);
+        // The inline connect panel's PasswordBox is now a single persistent element (not
+        // re-created per list item), so it must be cleared explicitly whenever the selected
+        // network changes — otherwise a password typed for one network would silently carry
+        // over into a Connect attempt against a different network picked afterwards.
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        DataContext = viewModel;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WifiConnectionViewModel.SelectedNetwork))
+            PasswordInput.Password = string.Empty;
     }
 
     private void ConnectButton_Click(object sender, RoutedEventArgs e)

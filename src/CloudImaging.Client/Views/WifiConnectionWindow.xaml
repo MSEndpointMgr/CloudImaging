@@ -7,14 +7,23 @@
         MinWidth="420" MinHeight="480"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
+        ResizeMode="CanMinimize"
         Topmost="True"
         ExtendsContentIntoTitleBar="True"
         WindowCornerPreference="Round">
     <!--
         Support tool (FR-051d companion feature): lets a technician connect this WinPE session to
         a Wi-Fi network without leaving the Client. Mirrors LogViewerWindow's chrome pattern
-        (WindowStyle="None" + ExtendsContentIntoTitleBar + NativeWindowChromeFix in code-behind —
-        required because WinPE doesn't run full DWM composition).
+        (WindowStyle="None" + ResizeMode="CanMinimize" + ExtendsContentIntoTitleBar +
+        NativeWindowChromeFix in code-behind), all of which are required because WinPE doesn't run
+        full DWM composition. ResizeMode="CanMinimize" matters specifically because a resizable
+        window keeps WS_THICKFRAME, which the non-composited Basic theme draws as a classic raised
+        3D border around our Fluent content. See NativeWindowChromeFix for the full explanation.
+
+        Layout mirrors the Windows Wi-Fi flyout: a flat list of available networks up top, and —
+        only once one is picked — an inline "connect" panel for just that network appended
+        directly below it, styled like a selected card (same accent-border language as
+        OperationSelectionView's operation cards) instead of a form that's always on screen.
     -->
     <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
         <Grid.RowDefinitions>
@@ -22,16 +31,16 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <ui:TitleBar Grid.Row="0" Title="Connect to Wi-Fi" ShowMaximize="False" />
 
-        <!-- Network list -->
+        <!-- Network chooser -->
         <Grid Grid.Row="1" Margin="16,8,16,8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <Grid Grid.Row="0" Margin="0,0,0,8">
@@ -59,19 +68,43 @@
                      ItemsSource="{Binding Networks}"
                      SelectedItem="{Binding SelectedNetwork}"
                      BorderThickness="1"
+                     Background="Transparent"
                      BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
                 <ListBox.ItemContainerStyle>
+                    <!-- Each row reads as its own small card: flat at rest, a subtle hover tint,
+                         and the same accent-border "this one is selected" treatment used by the
+                         operation cards on the main screen — so picking a network feels like the
+                         same interaction pattern as the rest of the app (and as Windows itself). -->
                     <Style TargetType="ListBoxItem">
                         <Setter Property="IsEnabled" Value="{Binding IsSupported}" />
+                        <Setter Property="Padding" Value="10,10" />
+                        <Setter Property="Margin" Value="4,3" />
+                        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
+                                <Setter Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </Style.Triggers>
                     </Style>
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="4">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="{Binding SignalSymbol}"
+                                           FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
                             <TextBlock Text="{Binding Ssid}" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding SignalPercent, StringFormat=' ({0}%)'}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="LockClosed16" FontSize="13" Margin="6,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           Visibility="{Binding IsSecured, Converter={StaticResource BoolToVisibility}}" />
                             <TextBlock Text="{Binding NotSupportedLabel}"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                        VerticalAlignment="Center" />
@@ -79,6 +112,41 @@
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
+
+            <!-- Inline "connect" panel for the selected network only. Appears the moment a
+                 network is picked and disappears on Cancel/Connect — mirroring the Windows Wi-Fi
+                 flyout's per-network expand instead of a password field that's always visible. -->
+            <Border Grid.Row="2"
+                    Margin="4,8,4,0" Padding="16"
+                    CornerRadius="4"
+                    Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                    BorderThickness="2"
+                    BorderBrush="{DynamicResource SystemAccentColorBrush}"
+                    Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <ui:SymbolIcon Symbol="{Binding SelectedNetwork.SignalSymbol}"
+                                       FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding SelectedNetwork.Ssid}" VerticalAlignment="Center"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    </StackPanel>
+
+                    <StackPanel Visibility="{Binding ShowPasswordField, Converter={StaticResource BoolToVisibility}}"
+                                Margin="0,8,0,4">
+                        <TextBlock Text="Network security key" Margin="0,0,0,4"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <PasswordBox x:Name="PasswordInput" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <ui:Button Content="Cancel" Appearance="Secondary" Margin="0,0,8,0"
+                                   Command="{Binding ClearSelectionCommand}" />
+                        <ui:Button Content="Connect" Appearance="Primary" Click="ConnectButton_Click"
+                                   IsEnabled="{Binding CanConnect}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </Grid>
 
         <!-- Status -->
@@ -89,18 +157,9 @@
                     Title="Connected" Message="{Binding StatusMessage}"
                     Severity="Success" IsOpen="{Binding HasSucceeded}" IsClosable="False" />
 
-        <!-- Password entry (not bound — read directly from PasswordBox on Connect, standard WPF pattern) -->
-        <StackPanel Grid.Row="3" Margin="16,0,16,8">
-            <TextBlock Text="Password (leave blank for open networks)" Margin="0,0,0,4"
-                       Style="{StaticResource CaptionTextBlockStyle}"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-            <PasswordBox x:Name="PasswordInput" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16">
-            <ui:Button Content="Close" Appearance="Secondary" Margin="0,0,8,0" Click="CloseButton_Click" />
-            <ui:Button Content="Connect" Appearance="Primary" Click="ConnectButton_Click"
-                       IsEnabled="{Binding CanConnect}" />
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16">
+            <ui:Button Content="Close" Appearance="Secondary" Click="CloseButton_Click" />
         </StackPanel>
     </Grid>
 </ui:FluentWindow>
+
