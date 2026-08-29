@@ -11,7 +11,7 @@ import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
-import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
@@ -20,6 +20,7 @@ import {
   uploadFileToBlobStorage,
   publishBootImageUpload,
 } from '../services/bootImageUploadService.ts';
+import type { UploadJobStatus } from '../services/uploadJobService.ts';
 
 interface BootImage {
   bootImageId: string;
@@ -205,6 +206,9 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
   const [stage, setStage]     = useState<UploadStage>('form');
   const [percent, setPercent] = useState(0);
   const [error, setError]     = useState<string | null>(null);
+  // Publish returns 202 Accepted and the verification/publish work runs in a background job,
+  // so this tracks what that job reports.
+  const [publishStatus, setPublishStatus] = useState<UploadJobStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = stage !== 'form';
@@ -213,7 +217,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
 
   const handleSubmit = async () => {
     if (!version.trim() || !file) {
-      setError('Provide a version and select a .wim or .iso file.');
+      setError('Provide a version and select a .wim file.');
       return;
     }
     if (duplicateVersion) {
@@ -233,7 +237,11 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
       await uploadFileToBlobStorage(session.uploadUrl, file, setPercent);
 
       setStage('publishing');
-      await publishBootImageUpload({ ...session, sha256Hash }, file.size, version.trim());
+      setPublishStatus(null);
+      await publishBootImageUpload(
+        { ...session, sha256Hash }, file.size, version.trim(),
+        { onStatus: job => setPublishStatus(job.status) },
+      );
 
       onPublished();
     } catch (err) {
@@ -245,7 +253,10 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
   const stageLabel =
     stage === 'hashing'    ? 'Computing checksum…'
     : stage === 'uploading'  ? 'Uploading to storage…'
-    : stage === 'publishing' ? 'Validating & publishing…'
+    : stage === 'publishing'
+      ? (publishStatus === 'Processing'
+          ? 'Verifying checksum and publishing…'
+          : 'Queued for verification and publishing…')
     : '';
 
   return (
@@ -281,18 +292,18 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="bootImageFile">Boot media (.wim or .iso)</Label>
+            <Label htmlFor="bootImageFile">Boot media (.wim)</Label>
             <input
               ref={fileInputRef}
               id="bootImageFile"
               type="file"
-              accept={IMAGE_FILE_ACCEPT}
+              accept={fileAccept(WIM_ONLY_EXTENSIONS)}
               className="hidden"
               disabled={busy}
               onChange={e => {
                 const selected = e.target.files?.[0] ?? null;
                 if (selected) {
-                  const validationError = validateImageFile(selected);
+                  const validationError = validateImageFile(selected, WIM_ONLY_EXTENSIONS);
                   if (validationError) {
                     setError(validationError);
                     setFile(null);

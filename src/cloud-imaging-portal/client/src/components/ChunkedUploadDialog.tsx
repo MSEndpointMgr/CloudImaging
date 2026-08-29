@@ -5,7 +5,7 @@ import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
 import { Card, CardContent } from './ui/card.tsx';
-import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { fileAccept, OS_IMAGE_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
@@ -20,6 +20,7 @@ import {
   type ChunkedUploadSession,
   type PersistedUploadState,
 } from '../services/chunkedUploadService.ts';
+import type { UploadJobStatus } from '../services/uploadJobService.ts';
 
 interface ChunkedUploadDialogProps {
   open:    boolean;
@@ -49,6 +50,9 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   // already-staged blocks don't have to be re-uploaded.
   const [resumable, setResumable] = useState<PersistedUploadState | null>(null);
   const [resuming, setResuming]   = useState(false);
+  // Status reported by the background publish job. Publish returns 202 Accepted immediately and
+  // the verification/publish work happens server-side, so this is what the operator watches.
+  const [publishStatus, setPublishStatus] = useState<UploadJobStatus | null>(null);
   const abortRef                  = useRef<AbortController | null>(null);
   const sessionRef                = useRef<ChunkedUploadSession | null>(null);
   const hashRunId                 = useRef(0);
@@ -65,7 +69,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const reset = () => {
     hashRunId.current++; // invalidate any in-flight hashing so it doesn't clobber state after reset
     setFile(null); setVersion(''); setSha256(''); setHashProgress(0); setProgress(0);
-    setState('idle'); setError(null); setResuming(false);
+    setState('idle'); setError(null); setResuming(false); setPublishStatus(null);
     sessionRef.current = null;
   };
 
@@ -129,30 +133,34 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
         : await startChunkedUpload(file.name, version, sha256);
       sessionRef.current = session;
 
-      const persist = (stagedBlockIds: string[]) => {
+      const persist = (stagedBlockCount: number) => {
         savePersistedUpload({
           ...session,
           version, sha256,
           fileName: file.name, fileSize: file.size, fileLastModified: file.lastModified,
-          stagedBlockIds,
+          stagedBlockCount,
         });
       };
 
-      const resumeBlockIds = resuming && resumable ? resumable.stagedBlockIds : undefined;
-      setProgress(resumeBlockIds ? Math.round((resumeBlockIds.length * session.blockSize / file.size) * 100) : 0);
-      if (!resuming) persist([]);
+      const resumeFromBlock = resuming && resumable ? resumable.stagedBlockCount : 0;
+      setProgress(resumeFromBlock ? Math.round((resumeFromBlock * session.blockSize / file.size) * 100) : 0);
+      if (!resuming) persist(0);
 
       const blockIds = await uploadBlocks(session, file, setProgress, abortRef.current.signal, {
-        resumeBlockIds,
+        resumeFromBlock,
         onBlockStaged: persist,
       });
 
       setState('finalizing');
-      const result = await finalizeChunkedUpload(session, blockIds, file.name, version, sha256, file.size);
+      setPublishStatus(null);
+      const result = await finalizeChunkedUpload(
+        session, blockIds, file.name, version, sha256, file.size,
+        { onStatus: job => setPublishStatus(job.status) },
+      );
       clearPersistedUpload();
       setResumable(null);
       setState('done');
-      onUploaded(result as { blobName: string });
+      onUploaded(result);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
         setState('cancelled');
@@ -177,7 +185,10 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const stageLabel =
     state === 'hashing'    ? 'Computing checksum…'
     : state === 'uploading'  ? 'Uploading to storage…'
-    : state === 'finalizing' ? 'Validating & publishing…'
+    : state === 'finalizing'
+      ? (publishStatus === 'Processing'
+          ? 'Verifying checksum and publishing…'
+          : 'Queued for verification and publishing…')
     : '';
   const duplicateVersion = isDuplicateVersion(version, existingVersions);
   const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion && !atCapacity;
@@ -232,13 +243,13 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
               ref={fileInputRef}
               id="osImageFile"
               type="file"
-              accept={IMAGE_FILE_ACCEPT}
+              accept={fileAccept(OS_IMAGE_EXTENSIONS)}
               className="hidden"
               disabled={state === 'uploading' || state === 'finalizing'}
               onChange={e => {
                 const selected = e.target.files?.[0] ?? null;
                 if (selected) {
-                  const validationError = validateImageFile(selected);
+                  const validationError = validateImageFile(selected, OS_IMAGE_EXTENSIONS);
                   if (validationError) {
                     setError(validationError);
                     e.target.value = '';
@@ -301,8 +312,13 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
           )}
 
           <div className="flex justify-end gap-2 pt-2">
-            {state === 'uploading' || state === 'finalizing' ? (
+            {state === 'uploading' ? (
               <Button variant="outline" onClick={handleCancel}>Cancel upload</Button>
+            ) : state === 'finalizing' ? (
+              // Publishing is already committed server-side once the block list is committed and
+              // the job is enqueued. Cancelling here would delete the staged blob out from under
+              // the worker, so the operator can only wait for the job to reach a terminal state.
+              <Button variant="outline" disabled>Publishing…</Button>
             ) : (
               <>
                 <Button variant="outline" onClick={handleClose}>

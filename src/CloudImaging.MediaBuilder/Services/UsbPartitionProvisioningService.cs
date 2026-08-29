@@ -9,7 +9,7 @@ namespace CloudImaging.MediaBuilder.Services;
 ///
 /// Partition layout:
 ///   Part 1 (FAT32, boot, minimum 2 GB):   WinPE boot files.
-///   Part 2 (NTFS, cache, minimum 20 GB):  Cloud Imaging Client OS image cache
+///   Part 2 (NTFS, cache, minimum 24 GB):  Cloud Imaging Client OS image cache
 ///                                         (see CloudImaging.Client's ImageCacheService, FR-009d).
 /// </summary>
 public sealed partial class UsbPartitionProvisioningService
@@ -17,8 +17,13 @@ public sealed partial class UsbPartitionProvisioningService
     /// <summary>Boot partition size in MB — the FR-055 minimum is 2 GB (2048 MB).</summary>
     public const int BootPartitionSizeMb = 2048;
 
-    /// <summary>Minimum cache partition size in bytes, per FR-055.</summary>
-    public const long MinimumCachePartitionBytes = 20L * 1024 * 1024 * 1024;
+    /// <summary>
+    /// Minimum cache partition size in bytes, per FR-055. Sized to hold one OS image at the top of
+    /// the supported range (20 GB) plus NTFS metadata and working headroom; a bare 20 GB partition
+    /// could not actually store a 20 GB image, which would leave the cache silently unusable for
+    /// the largest catalog entries. Still fits on a 32 GB stick alongside the 2 GB boot partition.
+    /// </summary>
+    public const long MinimumCachePartitionBytes = 24L * 1024 * 1024 * 1024;
 
     private readonly ILogger<UsbPartitionProvisioningService> _logger;
 

@@ -114,7 +114,7 @@ Operator API
   supplied from a local path for offline/air-gap deployments
 - **Prepare USB Storage Device**: lists qualifying removable USB drives (USB bus
   type + removable flag); writes the WinPE boot partition (≥ 2 GB) and an OS image
-  cache partition (≥ 20 GB); auto-refreshes the device list on plug/unplug events
+  cache partition (≥ 24 GB); auto-refreshes the device list on plug/unplug events
 
 ### Security
 

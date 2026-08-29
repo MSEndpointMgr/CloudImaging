@@ -43,3 +43,35 @@ public enum PartitionType
     /// <summary>Windows Recovery Environment (WinRE) partition — NTFS, hidden via GPT attribute.</summary>
     Recovery
 }
+
+/// <summary>
+/// Which catalog an asynchronous image publish job will land in once its background verification
+/// completes. See <see cref="Models.UploadJob"/>.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum UploadJobKind
+{
+    OsImage,
+    BootImage,
+    RecoveryImage
+}
+
+/// <summary>
+/// Lifecycle of an asynchronous image publish job. <see cref="Completed"/> and <see cref="Failed"/>
+/// are terminal; the portal stops polling once either is reached.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum UploadJobStatus
+{
+    /// <summary>Accepted and queued. The staged blob passed its file-signature check.</summary>
+    Pending,
+
+    /// <summary>Claimed by the background worker: hashing, extracting, and copying.</summary>
+    Processing,
+
+    /// <summary>Verified and registered in the catalog. <c>ResultImageId</c> is populated.</summary>
+    Completed,
+
+    /// <summary>Rejected or errored. <c>FailureReason</c> explains why, for display in the portal.</summary>
+    Failed
+}

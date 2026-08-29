@@ -44,6 +44,7 @@ var host = new HostBuilder()
         services.AddSingleton<SessionHistoryRepository>();
         services.AddSingleton<LocationRepository>();
         services.AddSingleton<UserLocationPreferenceRepository>();
+        services.AddSingleton<UploadJobRepository>();
 
         // Key Vault certificate service (FR-068)
         services.AddSingleton<KeyVaultCertificateService>();
@@ -61,6 +62,8 @@ var host = new HostBuilder()
         services.AddSingleton<BulkAssignmentService>();
         services.AddSingleton<ImageDeletionGuardService>();
         services.AddSingleton<BootImageValidationService>();
+        services.AddSingleton<IsoExtractionService>();
+        services.AddSingleton<UploadPublishService>();
         services.AddSingleton<DeviceSessionLifecycleService>();
 
         // Azure Blob Storage (SAS token URL generation, FR-025)
@@ -104,6 +107,7 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<SessionHistoryRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<LocationRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<UserLocationPreferenceRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<UploadJobRepository>().EnsureTableExistsAsync(ct);
 }
 
 host.Run();

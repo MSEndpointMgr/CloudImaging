@@ -57,7 +57,7 @@ sequenceDiagram
         
         alt Checksum matches
             MediaBuilder->>USB: Create two partitions on USB
-            Note over USB: Partition 1: Cache (min 20GB recommended for 5-10GB OS images)<br/>Partition 2: Bootable (UEFI format for WinPE)
+            Note over USB: Partition 1: Cache (min 24GB, holds one OS image up to 20GB)<br/>Partition 2: Bootable (UEFI format for WinPE)
             USB-->>MediaBuilder: two partitions created
             
             MediaBuilder->>USB: Deploy boot image to bootable partition

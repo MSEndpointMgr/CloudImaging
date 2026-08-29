@@ -122,7 +122,7 @@ export default function OsImagesPage(): React.ReactElement {
       )}
 
       <div className="rounded-md border border-border overflow-hidden">
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               {isAdministrator && (
@@ -139,13 +139,13 @@ export default function OsImagesPage(): React.ReactElement {
                   />
                 </TableHead>
               )}
-              <TableHead>Name</TableHead>
-              <TableHead>Version</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>SHA-256</TableHead>
-              <TableHead>Uploaded</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="w-[30%]">Name</TableHead>
+              <TableHead className="w-[13%]">Version</TableHead>
+              <TableHead className="w-[9%]">Size</TableHead>
+              <TableHead className="w-[13%]">SHA-256</TableHead>
+              <TableHead className="w-[14%]">Uploaded</TableHead>
+              <TableHead className="w-[10%]">Status</TableHead>
+              <TableHead className="w-[90px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -186,11 +186,11 @@ export default function OsImagesPage(): React.ReactElement {
                     />
                   </TableCell>
                 )}
-                <TableCell className="font-medium">{img.name}</TableCell>
-                <TableCell>{img.version}</TableCell>
-                <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
+                <TableCell className="max-w-0 truncate font-medium" title={img.name}>{img.name}</TableCell>
+                <TableCell className="truncate">{img.version}</TableCell>
+                <TableCell className="truncate">{fmtSize(img.sizeBytes)}</TableCell>
+                <TableCell className="truncate font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
+                <TableCell className="truncate text-xs text-muted-foreground">
                   {formatDateTime(img.uploadedAt)}
                 </TableCell>
                 <TableCell>

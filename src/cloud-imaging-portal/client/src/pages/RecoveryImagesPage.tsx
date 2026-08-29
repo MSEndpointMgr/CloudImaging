@@ -11,7 +11,7 @@ import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
-import { IMAGE_FILE_ACCEPT, validateImageFile } from '../lib/imageFileValidation.ts';
+import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
@@ -20,6 +20,7 @@ import {
   uploadRecoveryFileToBlobStorage,
   publishRecoveryImageUpload,
 } from '../services/recoveryImageUploadService.ts';
+import type { UploadJobStatus } from '../services/uploadJobService.ts';
 
 interface RecoveryImage {
   recoveryImageId: string;
@@ -226,6 +227,9 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
   const [stage, setStage]     = useState<UploadStage>('form');
   const [percent, setPercent] = useState(0);
   const [error, setError]     = useState<string | null>(null);
+  // Publish returns 202 Accepted and the verification/publish work runs in a background job,
+  // so this tracks what that job reports.
+  const [publishStatus, setPublishStatus] = useState<UploadJobStatus | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = stage !== 'form';
@@ -234,7 +238,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
 
   const handleSubmit = async () => {
     if (!version.trim() || !file) {
-      setError('Provide a version and select a .wim or .iso file.');
+      setError('Provide a version and select a .wim file.');
       return;
     }
     if (duplicateVersion) {
@@ -254,7 +258,11 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
       await uploadRecoveryFileToBlobStorage(session.uploadUrl, file, setPercent);
 
       setStage('publishing');
-      await publishRecoveryImageUpload({ ...session, sha256Hash }, file.size, version.trim(), description);
+      setPublishStatus(null);
+      await publishRecoveryImageUpload(
+        { ...session, sha256Hash }, file.size, version.trim(), description,
+        { onStatus: job => setPublishStatus(job.status) },
+      );
 
       onPublished();
     } catch (err) {
@@ -266,7 +274,10 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
   const stageLabel =
     stage === 'hashing'    ? 'Computing checksum…'
     : stage === 'uploading'  ? 'Uploading to storage…'
-    : stage === 'publishing' ? 'Validating & publishing…'
+    : stage === 'publishing'
+      ? (publishStatus === 'Processing'
+          ? 'Verifying checksum and publishing…'
+          : 'Queued for verification and publishing…')
     : '';
 
   return (
@@ -313,18 +324,18 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="recoveryImageFile">Recovery media (.wim or .iso)</Label>
+            <Label htmlFor="recoveryImageFile">Recovery media (.wim)</Label>
             <input
               ref={fileInputRef}
               id="recoveryImageFile"
               type="file"
-              accept={IMAGE_FILE_ACCEPT}
+              accept={fileAccept(WIM_ONLY_EXTENSIONS)}
               className="hidden"
               disabled={busy}
               onChange={e => {
                 const selected = e.target.files?.[0] ?? null;
                 if (selected) {
-                  const validationError = validateImageFile(selected);
+                  const validationError = validateImageFile(selected, WIM_ONLY_EXTENSIONS);
                   if (validationError) {
                     setError(validationError);
                     setFile(null);

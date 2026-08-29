@@ -76,6 +76,7 @@ import { recoveryImagesRouter } from './routes/recovery-images.js';
 import { sessionHistoryRouter } from './routes/session-history.js';
 import { locationsRouter } from './routes/locations.js';
 import { userPreferencesRouter } from './routes/user-preferences.js';
+import { uploadJobsRouter } from './routes/upload-jobs.js';
 
 // Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
@@ -94,6 +95,7 @@ app.use('/api/recovery-images',     recoveryImagesRouter);
 app.use('/api/session-history',     sessionHistoryRouter);
 app.use('/api/locations',           locationsRouter);
 app.use('/api/user-preferences',    userPreferencesRouter);
+app.use('/api/upload-jobs',         uploadJobsRouter);
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error', err);

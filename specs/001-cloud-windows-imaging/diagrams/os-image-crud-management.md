@@ -12,7 +12,7 @@ sequenceDiagram
     participant Storage as Azure Blob<br/>Storage
     participant MetadataStore as Azure Table<br/>Storage
 
-    Admin->>Portal: Upload new OS image (WIM file 5-10 GB)
+    Admin->>Portal: Upload new OS image (WIM file, up to 20 GB)
     Portal->>PortalBackend: POST /images/upload<br/>(multipart: file, name, description)
     Note over PortalBackend: Entra ID admin role required
     

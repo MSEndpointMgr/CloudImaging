@@ -129,7 +129,7 @@ Authenticated operator boundary for administrative and technician operations. Th
 
 #### OS Image Chunked Upload Protocol
 
-OS image uploads support chunked transfer for large files (5-10 GB typical). This protocol enables resumable uploads and progress tracking:
+OS image uploads support chunked transfer for large files (up to 20 GB). This protocol enables resumable uploads and progress tracking:
 
 - **Session creation**: POST /api/images/upload-session returns `uploadSessionId`, authorized SAS token URL for a temporary blob, and `chunkSize` (default: 4 MB, configurable).
 - **Chunk upload**: Client uploads each 4 MB chunk via PUT with byte-range header (e.g., `Content-Range: bytes 0-4194303/*`).

@@ -160,7 +160,7 @@ Expected result:
 4. Query boot images through Operator API.
 5. Plug in a qualifying USB device after the device list is open; verify it auto-appears (DeviceWatcher). Unplug and verify it auto-disappears.
 6. Select removable USB target and confirm destructive action.
-7. Verify two partitions are created: cache (>= 20 GB) and bootable (>= 2 GB).
+7. Verify two partitions are created: cache (>= 24 GB) and bootable (>= 2 GB).
 8. Download boot image via SAS (off UI thread).
 9. Deploy boot payload and configure WinPE auto-start.
 

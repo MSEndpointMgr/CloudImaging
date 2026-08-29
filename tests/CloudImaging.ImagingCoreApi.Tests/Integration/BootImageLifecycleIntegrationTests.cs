@@ -109,7 +109,7 @@ public sealed class BootImageLifecycleIntegrationTests
         422.Should().Be(422, "checksum failure returns HTTP 422 Unprocessable Entity");
     }
 
-    // ── File-type allow-list (only genuine WIM/ISO images may be uploaded) ─────
+    // ── File-type allow-list (OS images accept WIM/ISO; boot/recovery images are WIM-only) ─────
 
     [Theory]
     [InlineData(".wim", true)]
@@ -121,9 +121,23 @@ public sealed class BootImageLifecycleIntegrationTests
     [InlineData(".dll", false)]
     [InlineData("", false)]
     [InlineData(null, false)]
-    public void IsAllowedExtension_OnlyAcceptsWimAndIso(string? extension, bool expected)
+    public void IsAllowedExtension_OsImages_AcceptsWimAndIso(string? extension, bool expected)
     {
-        BootImageValidationService.IsAllowedExtension(extension).Should().Be(expected,
-            "only .wim and .iso files should ever be accepted for boot/recovery/OS image uploads");
+        BootImageValidationService.IsAllowedExtension(extension, BootImageValidationService.OsImageExtensions)
+            .Should().Be(expected, "OS images may be uploaded as either .wim or .iso (the ISO is extracted at publish time)");
+    }
+
+    [Theory]
+    [InlineData(".wim", true)]
+    [InlineData(".WIM", true)]
+    [InlineData(".iso", false)]
+    [InlineData(".esd", false)]
+    [InlineData(".exe", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsAllowedExtension_BootAndRecoveryImages_AcceptsWimOnly(string? extension, bool expected)
+    {
+        BootImageValidationService.IsAllowedExtension(extension, BootImageValidationService.WimOnlyExtensions)
+            .Should().Be(expected, "boot and recovery images have no coherent standalone ISO form, so only .wim is accepted");
     }
 }

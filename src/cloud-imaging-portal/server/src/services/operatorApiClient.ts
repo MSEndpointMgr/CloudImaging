@@ -8,18 +8,20 @@ import { getOperatorApiToken } from './operatorApiToken.js';
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
- * Timeout for the boot-image / OS-image upload "publish" calls specifically. Publish
- * downloads the whole staged blob through Imaging Core API to verify its SHA-256 hash and
- * then copies it to its published path. Both scale with image size, so a multi-hundred-MB
- * WIM can legitimately take well over 30s — and OS images in particular are typically
- * 5-10 GB, so this needs to comfortably outlast Operator API's own downstream timeout to
- * Imaging Core API (280s — see OperatorApi Program.cs) rather than cutting the request off
- * first and masking whatever Operator API would have eventually returned. Using a shorter
- * value here caused the publish (or a request queued behind it) to be aborted client-side
- * and surfaced as a 504 even though the backend was still working correctly (see repo
- * memory: boot-image-upload-504).
+ * Timeout for the OS / boot / recovery image upload "publish" calls specifically.
+ *
+ * Publish used to verify the whole staged blob's SHA-256 and copy it to its published path
+ * inline, which scales with image size and could not complete in time for multi-GB OS images.
+ * A long timeout here never helped, because Azure Static Web Apps caps every API request at a
+ * fixed 45 seconds and returns "Backend call failure" past that, and Azure Functions HTTP is
+ * severed by the load balancer at 230 seconds regardless of functionTimeout. Both caps sit in
+ * front of this client, so any value above ~40s was unreachable.
+ *
+ * Publish now only performs a cheap file-signature check and enqueues an UploadJob, returning
+ * 202 Accepted, so it completes in a couple of seconds. This timeout is a modest allowance for
+ * committing the block list on a large chunked upload, well inside the edge cap.
  */
-const PUBLISH_TIMEOUT_MS = 300_000;
+const PUBLISH_TIMEOUT_MS = 40_000;
 
 /**
  * Typed HTTP client for portal backend → Operator API calls over Private Link (T041, FR-013).
@@ -119,6 +121,17 @@ export class OperatorApiClient {
 
   async abandonOsImageUpload(uploadId: string, payload: unknown): Promise<void> {
     await this.http.post<unknown>(`/api/images/upload/${uploadId}/abandon`, payload);
+  }
+
+  // ── Upload job status ──────────────────────────────────────────────────────
+
+  /**
+   * Reads the status of a background publish job. Shared by the OS, boot and recovery image
+   * upload flows, which all return 202 Accepted from publish and are completed by a worker.
+   */
+  async getUploadJob(uploadId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/upload-jobs/${encodeURIComponent(uploadId)}`);
+    return data;
   }
 
   // ── Boot image operations ────────────────────────────────────────────────────

@@ -5,6 +5,7 @@
  */
 
 import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
+import { waitForUploadJob, type UploadJob } from './uploadJobService.ts';
 
 export interface UploadSession {
   uploadId: string;
@@ -73,13 +74,17 @@ export async function uploadFileToBlobStorage(
 }
 
 /**
- * Finalizes a staged upload by validating the SHA-256 and publishing the boot image.
+ * Finalizes a staged upload. The server checks the file signature inline, then verifies the
+ * SHA-256 and publishes in a background job (see uploadJobService), because hashing a
+ * multi-hundred-MB WIM cannot finish inside the fixed 45 second Static Web Apps request cap.
+ * This resolves once the boot image is actually in the catalog.
  */
 export async function publishBootImageUpload(
   session: UploadSession,
   sizeBytes: number,
   version: string,
-): Promise<unknown> {
+  options?: { onStatus?: (job: UploadJob) => void; signal?: AbortSignal },
+): Promise<UploadJob> {
   const res = await apiFetch(`/api/boot-images/upload/${session.uploadId}/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -94,5 +99,8 @@ export async function publishBootImageUpload(
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, `Publish failed: HTTP ${res.status}`));
   }
-  return res.json();
+
+  const job = await res.json() as UploadJob;
+  options?.onStatus?.(job);
+  return waitForUploadJob(job.uploadId, options);
 }

@@ -22,6 +22,21 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" />
     <PackageReference Include="SkiaSharp" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+    <PackageReference Include="DiscUtils.Iso9660" />
+    <PackageReference Include="DiscUtils.Udf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      host.json raises functionTimeout above the 30 minute Elastic Premium default. This app hosts
+      the ProcessUploadJobs timer worker, which hashes and (for ISO uploads) extracts OS images of
+      up to 20 GB; the default leaves too little headroom on a throttled instance. It has to be
+      copied to the output directory because CI deploys the raw `dotnet publish -o` folder as a zip.
+      HTTP functions are unaffected: those are still severed by the load balancer at 230 seconds.
+    -->
+    <None Update="host.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

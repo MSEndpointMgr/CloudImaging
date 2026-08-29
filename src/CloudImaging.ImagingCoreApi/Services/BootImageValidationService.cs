@@ -10,13 +10,25 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// Validates an uploaded boot/OS/recovery image blob for file-type authenticity, corruption, and
 /// checksum integrity (T125a, FR-063). Used during the staged upload finalize-publish flow to
 /// ensure the file is a genuine WIM/ISO image — not merely renamed — before it is committed to
-/// the catalog. Only the file extensions in <see cref="AllowedExtensions"/> are ever accepted;
+/// the catalog. Only the file extensions in the caller's chosen allow-list are ever accepted;
 /// this guards against malicious files being smuggled into the catalog under a spoofed extension.
 /// </summary>
 public sealed partial class BootImageValidationService
 {
-    /// <summary>Allowed image file extensions across boot, recovery, and OS image uploads.</summary>
-    public static readonly IReadOnlyCollection<string> AllowedExtensions = new[] { ".wim", ".iso" };
+    /// <summary>
+    /// Allowed extensions for OS image uploads. ISO is genuinely useful here — retail/volume
+    /// Windows ISOs ship <c>sources\install.wim</c>/<c>install.esd</c>, which is exactly what
+    /// gets applied, so the publish step extracts it automatically (see IsoExtractionService).
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> OsImageExtensions = new[] { ".wim", ".iso" };
+
+    /// <summary>
+    /// Allowed extensions for boot and recovery image uploads. Both are WIM-only: a boot image is
+    /// the WinPE <c>boot.wim</c> that Media Builder/self-update replace in place, and a recovery
+    /// image is a standalone <c>Winre.wim</c> pulled from a reference machine — neither has a
+    /// coherent standalone ISO form, so ISO is intentionally not accepted for these.
+    /// </summary>
+    public static readonly IReadOnlyCollection<string> WimOnlyExtensions = new[] { ".wim" };
 
     // WIM (Windows Imaging Format) files begin with the ASCII signature "MSWIM" followed by
     // three null bytes.
@@ -37,29 +49,42 @@ public sealed partial class BootImageValidationService
 
     public sealed record ValidationResult(bool Valid, string? ActualHash, string? FailureReason);
 
-    /// <summary>Returns whether <paramref name="extension"/> (e.g. ".wim") is an allowed image file type.</summary>
-    public static bool IsAllowedExtension(string? extension) =>
-        extension is not null && AllowedExtensions.Contains(extension.ToLowerInvariant());
+    /// <summary>
+    /// Returns whether <paramref name="extension"/> (e.g. ".wim") is allowed for this upload type,
+    /// per the caller-supplied <paramref name="allowedExtensions"/> (<see cref="OsImageExtensions"/>
+    /// or <see cref="WimOnlyExtensions"/>).
+    /// </summary>
+    public static bool IsAllowedExtension(string? extension, IReadOnlyCollection<string> allowedExtensions) =>
+        extension is not null && allowedExtensions.Contains(extension.ToLowerInvariant());
 
     /// <summary>
-    /// Downloads the leading bytes of <paramref name="blobClient"/> to verify its content matches
-    /// the magic signature expected for <paramref name="extension"/>, then — only if that passes —
-    /// computes the full SHA-256 hash and compares it against <paramref name="expectedHash"/>.
-    /// Rejecting on a bad signature before hashing avoids wasting time/bandwidth downloading a
-    /// multi-gigabyte file that is not a genuine image to begin with.
+    /// Verifies only that the blob's leading bytes match the magic signature expected for
+    /// <paramref name="extension"/>, without hashing the file.
+    ///
+    /// <para>
+    /// This is the half of validation that is cheap enough to run inside an HTTP request: it is a
+    /// single ranged read of the first ~36 KB, regardless of whether the blob is 400 MB or 20 GB.
+    /// The publish endpoints run this inline so an operator who picked the wrong file is told
+    /// immediately, and leave the full-file SHA-256 to the background publish worker (see
+    /// <see cref="Contracts.Models.UploadJob"/> for why that split is mandatory).
+    /// </para>
     /// </summary>
-    public async Task<ValidationResult> ValidateAsync(
+    /// <param name="allowedExtensions">
+    /// The allow-list for this upload type — <see cref="OsImageExtensions"/> for OS images, or
+    /// <see cref="WimOnlyExtensions"/> for boot/recovery images.
+    /// </param>
+    public async Task<ValidationResult> ValidateSignatureAsync(
         BlobBaseClient blobClient,
-        string expectedHash,
         string extension,
+        IReadOnlyCollection<string> allowedExtensions,
         CancellationToken ct = default)
     {
         var normalizedExt = extension.ToLowerInvariant();
-        if (!IsAllowedExtension(normalizedExt))
+        if (!IsAllowedExtension(normalizedExt, allowedExtensions))
         {
             LogUnsupportedExtension(_logger, extension);
             return new ValidationResult(false, null,
-                $"Unsupported file extension '{extension}'. Only {string.Join(", ", AllowedExtensions)} are allowed.");
+                $"Unsupported file extension '{extension}'. Only {string.Join(", ", allowedExtensions)} are allowed.");
         }
 
         byte[] header;
@@ -86,6 +111,33 @@ public sealed partial class BootImageValidationService
             LogSignatureMismatch(_logger, normalizedExt);
             return new ValidationResult(false, null,
                 $"File content does not match a valid {normalizedExt} file signature.");
+        }
+
+        return new ValidationResult(true, null, null);
+    }
+
+    /// <summary>
+    /// Downloads the leading bytes of <paramref name="blobClient"/> to verify its content matches
+    /// the magic signature expected for <paramref name="extension"/>, then — only if that passes —
+    /// computes the full SHA-256 hash and compares it against <paramref name="expectedHash"/>.
+    /// Rejecting on a bad signature before hashing avoids wasting time/bandwidth downloading a
+    /// multi-gigabyte file that is not a genuine image to begin with.
+    /// </summary>
+    /// <param name="allowedExtensions">
+    /// The allow-list for this upload type — <see cref="OsImageExtensions"/> for OS images, or
+    /// <see cref="WimOnlyExtensions"/> for boot/recovery images.
+    /// </param>
+    public async Task<ValidationResult> ValidateAsync(
+        BlobBaseClient blobClient,
+        string expectedHash,
+        string extension,
+        IReadOnlyCollection<string> allowedExtensions,
+        CancellationToken ct = default)
+    {
+        var signature = await ValidateSignatureAsync(blobClient, extension, allowedExtensions, ct);
+        if (!signature.Valid)
+        {
+            return signature;
         }
 
         // Opens a read stream over the full blob to hash it. Not wrapped by the same try/catch

@@ -69,6 +69,16 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> AbandonOsImageUploadAsync(string uploadId, object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync($"/api/internal/images/upload/{uploadId}/abandon", payload, JsonOptions, ct);
 
+    // ── Upload job status ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads the status of a background publish job. Publish endpoints return 202 Accepted and
+    /// hand the expensive verification work to a worker, so the portal polls this to learn when
+    /// the image actually landed in the catalog (or why it did not).
+    /// </summary>
+    public Task<HttpResponseMessage> GetUploadJobAsync(string uploadId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/upload-jobs/{Uri.EscapeDataString(uploadId)}", ct);
+
     // ── Boot image operations ──────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetBootImagesAsync(CancellationToken ct = default) =>

@@ -6,6 +6,7 @@
  */
 
 import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
+import { waitForUploadJob, type UploadJob } from './uploadJobService.ts';
 
 export interface RecoveryUploadSession {
   uploadId: string;
@@ -66,14 +67,18 @@ export async function uploadRecoveryFileToBlobStorage(
 }
 
 /**
- * Finalizes a staged upload by validating the SHA-256 and publishing the recovery image.
+ * Finalizes a staged upload. The server checks the file signature inline, then verifies the
+ * SHA-256 and publishes in a background job (see uploadJobService), because hashing a large WIM
+ * cannot finish inside the fixed 45 second Static Web Apps request cap. This resolves once the
+ * recovery image is actually in the catalog.
  */
 export async function publishRecoveryImageUpload(
   session: RecoveryUploadSession,
   sizeBytes: number,
   version: string,
   description?: string,
-): Promise<unknown> {
+  options?: { onStatus?: (job: UploadJob) => void; signal?: AbortSignal },
+): Promise<UploadJob> {
   const res = await apiFetch(`/api/recovery-images/upload/${session.uploadId}/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -89,5 +94,8 @@ export async function publishRecoveryImageUpload(
   if (!res.ok) {
     throw new Error(await extractErrorDetail(res, `Publish failed: HTTP ${res.status}`));
   }
-  return res.json();
+
+  const job = await res.json() as UploadJob;
+  options?.onStatus?.(job);
+  return waitForUploadJob(job.uploadId, options);
 }

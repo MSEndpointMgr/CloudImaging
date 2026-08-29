@@ -61,17 +61,27 @@ public sealed class UsbPartitionDeploymentTests
     }
 
     [Fact]
-    public void CachePartition_MinimumSize_Is20Gb()
+    public void CachePartition_MinimumSize_Is24Gb()
     {
-        UsbPartitionProvisioningService.MinimumCachePartitionBytes.Should().Be(20L * 1024 * 1024 * 1024,
-            "cache partition must be at least 20 GB per FR-055, to hold Client OS image cache entries");
+        UsbPartitionProvisioningService.MinimumCachePartitionBytes.Should().Be(24L * 1024 * 1024 * 1024,
+            "cache partition must hold one OS image at the top of the supported range (20 GB) plus "
+            + "filesystem overhead, otherwise the largest catalog entries could never be cached");
+    }
+
+    [Fact]
+    public void CachePartition_Minimum_FitsLargestSupportedOsImage()
+    {
+        const long largestSupportedImageBytes = 20L * 1024 * 1024 * 1024;
+        UsbPartitionProvisioningService.MinimumCachePartitionBytes.Should().BeGreaterThan(largestSupportedImageBytes,
+            "a cache partition exactly the size of the largest supported image leaves no room for "
+            + "NTFS metadata, so the copy would fail at the end of a long download");
     }
 
     [Fact]
     public async Task ProvisionAsync_Throws_WhenDiskTooSmallForCacheMinimum()
     {
-        // A disk that only leaves room for a cache partition under the 20 GB FR-055 minimum
-        // must be rejected BEFORE any destructive diskpart action is taken.
+        // A disk that only leaves room for a cache partition under the FR-055 minimum must be
+        // rejected BEFORE any destructive diskpart action is taken.
         var svc = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
         const long tooSmallDiskBytes = 8L * 1024 * 1024 * 1024; // 8 GB total
 

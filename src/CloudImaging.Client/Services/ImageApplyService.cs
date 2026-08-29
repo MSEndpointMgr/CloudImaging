@@ -33,6 +33,8 @@ public sealed partial class ImageApplyService
         Action<int>? onProgress,
         CancellationToken ct = default)
     {
+        WinPeEnvironmentGuard.EnsureRunningInWinPe("Applying the operating system image");
+
         // Step 1: SHA-256 verification before invoking DISM (FR-006)
         LogVerifyingHash(_logger, wimPath);
         var actualHash = await ComputeSha256Async(wimPath, ct);

@@ -52,6 +52,9 @@
     <!-- Server-side image resizing for uploaded branding logos (FR-038) -->
     <PackageVersion Include="SkiaSharp"                           Version="4.151.1" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
+    <!-- Pure-managed ISO9660/UDF reading, to extract install.wim/install.esd from uploaded OS image ISOs -->
+    <PackageVersion Include="DiscUtils.Iso9660"                   Version="0.16.13" />
+    <PackageVersion Include="DiscUtils.Udf"                       Version="0.16.13" />
 
     <!-- Test frameworks -->
     <PackageVersion Include="xunit"                               Version="2.9.0" />

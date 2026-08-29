@@ -50,6 +50,8 @@ public sealed partial class DiskFormatService
     /// </exception>
     public async Task<DiskFormatResult> FormatTargetDiskAsync(PartitioningScheme scheme, CancellationToken ct = default)
     {
+        WinPeEnvironmentGuard.EnsureRunningInWinPe("Formatting the target disk");
+
         var ordered = ValidateAndOrder(scheme);
 
         var diskIndex = FindSingleFixedDiskIndex();

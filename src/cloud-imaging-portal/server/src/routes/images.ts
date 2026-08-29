@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
-import { isAllowedImageFile, ALLOWED_IMAGE_EXTENSIONS } from '../utils/imageFileValidation.js';
+import { isAllowedImageFile, OS_IMAGE_EXTENSIONS } from '../utils/imageFileValidation.js';
 
 /**
  * Images router. OS image catalog CRUD proxy to the Operator API (T086, FR-036, FR-037).
@@ -35,18 +35,21 @@ router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (r
     // The client sends the original uploaded file's name as `name` (T086); it doubles as the
     // catalog display name, so its extension is what's validated against the allow-list here.
     const { name } = req.body as { name?: string };
-    if (!name || !isAllowedImageFile(name)) {
-      res.status(400).json({ error: `Only ${ALLOWED_IMAGE_EXTENSIONS.join(', ')} files are allowed.` });
+    if (!name || !isAllowedImageFile(name, OS_IMAGE_EXTENSIONS)) {
+      res.status(400).json({ error: `Only ${OS_IMAGE_EXTENSIONS.join(', ')} files are allowed.` });
       return;
     }
     res.json(await operatorApiClient.startOsImageUpload(req.body as unknown));
   } catch (err) { next(err); }
 });
 
+// Publish only performs a cheap file-signature check and enqueues a background job, so it
+// answers 202 Accepted with the job. The client polls GET /api/upload-jobs/:uploadId until the
+// image is actually in the catalog.
 router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const published = await operatorApiClient.publishOsImageUpload(req.params['uploadId'] as string, req.body as unknown);
-    res.status(201).json(published);
+    const job = await operatorApiClient.publishOsImageUpload(req.params['uploadId'] as string, req.body as unknown);
+    res.status(202).json(job);
   } catch (err) { next(err); }
 });
 

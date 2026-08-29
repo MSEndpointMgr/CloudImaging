@@ -21,6 +21,8 @@ public sealed partial class BootConfigurationService
     /// <exception cref="InvalidOperationException">bcdboot returned a non-zero exit code.</exception>
     public async Task ConfigureAsync(string windowsVolume, string efiSystemVolume, CancellationToken ct = default)
     {
+        WinPeEnvironmentGuard.EnsureRunningInWinPe("Configuring boot files");
+
         var arguments = $"\"{windowsVolume}\\Windows\" /s {efiSystemVolume} /f UEFI";
         LogStartingBcdboot(_logger, arguments);
 

@@ -46,6 +46,8 @@ public sealed partial class RecoveryImageService
         string recoveryVolume,
         CancellationToken ct = default)
     {
+        WinPeEnvironmentGuard.EnsureRunningInWinPe("Applying the recovery image");
+
         LogVerifyingHash(_logger, recoveryWimPath);
         var actualHash = await ComputeSha256Async(recoveryWimPath, ct);
         if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
@@ -84,9 +86,13 @@ public sealed partial class RecoveryImageService
         var windowsRecoveryWimPath = GetWindowsRecoveryWimPath(windowsVolume);
         if (!File.Exists(windowsRecoveryWimPath))
         {
+            // Nothing to apply — a read-only check, not a destructive action, so this can report
+            // "no fallback available" without needing to be running in WinPE first.
             LogEmbeddedImageNotFound(_logger, windowsRecoveryWimPath);
             return false;
         }
+
+        WinPeEnvironmentGuard.EnsureRunningInWinPe("Applying the recovery image");
 
         LogUsingEmbeddedFallback(_logger, windowsRecoveryWimPath);
         await FinalizeApplyAsync(windowsVolume, recoveryVolume, ct);

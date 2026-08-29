@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
+using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
 using CloudImaging.ImagingCoreApi.Services;
@@ -30,17 +31,20 @@ public sealed partial class RecoveryImageUploadFunctions
     private const string UploadContainer = "recovery-images";
 
     private readonly RecoveryImageRepository _recoveryImageRepo;
+    private readonly UploadJobRepository _jobRepo;
     private readonly BootImageValidationService _validator;
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<RecoveryImageUploadFunctions> _logger;
 
     public RecoveryImageUploadFunctions(
         RecoveryImageRepository recoveryImageRepo,
+        UploadJobRepository jobRepo,
         BootImageValidationService validator,
         BlobServiceClient blobClient,
         ILogger<RecoveryImageUploadFunctions> logger)
     {
         _recoveryImageRepo = recoveryImageRepo;
+        _jobRepo = jobRepo;
         _validator = validator;
         _blobClient = blobClient;
         _logger = logger;
@@ -66,12 +70,12 @@ public sealed partial class RecoveryImageUploadFunctions
         var fileName = fileNameProp.GetString() ?? string.Empty;
         var extension = Path.GetExtension(fileName);
 
-        if (!BootImageValidationService.IsAllowedExtension(extension))
+        if (!BootImageValidationService.IsAllowedExtension(extension, BootImageValidationService.WimOnlyExtensions))
         {
             LogUnsupportedExtension(_logger, extension);
             var rejected = req.CreateResponse(HttpStatusCode.BadRequest);
             await rejected.WriteStringAsync(
-                $"Unsupported file extension '{extension}'. Only {string.Join(", ", BootImageValidationService.AllowedExtensions)} are allowed.",
+                $"Unsupported file extension '{extension}'. Only {string.Join(", ", BootImageValidationService.WimOnlyExtensions)} are allowed.",
                 context.CancellationToken);
             return rejected;
         }
@@ -130,40 +134,43 @@ public sealed partial class RecoveryImageUploadFunctions
         var extension = Path.GetExtension(blobName);
 
         // The client uploaded the whole file in a single PUT (see StartUpload), so there is no
-        // block list to commit here — just validate the already-complete blob directly, mirroring
-        // BootImageUploadFunctions.PublishUpload.
+        // block list to commit here. Only the cheap file-signature check (a ranged read of the
+        // first ~36 KB) runs inline; the full-file SHA-256 and the copy to the published prefix
+        // are handed to the background worker so this request stays well inside the 45s Static
+        // Web Apps cap (see UploadJob).
         var blobClient = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(blobName);
-        var validation = await _validator.ValidateAsync(blobClient, sha256Hash, extension, context.CancellationToken);
+        var signature = await _validator.ValidateSignatureAsync(
+            blobClient, extension, BootImageValidationService.WimOnlyExtensions, context.CancellationToken);
 
-        if (!validation.Valid)
+        if (!signature.Valid)
         {
-            LogValidationFailed(_logger, blobName, validation.FailureReason ?? "unknown");
+            LogValidationFailed(_logger, blobName, signature.FailureReason ?? "unknown");
             await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
             var bad = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
-            await bad.WriteStringAsync(validation.FailureReason ?? "Checksum validation failed.", context.CancellationToken);
+            await bad.WriteStringAsync(signature.FailureReason ?? "File signature validation failed.", context.CancellationToken);
             return bad;
         }
 
-        var finalBlobName = $"published/{Guid.NewGuid():N}/winre-{version.Replace(' ', '-')}{extension}";
-        var finalBlob = _blobClient.GetBlobContainerClient(UploadContainer).GetBlobClient(finalBlobName);
-        await finalBlob.StartCopyFromUriAsync(blobClient.Uri, cancellationToken: context.CancellationToken);
-        await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
-
-        var image = await _recoveryImageRepo.PublishAsync(new RecoveryImage
+        var now = DateTimeOffset.UtcNow;
+        var job = new UploadJob
         {
-            RecoveryImageId = Guid.NewGuid(),
+            UploadId = uploadId,
+            Kind = UploadJobKind.RecoveryImage,
+            Status = UploadJobStatus.Pending,
+            BlobName = blobName,
+            Sha256Hash = sha256Hash,
             Version = version,
             Description = description,
             SizeBytes = sizeBytes,
-            StoragePath = $"{UploadContainer}/{finalBlobName}",
-            Sha256Hash = validation.ActualHash!,
-        }, context.CancellationToken);
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        var accepted = await _jobRepo.CreateOrGetAsync(job, context.CancellationToken);
+        LogPublishAccepted(_logger, uploadId, version);
 
-        LogPublished(_logger, image.RecoveryImageId, version);
-
-        var response = req.CreateResponse(HttpStatusCode.Created);
+        var response = req.CreateResponse(HttpStatusCode.Accepted);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(image, JsonOptions), context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(accepted, JsonOptions), context.CancellationToken);
         return response;
     }
 
@@ -205,8 +212,8 @@ public sealed partial class RecoveryImageUploadFunctions
     [LoggerMessage(Level = LogLevel.Warning, Message = "Recovery image validation failed for {BlobName}: {Reason}.")]
     private static partial void LogValidationFailed(ILogger logger, string blobName, string reason);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Recovery image published: {RecoveryImageId} v{Version}.")]
-    private static partial void LogPublished(ILogger logger, Guid recoveryImageId, string version);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Recovery image publish accepted for background processing: id={UploadId} v{Version}.")]
+    private static partial void LogPublishAccepted(ILogger logger, string uploadId, string version);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Recovery image upload rejected: unsupported extension '{Extension}'.")]
     private static partial void LogUnsupportedExtension(ILogger logger, string extension);

@@ -44,6 +44,8 @@ public sealed partial class ImageDownloadService
         Action<int>? onProgress,
         CancellationToken ct = default)
     {
+        WinPeEnvironmentGuard.EnsureRunningInWinPe("Downloading the operating system image");
+
         // 1. Check cache first (T056c)
         if (_cache is not null)
         {
