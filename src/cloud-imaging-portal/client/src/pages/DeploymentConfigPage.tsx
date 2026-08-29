@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Lock, Link as LinkIcon } from 'lucide-react';
+import { Lock, Link as LinkIcon, RotateCcw } from 'lucide-react';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
@@ -184,19 +184,32 @@ export default function DeploymentConfigPage(): React.ReactElement {
     max: number,
     label: string,
     description: string,
+    defaultValue: number,
   ) => (
     <div className="space-y-1.5">
       <Label htmlFor={key}>{label}</Label>
       <p className="text-xs text-muted-foreground">{description}</p>
-      <Input
-        id={key}
-        type="number"
-        min={min}
-        max={max}
-        value={config[key] as number}
-        onChange={e => setConfig(c => ({ ...c, [key]: Number(e.target.value) }))}
-        className="w-40"
-      />
+      <div className="flex items-center gap-2">
+        <Input
+          id={key}
+          type="number"
+          min={min}
+          max={max}
+          value={config[key] as number}
+          onChange={e => setConfig(c => ({ ...c, [key]: Number(e.target.value) }))}
+          className="w-40"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => setConfig(c => ({ ...c, [key]: defaultValue }))}
+          disabled={(config[key] as number) === defaultValue}
+          title="Reset to default"
+        >
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 
@@ -245,9 +258,9 @@ export default function DeploymentConfigPage(): React.ReactElement {
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-6">
             {numField('certValidityPeriodDays', 30, 3650, 'Certificate validity period (days)',
-              'The lifetime of newly issued boot media certificates before they expire and must be rotated.')}
+              'The lifetime of newly issued boot media certificates before they expire and must be rotated.', DEFAULT_CONFIG.certValidityPeriodDays)}
             {numField('clockSkewToleranceSeconds', 0, 300, 'Clock skew tolerance (seconds)',
-              'The permitted time difference between a device clock and the server clock when validating tokens and certificates.')}
+              'The permitted time difference between a device clock and the server clock when validating tokens and certificates.', DEFAULT_CONFIG.clockSkewToleranceSeconds)}
           </CardContent>
         </Card>
       )}
@@ -279,11 +292,11 @@ export default function DeploymentConfigPage(): React.ReactElement {
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-6">
             {numField('sasTokenUrlExpiryMinutes', 15, 1440, 'OS image download link expiry (minutes)',
-              'How long a generated download link for an operating system image stays valid before it must be regenerated.')}
+              'How long a generated download link for an operating system image stays valid before it must be regenerated.', DEFAULT_CONFIG.sasTokenUrlExpiryMinutes)}
             {numField('bootImageSasExpiryMinutes', 15, 1440, 'Boot image download link expiry (minutes)',
-              'How long a generated download link for a boot image stays valid before it must be regenerated.')}
+              'How long a generated download link for a boot image stays valid before it must be regenerated.', DEFAULT_CONFIG.bootImageSasExpiryMinutes)}
             {numField('sessionHistoryRetentionDays', 1, 3650, 'Session history retention (days)',
-              'How long completed session outcomes are kept for reporting before being purged.')}
+              'How long completed session outcomes are kept for reporting before being purged.', DEFAULT_CONFIG.sessionHistoryRetentionDays)}
           </CardContent>
         </Card>
       )}
