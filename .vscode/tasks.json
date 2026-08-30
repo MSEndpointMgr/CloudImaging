@@ -110,7 +110,12 @@
       "command": "dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj --configuration Release",
       "problemMatcher": ["$msCompile"],
       "group": "build",
-      "detail": "Build the CloudImaging.Client WPF app in Release configuration."
+      "detail": "Build the CloudImaging.Client WPF app in Release configuration.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
     },
     {
       "label": "Build: Media Builder WPF (Release)",
@@ -118,7 +123,12 @@
       "command": "dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj --configuration Release",
       "problemMatcher": ["$msCompile"],
       "group": "build",
-      "detail": "Build the CloudImaging.MediaBuilder WPF app in Release configuration."
+      "detail": "Build the CloudImaging.MediaBuilder WPF app in Release configuration.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
     },
     {
       "label": "Build: Client WPF (Debug)",
@@ -155,7 +165,12 @@
       "dependsOrder": "sequence",
       "problemMatcher": [],
       "group": "build",
-      "detail": "Build both the Cloud Imaging Client and Media Builder WPF apps in Debug configuration."
+      "detail": "Build both the Cloud Imaging Client and Media Builder WPF apps in Debug configuration.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
     },
     {
       "label": "Publish: Client WPF (self-contained win-x64)",
@@ -192,7 +207,12 @@
       "dependsOrder": "sequence",
       "problemMatcher": [],
       "group": "build",
-      "detail": "Publish both the Cloud Imaging Client and Media Builder WPF apps as self-contained win-x64 deployments."
+      "detail": "Publish both the Cloud Imaging Client and Media Builder WPF apps as self-contained win-x64 deployments.",
+      "options": {
+        "statusbar": {
+          "hide": true
+        }
+      }
     },
     {
       "label": "Test: .NET Solution",
@@ -255,7 +275,7 @@
       "detail": "Kill any process already listening on port 5173 (avoids Vite falling back to 5174, which breaks the registered SPA redirect URI), then start the Vite dev server. Requires VITE_ENTRA_CLIENT_ID / VITE_ENTRA_AUTHORITY in .env.",
       "options": {
         "statusbar": {
-          "hide" : false
+          "hide" : true
         }
       }
     },

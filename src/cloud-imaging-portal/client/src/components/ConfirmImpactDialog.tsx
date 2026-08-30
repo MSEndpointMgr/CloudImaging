@@ -43,11 +43,13 @@ export function ConfirmImpactDialog({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
             <AlertTriangle className="h-5 w-5" aria-hidden="true" />
           </div>
-          <div className="space-y-1.5">
-            <h2 id={titleId} className="text-sm font-semibold">
+          <div className="min-w-0 space-y-1.5">
+            <h2 id={titleId} className="text-sm font-semibold break-words">
               {copy.confirmTitle}
             </h2>
-            <p className="text-xs leading-relaxed text-muted-foreground">{copy.impact}</p>
+            {/* Impact copy interpolates operator-supplied names, so an unbroken token long enough
+                to outgrow the modal has to wrap rather than overflow it. */}
+            <p className="text-xs leading-relaxed text-muted-foreground break-words">{copy.impact}</p>
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">

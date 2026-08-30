@@ -199,13 +199,43 @@ public sealed partial class DiskFormatService
         using var results = searcher.Get();
         foreach (ManagementObject disk in results)
         {
-            if (disk["Size"] is string sizeStr && ulong.TryParse(sizeStr, out var bytes))
+            if (TryConvertDiskSizeBytes(disk["Size"], out var bytes))
             {
                 return (long)(bytes / (1024 * 1024));
             }
         }
 
         throw new InvalidOperationException($"Could not determine the size of disk {diskIndex}.");
+    }
+
+    /// <summary>
+    /// Converts a <c>Win32_DiskDrive.Size</c> property value to bytes.
+    ///
+    /// <para>
+    /// The property is a CIM <c>uint64</c>, which WMI surfaces as a boxed <see cref="ulong"/> on
+    /// some providers and as a decimal string on others, so neither representation can be assumed:
+    /// accepting only one of them fails formatting on every device that reports the other. The
+    /// value is also null on a disk whose geometry cannot be read at all.
+    /// </para>
+    /// </summary>
+    internal static bool TryConvertDiskSizeBytes(object? raw, out ulong bytes)
+    {
+        bytes = 0;
+        if (raw is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            bytes = Convert.ToUInt64(raw, CultureInfo.InvariantCulture);
+        }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            return false;
+        }
+
+        return bytes > 0;
     }
 
     /// <summary>

@@ -44,7 +44,7 @@ function initialsFrom(name: string): string {
 export function AccessDenied(): React.ReactElement {
   const { theme, toggleTheme } = useTheme();
   const { account, avatarUrl, signOut } = useAuth();
-  const { branding, logoUrl } = useBranding();
+  const { branding, logoUrl, isLoaded } = useBranding();
 
   const appName = branding.applicationName ?? 'Cloud Imaging';
   const displayName = account?.name ?? account?.username ?? 'Signed in';
@@ -58,7 +58,7 @@ export function AccessDenied(): React.ReactElement {
         aria-hidden="true"
         className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar"
       >
-        <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-5">
+        <div className={`flex h-14 items-center gap-2.5 border-b border-sidebar-border px-5 transition-opacity duration-200 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
           {logoUrl ? (
             <img src={logoUrl} alt="" className="h-8 w-8 rounded-lg object-contain" />
           ) : (

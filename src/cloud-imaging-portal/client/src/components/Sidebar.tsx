@@ -25,14 +25,16 @@ const navItems: NavItem[] = [
 
 export function Sidebar(): React.ReactElement {
   const { pathname } = useLocation();
-  const { branding, logoUrl } = useBranding();
+  const { branding, logoUrl, isLoaded } = useBranding();
   const { isAdministrator } = useAuth();
   const appName = branding.applicationName ?? 'Cloud Imaging';
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdministrator);
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="flex h-14 items-center gap-2.5 border-b border-sidebar-border px-5">
+      {/* Held back until branding resolves so a tenant with a custom logo never sees the built-in
+          one flash first. The slot keeps its size either way, so nothing shifts when it appears. */}
+      <div className={cn('flex h-14 items-center gap-2.5 border-b border-sidebar-border px-5 transition-opacity duration-200', isLoaded ? 'opacity-100' : 'opacity-0')}>
         {logoUrl ? (
           <img src={logoUrl} alt="" className="h-8 w-8 rounded-lg object-contain" />
         ) : (

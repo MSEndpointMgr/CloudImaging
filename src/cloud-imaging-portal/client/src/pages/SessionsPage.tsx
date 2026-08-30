@@ -92,6 +92,23 @@ function formatRegistered(iso: string): string {
   return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 }
 
+/**
+ * Label for the OS image picker. A native <select> popup sizes itself to its longest option and
+ * ignores the control's width, so an image whose catalog name is the raw uploaded file name (the
+ * default) would otherwise open a dropdown running off the side of the page. The operator-authored
+ * version leads and is never truncated, since that is what identifies the image and it is unique
+ * across the catalog.
+ */
+const MAX_IMAGE_OPTION_CHARS = 48;
+
+function imageOptionLabel(image: OsImage): string {
+  const name = image.name.replace(/\.(wim|esd|iso)$/i, '').trim();
+  const label = name && name !== image.version ? `${image.version} (${name})` : image.version;
+  return label.length > MAX_IMAGE_OPTION_CHARS
+    ? `${label.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
+    : label;
+}
+
 // ── Generic column sorting ────────────────────────────────────────────────
 
 type SortDir = 'asc' | 'desc';
@@ -484,7 +501,7 @@ function SessionsPageImpl(): React.ReactElement {
   const bulkAssignCopy: ConfirmImpactCopy = {
     confirmTitle: `Start imaging on ${coupled.length} device${coupled.length !== 1 ? 's' : ''}?`,
     impact: selectedImageLabel
-      ? `This assigns "${selectedImageLabel.name} ${selectedImageLabel.version}" to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`
+      ? `This assigns "${selectedImageLabel.version}" to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`
       : `This assigns the selected OS image to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`,
     confirmLabel: 'Start Imaging',
     destructive: false,
@@ -638,7 +655,7 @@ function SessionsPageImpl(): React.ReactElement {
                 >
                   <option value="">{hasOsImages ? 'Select OS image…' : 'No OS images uploaded'}</option>
                   {images.map(img => (
-                    <option key={img.imageId} value={img.imageId}>{img.name} {img.version}</option>
+                    <option key={img.imageId} value={img.imageId}>{imageOptionLabel(img)}</option>
                   ))}
                 </select>
                 <Button

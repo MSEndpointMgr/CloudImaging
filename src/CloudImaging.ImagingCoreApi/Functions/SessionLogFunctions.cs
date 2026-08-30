@@ -52,6 +52,13 @@ public sealed partial class SessionLogFunctions
         var fileName = $"client-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssZ}.log";
         var blobName = $"{sessionGuid}/{fileName}";
 
+        // Staging a blob into a container that does not exist fails the device's PUT with a bare
+        // 404, and the container is only declared in the deployment template, so any environment
+        // provisioned before it was added would silently lose every diagnostic log. Creating it
+        // here costs one call on a path only reached when imaging has already failed.
+        await _blobClient.GetBlobContainerClient(Container)
+            .CreateIfNotExistsAsync(cancellationToken: context.CancellationToken);
+
         var uploadUrl = await BlobSasUrlGenerator.GenerateAsync(
             _blobClient,
             Container,

@@ -23,7 +23,7 @@ interface BrandingConfig {
 
 interface BrandingContextValue {
   branding: BrandingConfig;
-  /** Object URL for the configured portal logo, or null when none is set. */
+  /** Data URL for the configured portal logo, or null when none is set. */
   logoUrl: string | null;
   isLoaded: boolean;
   /** Re-fetches branding (and the portal logo) from the backend. */
@@ -37,30 +37,70 @@ const BrandingContext = createContext<BrandingContextValue>({
   refresh: async () => { /* no-op default */ },
 });
 
+// ── Persisted branding chrome ────────────────────────────────────────────────
+// Branding is fetched asynchronously, so on every reload there is a window where the portal does
+// not yet know whether this tenant has a custom logo. Caching the resolved logo and application
+// name means a tenant that has configured a logo renders it immediately on every subsequent load,
+// and the built-in mark is only ever shown to a tenant that genuinely has no logo configured.
+//
+// The logo is held as a data URL rather than an object URL so it survives being written to
+// storage. Uploads are capped at 512 KB (see BrandingPage), which stays well inside the
+// localStorage quota even after base64 expansion.
+
+const BRANDING_CACHE_KEY = 'ci-portal-branding';
+
+interface CachedBranding {
+  applicationName?: string;
+  portalLogoDataUrl?: string;
+}
+
+function readCachedBranding(): CachedBranding | null {
+  try {
+    const raw = localStorage.getItem(BRANDING_CACHE_KEY);
+    return raw ? JSON.parse(raw) as CachedBranding : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedBranding(value: CachedBranding): void {
+  try { localStorage.setItem(BRANDING_CACHE_KEY, JSON.stringify(value)); }
+  catch { /* quota or private mode — the portal just falls back to fetching every load */ }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read logo.'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 /**
  * Applies branding at runtime by injecting CSS custom properties (T096, FR-038).
  * Wraps the application so all components can consume live branding values.
  */
 export function BrandingProvider({ children }: { children: React.ReactNode }): React.ReactElement {
-  const [branding, setBranding] = useState<BrandingConfig>({});
-  const [logoUrl, setLogoUrl]   = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const logoUrlRef = useRef<string | null>(null);
+  // Seeded synchronously from the last resolved branding so the correct logo is on screen from
+  // the very first paint, then reconciled with the backend by `load` below.
+  const cached = useRef(readCachedBranding()).current;
+  const [branding, setBranding] = useState<BrandingConfig>(
+    cached?.applicationName ? { applicationName: cached.applicationName } : {});
+  const [logoUrl, setLogoUrl]   = useState<string | null>(cached?.portalLogoDataUrl ?? null);
+  const [isLoaded, setIsLoaded] = useState(cached !== null);
   const { theme } = useTheme();
 
   /**
-   * Replaces the current logo object URL, revoking the previous one to avoid leaks, and keeps
-   * the browser tab favicon in sync with it — the portal logo is the only branding asset
-   * available for this, so it doubles as the favicon (falls back to the browser's default
-   * icon when no portal logo is configured, since there is no bundled default to fall back to).
+   * Publishes the resolved logo and keeps the browser tab favicon in sync with it — the portal
+   * logo is the only branding asset available for this, so it doubles as the favicon (falls back
+   * to the browser's default icon when no portal logo is configured, since there is no bundled
+   * default to fall back to).
    */
-  const setLogoObjectUrl = useCallback((url: string | null) => {
-    if (logoUrlRef.current) {
-      URL.revokeObjectURL(logoUrlRef.current);
-    }
-    logoUrlRef.current = url;
-    setLogoUrl(url);
-    applyFavicon(url);
+  const applyLogo = useCallback((dataUrl: string | null, applicationName?: string) => {
+    setLogoUrl(dataUrl);
+    applyFavicon(dataUrl);
+    writeCachedBranding({ applicationName, portalLogoDataUrl: dataUrl ?? undefined });
   }, []);
 
   const load = useCallback(async () => {
@@ -72,19 +112,16 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
 
         if (data.portalLogoBlobPath) {
           try {
-            // Stream the logo bytes through the backend (managed identity read, no SAS)
-            // and expose them as an ephemeral object URL for <img>.
+            // Stream the logo bytes through the backend (managed identity read, no SAS).
             const logoRes = await apiFetchWithRetry('/api/branding/portal-logo/content', { credentials: 'include' });
+            // A failed logo read leaves whatever is already on screen in place: the tenant does
+            // have a logo, so falling back to the built-in mark would be the wrong answer.
             if (logoRes.ok) {
-              setLogoObjectUrl(URL.createObjectURL(await logoRes.blob()));
-            } else {
-              setLogoObjectUrl(null);
+              applyLogo(await blobToDataUrl(await logoRes.blob()), data.applicationName);
             }
-          } catch {
-            setLogoObjectUrl(null);
-          }
+          } catch { /* keep the current logo */ }
         } else {
-          setLogoObjectUrl(null);
+          applyLogo(null, data.applicationName);
         }
       }
     } catch {
@@ -92,20 +129,22 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
     } finally {
       setIsLoaded(true);
     }
-  }, [setLogoObjectUrl]);
+  }, [applyLogo]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // On a first-ever visit there is no cached logo, so the chrome hides its mark until branding
+  // resolves rather than flashing the built-in one. `load` can never settle when its request is
+  // parked behind an interactive sign-in redirect, so reveal the default after a grace period
+  // rather than leaving the chrome blank indefinitely.
+  useEffect(() => {
+    const timer = setTimeout(() => setIsLoaded(true), 2_500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Re-applies branding CSS variables whenever the branding config or the active light/dark
   // theme changes, so surface-colour overrides pick the correct per-theme value immediately.
   useEffect(() => { applyBrandingCssVariables(branding, theme); }, [branding, theme]);
-
-  // Revoke the last object URL on unmount.
-  useEffect(() => () => {
-    if (logoUrlRef.current) {
-      URL.revokeObjectURL(logoUrlRef.current);
-    }
-  }, []);
 
   return (
     <BrandingContext.Provider value={{ branding, logoUrl, isLoaded, refresh: load }}>
