@@ -56,6 +56,16 @@ public sealed class UploadJob
     /// <summary>Operator-facing explanation when <see cref="Status"/> is <see cref="UploadJobStatus.Failed"/>.</summary>
     public string? FailureReason { get; init; }
 
+    /// <summary>Which phase of publishing the worker is currently in.</summary>
+    public UploadJobStage Stage { get; init; }
+
+    /// <summary>
+    /// Completion of the current <see cref="Stage"/>, 0-100. Verifying a 20 GB image takes minutes,
+    /// so the worker reports incremental progress here for the portal's progress bar instead of
+    /// leaving the operator staring at a bar pinned at 100% for the whole publish.
+    /// </summary>
+    public int ProgressPercent { get; init; }
+
     /// <summary>Id of the created catalog entry once <see cref="UploadJobStatus.Completed"/>.</summary>
     public Guid? ResultImageId { get; init; }
 

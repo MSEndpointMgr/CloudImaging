@@ -48,7 +48,6 @@ interface OsImage {
   imageId: string;
   name: string;
   version: string;
-  isActive: boolean;
 }
 
 // States for which the Client may have uploaded a diagnostic log on failure.
@@ -250,10 +249,11 @@ function SessionsPageImpl(): React.ReactElement {
   useEffect(() => {
     void (async () => {
       try {
+        // GET /api/images already returns only active catalog entries (OsImageRepository
+        // .ListActiveAsync), so nothing is filtered client-side here.
         const res = await apiFetch('/api/images', { credentials: 'include' });
         if (res.ok) {
-          const data = await res.json() as OsImage[];
-          setImages(data.filter(i => i.isActive));
+          setImages(await res.json() as OsImage[]);
         }
       } catch { /* leave list empty */ }
       finally { setImagesLoaded(true); }

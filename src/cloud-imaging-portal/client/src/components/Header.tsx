@@ -104,22 +104,25 @@ export function Header(): React.ReactElement {
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   My location
                 </label>
-                <select
-                  id="header-location-select"
-                  value={preferredLocationId ?? ''}
-                  onChange={e => {
-                    const selected = locations.find(l => l.locationId === e.target.value);
-                    void setPreferredLocation(selected ?? null);
-                  }}
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm"
-                >
-                  <option value="">No location set</option>
-                  {locations.map(loc => (
-                    <option key={loc.locationId} value={loc.locationId}>{loc.name}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    id="header-location-select"
+                    value={preferredLocationId ?? ''}
+                    onChange={e => {
+                      const selected = locations.find(l => l.locationId === e.target.value);
+                      void setPreferredLocation(selected ?? null);
+                    }}
+                    className="h-8 w-full appearance-none rounded-md border border-input bg-background px-2 pr-8 text-sm shadow-sm"
+                  >
+                    <option value="">No location set</option>
+                    {locations.map(loc => (
+                      <option key={loc.locationId} value={loc.locationId}>{loc.name}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                </div>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  Filters the Sessions page to devices registered at this location.
+                  Filters the Devices page to devices registered at this location.
                 </p>
               </div>
 

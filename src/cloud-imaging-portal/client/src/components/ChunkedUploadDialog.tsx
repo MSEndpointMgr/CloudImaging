@@ -20,7 +20,11 @@ import {
   type ChunkedUploadSession,
   type PersistedUploadState,
 } from '../services/chunkedUploadService.ts';
-import type { UploadJobStatus } from '../services/uploadJobService.ts';
+import {
+  uploadJobProgressPercent,
+  uploadJobStageLabel,
+  type UploadJob,
+} from '../services/uploadJobService.ts';
 
 interface ChunkedUploadDialogProps {
   open:    boolean;
@@ -50,9 +54,10 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   // already-staged blocks don't have to be re-uploaded.
   const [resumable, setResumable] = useState<PersistedUploadState | null>(null);
   const [resuming, setResuming]   = useState(false);
-  // Status reported by the background publish job. Publish returns 202 Accepted immediately and
-  // the verification/publish work happens server-side, so this is what the operator watches.
-  const [publishStatus, setPublishStatus] = useState<UploadJobStatus | null>(null);
+  // Progress reported by the background publish job. Publish returns 202 Accepted immediately and
+  // the verification/extraction/publish work happens server-side, so this is what the operator
+  // watches for what is by far the longest part of a multi-GB upload.
+  const [publishJob, setPublishJob] = useState<UploadJob | null>(null);
   const abortRef                  = useRef<AbortController | null>(null);
   const sessionRef                = useRef<ChunkedUploadSession | null>(null);
   const hashRunId                 = useRef(0);
@@ -69,7 +74,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const reset = () => {
     hashRunId.current++; // invalidate any in-flight hashing so it doesn't clobber state after reset
     setFile(null); setVersion(''); setSha256(''); setHashProgress(0); setProgress(0);
-    setState('idle'); setError(null); setResuming(false); setPublishStatus(null);
+    setState('idle'); setError(null); setResuming(false); setPublishJob(null);
     sessionRef.current = null;
   };
 
@@ -152,10 +157,10 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
       });
 
       setState('finalizing');
-      setPublishStatus(null);
+      setPublishJob(null);
       const result = await finalizeChunkedUpload(
         session, blockIds, file.name, version, sha256, file.size,
-        { onStatus: job => setPublishStatus(job.status) },
+        { onStatus: setPublishJob },
       );
       clearPersistedUpload();
       setResumable(null);
@@ -185,11 +190,9 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const stageLabel =
     state === 'hashing'    ? 'Computing checksum…'
     : state === 'uploading'  ? 'Uploading to storage…'
-    : state === 'finalizing'
-      ? (publishStatus === 'Processing'
-          ? 'Verifying checksum and publishing…'
-          : 'Queued for verification and publishing…')
+    : state === 'finalizing' ? uploadJobStageLabel(publishJob)
     : '';
+  const stagePercent = state === 'finalizing' ? uploadJobProgressPercent(publishJob) : progress;
   const duplicateVersion = isDuplicateVersion(version, existingVersions);
   const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion && !atCapacity;
 
@@ -292,10 +295,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
           </div>
 
           {(state === 'uploading' || state === 'finalizing') && (
-            <UploadProgressBar
-              percent={state === 'finalizing' ? 100 : progress}
-              label={stageLabel}
-            />
+            <UploadProgressBar percent={stagePercent} label={stageLabel} />
           )}
 
           {state === 'error' && (

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Security.Cryptography;
 using Azure;
@@ -42,6 +43,12 @@ public sealed partial class BootImageValidationService
 
     /// <summary>Number of leading bytes downloaded to inspect the file signature (covers the ISO check above).</summary>
     private const int SignatureCheckLength = 0x9001 + 5;
+
+    /// <summary>
+    /// Chunk size used when streaming a blob through the hash. Large enough that a 20 GB image is
+    /// paced by throughput rather than by per-read round trips to Blob Storage.
+    /// </summary>
+    private const int HashReadBufferBytes = 8 * 1024 * 1024;
 
     private readonly ILogger<BootImageValidationService> _logger;
 
@@ -132,6 +139,7 @@ public sealed partial class BootImageValidationService
         string expectedHash,
         string extension,
         IReadOnlyCollection<string> allowedExtensions,
+        IProgress<double>? progress = null,
         CancellationToken ct = default)
     {
         var signature = await ValidateSignatureAsync(blobClient, extension, allowedExtensions, ct);
@@ -148,7 +156,12 @@ public sealed partial class BootImageValidationService
         Stream download;
         try
         {
-            download = await blobClient.OpenReadAsync(cancellationToken: ct);
+            download = await blobClient.OpenReadAsync(
+                new Azure.Storage.Blobs.Models.BlobOpenReadOptions(allowModifications: false)
+                {
+                    BufferSize = HashReadBufferBytes,
+                },
+                ct);
         }
         catch (Exception ex)
         {
@@ -158,7 +171,7 @@ public sealed partial class BootImageValidationService
 
         await using (download)
         {
-            return await ValidateAsync(download, expectedHash, ct);
+            return await ValidateAsync(download, expectedHash, progress, ct);
         }
     }
 
@@ -182,9 +195,14 @@ public sealed partial class BootImageValidationService
     /// Computes the SHA-256 hash of the blob at <paramref name="blobStream"/> and compares it
     /// against <paramref name="expectedHash"/>. Returns the validation result.
     /// </summary>
+    /// <param name="progress">
+    /// Optional sink for 0.0-1.0 completion, reported as the stream is consumed. Only usable when
+    /// <paramref name="blobStream"/> reports a length; otherwise nothing is reported.
+    /// </param>
     public async Task<ValidationResult> ValidateAsync(
         Stream blobStream,
         string expectedHash,
+        IProgress<double>? progress = null,
         CancellationToken ct = default)
     {
         LogValidating(_logger, expectedHash[..Math.Min(12, expectedHash.Length)]);
@@ -192,8 +210,11 @@ public sealed partial class BootImageValidationService
         string actualHash;
         try
         {
-            var hashBytes = await SHA256.HashDataAsync(blobStream, ct);
-            actualHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+            actualHash = await ComputeSha256Async(blobStream, progress, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -211,6 +232,43 @@ public sealed partial class BootImageValidationService
 
         LogValidationPassed(_logger, actualHash[..12]);
         return new ValidationResult(true, actualHash, null);
+    }
+
+    /// <summary>
+    /// Hashes <paramref name="source"/> in explicit chunks rather than via <c>SHA256.HashDataAsync</c>,
+    /// which is opaque and cannot report how far through a multi-GB blob it is.
+    /// </summary>
+    private static async Task<string> ComputeSha256Async(
+        Stream source, IProgress<double>? progress, CancellationToken ct)
+    {
+        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = ArrayPool<byte>.Shared.Rent(HashReadBufferBytes);
+
+        // A non-seekable stream (or one of unknown size) simply gets no progress reports rather
+        // than fabricated ones.
+        long total = source.CanSeek ? source.Length : 0;
+        long read = 0;
+
+        try
+        {
+            int count;
+            while ((count = await source.ReadAsync(buffer.AsMemory(0, HashReadBufferBytes), ct)) > 0)
+            {
+                sha256.AppendData(buffer, 0, count);
+                read += count;
+                if (total > 0)
+                {
+                    progress?.Report((double)read / total);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        progress?.Report(1.0);
+        return Convert.ToHexString(sha256.GetHashAndReset()).ToLowerInvariant();
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Validating boot image SHA-256 (expected prefix={Prefix}).")]

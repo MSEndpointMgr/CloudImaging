@@ -20,7 +20,11 @@ import {
   uploadFileToBlobStorage,
   publishBootImageUpload,
 } from '../services/bootImageUploadService.ts';
-import type { UploadJobStatus } from '../services/uploadJobService.ts';
+import {
+  uploadJobProgressPercent,
+  uploadJobStageLabel,
+  type UploadJob,
+} from '../services/uploadJobService.ts';
 
 interface BootImage {
   bootImageId: string;
@@ -208,7 +212,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
   const [error, setError]     = useState<string | null>(null);
   // Publish returns 202 Accepted and the verification/publish work runs in a background job,
   // so this tracks what that job reports.
-  const [publishStatus, setPublishStatus] = useState<UploadJobStatus | null>(null);
+  const [publishJob, setPublishJob] = useState<UploadJob | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const busy = stage !== 'form';
@@ -237,10 +241,10 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
       await uploadFileToBlobStorage(session.uploadUrl, file, setPercent);
 
       setStage('publishing');
-      setPublishStatus(null);
+      setPublishJob(null);
       await publishBootImageUpload(
         { ...session, sha256Hash }, file.size, version.trim(),
-        { onStatus: job => setPublishStatus(job.status) },
+        { onStatus: setPublishJob },
       );
 
       onPublished();
@@ -253,11 +257,9 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
   const stageLabel =
     stage === 'hashing'    ? 'Computing checksum…'
     : stage === 'uploading'  ? 'Uploading to storage…'
-    : stage === 'publishing'
-      ? (publishStatus === 'Processing'
-          ? 'Verifying checksum and publishing…'
-          : 'Queued for verification and publishing…')
+    : stage === 'publishing' ? uploadJobStageLabel(publishJob)
     : '';
+  const stagePercent = stage === 'publishing' ? uploadJobProgressPercent(publishJob) : percent;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -335,7 +337,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
             </div>
           </div>
 
-          {busy && <UploadProgressBar percent={stage === 'publishing' ? 100 : percent} label={stageLabel} />}
+          {busy && <UploadProgressBar percent={stagePercent} label={stageLabel} />}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">

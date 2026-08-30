@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using DiscUtils;
 using DiscUtils.Iso9660;
@@ -44,7 +45,7 @@ public sealed partial class IsoExtractionService
     /// </summary>
     public Task<ExtractionResult> ExtractInstallImageAsync(
         Stream isoStream, Stream destination, CancellationToken ct) =>
-        ExtractInstallImageAsync(isoStream, (_, _) => Task.FromResult(destination), ct);
+        ExtractInstallImageAsync(isoStream, (_, _) => Task.FromResult(destination), null, ct);
 
     /// <summary>
     /// Locates <c>sources\install.wim</c> or <c>sources\install.esd</c> within the ISO readable
@@ -64,6 +65,7 @@ public sealed partial class IsoExtractionService
     public async Task<ExtractionResult> ExtractInstallImageAsync(
         Stream isoStream,
         Func<string, CancellationToken, Task<Stream>> openDestinationAsync,
+        IProgress<double>? progress,
         CancellationToken ct)
     {
         DiscFileSystem fileSystem;
@@ -91,7 +93,7 @@ public sealed partial class IsoExtractionService
                 var destination = await openDestinationAsync(Path.GetExtension(candidate), ct);
                 using (var entryStream = fileSystem.OpenFile(candidate, FileMode.Open, FileAccess.Read))
                 {
-                    await entryStream.CopyToAsync(destination, CopyBufferBytes, ct);
+                    await CopyWithProgressAsync(entryStream, destination, progress, ct);
                 }
 
                 await destination.FlushAsync(ct);
@@ -101,6 +103,44 @@ public sealed partial class IsoExtractionService
 
         return ExtractionResult.Failure(
             "No sources\\install.wim or sources\\install.esd was found inside the uploaded ISO.");
+    }
+
+    /// <summary>
+    /// Copies the entry in explicit chunks rather than via <c>Stream.CopyToAsync</c>, so the caller
+    /// can be told how far through a multi-GB extract it is while it runs.
+    /// </summary>
+    private static async Task CopyWithProgressAsync(
+        Stream source, Stream destination, IProgress<double>? progress, CancellationToken ct)
+    {
+        if (progress is null)
+        {
+            await source.CopyToAsync(destination, CopyBufferBytes, ct);
+            return;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(CopyBufferBytes);
+        long total = source.CanSeek ? source.Length : 0;
+        long copied = 0;
+
+        try
+        {
+            int count;
+            while ((count = await source.ReadAsync(buffer.AsMemory(0, CopyBufferBytes), ct)) > 0)
+            {
+                await destination.WriteAsync(buffer.AsMemory(0, count), ct);
+                copied += count;
+                if (total > 0)
+                {
+                    progress.Report((double)copied / total);
+                }
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        progress.Report(1.0);
     }
 
     /// <summary>

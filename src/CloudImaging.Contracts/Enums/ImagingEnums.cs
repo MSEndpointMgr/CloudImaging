@@ -75,3 +75,24 @@ public enum UploadJobStatus
     /// <summary>Rejected or errored. <c>FailureReason</c> explains why, for display in the portal.</summary>
     Failed
 }
+
+/// <summary>
+/// Which phase of the background publish the worker is currently in. Reported alongside
+/// <c>ProgressPercent</c> so the portal can show a real progress bar for work that takes minutes
+/// on a multi-GB image, rather than a bar pinned at 100%.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum UploadJobStage
+{
+    /// <summary>Accepted but not yet claimed by the worker.</summary>
+    Queued,
+
+    /// <summary>Re-computing the SHA-256 over the whole staged blob.</summary>
+    Verifying,
+
+    /// <summary>Streaming <c>sources\install.wim</c> out of an uploaded ISO. OS images only.</summary>
+    Extracting,
+
+    /// <summary>Copying the verified blob to its published path and writing the catalog entry.</summary>
+    Publishing
+}

@@ -88,6 +88,11 @@ export default {
           '60%': { opacity: '1', transform: 'scale(1.15)' },
           '100%': { opacity: '1', transform: 'scale(1)' },
         },
+        // Indeterminate sliding fill for the branded splash screen's progress bar.
+        'loading-bar': {
+          from: { transform: 'translateX(-100%)' },
+          to: { transform: 'translateX(250%)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -95,6 +100,7 @@ export default {
         'toast-in': 'toast-in 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
         'toast-out': 'toast-out 0.18s ease-in forwards',
         pop: 'pop 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
+        'loading-bar': 'loading-bar 0.35s ease-in-out infinite',
       },
     },
   },

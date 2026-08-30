@@ -3,6 +3,7 @@ import { InteractionType } from '@azure/msal-browser';
 import { useAuth, GRAPH_PHOTO_SCOPE } from '../context/authContext.tsx';
 import { getApiScope } from '../lib/msal.ts';
 import { AccessDenied } from './AccessDenied.tsx';
+import { LoadingScreen } from './LoadingScreen.tsx';
 
 interface Props {
   children: React.ReactNode;
@@ -36,8 +37,8 @@ export function ProtectedRoute({ children }: Props): React.ReactElement | null {
         </div>
       );
     }
-    // Auth redirect is in progress; render nothing until the redirect completes
-    return null;
+    // Auth redirect is in progress (initial sign-in or a silent token renewal round-trip)
+    return <LoadingScreen />;
   }
 
   if (!hasPortalAccess) {

@@ -67,7 +67,7 @@ public sealed class BootImageLifecycleIntegrationTests
 
         var data   = System.Text.Encoding.UTF8.GetBytes("test data");
         var stream = new System.IO.MemoryStream(data);
-        var result = await svc.ValidateAsync(stream, "wronghash000", CancellationToken.None);
+        var result = await svc.ValidateAsync(stream, "wronghash000", null, CancellationToken.None);
 
         result.Valid.Should().BeFalse("wrong hash must fail validation");
         result.FailureReason.Should().ContainEquivalentOf("mismatch",
@@ -85,7 +85,7 @@ public sealed class BootImageLifecycleIntegrationTests
             System.Security.Cryptography.SHA256.HashData(data)).ToLowerInvariant();
 
         var stream = new System.IO.MemoryStream(data);
-        var result = await svc.ValidateAsync(stream, expected, CancellationToken.None);
+        var result = await svc.ValidateAsync(stream, expected, null, CancellationToken.None);
 
         result.Valid.Should().BeTrue("matching hash must pass validation");
         result.ActualHash.Should().Be(expected);

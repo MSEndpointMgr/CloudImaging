@@ -7,6 +7,7 @@ import { ThemeProvider } from './context/themeContext.tsx';
 import { ToastProvider } from './context/toastContext.tsx';
 import { UserPreferencesProvider } from './context/userPreferencesContext.tsx';
 import { ProtectedRoute } from './components/ProtectedRoute.tsx';
+import { LoadingScreen } from './components/LoadingScreen.tsx';
 
 // Lazy page stubs. Each section is a placeholder until the feature pages are built
 import { Suspense, lazy } from 'react';
@@ -43,7 +44,7 @@ export default function App(): React.ReactElement {
               <UserPreferencesProvider>
               <ToastProvider>
                 <ProtectedRoute>
-                  <Suspense fallback={<div className="p-6 text-muted-foreground">Loading…</div>}>
+                  <Suspense fallback={<LoadingScreen />}>
                     <Routes>
                       <Route element={<AppShell />}>
                         <Route index                   element={<DashboardPage />} />

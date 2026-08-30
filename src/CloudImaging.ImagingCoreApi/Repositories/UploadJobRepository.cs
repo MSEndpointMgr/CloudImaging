@@ -120,6 +120,9 @@ public sealed class UploadJobRepository
         entity["LeaseExpiresAt"] = now.Add(leaseDuration);
         entity["AttemptCount"] = (entity.GetInt32("AttemptCount") ?? 0) + 1;
         entity["UpdatedAt"] = now;
+        // A reclaimed job restarts its work from the beginning, so its reported progress must too.
+        entity["Stage"] = UploadJobStage.Verifying.ToString();
+        entity["ProgressPercent"] = 0;
 
         try
         {
@@ -131,6 +134,39 @@ public sealed class UploadJobRepository
         }
 
         return FromEntity(entity);
+    }
+
+    /// <summary>
+    /// Records how far the worker has got through <paramref name="stage"/>, and renews the claim
+    /// at the same time so a long publish that is demonstrably still making progress can never have
+    /// its lease lapse underneath it.
+    ///
+    /// <para>
+    /// Uses a merge (not a replace) with an unconditional ETag: this races only with itself and the
+    /// terminal write, and progress is advisory, so losing one update is preferable to failing a
+    /// publish over a concurrency conflict on a field nothing reads back.
+    /// </para>
+    /// </summary>
+    public async Task ReportProgressAsync(
+        string uploadId,
+        UploadJobStage stage,
+        int progressPercent,
+        TimeSpan leaseRenewal,
+        CancellationToken ct = default)
+    {
+        var entity = new TableEntity(Partition, uploadId)
+        {
+            ["Stage"] = stage.ToString(),
+            ["ProgressPercent"] = Math.Clamp(progressPercent, 0, 100),
+            ["UpdatedAt"] = DateTimeOffset.UtcNow,
+            ["LeaseExpiresAt"] = DateTimeOffset.UtcNow.Add(leaseRenewal),
+        };
+
+        try
+        {
+            await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404) { /* purged or already terminal */ }
     }
 
     public async Task CompleteAsync(string uploadId, Guid resultImageId, CancellationToken ct = default) =>
@@ -153,6 +189,11 @@ public sealed class UploadJobRepository
         entity["FailureReason"] = failureReason;
         entity["ResultImageId"] = resultImageId?.ToString();
         entity["UpdatedAt"] = DateTimeOffset.UtcNow;
+        entity["Stage"] = UploadJobStage.Publishing.ToString();
+        // Pin the bar wherever it got to: full on success, frozen at the failure point otherwise.
+        entity["ProgressPercent"] = status == UploadJobStatus.Completed
+            ? 100
+            : entity.GetInt32("ProgressPercent") ?? 0;
         // Clearing the lease keeps a terminal job from ever looking reclaimable to the worker.
         entity["LeaseExpiresAt"] = null;
 
@@ -199,6 +240,9 @@ public sealed class UploadJobRepository
     private static UploadJobKind ParseKind(string? value) =>
         Enum.TryParse<UploadJobKind>(value, out var parsed) ? parsed : UploadJobKind.OsImage;
 
+    private static UploadJobStage ParseStage(string? value) =>
+        Enum.TryParse<UploadJobStage>(value, out var parsed) ? parsed : UploadJobStage.Queued;
+
     private static TableEntity ToEntity(UploadJob j) => new(Partition, j.UploadId)
     {
         ["Kind"] = j.Kind.ToString(),
@@ -215,6 +259,8 @@ public sealed class UploadJobRepository
         ["ResultImageId"] = j.ResultImageId?.ToString(),
         ["AttemptCount"] = j.AttemptCount,
         ["LeaseExpiresAt"] = j.LeaseExpiresAt,
+        ["Stage"] = j.Stage.ToString(),
+        ["ProgressPercent"] = j.ProgressPercent,
     };
 
     private static UploadJob FromEntity(TableEntity e) => new()
@@ -234,5 +280,7 @@ public sealed class UploadJobRepository
         ResultImageId = Guid.TryParse(e.GetString("ResultImageId"), out var id) ? id : null,
         AttemptCount = e.GetInt32("AttemptCount") ?? 0,
         LeaseExpiresAt = e.GetDateTimeOffset("LeaseExpiresAt"),
+        Stage = ParseStage(e.GetString("Stage")),
+        ProgressPercent = e.GetInt32("ProgressPercent") ?? 0,
     };
 }

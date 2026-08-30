@@ -40,6 +40,13 @@ public sealed partial class UploadPublishService
     /// </summary>
     private const int BlobWriteBufferBytes = 8 * 1024 * 1024;
 
+    /// <summary>
+    /// Lease extension written with every progress report. Must stay in step with
+    /// <c>UploadJobFunctions.LeaseDuration</c>: reporting progress renews the claim, so a publish
+    /// that is visibly still working can never have its job stolen by the next timer tick.
+    /// </summary>
+    private static readonly TimeSpan LeaseRenewal = TimeSpan.FromMinutes(60);
+
     private readonly UploadJobRepository _jobRepo;
     private readonly OsImageRepository _osImageRepo;
     private readonly BootImageRepository _bootImageRepo;
@@ -116,8 +123,11 @@ public sealed partial class UploadPublishService
         var extension = Path.GetExtension(job.BlobName);
         var name = job.Name ?? job.Version;
 
+        var progress = CreateReporter(job, ct);
+        await progress.BeginStageAsync(UploadJobStage.Verifying);
+
         var validation = await _validator.ValidateAsync(
-            staged, job.Sha256Hash, extension, BootImageValidationService.OsImageExtensions, ct);
+            staged, job.Sha256Hash, extension, BootImageValidationService.OsImageExtensions, progress, ct);
 
         if (!validation.Valid)
         {
@@ -135,7 +145,9 @@ public sealed partial class UploadPublishService
         // instead of the raw ISO. Every other extension (.wim/.esd) publishes as-is below.
         if (string.Equals(extension, ".iso", StringComparison.OrdinalIgnoreCase))
         {
-            var isoResult = await ExtractAndPublishIsoAsync(container, staged, name, job.Version, ct);
+            await progress.BeginStageAsync(UploadJobStage.Extracting);
+
+            var isoResult = await ExtractAndPublishIsoAsync(container, staged, name, job.Version, progress, ct);
             await staged.DeleteIfExistsAsync(cancellationToken: ct);
 
             if (!isoResult.Found)
@@ -151,9 +163,11 @@ public sealed partial class UploadPublishService
             finalHash = isoResult.Hash!;
             finalSizeBytes = isoResult.SizeBytes;
             LogIsoExtracted(_logger, job.BlobName, isoResult.SourcePath!, finalSizeBytes);
+            await progress.BeginStageAsync(UploadJobStage.Publishing);
         }
         else
         {
+            await progress.BeginStageAsync(UploadJobStage.Publishing);
             finalBlobName =
                 $"published/{Guid.NewGuid():N}/{Path.GetFileNameWithoutExtension(name).Replace(' ', '-')}-{job.Version.Replace(' ', '-')}{extension}";
             await MoveBlobAsync(container, staged, finalBlobName, ct);
@@ -198,8 +212,11 @@ public sealed partial class UploadPublishService
         var staged = container.GetBlobClient(job.BlobName);
         var extension = Path.GetExtension(job.BlobName);
 
+        var progress = CreateReporter(job, ct);
+        await progress.BeginStageAsync(UploadJobStage.Verifying);
+
         var validation = await _validator.ValidateAsync(
-            staged, job.Sha256Hash, extension, BootImageValidationService.WimOnlyExtensions, ct);
+            staged, job.Sha256Hash, extension, BootImageValidationService.WimOnlyExtensions, progress, ct);
 
         if (!validation.Valid)
         {
@@ -207,6 +224,8 @@ public sealed partial class UploadPublishService
             await _jobRepo.FailAsync(job.UploadId, validation.FailureReason ?? "Checksum validation failed.", ct);
             return;
         }
+
+        await progress.BeginStageAsync(UploadJobStage.Publishing);
 
         var finalBlobName = $"published/{Guid.NewGuid():N}/{job.Version.Replace(' ', '-')}{extension}";
         await MoveBlobAsync(container, staged, finalBlobName, ct);
@@ -234,8 +253,11 @@ public sealed partial class UploadPublishService
         var staged = container.GetBlobClient(job.BlobName);
         var extension = Path.GetExtension(job.BlobName);
 
+        var progress = CreateReporter(job, ct);
+        await progress.BeginStageAsync(UploadJobStage.Verifying);
+
         var validation = await _validator.ValidateAsync(
-            staged, job.Sha256Hash, extension, BootImageValidationService.WimOnlyExtensions, ct);
+            staged, job.Sha256Hash, extension, BootImageValidationService.WimOnlyExtensions, progress, ct);
 
         if (!validation.Valid)
         {
@@ -243,6 +265,8 @@ public sealed partial class UploadPublishService
             await _jobRepo.FailAsync(job.UploadId, validation.FailureReason ?? "Checksum validation failed.", ct);
             return;
         }
+
+        await progress.BeginStageAsync(UploadJobStage.Publishing);
 
         var finalBlobName = $"published/{Guid.NewGuid():N}/winre-{job.Version.Replace(' ', '-')}{extension}";
         await MoveBlobAsync(container, staged, finalBlobName, ct);
@@ -262,6 +286,9 @@ public sealed partial class UploadPublishService
     }
 
     // ── Blob helpers ──────────────────────────────────────────────────────────
+
+    private UploadJobProgressReporter CreateReporter(UploadJob job, CancellationToken ct) =>
+        new(_jobRepo, job.UploadId, LeaseRenewal, ct);
 
     /// <summary>
     /// Copies the staged blob to its published path and only then deletes the source.
@@ -315,6 +342,7 @@ public sealed partial class UploadPublishService
         BlockBlobClient stagedBlob,
         string name,
         string version,
+        IProgress<double>? progress,
         CancellationToken ct)
     {
         using var sha256 = SHA256.Create();
@@ -342,7 +370,7 @@ public sealed partial class UploadPublishService
                             innerCt);
                         hashingStream = new CryptoStream(blobStream, sha256, CryptoStreamMode.Write, leaveOpen: true);
                         return hashingStream;
-                    }, ct);
+                    }, progress, ct);
                 }
                 finally
                 {

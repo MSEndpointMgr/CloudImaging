@@ -12,6 +12,9 @@ import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
 
 export type UploadJobStatus = 'Pending' | 'Processing' | 'Completed' | 'Failed';
 
+/** Which phase of the background publish the worker is in; drives the operator-facing label. */
+export type UploadJobStage = 'Queued' | 'Verifying' | 'Extracting' | 'Publishing';
+
 export interface UploadJob {
   uploadId: string;
   kind: 'OsImage' | 'BootImage' | 'RecoveryImage';
@@ -27,6 +30,37 @@ export interface UploadJob {
   failureReason?: string | null;
   resultImageId?: string | null;
   attemptCount: number;
+  stage: UploadJobStage;
+  /** Completion of `stage`, 0-100, reported incrementally by the worker. */
+  progressPercent: number;
+}
+
+const STAGE_LABELS: Record<UploadJobStage, string> = {
+  Queued: 'Queued for verification and publishing…',
+  Verifying: 'Verifying checksum…',
+  Extracting: 'Extracting install image from ISO…',
+  Publishing: 'Publishing to catalog…',
+};
+
+/**
+ * Operator-facing label for the publish phase. Falls back to the queued wording while the job
+ * exists but the worker has not claimed it yet, and for any stage an older backend does not report.
+ */
+export function uploadJobStageLabel(job: UploadJob | null): string {
+  if (!job) return STAGE_LABELS.Queued;
+  if (job.status === 'Pending') return STAGE_LABELS.Queued;
+  return STAGE_LABELS[job.stage] ?? STAGE_LABELS.Queued;
+}
+
+/**
+ * Percent to show for the publish phase. A completed job always reads 100 even if the last
+ * progress report was lost, and a job the worker has not started yet reads 0 rather than
+ * inheriting the upload stage's full bar.
+ */
+export function uploadJobProgressPercent(job: UploadJob | null): number {
+  if (!job) return 0;
+  if (job.status === 'Completed') return 100;
+  return Math.min(100, Math.max(0, Math.round(job.progressPercent ?? 0)));
 }
 
 const POLL_INTERVAL_MS = 3_000;
