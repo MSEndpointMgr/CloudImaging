@@ -5,6 +5,9 @@ import {
   Monitor,
   HardDrive,
   Disc,
+  LifeBuoy,
+  BarChart3,
+  MapPin,
   Palette,
   Settings,
   CheckCircle2,
@@ -142,7 +145,7 @@ interface NavCard {
 const NAV_CARDS: NavCard[] = [
   {
     to: '/sessions',
-    title: 'Sessions',
+    title: 'Devices',
     description: 'Monitor and manage active imaging sessions. Couple devices, assign images, and track progress.',
     icon: <Monitor size={18} />,
   },
@@ -157,6 +160,26 @@ const NAV_CARDS: NavCard[] = [
     title: 'Boot Images',
     description: 'WinPE boot media published from the Media Builder app.',
     icon: <Disc size={18} />,
+  },
+  {
+    to: '/recovery-images',
+    title: 'Recovery Images',
+    description: 'Custom Windows Recovery Environment (WinRE) images published for deployment.',
+    icon: <LifeBuoy size={18} />,
+  },
+  {
+    to: '/reports',
+    title: 'Reports',
+    description: 'Session outcomes, failure details, and image inventory across the fleet.',
+    icon: <BarChart3 size={18} />,
+    adminOnly: true,
+  },
+  {
+    to: '/locations',
+    title: 'Locations',
+    description: 'Manage the site catalog devices are registered against.',
+    icon: <MapPin size={18} />,
+    adminOnly: true,
   },
   {
     to: '/branding',
@@ -239,11 +262,13 @@ export default function DashboardPage(): React.ReactElement {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {STAT_CARDS.map(card => {
           const trend = card.showTrend ? trends?.[card.key] : undefined;
-          // A trend pill comparing against zero is meaningless (e.g. "0%"/"New" next to a 0 count) —
-          // only show it once there's an actual count to contextualize.
-          const showPill = trend != null && !!stats && stats[card.key] > 0;
-          const badgeVariant = trend?.changePct == null ? 'muted' : trend.changePct > 0 ? 'success' : trend.changePct < 0 ? 'negative' : 'muted';
-          const TrendIcon = trend?.changePct == null || trend.changePct === 0 ? Minus : trend.changePct > 0 ? TrendingUp : TrendingDown;
+          const changePct = trend?.changePct ?? null;
+          // A trend pill comparing against zero is meaningless (e.g. "0%" next to a 0 count), and
+          // a null changePct means there's no previous-window baseline to compute a percentage
+          // from at all — show the pill only when there's an actual number to report.
+          const showPill = trend != null && !!stats && stats[card.key] > 0 && changePct !== null;
+          const badgeVariant = changePct == null ? 'muted' : changePct > 0 ? 'success' : changePct < 0 ? 'negative' : 'muted';
+          const TrendIcon = changePct == null || changePct === 0 ? Minus : changePct > 0 ? TrendingUp : TrendingDown;
           return (
             <Link key={card.key} to={card.to} className="group block">
               <Card className="transition-colors hover:border-primary/50 hover:bg-accent/40">
@@ -258,10 +283,10 @@ export default function DashboardPage(): React.ReactElement {
                     ) : (
                       <Skeleton className="h-9 w-16" />
                     )}
-                    {showPill && trend && (
+                    {showPill && (
                       <Badge variant={badgeVariant} title={`vs. previous ${TREND_DAYS} days`}>
                         <TrendIcon size={11} />
-                        {trend.changePct == null ? 'New' : `${Math.abs(trend.changePct)}%`}
+                        {`${Math.abs(changePct ?? 0)}%`}
                       </Badge>
                     )}
                   </div>

@@ -168,7 +168,11 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                     wimPath,
                     hash,
                     diskFormat.WindowsVolume,
-                    onProgress: pct => _progress.OverallPercent = 55 + (int)(pct * 0.25), // 55–80%
+                    onProgress: pct =>
+                    {
+                        _progress.OverallPercent = 55 + (int)(pct * 0.25); // 55–80%
+                        _ = reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, pct, ct: ct);
+                    },
                     ct: ct);
             }
             catch (Exception ex)
@@ -251,7 +255,11 @@ public sealed class ImagingWorkflowViewModel : IDisposable
                     expectedHash: recoveryInfo.Sha256Hash,
                     sasUrl: recoveryInfo.SasTokenUrl,
                     destinationPath: recoveryDestinationPath,
-                    onProgress: pct => _progress.OverallPercent = 85 + (int)(pct * 0.10), // 85–95%
+                    onProgress: pct =>
+                    {
+                        _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85–95%
+                        _ = reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, pct, ct: ct);
+                    },
                     ct: ct);
             }
             catch (Exception ex)
