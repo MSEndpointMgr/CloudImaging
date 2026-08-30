@@ -56,8 +56,8 @@ test.describe('Cloud Imaging Portal: Critical E2E Paths', () => {
   test('sessions page: filter tabs are visible and functional', async ({ page }) => {
     await gotoSessions(page);
 
-    // Both primary tabs should be present
-    for (const label of ['Pending', 'Monitor']) {
+    // All primary tabs should be present
+    for (const label of ['Pending', 'Monitor', 'Failed']) {
       await expect(page.getByRole('tab', { name: label }).or(
         page.getByText(label, { exact: true })
       )).toBeVisible();

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using CloudImaging.ImagingCoreApi.Services;
@@ -87,14 +88,24 @@ public sealed partial class SessionLogFunctions
         var prefix = $"{sessionGuid}/";
         var items = new List<object>();
 
-        await foreach (var blob in container.GetBlobsAsync(prefix: prefix, cancellationToken: context.CancellationToken))
+        try
         {
-            items.Add(new
+            await foreach (var blob in container.GetBlobsAsync(prefix: prefix, cancellationToken: context.CancellationToken))
             {
-                fileName = blob.Name[prefix.Length..],
-                sizeBytes = blob.Properties.ContentLength ?? 0,
-                uploadedAt = blob.Properties.LastModified,
-            });
+                items.Add(new
+                {
+                    fileName = blob.Name[prefix.Length..],
+                    sizeBytes = blob.Properties.ContentLength ?? 0,
+                    uploadedAt = blob.Properties.LastModified,
+                });
+            }
+        }
+        catch (RequestFailedException ex) when (ex.Status == (int)HttpStatusCode.NotFound)
+        {
+            // The container is created lazily on the first log upload, so "no container" and
+            // "no logs for this session" are the same answer to the portal: an empty list, not a
+            // 500 that surfaces as "Could not retrieve logs for this session".
+            LogContainerMissing(_logger, sessionGuid);
         }
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -142,4 +153,7 @@ public sealed partial class SessionLogFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Session log upload URL issued for session {SessionId}: {FileName}.")]
     private static partial void LogUploadUrlIssued(ILogger logger, Guid sessionId, string fileName);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "No session-logs container exists yet; returning no logs for session {SessionId}.")]
+    private static partial void LogContainerMissing(ILogger logger, Guid sessionId);
 }

@@ -50,22 +50,24 @@ interface OsImage {
   version: string;
 }
 
-// States for which the Client may have uploaded a diagnostic log on failure.
+// States for which the Client may have uploaded a diagnostic log on failure. These get their own
+// tab rather than sitting alongside healthy sessions in Monitor.
 const FAILED_STATES = new Set(['SessionFailed', 'SessionNotAuthorized']);
 
-type DeviceView = 'pending' | 'monitor';
+type DeviceView = 'pending' | 'monitor' | 'failed';
 
 // Available: newly-registered sessions awaiting a technician to enter the device's passcode.
 const AVAILABLE_STATES = new Set(['SessionInit', 'SessionAllowed']);
 // Coupled: passcode has been matched — eligible for OS image selection.
 const COUPLED_STATES = new Set(['SessionAssigned']);
-// Monitor: devices whose imaging has started, completed, failed, or were never authorized.
-const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress', 'SessionCompleted', 'SessionFailed', 'SessionNotAuthorized']);
+// Monitor: devices that were coupled and then had imaging started, through to completion.
+const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress', 'SessionCompleted']);
 
 function deriveCounts(sessions: Session[]) {
   return {
     pending: sessions.filter(s => AVAILABLE_STATES.has(s.state) || COUPLED_STATES.has(s.state)).length,
     monitor: sessions.filter(s => MONITOR_STATES.has(s.state)).length,
+    failed:  sessions.filter(s => FAILED_STATES.has(s.state)).length,
   };
 }
 
@@ -242,9 +244,16 @@ function SessionsPageImpl(): React.ReactElement {
   // so technicians can't miss it while coupling devices ahead of an image being ready.
   const hasOsImages = images.length > 0;
 
-  const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'state' | 'registered'>('registered');
-  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'registered'>('registered');
-  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'state' | 'progress' | 'step'>('state');
+  const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>('registered');
+  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>('registered');
+  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'state' | 'progress' | 'step'>('state');
+  const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>('registered');
+
+  // Uploaded diagnostic logs per failed session, looked up once the Failed tab is opened. A
+  // session only has a log if the Client managed a best-effort upload before reboot, so the
+  // download button stays disabled until we know there is actually something to download.
+  const [sessionLogs, setSessionLogs] = useState<Record<string, SessionLogEntry[]>>({});
+  const logLookupsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     void (async () => {
@@ -261,18 +270,11 @@ function SessionsPageImpl(): React.ReactElement {
   }, []);
 
   const handleDownloadLog = useCallback(async (sessionId: string) => {
+    const entries = sessionLogs[sessionId];
+    if (!entries || entries.length === 0) return;
+
     setDownloadingLog(sessionId);
     try {
-      const listRes = await apiFetch(`/api/sessions/${sessionId}/logs`, { credentials: 'include' });
-      if (!listRes.ok) {
-        notify({ status: 'error', title: 'Could not retrieve logs for this session.' });
-        return;
-      }
-      const entries = await listRes.json() as SessionLogEntry[];
-      if (entries.length === 0) {
-        notify({ status: 'info', title: 'No log was uploaded for this session.' });
-        return;
-      }
       const latest = [...entries].sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))[0];
       const urlRes = await apiFetch(
         `/api/sessions/${sessionId}/logs/${encodeURIComponent(latest.fileName)}/download-url`,
@@ -288,7 +290,7 @@ function SessionsPageImpl(): React.ReactElement {
     } finally {
       setDownloadingLog(null);
     }
-  }, [notify]);
+  }, [notify, sessionLogs]);
 
   const fetchSessions = useCallback(async (data?: Session[]) => {
     setLoading(true);
@@ -339,6 +341,7 @@ function SessionsPageImpl(): React.ReactElement {
     {
       serial:     (s: Session) => s.deviceSerialNumber,
       device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location:   (s: Session) => s.locationName ?? '',
       state:      (s: Session) => stateLabel(s.state),
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
@@ -349,6 +352,7 @@ function SessionsPageImpl(): React.ReactElement {
     {
       serial:     (s: Session) => s.deviceSerialNumber,
       device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location:   (s: Session) => s.locationName ?? '',
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
   ), [locationFiltered, coupledSort]);
@@ -358,13 +362,53 @@ function SessionsPageImpl(): React.ReactElement {
     {
       serial:   (s: Session) => s.deviceSerialNumber,
       device:   (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location: (s: Session) => s.locationName ?? '',
       state:    (s: Session) => stateLabel(s.state),
       progress: (s: Session) => s.overallProgressPercent,
       step:     (s: Session) => s.currentStep ?? '',
     },
   ), [locationFiltered, monitorSort]);
+  const failed = useMemo(() => sortRows(
+    locationFiltered.filter(s => FAILED_STATES.has(s.state)),
+    failedSort,
+    {
+      serial:     (s: Session) => s.deviceSerialNumber,
+      device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location:   (s: Session) => s.locationName ?? '',
+      state:      (s: Session) => stateLabel(s.state),
+      step:       (s: Session) => s.currentStep ?? '',
+      registered: (s: Session) => new Date(s.createdAt).getTime(),
+    },
+  ), [locationFiltered, failedSort]);
+
+  // Look up log availability only for the failed sessions currently on screen, and only once per
+  // session, so opening the tab costs one request per failed device rather than one per poll.
+  useEffect(() => {
+    if (view !== 'failed') return;
+    const pending = failed.filter(s => !logLookupsRef.current.has(s.sessionId));
+    if (pending.length === 0) return;
+
+    pending.forEach(s => logLookupsRef.current.add(s.sessionId));
+    void (async () => {
+      const results = await Promise.all(pending.map(async s => {
+        try {
+          const res = await apiFetch(`/api/sessions/${s.sessionId}/logs`, { credentials: 'include' });
+          return [s.sessionId, res.ok ? await res.json() as SessionLogEntry[] : []] as const;
+        } catch {
+          // Treat an unreachable lookup as "no log", which leaves the button disabled rather
+          // than offering a download that would fail on click.
+          return [s.sessionId, [] as SessionLogEntry[]] as const;
+        }
+      }));
+      setSessionLogs(prev => ({ ...prev, ...Object.fromEntries(results) }));
+    })();
+  }, [view, failed]);
 
   const handleRefresh = () => {
+    // A log is uploaded best-effort just after the failure, so a session that had none a moment
+    // ago may have one now; drop those cached "no log" answers and let them be looked up again.
+    logLookupsRef.current = new Set(
+      [...logLookupsRef.current].filter(id => (sessionLogs[id]?.length ?? 0) > 0));
     void (async () => { const data = await fetchSessions(); scheduleNextPoll(data); })();
   };
 
@@ -453,6 +497,7 @@ function SessionsPageImpl(): React.ReactElement {
           {([
             { key: 'pending', label: 'Pending', count: counts.pending },
             { key: 'monitor', label: 'Monitor', count: counts.monitor },
+            { key: 'failed',  label: 'Failed',  count: counts.failed },
           ] as const).map((tab) => {
             const isActive = tab.key === view;
             return (
@@ -500,7 +545,13 @@ function SessionsPageImpl(): React.ReactElement {
         </div>
       </div>
 
-      <p className="text-sm text-muted-foreground">Enter a device&apos;s passcode to couple it, assign an OS image to coupled devices, and monitor deployment progress and status in real time.</p>
+      <p className="text-sm text-muted-foreground">
+        {view === 'pending'
+          ? 'Enter a device\u2019s passcode to couple it, then assign an OS image to start imaging.'
+          : view === 'monitor'
+            ? 'Deployment progress and status for devices that have started imaging, updated in real time.'
+            : 'Devices whose imaging failed or that were never authorized. Download the diagnostic log where the Client managed to upload one.'}
+      </p>
 
       {view === 'pending' ? (
         <div className="space-y-5">
@@ -525,7 +576,7 @@ function SessionsPageImpl(): React.ReactElement {
                 <TableRow className="hover:bg-transparent">
                   <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[18%]" />
                   <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[24%]" />
-                  <TableHead className="w-[16%]">Location</TableHead>
+                  <SortableHead label="Location" sortKey="location" sort={availableSort} onSort={toggleAvailableSort} className="w-[16%]" />
                   <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[12%]" />
                   <TableHead className="w-[13%]">Passcode</TableHead>
                   <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[13%]" />
@@ -605,7 +656,7 @@ function SessionsPageImpl(): React.ReactElement {
                 <TableRow className="hover:bg-transparent">
                   <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[22%]" />
                   <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[28%]" />
-                  <TableHead className="w-[18%]">Location</TableHead>
+                  <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="w-[18%]" />
                   <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[20%]" />
                   {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
                       The other columns above intentionally leave headroom (don't sum to 100%) so this
@@ -648,20 +699,19 @@ function SessionsPageImpl(): React.ReactElement {
             </Table>
           </div>
         </div>
-      ) : (
+      ) : view === 'monitor' ? (
         <div className="rounded-md border border-border overflow-hidden">
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
-                <TableHead className="w-[13%]">Location</TableHead>
-                {/* State and Actions are fixed pixel widths (not %) so they never shrink below the
-                    space their badge/button needs — the other columns share whatever space remains. */}
+                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[24%]" />
+                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
+                {/* State is a fixed pixel width (not %) so it never shrinks below the space its
+                    badge needs — the other columns share whatever space remains. */}
                 <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[140px]" />
-                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[17%]" />
-                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
-                <TableHead className="w-[150px]">Actions</TableHead>
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -674,16 +724,15 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                    <TableCell><Skeleton className="h-8 w-24" /></TableCell>
                   </TableRow>
                 ))
               ) : monitor.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0">
+                  <TableCell colSpan={6} className="p-0">
                     <EmptyState
                       icon={Activity}
                       title="No imaging activity yet"
-                      description="Sessions will appear here once imaging starts."
+                      description="Devices appear here once you couple them and start imaging."
                     />
                   </TableCell>
                 </TableRow>
@@ -704,20 +753,78 @@ function SessionsPageImpl(): React.ReactElement {
                     ) : <span className="text-muted-foreground">-</span>}
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
-                  <TableCell>
-                    {FAILED_STATES.has(s.state) && (
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border overflow-hidden">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="w-[16%]" />
+                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="w-[22%]" />
+                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="w-[15%]" />
+                <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="w-[140px]" />
+                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="w-[17%]" />
+                <SortableHead label="Registered" sortKey="registered" sort={failedSort} onSort={toggleFailedSort} className="w-[14%]" />
+                <TableHead className="w-[150px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && sessions.length === 0 ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={`fail-skeleton-${i}`} className="hover:bg-transparent">
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-32" /></TableCell>
+                  </TableRow>
+                ))
+              ) : failed.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={7} className="p-0">
+                    <EmptyState
+                      icon={CheckCircle2}
+                      title="No failed devices"
+                      description="Devices that fail imaging or are denied authorization appear here."
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : failed.map(s => {
+                const logs = sessionLogs[s.sessionId];
+                const logsUnknown = logs === undefined;
+                const hasLog = !logsUnknown && logs.length > 0;
+                return (
+                  <TableRow key={s.sessionId}>
+                    <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
+                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
+                    <TableCell>
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={downloadingLog === s.sessionId}
+                        disabled={!hasLog || downloadingLog === s.sessionId}
+                        title={
+                          logsUnknown ? 'Checking for an uploaded diagnostic log…'
+                          : hasLog ? 'Download the diagnostic log the Client uploaded for this device.'
+                          : 'This device never uploaded a diagnostic log, so there is nothing to download.'
+                        }
                         onClick={() => { void handleDownloadLog(s.sessionId); }}
                       >
                         <FileDown className={downloadingLog === s.sessionId ? 'animate-pulse' : ''} /> Download log
                       </Button>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
