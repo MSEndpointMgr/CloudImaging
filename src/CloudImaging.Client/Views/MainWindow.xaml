@@ -13,17 +13,19 @@
         WindowCornerPreference="Round"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
-        TextOptions.TextRenderingMode="Grayscale">
+        TextOptions.TextRenderingMode="Grayscale"
+        RenderOptions.BitmapScalingMode="HighQuality">
     <!--
         Sharpens every glyph rendered inside this window, including the WPF-UI SymbolIcon glyphs
         (Fluent icon font) on every hosted page: Display formatting mode pixel-snaps glyphs
         instead of WPF's default sub-pixel-positioned "Ideal" mode (which looks fuzzy at the
         small sizes used here), Grayscale rendering avoids ClearType color fringing on WinPE
         (no Themes/font-smoothing service, same reason WindowStyle=None is needed above), and
-        UseLayoutRounding snaps control edges to whole device pixels. These are attached,
-        inherited properties, so setting them once here is enough for every Page navigated into
-        NavigationFrame below and every dialog Window owned by this one — the same one-shot
-        approach as BrandingLogo's RenderOptions.BitmapScalingMode="HighQuality".
+        UseLayoutRounding snaps control edges to whole device pixels. RenderOptions.BitmapScaling
+        Mode applies to every raster Image in this window (e.g. branding\logo.png) instead of
+        needing "HighQuality" repeated on each one. These are attached, inherited properties, so
+        setting them once here is enough for every Page navigated into NavigationFrame below and
+        every dialog Window owned by this one.
     -->
     <!--
         Fixed layout sized to fit the smallest default WinPE screen resolution:

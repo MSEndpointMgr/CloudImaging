@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <!--
+    Without ANY app.manifest, Windows treats this process as DPI-unaware: if the WinPE
+    display isn't running at exactly 96 DPI/100% scaling, the OS DPI-virtualizes the whole
+    window (renders it at a lower resolution, then stretches the bitmap to fit), which looks
+    exactly like the "pixelated, even the text" symptom reported for WinPE screenshots — a
+    blur/pixelation baked into the presented bitmap, not just an anti-aliasing/hinting quality
+    issue (that part is already handled by MainWindow's TextOptions.TextRenderingMode=Grayscale).
+    Declaring PerMonitorV2 (falling back to PerMonitor then System on older Windows builds)
+    makes Windows hand the app the real, unscaled pixel buffer to draw into instead.
+  -->
+  <asmv3:application xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
+      <dpiAware>true/pm</dpiAware>
+    </asmv3:windowsSettings>
+    <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">
+      <dpiAwareness>PerMonitorV2, PerMonitor, System</dpiAwareness>
+    </asmv3:windowsSettings>
+  </asmv3:application>
+
+  <!-- Ensures GDI-based text/UI (and elevation checks) render correctly on Windows 10/11 hosts. -->
+  <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+    <application>
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" /> <!-- Windows 10/11 -->
+    </application>
+  </compatibility>
+</assembly>

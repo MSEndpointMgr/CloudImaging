@@ -19,6 +19,13 @@
       runtime *.resources.dll files that are never loaded.
     -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!--
+      No app.manifest previously existed, so Windows treated the process as DPI-unaware and
+      DPI-virtualized (bitmap-stretched) the whole window on any WinPE display not running at
+      exactly 96 DPI/100% scaling — the actual cause of controls/text looking "pixelated" rather
+      than merely un-hinted. app.manifest declares PerMonitorV2 DPI awareness instead.
+    -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <!--

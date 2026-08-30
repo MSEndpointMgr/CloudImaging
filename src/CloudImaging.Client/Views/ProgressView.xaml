@@ -7,11 +7,13 @@
         FR-007: split hero + step-sidebar layout. Left sidebar lists the 5-step pipeline
         (Format, Download, Apply, Configure Boot, Apply Recovery) with a small dot + label +
         caption per step (mirrors CloudImaging.MediaBuilder's GenerateBootImageView step list).
-        The right "hero" panel shows a determinate progress ring next to the current step's
-        title/subtitle, a short live-activity ticker underneath (the same StatusMessage strings
-        ImagingWorkflowViewModel already sets — no fabricated byte/speed telemetry, since the
-        pipeline doesn't expose any), and an overall progress bar. Sized to fit the fixed
-        800x600 WinPE window with no page-level scrolling (FR-002b).
+        The right "hero" panel shows a continuously-spinning (indeterminate) progress ring next
+        to the current step's title/subtitle — the exact percentage is shown as text over the
+        ring and in the overall progress bar below, so the ring itself only needs to communicate
+        "still working", not the value — a short live-activity ticker underneath (the same
+        StatusMessage strings ImagingWorkflowViewModel already sets — no fabricated byte/speed
+        telemetry, since the pipeline doesn't expose any), and an overall progress bar. Sized to
+        fit the fixed 800x600 WinPE window with no page-level scrolling (FR-002b).
     -->
     <Grid>
         <Grid.ColumnDefinitions>
@@ -123,8 +125,7 @@
             <!-- Ring + title/subtitle -->
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,18">
                 <Grid Width="52" Height="52" VerticalAlignment="Center">
-                    <ui:ProgressRing Progress="{Binding OverallPercent}"
-                                     IsIndeterminate="False"
+                    <ui:ProgressRing IsIndeterminate="True"
                                      Width="52" Height="52" />
                     <TextBlock Text="{Binding OverallPercent, StringFormat='{}{0}%'}"
                                FontSize="12" FontWeight="SemiBold"

@@ -3,11 +3,13 @@ import { Trash2, Pencil, Plus, ImageOff } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
+import { useSort, sortRows } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
 import { ImageEditorDialog } from '../components/ImageEditorDialog.tsx';
 
@@ -21,6 +23,17 @@ interface OsImage {
   uploadedAt: string;
   isInUse: boolean;
 }
+
+type OsImageSortKey = 'name' | 'version' | 'size' | 'sha256' | 'uploaded' | 'status';
+
+const OS_IMAGE_SORT_ACCESSORS: Record<OsImageSortKey, (row: OsImage) => string | number> = {
+  name:     row => row.name,
+  version:  row => row.version,
+  size:     row => row.sizeBytes,
+  sha256:   row => row.sha256Hash,
+  uploaded: row => row.uploadedAt,
+  status:   row => (row.isInUse ? 'In Use' : 'Available'),
+};
 
 function fmtSize(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
@@ -40,6 +53,7 @@ export default function OsImagesPage(): React.ReactElement {
   const [removing, setRemoving] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<OsImage | null>(null);
+  const [sort, toggleSort] = useSort<OsImageSortKey>({ key: 'uploaded', dir: 'desc' });
 
   const loadImages = async () => {
     setLoading(true);
@@ -57,6 +71,7 @@ export default function OsImagesPage(): React.ReactElement {
   const removable = images.filter(img => !img.isInUse);
   const allSelected  = removable.length > 0 && removable.every(img => checked.has(img.imageId));
   const someSelected = removable.some(img => checked.has(img.imageId));
+  const sortedImages = sortRows(images, sort, OS_IMAGE_SORT_ACCESSORS);
 
   const toggleRow   = (id: string) => setChecked(prev => { const n = new Set(prev); if (n.has(id)) { n.delete(id); } else { n.add(id); } return n; });
   const selectAll   = () => setChecked(new Set(removable.map(img => img.imageId)));
@@ -139,12 +154,12 @@ export default function OsImagesPage(): React.ReactElement {
                   />
                 </TableHead>
               )}
-              <TableHead className="w-[30%]">Name</TableHead>
-              <TableHead className="w-[13%]">Version</TableHead>
-              <TableHead className="w-[9%]">Size</TableHead>
-              <TableHead className="w-[13%]">SHA-256</TableHead>
-              <TableHead className="w-[14%]">Uploaded</TableHead>
-              <TableHead className="w-[10%]">Status</TableHead>
+              <SortableHead label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[30%]" />
+              <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} className="w-[13%]" />
+              <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} className="w-[9%]" />
+              <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} className="w-[13%]" />
+              <SortableHead label="Uploaded" sortKey="uploaded" sort={sort} onSort={toggleSort} className="w-[14%]" />
+              <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="w-[10%]" />
               <TableHead className="w-[90px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -167,7 +182,7 @@ export default function OsImagesPage(): React.ReactElement {
                   />
                 </TableCell>
               </TableRow>
-            ) : images.map(img => (
+            ) : sortedImages.map(img => (
               <TableRow
                 key={img.imageId}
                 data-state={checked.has(img.imageId) ? 'selected' : undefined}

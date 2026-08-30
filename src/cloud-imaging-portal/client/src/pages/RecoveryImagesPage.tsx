@@ -7,6 +7,7 @@ import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { EmptyState } from '../components/ui/empty-state';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
@@ -14,6 +15,7 @@ import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { formatDateTime } from '../lib/utils.ts';
+import { useSort, sortRows } from '../lib/tableSort.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
   startRecoveryImageUpload,
@@ -40,6 +42,16 @@ interface RecoveryImage {
 /** Maximum number of active recovery image entries (mirrors the boot image catalog cap). */
 const MAX_RECOVERY_IMAGES = 5;
 
+type RecoveryImageSortKey = 'version' | 'size' | 'sha256' | 'created' | 'status';
+
+const RECOVERY_IMAGE_SORT_ACCESSORS: Record<RecoveryImageSortKey, (row: RecoveryImage) => string | number> = {
+  version: row => row.version,
+  size:    row => row.sizeBytes,
+  sha256:  row => row.sha256Hash,
+  created: row => row.createdAt,
+  status:  row => (row.isLatestPublished ? 'Latest' : row.isActive ? 'Active' : ''),
+};
+
 function fmtSize(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
 }
@@ -55,14 +67,14 @@ export default function RecoveryImagesPage(): React.ReactElement {
   const [images, setImages]   = useState<RecoveryImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [sort, toggleSort] = useSort<RecoveryImageSortKey>({ key: 'created', dir: 'desc' });
 
   const loadImages = async () => {
     setLoading(true);
     try {
       const res = await apiFetchWithRetry('/api/recovery-images', { credentials: 'include' });
       if (res.ok) {
-        const data = await res.json() as RecoveryImage[];
-        setImages(data.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+        setImages(await res.json() as RecoveryImage[]);
       } else notify({ status: 'error', title: 'Failed to load recovery images.' });
     } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
@@ -84,6 +96,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
   const remaining = Math.max(0, MAX_RECOVERY_IMAGES - used);
   const atCapacity = remaining === 0;
   const usedPct   = Math.min(100, Math.round((used / MAX_RECOVERY_IMAGES) * 100));
+  const sortedImages = sortRows(images, sort, RECOVERY_IMAGE_SORT_ACCESSORS);
 
   return (
     <>
@@ -139,11 +152,11 @@ export default function RecoveryImagesPage(): React.ReactElement {
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Version</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>SHA-256</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead>Status</TableHead>
+              <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} />
+              <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} />
+              <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
+              <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
+              <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
               {isAdministrator && <TableHead>Actions</TableHead>}
             </TableRow>
           </TableHeader>
@@ -160,7 +173,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                   />
                 </TableCell>
               </TableRow>
-            ) : images.map(img => (
+            ) : sortedImages.map(img => (
               <TableRow key={img.recoveryImageId}>
                 <TableCell className="font-medium">
                   {img.version}

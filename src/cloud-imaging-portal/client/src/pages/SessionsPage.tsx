@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, ArrowUp, ArrowDown, ArrowUpDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -14,6 +14,7 @@ import { Skeleton } from '../components/ui/skeleton.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { cn } from '../lib/utils.ts';
+import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
 import { useUserPreferences } from '../context/userPreferencesContext.tsx';
 import {
@@ -24,6 +25,7 @@ import {
   TableHead,
   TableCell,
 } from '../components/ui/table.tsx';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 
 interface Session {
   sessionId: string;
@@ -109,64 +111,6 @@ function imageOptionLabel(image: OsImage): string {
   return label.length > MAX_IMAGE_OPTION_CHARS
     ? `${label.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
     : label;
-}
-
-// ── Generic column sorting ────────────────────────────────────────────────
-
-type SortDir = 'asc' | 'desc';
-interface SortState<K extends string> {
-  key: K;
-  dir: SortDir;
-}
-
-function useSort<K extends string>(defaultKey: K): [SortState<K>, (key: K) => void] {
-  const [sort, setSort] = useState<SortState<K>>({ key: defaultKey, dir: 'asc' });
-  const toggle = useCallback((key: K) => {
-    setSort(prev => (prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
-  }, []);
-  return [sort, toggle];
-}
-
-function sortRows<T, K extends string>(
-  rows: T[],
-  sort: SortState<K>,
-  accessors: Record<K, (row: T) => string | number>,
-): T[] {
-  const accessor = accessors[sort.key];
-  return [...rows].sort((a, b) => {
-    const av = accessor(a);
-    const bv = accessor(b);
-    const cmp = typeof av === 'number' && typeof bv === 'number'
-      ? av - bv
-      : String(av).localeCompare(String(bv), undefined, { sensitivity: 'base' });
-    return sort.dir === 'asc' ? cmp : -cmp;
-  });
-}
-
-function SortableHead<K extends string>({ label, sortKey, sort, onSort, className }: {
-  label: string;
-  sortKey: K;
-  sort: SortState<K>;
-  onSort: (key: K) => void;
-  className?: string;
-}): React.ReactElement {
-  const active = sort.key === sortKey;
-  const Icon = active ? (sort.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
-  return (
-    <TableHead className={className}>
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        // Tailwind's preflight resets `text-transform: none` on <button>, which would otherwise
-        // override the `uppercase` class inherited from the parent <th> (see table.tsx) — reassert
-        // it here so sortable headers render in the same ALL CAPS style as static ones.
-        className="inline-flex items-center gap-1 uppercase hover:text-foreground focus-visible:outline-none"
-      >
-        {label}
-        <Icon size={12} className={active ? '' : 'opacity-30'} />
-      </button>
-    </TableHead>
-  );
 }
 
 // ── Inline passcode coupling (per Available row) ──────────────────────────
@@ -263,10 +207,10 @@ function SessionsPageImpl(): React.ReactElement {
   // so technicians can't miss it while coupling devices ahead of an image being ready.
   const hasOsImages = images.length > 0;
 
-  const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>('registered');
-  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>('registered');
-  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'state' | 'progress' | 'step'>('state');
-  const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>('registered');
+  const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>({ key: 'registered', dir: 'asc' });
+  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
+  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'state' | 'progress' | 'step'>({ key: 'state', dir: 'asc' });
+  const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>({ key: 'registered', dir: 'asc' });
 
   // Uploaded diagnostic logs per failed session, looked up once the Failed tab is opened. A
   // session only has a log if the Client managed a best-effort upload before reboot, so the
