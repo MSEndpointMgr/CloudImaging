@@ -25,7 +25,7 @@ namespace CloudImaging.Client.ViewModels;
 /// <c>bcdboot</c>, and the WinRE recovery image is downloaded and applied — turning what was
 /// previously a single non-bootable partition into a real UEFI-bootable device.
 /// </summary>
-public sealed class ImagingWorkflowViewModel : IDisposable
+public sealed partial class ImagingWorkflowViewModel : IDisposable
 {
     private static readonly TimeSpan AssignmentWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan AssignmentPollInterval = TimeSpan.FromSeconds(5);
@@ -70,6 +70,13 @@ public sealed class ImagingWorkflowViewModel : IDisposable
         var ct = CancellationToken.None;
         var reporter = new Services.ImagingProgressReporter(
             _gatewayClient, _sessionId, _loggerFactory.CreateLogger<Services.ImagingProgressReporter>());
+
+        // A technician reviewing the rolling log after a Retry (which restarts the whole
+        // pipeline from the beginning, see ResultsViewModel.RetryCommand) otherwise has no way
+        // to tell where one attempt's entries end and the next one's begin. This banner line
+        // makes each attempt visually distinct when scrolling through the combined log.
+        var pipelineLogger = _loggerFactory.CreateLogger<ImagingWorkflowViewModel>();
+        LogPipelineStarting(pipelineLogger, _sessionId);
 
         try
         {
@@ -375,11 +382,31 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             catch { /* best-effort — progress reporting must never mask the real failure */ }
         }
 
-        _progress.ErrorMessage = errorDetail;
+        // ProgressView and ResultsView are both FR-002b no-scroll views (see
+        // UiThreadResponsivenessTests.View_ContainsNoScrollViewer): a failed external tool
+        // (diskpart/bcdboot/reagentc) can embed its whole console transcript in errorDetail, which
+        // would otherwise overflow those fixed-size windows with no way to see the rest. The
+        // reporter call and the rolling log above already got the untruncated errorDetail; only
+        // what's shown on screen is bounded, pointing the technician at "View Log" for the rest.
+        var onScreenDetail = BuildOnScreenErrorDetail(errorDetail);
+        _progress.ErrorMessage = onScreenDetail;
         _progress.SupportReferenceCode = code;
 
         FireAndForgetLogUpload();
-        _navigateToResults(ResultsViewModel.Outcome.Failure, _deviceSerialNumber, errorDetail, code);
+        _navigateToResults(ResultsViewModel.Outcome.Failure, _deviceSerialNumber, onScreenDetail, code);
+    }
+
+    /// <summary>Upper bound on how much of a failure's error detail is shown on screen (see <see cref="FailAsync"/>).</summary>
+    private const int MaxOnScreenErrorDetailChars = 240;
+
+    private static string BuildOnScreenErrorDetail(string errorDetail)
+    {
+        if (errorDetail.Length <= MaxOnScreenErrorDetailChars)
+        {
+            return errorDetail;
+        }
+
+        return errorDetail[..MaxOnScreenErrorDetailChars].TrimEnd() + "…\n\nSee \"View Log\" for the full detail.";
     }
 
     /// <summary>
@@ -406,4 +433,7 @@ public sealed class ImagingWorkflowViewModel : IDisposable
             : null;
 
     public void Dispose() => _sasCoordinator?.Dispose();
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "==== Starting imaging pipeline for session {SessionId} ====")]
+    private static partial void LogPipelineStarting(ILogger logger, Guid sessionId);
 }

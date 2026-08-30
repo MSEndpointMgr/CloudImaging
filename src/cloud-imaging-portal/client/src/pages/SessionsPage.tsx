@@ -95,11 +95,13 @@ function formatRegistered(iso: string): string {
 /**
  * Label for the OS image picker. A native <select> popup sizes itself to its longest option and
  * ignores the control's width, so an image whose catalog name is the raw uploaded file name (the
- * default) would otherwise open a dropdown running off the side of the page. The operator-authored
- * version leads and is never truncated, since that is what identifies the image and it is unique
- * across the catalog.
+ * default) could otherwise open a dropdown running off the side of the page. The picker sits early
+ * in its row (see the Coupled Devices toolbar) precisely so there's ample room for the popup to
+ * expand into, so this only needs to catch pathological outliers rather than routinely truncate.
+ * The operator-authored version leads and is never truncated, since that is what identifies the
+ * image and it is unique across the catalog.
  */
-const MAX_IMAGE_OPTION_CHARS = 48;
+const MAX_IMAGE_OPTION_CHARS = 100;
 
 function imageOptionLabel(image: OsImage): string {
   const name = image.name.replace(/\.(wim|esd|iso)$/i, '').trim();
@@ -638,35 +640,39 @@ function SessionsPageImpl(): React.ReactElement {
           </div>
 
           <div className="rounded-md border border-border overflow-hidden">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+              <div className="flex shrink-0 items-center gap-2">
                 <h3 className="text-sm font-semibold">Coupled Devices</h3>
                 <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-semibold text-primary">
                   {coupled.length}
                 </span>
               </div>
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-                <select
-                  value={selectedImageId ?? ''}
-                  onChange={e => setSelectedImageId(e.target.value || null)}
-                  disabled={coupled.length === 0 || images.length === 0}
-                  title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
-                  className="h-8 w-40 min-w-0 max-w-full flex-1 truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-64 sm:flex-none"
-                >
-                  <option value="">{hasOsImages ? 'Select OS image…' : 'No OS images uploaded'}</option>
-                  {images.map(img => (
-                    <option key={img.imageId} value={img.imageId}>{imageOptionLabel(img)}</option>
-                  ))}
-                </select>
-                <Button
-                  size="sm"
-                  onClick={() => setPendingBulkAssign(true)}
-                  disabled={!selectedImageId || coupled.length === 0 || startingImages}
-                  title={!hasOsImages ? 'Upload an OS image before starting imaging.' : undefined}
-                >
-                  {startingImages ? 'Starting…' : `Start Imaging (${coupled.length})`}
-                </Button>
-              </div>
+              {/* Placed here (rather than beside the button) so it gets the bulk of the row's
+                  width and, just as importantly, sits well clear of the right edge of the page —
+                  the native popup opens flush with the control and ignores its own width, so
+                  giving it room on this side lets long catalog names show in full (see
+                  imageOptionLabel). */}
+              <select
+                value={selectedImageId ?? ''}
+                onChange={e => setSelectedImageId(e.target.value || null)}
+                disabled={coupled.length === 0 || images.length === 0}
+                title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
+                className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">{hasOsImages ? 'Select OS image…' : 'No OS images uploaded'}</option>
+                {images.map(img => (
+                  <option key={img.imageId} value={img.imageId}>{imageOptionLabel(img)}</option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                className="shrink-0"
+                onClick={() => setPendingBulkAssign(true)}
+                disabled={!selectedImageId || coupled.length === 0 || startingImages}
+                title={!hasOsImages ? 'Upload an OS image before starting imaging.' : undefined}
+              >
+                {startingImages ? 'Starting…' : `Start Imaging (${coupled.length})`}
+              </Button>
             </div>
             <Table className="table-fixed">
               <TableHeader>

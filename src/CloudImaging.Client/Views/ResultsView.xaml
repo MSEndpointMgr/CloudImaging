@@ -80,6 +80,14 @@
                         <TextBlock Text="{Binding SupportReferenceCode, StringFormat='Error reference: {0}'}"
                                    Style="{StaticResource BodyStrongTextBlockStyle}"
                                    HorizontalAlignment="Center" Margin="0,16,0,0" />
+                        <!--
+                            ErrorDetail is pre-truncated by ImagingWorkflowViewModel.FailAsync
+                            before it ever reaches this binding (see BuildOnScreenErrorDetail):
+                            a failed external tool (diskpart/bcdboot/reagentc) can embed its full
+                            console transcript in the underlying exception, but FR-002b forbids a
+                            ScrollViewer here, so the full detail is only ever in the rolling log
+                            (openable via "View Log") and this box always shows a short summary.
+                        -->
                         <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
                                  Text="{Binding ErrorDetail, Mode=OneWay}"
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"

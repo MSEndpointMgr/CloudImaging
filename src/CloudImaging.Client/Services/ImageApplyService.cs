@@ -68,10 +68,19 @@ public sealed partial class ImageApplyService
         var tcs = new TaskCompletionSource<int>();
         process.Exited += (_, _) => tcs.TrySetResult(process.ExitCode);
 
+        // Captured so a failure's exception message carries the same actionable detail DISM
+        // printed as diskpart/bcdboot/reagentc's failures already do (see DiskFormatService/
+        // BootConfigurationService/RecoveryImageService). Previously ErrorDataReceived had no
+        // handler at all, so a failed DISM apply (arguably the single most consequential step in
+        // the whole pipeline) surfaced only a bare exit code with no explanation whatsoever.
+        var output = new System.Text.StringBuilder();
+
         process.OutputDataReceived += (_, e) =>
         {
             if (e.Data is not null)
             {
+                output.AppendLine(e.Data);
+
                 // DISM outputs progress lines like: "[==        20.0%          ]"
                 if (int.TryParse(
                     System.Text.RegularExpressions.Regex.Match(e.Data, @"(\d+)\.?\d*\s*%").Groups[1].Value,
@@ -79,6 +88,14 @@ public sealed partial class ImageApplyService
                 {
                     onProgress?.Invoke(pct);
                 }
+            }
+        };
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                output.AppendLine(e.Data);
             }
         };
 
@@ -91,8 +108,8 @@ public sealed partial class ImageApplyService
         int exitCode = await tcs.Task;
         if (exitCode != 0)
         {
-            LogDismFailed(_logger, exitCode);
-            throw new InvalidOperationException($"DISM exited with code {exitCode}.");
+            LogDismFailed(_logger, exitCode, output.ToString());
+            throw new InvalidOperationException($"DISM exited with code {exitCode}: {output}");
         }
 
         onProgress?.Invoke(100);
@@ -118,8 +135,8 @@ public sealed partial class ImageApplyService
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting DISM: {Args}")]
     private static partial void LogStartingDism(ILogger logger, string args);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "DISM exited with code {ExitCode}.")]
-    private static partial void LogDismFailed(ILogger logger, int exitCode);
+    [LoggerMessage(Level = LogLevel.Error, Message = "DISM exited with code {ExitCode}. Output: {Output}")]
+    private static partial void LogDismFailed(ILogger logger, int exitCode, string output);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Image successfully applied to {Volume}.")]
     private static partial void LogApplyCompleted(ILogger logger, string volume);

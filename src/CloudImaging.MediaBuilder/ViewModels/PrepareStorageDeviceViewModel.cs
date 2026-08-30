@@ -451,7 +451,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         var images = await _operatorApi.GetBootImagesAsync();
 
         BootImages.Clear();
-        foreach (var image in images.Where(i => i.IsActive))
+        foreach (var image in images
+            .Where(i => i.IsActive)
+            .OrderByDescending(i => i.Version, Comparer<string>.Create(CompareVersions)))
         {
             var latest = image.IsLatestPublished ? " (latest)" : string.Empty;
             var label  = string.Create(CultureInfo.InvariantCulture,
@@ -899,6 +901,29 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             unit++;
         }
         return string.Create(CultureInfo.InvariantCulture, $"{size:0.0} {units[unit]}");
+    }
+
+    /// <summary>
+    /// Compares boot image versions ("YYYY.MM.DD.N", see versionSuggestion.ts) segment-by-segment
+    /// as integers, so e.g. "2026.08.10.1" correctly sorts after "2026.08.9.1" — plain ordinal
+    /// string comparison would rank them the other way round. Falls back to ordinal comparison
+    /// if either version doesn't parse cleanly as dotted integers.
+    /// </summary>
+    private static int CompareVersions(string a, string b)
+    {
+        var partsA = a.Split('.');
+        var partsB = b.Split('.');
+        var length = Math.Max(partsA.Length, partsB.Length);
+        for (var i = 0; i < length; i++)
+        {
+            if (i >= partsA.Length || i >= partsB.Length ||
+                !int.TryParse(partsA[i], out var numA) || !int.TryParse(partsB[i], out var numB))
+            {
+                return string.CompareOrdinal(a, b);
+            }
+            if (numA != numB) return numA.CompareTo(numB);
+        }
+        return 0;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -133,6 +133,22 @@ public sealed partial class DiskFormatService
         sb.AppendLine("clean");
         sb.AppendLine("convert gpt");
 
+        // WinPE's volume manager does not always finish re-enumerating the disk before diskpart
+        // moves on to its next scripted command immediately after "clean"/"convert gpt" rewrite
+        // the disk's partition table. Observed in the field as a partition being created
+        // successfully (and even formatted) but a later command in the same script (assign/gpt
+        // attributes) failing with exit code -2147024463 (0x800701B1 = HRESULT-wrapped Win32
+        // error 433, ERROR_NO_SUCH_DEVICE) because Windows still has not mounted the volume it
+        // just created. "rescan" forces diskpart to refresh its and Windows' view of all disks
+        // and volumes before any partition-level command runs, closing that race.
+        sb.AppendLine("rescan");
+
+        // "rescan" does not reliably preserve diskpart's "selected disk" context (community and
+        // in-house testing both show it can drop back to no selection), every command below
+        // implicitly targets whatever disk is currently selected, so it must be reselected
+        // explicitly or "create partition" could silently target the wrong disk (or none).
+        sb.AppendLine(CultureInfo.InvariantCulture, $"select disk {diskIndex}");
+
         foreach (var partition in ordered)
         {
             switch (partition.PartitionType)

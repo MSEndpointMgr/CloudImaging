@@ -76,11 +76,18 @@
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1" CornerRadius="4">
+            <!--
+                VerticalScrollBarVisibility is deliberately "Visible" rather than "Auto": on WinPE
+                (no DWM composition / software rendering) the WPF-UI themed scrollbar's hover
+                fade-in visual state has been observed to never trigger, leaving an Auto scrollbar
+                completely invisible even though the content genuinely overflows and the track is
+                functional, so forcing it always-visible guarantees a technician can see and use it.
+            -->
             <TextBox x:Name="LogTextBox"
                      IsReadOnly="True"
                      TextWrapping="NoWrap"
                      FontFamily="Consolas" FontSize="12"
-                     VerticalScrollBarVisibility="Auto"
+                     VerticalScrollBarVisibility="Visible"
                      HorizontalScrollBarVisibility="Auto"
                      Background="Transparent" BorderThickness="0"
                      Padding="10" />

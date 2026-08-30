@@ -144,9 +144,9 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
           <Card key={stat.label}>
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground">{stat.label}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
                 {records ? stat.value : <Skeleton className="h-7 w-10" />}
-              </p>
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -158,9 +158,10 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
         </p>
       )}
 
+      <div className="rounded-md border border-border overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableHead>State</TableHead>
             <TableHead>Device</TableHead>
             <TableHead>Manufacturer / Model</TableHead>
@@ -195,6 +196,7 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
           ))}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

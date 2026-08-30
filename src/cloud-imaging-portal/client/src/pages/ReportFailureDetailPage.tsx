@@ -113,9 +113,10 @@ export default function ReportFailureDetailPage(): React.ReactElement {
         </Button>
       </div>
 
+      <div className="rounded-md border border-border overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableHead>State</TableHead>
             <TableHead>Device</TableHead>
             <TableHead>Failed Step</TableHead>
@@ -151,6 +152,7 @@ export default function ReportFailureDetailPage(): React.ReactElement {
           ))}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

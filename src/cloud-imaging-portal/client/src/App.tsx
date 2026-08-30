@@ -8,21 +8,23 @@ import { ToastProvider } from './context/toastContext.tsx';
 import { UserPreferencesProvider } from './context/userPreferencesContext.tsx';
 import { ProtectedRoute } from './components/ProtectedRoute.tsx';
 import { LoadingScreen } from './components/LoadingScreen.tsx';
+import { RouteErrorBoundary } from './components/RouteErrorBoundary.tsx';
+import { lazyWithReload } from './lib/lazyWithReload.ts';
 
 // Lazy page stubs. Each section is a placeholder until the feature pages are built
-import { Suspense, lazy } from 'react';
-const DashboardPage   = lazy(() => import('./pages/DashboardPage.tsx'));
-const SessionsPage    = lazy(() => import('./pages/SessionsPage.tsx'));
-const OsImagesPage    = lazy(() => import('./pages/OsImagesPage.tsx'));
-const BootImagesPage  = lazy(() => import('./pages/BootImagesPage.tsx'));
-const RecoveryImagesPage = lazy(() => import('./pages/RecoveryImagesPage.tsx'));
-const BrandingPage    = lazy(() => import('./pages/BrandingPage.tsx'));
-const DeploymentConfigPage = lazy(() => import('./pages/DeploymentConfigPage.tsx'));
-const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx'));
-const ReportSessionOutcomesPage = lazy(() => import('./pages/ReportSessionOutcomesPage.tsx'));
-const ReportImageInventoryPage = lazy(() => import('./pages/ReportImageInventoryPage.tsx'));
-const ReportFailureDetailPage = lazy(() => import('./pages/ReportFailureDetailPage.tsx'));
-const LocationsPage = lazy(() => import('./pages/LocationsPage.tsx'));
+import { Suspense } from 'react';
+const DashboardPage   = lazyWithReload(() => import('./pages/DashboardPage.tsx'));
+const SessionsPage    = lazyWithReload(() => import('./pages/SessionsPage.tsx'));
+const OsImagesPage    = lazyWithReload(() => import('./pages/OsImagesPage.tsx'));
+const BootImagesPage  = lazyWithReload(() => import('./pages/BootImagesPage.tsx'));
+const RecoveryImagesPage = lazyWithReload(() => import('./pages/RecoveryImagesPage.tsx'));
+const BrandingPage    = lazyWithReload(() => import('./pages/BrandingPage.tsx'));
+const DeploymentConfigPage = lazyWithReload(() => import('./pages/DeploymentConfigPage.tsx'));
+const ReportsPage = lazyWithReload(() => import('./pages/ReportsPage.tsx'));
+const ReportSessionOutcomesPage = lazyWithReload(() => import('./pages/ReportSessionOutcomesPage.tsx'));
+const ReportImageInventoryPage = lazyWithReload(() => import('./pages/ReportImageInventoryPage.tsx'));
+const ReportFailureDetailPage = lazyWithReload(() => import('./pages/ReportFailureDetailPage.tsx'));
+const LocationsPage = lazyWithReload(() => import('./pages/LocationsPage.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
@@ -44,6 +46,7 @@ export default function App(): React.ReactElement {
               <UserPreferencesProvider>
               <ToastProvider>
                 <ProtectedRoute>
+                  <RouteErrorBoundary>
                   <Suspense fallback={<LoadingScreen />}>
                     <Routes>
                       <Route element={<AppShell />}>
@@ -63,6 +66,7 @@ export default function App(): React.ReactElement {
                       </Route>
                     </Routes>
                   </Suspense>
+                  </RouteErrorBoundary>
                 </ProtectedRoute>
               </ToastProvider>
               </UserPreferencesProvider>

@@ -13,6 +13,7 @@ namespace CloudImaging.Client.Services;
 public sealed partial class ImageDownloadService
 {
     private const int BufferSize = 81_920; // 80 KB
+    private const int MaxAttempts = 3;
 
     private readonly HttpClient _httpClient;
     private readonly ImageCacheService? _cache;
@@ -83,6 +84,46 @@ public sealed partial class ImageDownloadService
         Action<int>? onProgress,
         CancellationToken ct = default)
     {
+        // Same bounded-retry-with-backoff convention as the sibling
+        // CloudImaging.MediaBuilder.Services.BootImageDownloadService (also a SAS-URL blob
+        // download) — the WinPE network path has been observed to hit transient connection
+        // timeouts (SocketException 10060) during a session, and a single-shot GET here would
+        // fail the whole imaging pipeline (forcing a full disk reformat via Retry) rather than
+        // just re-attempting the download.
+        Exception? lastError = null;
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                await DownloadOnceAsync(sasUrl, destinationPath, onProgress, ct);
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = ex;
+                LogAttemptFailed(_logger, attempt, ex);
+                try { File.Delete(destinationPath); } catch { /* best-effort */ }
+
+                if (attempt < MaxAttempts)
+                {
+                    var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // 2s, 4s
+                    await Task.Delay(delay, ct);
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Failed to download the image after {MaxAttempts} attempts.", lastError);
+    }
+
+    private async Task DownloadOnceAsync(
+        string sasUrl,
+        string destinationPath,
+        Action<int>? onProgress,
+        CancellationToken ct)
+    {
         LogStarting(_logger, sasUrl[..Math.Min(60, sasUrl.Length)]);
         Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? string.Empty);
 
@@ -117,6 +158,9 @@ public sealed partial class ImageDownloadService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Image download complete: {Bytes} bytes written.")]
     private static partial void LogCompleted(ILogger logger, long bytes);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Download attempt {Attempt} failed.")]
+    private static partial void LogAttemptFailed(ILogger logger, int attempt, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Cache write failed for image {ImageId} — hash mismatch.")]
     private static partial void LogCacheWriteFailed(ILogger logger, Exception ex, string imageId);

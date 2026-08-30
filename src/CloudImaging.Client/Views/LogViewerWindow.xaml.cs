@@ -16,10 +16,13 @@ public partial class LogViewerWindow : FluentWindow
 {
     /// <summary>
     /// Upper bound on how much of the log file is loaded into the view, so the window stays
-    /// responsive even once the rolling file approaches its 10 MB cap — shows the most recent
-    /// (and most relevant) activity rather than the oldest.
+    /// responsive even if the rolling file approaches its 10 MB cap. Deliberately close to that
+    /// cap (not a small fraction of it, as a 512 KB tail previously was): a single imaging session
+    /// alone routinely logs several hundred KB (e.g. diskpart's quick-format progress ticker emits
+    /// one line per percent), so a small cap silently discarded the start of the very session a
+    /// technician opens this viewer to investigate, with no way to page back further.
     /// </summary>
-    private const int MaxTailBytes = 512 * 1024; // 512 KB
+    private const int MaxTailBytes = 8 * 1024 * 1024; // 8 MB
 
     public LogViewerWindow()
     {

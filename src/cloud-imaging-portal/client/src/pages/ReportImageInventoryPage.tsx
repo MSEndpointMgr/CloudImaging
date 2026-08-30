@@ -5,7 +5,7 @@ import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
-import { Badge } from '../components/ui/badge.tsx';
+import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 
@@ -44,7 +44,9 @@ interface InventoryRow {
   name: string;
   sizeBytes: number;
   date: string;
-  status: string;
+  statusLabel: string;
+  statusVariant: BadgeProps['variant'];
+  statusDot: boolean;
 }
 
 function fmtSize(bytes: number): string {
@@ -77,20 +79,27 @@ export default function ReportImageInventoryPage(): React.ReactElement {
         const recoveryImages = recRes.ok ? await recRes.json() as RecoveryImage[] : [];
         if (cancelled) return;
 
+        // Status label/variant/dot mirrors the exact convention used on the OS/Boot/Recovery
+        // Image catalog pages, so this report's pills look identical to the ones an operator
+        // already knows from those pages instead of introducing a one-off wording/style.
         const combined: InventoryRow[] = [
           ...osImages.map((img): InventoryRow => ({
             catalog: 'OS Image', id: img.imageId, name: `${img.name} v${img.version}`,
-            sizeBytes: img.sizeBytes, date: img.uploadedAt, status: img.isInUse ? 'In use' : 'Unused',
+            sizeBytes: img.sizeBytes, date: img.uploadedAt,
+            statusLabel: img.isInUse ? 'In Use' : 'Available',
+            statusVariant: img.isInUse ? 'info' : 'success', statusDot: true,
           })),
           ...bootImages.map((img): InventoryRow => ({
             catalog: 'Boot Image', id: img.bootImageId, name: `v${img.version}`,
             sizeBytes: img.sizeBytes, date: img.createdAt,
-            status: img.isLatestPublished ? 'Latest published' : img.isActive ? 'Active' : 'Inactive',
+            statusLabel: img.isLatestPublished ? 'Latest' : img.isActive ? 'Active' : 'Inactive',
+            statusVariant: img.isLatestPublished ? 'info' : 'muted', statusDot: img.isLatestPublished || img.isActive,
           })),
           ...recoveryImages.map((img): InventoryRow => ({
             catalog: 'Recovery Image', id: img.recoveryImageId, name: `v${img.version}`,
             sizeBytes: img.sizeBytes, date: img.uploadedAt,
-            status: img.isLatestPublished ? 'Latest published' : img.isActive ? 'Active' : 'Inactive',
+            statusLabel: img.isLatestPublished ? 'Latest' : img.isActive ? 'Active' : 'Inactive',
+            statusVariant: img.isLatestPublished ? 'info' : 'muted', statusDot: img.isLatestPublished || img.isActive,
           })),
         ];
         setRows(combined);
@@ -117,7 +126,7 @@ export default function ReportImageInventoryPage(): React.ReactElement {
       { header: 'Size (bytes)', accessor: r => r.sizeBytes },
       { header: 'Date', accessor: r => r.date },
       { header: 'Age (days)', accessor: r => ageDays(r.date) },
-      { header: 'Status', accessor: r => r.status },
+      { header: 'Status', accessor: r => r.statusLabel },
     ]);
     downloadBlob('image-inventory.csv', csv);
   };
@@ -125,17 +134,18 @@ export default function ReportImageInventoryPage(): React.ReactElement {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           {totals ? `${totals.count} images, ${fmtSize(totals.totalSize)} total` : <Skeleton className="h-4 w-48" />}
-        </p>
+        </div>
         <Button variant="secondary" onClick={handleExport} disabled={!rows || rows.length === 0}>
           <FileDown size={14} /> Export CSV
         </Button>
       </div>
 
+      <div className="rounded-md border border-border overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="hover:bg-transparent">
             <TableHead>Catalog</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Size</TableHead>
@@ -166,14 +176,13 @@ export default function ReportImageInventoryPage(): React.ReactElement {
               <TableCell>{formatDateTime(r.date)}</TableCell>
               <TableCell>{ageDays(r.date)}d</TableCell>
               <TableCell>
-                <Badge variant={r.status === 'In use' || r.status === 'Latest published' || r.status === 'Active' ? 'success' : 'muted'}>
-                  {r.status}
-                </Badge>
+                <Badge variant={r.statusVariant} dot={r.statusDot}>{r.statusLabel}</Badge>
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }
