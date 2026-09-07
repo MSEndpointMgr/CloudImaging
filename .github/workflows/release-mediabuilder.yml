@@ -35,8 +35,11 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Restore .NET solution
-        run: dotnet restore CloudImaging.sln
+      # CloudImaging.MediaBuilder.csproj has no <RuntimeIdentifiers>, so a plain solution restore
+      # produces an assets file with no win-x64 target -- the later --no-restore publish
+      # then fails with NETSDK1047. Restore the project itself with the RID instead.
+      - name: Restore CloudImaging.MediaBuilder (win-x64)
+        run: dotnet restore src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj -r win-x64
 
       - name: Build CloudImaging.MediaBuilder (WPF, self-contained win-x64)
         run: |
