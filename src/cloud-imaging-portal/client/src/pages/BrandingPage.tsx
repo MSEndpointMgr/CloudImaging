@@ -5,6 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Button, type ButtonStatus } from '../components/ui/button';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
+import { PageLoading } from '../components/PageLoading.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
@@ -383,7 +384,7 @@ export default function BrandingPage(): React.ReactElement {
     }
   };
 
-  if (loading) return <p className="text-muted-foreground">Loading…</p>;
+  if (loading) return <PageLoading />;
 
   return (
     <>

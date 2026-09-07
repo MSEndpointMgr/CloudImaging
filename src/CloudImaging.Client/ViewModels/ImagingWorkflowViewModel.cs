@@ -40,6 +40,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     private readonly string _cacheRoot;
 
     private Services.SasRefreshCoordinator? _sasCoordinator;
+    private Services.SessionHeartbeatCoordinator? _heartbeatCoordinator;
     private Services.SessionStatusResponse _status;
 
     public ImagingWorkflowViewModel(
@@ -93,6 +94,14 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 ParseExpiry(_status.SasTokenUrlExpiresAt),
                 _loggerFactory.CreateLogger<Services.SasRefreshCoordinator>());
             _sasCoordinator.Start();
+
+            // Steps that go quiet (DISM commit, reagentc, a stalled download) produce no progress
+            // reports, so liveness needs its own cadence — see SessionHeartbeatCoordinator.
+            _heartbeatCoordinator = new Services.SessionHeartbeatCoordinator(
+                _gatewayClient,
+                _sessionId,
+                _loggerFactory.CreateLogger<Services.SessionHeartbeatCoordinator>());
+            _heartbeatCoordinator.Start();
 
             // Every Information-level log message the step services below emit (disk selection,
             // "Starting DISM: ...", "Starting bcdboot ...", "Starting reagentc.exe ...", hash
@@ -305,6 +314,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         finally
         {
             _sasCoordinator?.Dispose();
+            _heartbeatCoordinator?.Dispose();
         }
     }
 
@@ -406,7 +416,17 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             return errorDetail;
         }
 
-        return errorDetail[..MaxOnScreenErrorDetailChars].TrimEnd() + "…\n\nSee \"View Log\" for the full detail.";
+        // Cut at the nearest preceding whitespace instead of hard mid-word (a raw character cut
+        // produced things like "DiskPar…", which reads as broken rather than intentionally
+        // summarized).
+        var truncated = errorDetail[..MaxOnScreenErrorDetailChars];
+        var lastBreak = truncated.LastIndexOfAny([' ', '\n', '\r', '\t']);
+        if (lastBreak > 0)
+        {
+            truncated = truncated[..lastBreak];
+        }
+
+        return truncated.TrimEnd() + "…\n\nSee \"View Log\" for the full detail.";
     }
 
     /// <summary>
@@ -432,7 +452,11 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             ? dt
             : null;
 
-    public void Dispose() => _sasCoordinator?.Dispose();
+    public void Dispose()
+    {
+        _sasCoordinator?.Dispose();
+        _heartbeatCoordinator?.Dispose();
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "==== Starting imaging pipeline for session {SessionId} ====")]
     private static partial void LogPipelineStarting(ILogger logger, Guid sessionId);

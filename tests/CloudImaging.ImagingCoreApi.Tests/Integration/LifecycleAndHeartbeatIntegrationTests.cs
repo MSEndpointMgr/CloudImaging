@@ -20,6 +20,36 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
     }
 
     [Fact]
+    public void ActiveImagingHeartbeatTimeout_Is4Hours()
+    {
+        DeviceSessionLifecycleService.ActiveImagingHeartbeatTimeout.TotalHours
+            .Should().Be(4, "sessions actively imaging fail after 4 hours without heartbeat (FR-021)");
+    }
+
+    [Theory]
+    [InlineData(SessionState.SessionInit)]
+    [InlineData(SessionState.SessionAllowed)]
+    [InlineData(SessionState.SessionAssigned)]
+    public void PreImagingStates_UseThe30MinuteInactivityTimeout(SessionState state)
+    {
+        DeviceSessionLifecycleService.TimeoutFor(state)
+            .Should().Be(DeviceSessionLifecycleService.InactivityTimeout);
+    }
+
+    [Theory]
+    [InlineData(SessionState.SessionStarted)]
+    [InlineData(SessionState.SessionInProgress)]
+    public void ActiveImagingStates_UseTheLongerHeartbeatTimeout(SessionState state)
+    {
+        // Regression guard: a flat 30-minute timeout across all states failed devices that were
+        // still working — a long apply, or a transient network outage mid-apply, looked identical
+        // to a dead device.
+        DeviceSessionLifecycleService.TimeoutFor(state)
+            .Should().Be(DeviceSessionLifecycleService.ActiveImagingHeartbeatTimeout)
+            .And.BeGreaterThan(DeviceSessionLifecycleService.InactivityTimeout);
+    }
+
+    [Fact]
     public void TerminalPurgeTtl_Is24Hours()
     {
         DeviceSessionLifecycleService.TerminalPurgeTtl.TotalHours
@@ -94,6 +124,19 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
 
         (staleSession < cutoff).Should().BeTrue(
             "a session with last heartbeat 35 minutes ago should be expired");
+    }
+
+    [Fact]
+    public void ActivelyImagingSession_QuietFor35Minutes_IsNotFailed()
+    {
+        // The reported bug: a device still applying an image dropped into the Failed bucket in the
+        // portal purely because it had been quiet for over 30 minutes.
+        var cutoff = DateTimeOffset.UtcNow
+                   - DeviceSessionLifecycleService.TimeoutFor(SessionState.SessionInProgress);
+        var lastHeartbeat = DateTimeOffset.UtcNow.AddMinutes(-35);
+
+        (lastHeartbeat < cutoff).Should().BeFalse(
+            "a session still imaging must survive well past the pre-imaging inactivity window");
     }
 
     // ── Terminal purge eligibility ────────────────────────────────────────────

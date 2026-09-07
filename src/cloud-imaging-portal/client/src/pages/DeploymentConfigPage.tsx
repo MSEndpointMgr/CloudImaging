@@ -9,6 +9,7 @@ import { Button, type ButtonStatus } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card.tsx';
+import { PageLoading } from '../components/PageLoading.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import type { ToastContextValue } from '../context/toastContext.tsx';
 import { rolesFromAccount } from '../context/authContext.tsx';
@@ -176,7 +177,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
     }
   };
 
-  if (loading) return <p className="text-muted-foreground">Loading…</p>;
+  if (loading) return <PageLoading />;
 
   const numField = (
     key: keyof PortalConfig,

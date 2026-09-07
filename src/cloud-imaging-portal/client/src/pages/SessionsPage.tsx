@@ -591,17 +591,15 @@ function SessionsPageImpl(): React.ReactElement {
                   {coupled.length}
                 </span>
               </div>
-              {/* Placed here (rather than beside the button) so it gets the bulk of the row's
-                  width and, just as importantly, sits well clear of the right edge of the page —
-                  the native popup opens flush with the control and ignores its own width, so
-                  giving it room on this side lets long catalog names show in full (see
-                  imageOptionLabel). */}
+              {/* Sized to its own content (bounded by min/max) rather than stretching to fill the
+                  row — a fixed max-width also keeps very long catalog names (see
+                  imageOptionLabel) from blowing up the control; truncate ellipsizes those. */}
               <select
                 value={selectedImageId ?? ''}
                 onChange={e => setSelectedImageId(e.target.value || null)}
                 disabled={coupled.length === 0 || images.length === 0}
                 title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
-                className="h-8 min-w-0 flex-1 truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-8 w-auto min-w-[10rem] max-w-xs truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">{hasOsImages ? 'Select OS image…' : 'No OS images uploaded'}</option>
                 {images.map(img => (
@@ -610,7 +608,7 @@ function SessionsPageImpl(): React.ReactElement {
               </select>
               <Button
                 size="sm"
-                className="shrink-0"
+                className="ml-auto shrink-0"
                 onClick={() => setPendingBulkAssign(true)}
                 disabled={!selectedImageId || coupled.length === 0 || startingImages}
                 title={!hasOsImages ? 'Upload an OS image before starting imaging.' : undefined}

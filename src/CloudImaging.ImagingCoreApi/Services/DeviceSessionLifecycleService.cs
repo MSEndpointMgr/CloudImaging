@@ -16,6 +16,10 @@ namespace CloudImaging.ImagingCoreApi.Services;
 ///     <see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>) transition
 ///     to <see cref="SessionState.SessionFailed"/>, since an operator was already involved and the
 ///     interruption has real diagnostic value.
+///   • Sessions actively imaging (<see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>)
+///     get the longer <see cref="ActiveImagingHeartbeatTimeout"/> instead — a full disk apply can
+///     legitimately outlast the pre-imaging window, and a device mid-apply must survive a transient
+///     network outage rather than being declared failed while it is still working.
 ///   • Terminal purge: sessions in terminal state (Completed / Failed / Expired / NotAuthorized) that have
 ///     been terminal for longer than <see cref="TerminalPurgeTtl"/> are deleted from Table Storage.
 ///
@@ -23,8 +27,15 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// </summary>
 public sealed partial class DeviceSessionLifecycleService
 {
-    /// <summary>Sessions with no heartbeat for this long are expired.</summary>
+    /// <summary>Pre-imaging sessions with no heartbeat for this long are expired.</summary>
     public static readonly TimeSpan InactivityTimeout = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Sessions actively imaging tolerate this much heartbeat silence before being failed. The
+    /// client checks in every 30s while a step is running (SessionHeartbeatCoordinator), so this
+    /// is an outage/crash backstop, not the expected cadence.
+    /// </summary>
+    public static readonly TimeSpan ActiveImagingHeartbeatTimeout = TimeSpan.FromHours(4);
 
     /// <summary>Terminal sessions older than this are purged from storage.</summary>
     public static readonly TimeSpan TerminalPurgeTtl = TimeSpan.FromHours(24);
@@ -34,6 +45,13 @@ public sealed partial class DeviceSessionLifecycleService
         SessionState.SessionInit,
         SessionState.SessionAllowed,
         SessionState.SessionAssigned,
+        SessionState.SessionStarted,
+        SessionState.SessionInProgress,
+    ];
+
+    // States where the device is actually applying an image and gets the longer timeout.
+    private static readonly SessionState[] ActiveImagingStates =
+    [
         SessionState.SessionStarted,
         SessionState.SessionInProgress,
     ];
@@ -65,12 +83,13 @@ public sealed partial class DeviceSessionLifecycleService
     }
 
     /// <summary>
-    /// Expires sessions that have not sent a heartbeat within <see cref="InactivityTimeout"/>.
-    /// Returns the number of sessions expired.
+    /// Expires sessions that have not sent a heartbeat within the timeout applicable to their
+    /// state (<see cref="InactivityTimeout"/>, or <see cref="ActiveImagingHeartbeatTimeout"/> for
+    /// sessions actively imaging). Returns the number of sessions expired.
     /// </summary>
     public async Task<int> ExpireInactiveSessionsAsync(CancellationToken ct = default)
     {
-        var cutoff = DateTimeOffset.UtcNow - InactivityTimeout;
+        var now = DateTimeOffset.UtcNow;
         int expired = 0;
 
         await foreach (var session in _sessionRepo.QueryActiveAsync(ct))
@@ -80,6 +99,7 @@ public sealed partial class DeviceSessionLifecycleService
                 continue;
             }
 
+            var cutoff = now - TimeoutFor(session.State);
             var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
             if (lastHeartbeat < cutoff)
             {
@@ -97,6 +117,10 @@ public sealed partial class DeviceSessionLifecycleService
         LogExpiryRun(_logger, expired);
         return expired;
     }
+
+    /// <summary>How long a session in <paramref name="state"/> may go without a heartbeat.</summary>
+    public static TimeSpan TimeoutFor(SessionState state) =>
+        ActiveImagingStates.Contains(state) ? ActiveImagingHeartbeatTimeout : InactivityTimeout;
 
     /// <summary>
     /// Purges terminal sessions that have been in a terminal state for longer than

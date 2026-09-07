@@ -16,7 +16,7 @@ namespace CloudImaging.Client.DevMode;
 /// <c>DEV_SIMULATION</c> constant is defined ONLY for Debug builds (see the
 /// <c>&lt;DefineConstants&gt;</c> condition in <c>CloudImaging.Client.csproj</c>).
 /// Release builds — which are what every shipped/published artifact uses
-/// (<c>-c Release</c> in <c>.github/workflows/release.yml</c>) — compile this file to
+/// (<c>-c Release</c> in <c>.github/workflows/release-client.yml</c>) — compile this file to
 /// nothing, so the dev navigator can never be surfaced in a released application.
 ///
 /// Mirrors the CloudImaging.MediaBuilder DevSimulationLauncher pattern.

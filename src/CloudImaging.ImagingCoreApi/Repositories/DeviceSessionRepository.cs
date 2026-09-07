@@ -85,6 +85,29 @@ public sealed class DeviceSessionRepository
     }
 
     /// <summary>
+    /// Stamps <see cref="DeviceSession.LastHeartbeatAt"/> without touching any other field.
+    /// Uses a Merge (not the Replace <see cref="UpdateAsync"/> performs) so a liveness check-in can
+    /// never clobber a progress report racing with it. No-ops for sessions that are not in the
+    /// active partition — terminal sessions have no liveness to record.
+    /// </summary>
+    public async Task TouchHeartbeatAsync(Guid sessionId, DateTimeOffset heartbeatAt, CancellationToken ct = default)
+    {
+        var entity = new TableEntity(ActivePartition, sessionId.ToString())
+        {
+            ["LastHeartbeatAt"] = heartbeatAt,
+        };
+
+        try
+        {
+            await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            // Already terminal or purged — nothing to keep alive.
+        }
+    }
+
+    /// <summary>
     /// Find a session with a matching passcode hash among currently active (non-terminal) sessions.
     /// Used for coupling passcode validation (FR-021, FR-032).
     /// </summary>

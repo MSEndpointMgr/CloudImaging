@@ -15,6 +15,7 @@ public sealed partial class SasRefreshCoordinator : IDisposable
     private readonly Guid _sessionId;
     private readonly ILogger<SasRefreshCoordinator> _logger;
     private readonly CancellationTokenSource _cts = new();
+    private bool _disposed;
 
     public string? CurrentSasUrl { get; private set; }
     public DateTimeOffset? SasExpiresAt  { get; private set; }
@@ -71,6 +72,14 @@ public sealed partial class SasRefreshCoordinator : IDisposable
 
     public void Dispose()
     {
+        // Disposed from both RunAsync's finally block and ImagingWorkflowViewModel.Dispose, and
+        // CancellationTokenSource.Cancel throws once disposed.
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         _cts.Cancel();
         _cts.Dispose();
     }

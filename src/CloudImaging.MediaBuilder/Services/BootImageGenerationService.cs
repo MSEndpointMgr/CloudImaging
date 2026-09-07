@@ -997,7 +997,7 @@ public sealed partial class BootImageGenerationService
     /// real hardware or in a Hyper-V VM. Self-contained publishes always copy hostfxr.dll next
     /// to the exe (it's what lets the exe run without a globally-installed runtime);
     /// framework-dependent ones never do, since they expect one already installed under
-    /// Program Files\dotnet. The official release pipeline (.github/workflows/release.yml)
+    /// Program Files\dotnet. The official release pipeline (.github/workflows/release-client.yml)
     /// always publishes this way, so this only fires for hand-built "Use local path" sources.
     /// </summary>
     private static void EnsureClientBinariesAreSelfContained(string clientBinariesPath)

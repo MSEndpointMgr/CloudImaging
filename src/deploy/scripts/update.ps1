@@ -62,7 +62,14 @@ if ($ArchivePath -eq '') {
     $headers = @{ 'User-Agent' = 'CloudImaging-Updater/1.0'; Accept = 'application/vnd.github+json' }
 
     if ($Version -eq 'latest') {
-        $release = Invoke-RestMethod "$apiBase/latest" -Headers $headers
+        # The backend/IaC and Client streams release independently, so GitHub's repo-wide
+        # /releases/latest can resolve to whichever stream published most recently. Use the
+        # moving 'iac-latest' alias release instead (kept in sync by release-iac.yml).
+        try {
+            $release = Invoke-RestMethod "$apiBase/tags/iac-latest" -Headers $headers
+        } catch {
+            throw "Could not resolve the 'iac-latest' release. Has a stable backend/IaC release (tag v#.#.#) ever been published? $($_.Exception.Message)"
+        }
     } else {
         $releases = Invoke-RestMethod $apiBase -Headers $headers
         $release  = $releases | Where-Object { $_.tag_name -eq "v$Version" -or $_.tag_name -eq $Version } |
@@ -70,7 +77,9 @@ if ($ArchivePath -eq '') {
         if ($null -eq $release) { throw "Release version '$Version' not found in GitHub." }
     }
 
-    $resolvedVersion = $release.tag_name
+    # The 'iac-latest' alias release's own tag_name is literally "iac-latest"; its title embeds
+    # the real version instead (see release-iac.yml), e.g. "Cloud Imaging (latest — v1.2.3)".
+    $resolvedVersion = if ($release.name -match '(v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?)') { $Matches[1] } else { $release.tag_name }
     Write-Host "Target release: $resolvedVersion ($($release.html_url))"
 
     $asset = $release.assets | Where-Object { $_.name -like 'cloud-imaging-*.zip' } | Select-Object -First 1

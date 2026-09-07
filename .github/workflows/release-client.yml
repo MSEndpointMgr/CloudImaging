@@ -1,0 +1,101 @@
+name: GitHub Release - Cloud Imaging Client Package & Publish
+
+# Triggered on Client version tags (e.g. client-v1.2.0).
+# Builds the CloudImaging.Client WinPE binary and creates a GitHub Release. This
+# is the asset Media Builder's "Automatic download" source option pulls, via the
+# 'client-latest' alias release (see GitHubReleasesClient.cs).
+
+on:
+  push:
+    tags:
+      - 'client-v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to package (e.g. client-v1.0.0). Defaults to latest matching tag if blank.'
+        required: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  build-and-package:
+    name: Build & Package Client Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore .NET solution
+        run: dotnet restore CloudImaging.sln
+
+      - name: Build CloudImaging.Client (WPF, self-contained win-x64)
+        run: |
+          dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `
+            -c Release -r win-x64 --self-contained -o publish/Client --no-restore
+          New-Item release-artifacts -ItemType Directory -Force | Out-Null
+          Compress-Archive publish/Client/* release-artifacts/CloudImaging.Client.zip
+
+      - name: Determine version tag
+        id: tag
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'client-v*' }
+          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Release tag: $tag"
+
+      - name: Generate SHA-256 checksum manifest
+        run: |
+          $hash = (Get-FileHash release-artifacts/CloudImaging.Client.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  CloudImaging.Client.zip" | Out-File "release-artifacts/SHA256SUMS"
+          Write-Host "Client zip SHA-256: $hash"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name:  ${{ steps.tag.outputs.tag }}
+          name:      "Cloud Imaging Client ${{ steps.tag.outputs.tag }}"
+          body:      |
+            ## Cloud Imaging Client ${{ steps.tag.outputs.tag }}
+
+            WinPE-runnable Cloud Imaging Client binary. Embedded into boot images by Media
+            Builder, either via the "Automatic download" source option (always resolves the
+            `client-latest` alias release) or by pointing Media Builder at a local extracted
+            copy of this ZIP.
+
+            ### Release artifacts
+            | File | Description |
+            |------|-------------|
+            | `CloudImaging.Client.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
+            | `SHA256SUMS` | SHA-256 checksum for integrity verification |
+          files: |
+            release-artifacts/CloudImaging.Client.zip
+            release-artifacts/SHA256SUMS
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+
+      # ── Move the 'client-latest' alias (stable releases only) ─────────────────
+      # GitHubReleasesClient.cs resolves this fixed tag instead of GitHub's
+      # repo-wide /releases/latest, which would be unsafe once the iac/mediabuilder
+      # streams interleave with this one.
+      - name: Move 'client-latest' alias to this release
+        if: ${{ !contains(steps.tag.outputs.tag, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete client-latest --yes --cleanup-tag
+          gh release create client-latest `
+            "release-artifacts/CloudImaging.Client.zip" `
+            "release-artifacts/SHA256SUMS" `
+            --target "${{ github.sha }}" `
+            --title "Cloud Imaging Client (latest — ${{ steps.tag.outputs.tag }})" `
+            --notes "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes." `
+            --latest=false

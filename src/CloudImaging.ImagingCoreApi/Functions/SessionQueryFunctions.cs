@@ -106,6 +106,18 @@ public sealed partial class SessionQueryFunctions
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
 
+        // A successful device status poll IS the heartbeat (spec FR-021). Recording it here is what
+        // keeps a session alive through steps that report no progress of their own, and through the
+        // assignment wait. Best-effort: a failed stamp must not fail the poll the client depends on.
+        try
+        {
+            await _sessionRepo.TouchHeartbeatAsync(sessionGuid, DateTimeOffset.UtcNow, context.CancellationToken);
+        }
+        catch (Exception ex)
+        {
+            LogHeartbeatStampFailed(_logger, ex, sessionGuid);
+        }
+
         string? sha256Hash = null;
         if (session.AssignedOsImageId is Guid assignedId)
         {
@@ -172,4 +184,7 @@ public sealed partial class SessionQueryFunctions
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Listed {Count} device session summaries for portal.")]
     private static partial void LogSessionsListed(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to stamp heartbeat for session {SessionId}.")]
+    private static partial void LogHeartbeatStampFailed(ILogger logger, Exception ex, Guid sessionId);
 }

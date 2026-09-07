@@ -28,7 +28,7 @@
     The DEV_SIMULATION constant is defined ONLY for Debug builds, so every piece of
     dev-mode code (guarded by #if DEV_SIMULATION) is physically excluded from the
     compiled binary in Release. Released artifacts are always published with
-    `-c Release` (see .github/workflows/release.yml), so dev mode can never surface
+    `-c Release` (see .github/workflows/release-mediabuilder.yml), so dev mode can never surface
     in a shipped application.
   -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

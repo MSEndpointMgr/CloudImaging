@@ -8,9 +8,10 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
-/// Resolves the latest MSEndpointMgr/CloudImaging GitHub release and downloads the Cloud
-/// Imaging Client binaries asset for the GenerateBootImageView's "Automatic download" source
-/// option (T152/T153, FR-051a).
+/// Resolves the MSEndpointMgr/CloudImaging "client-latest" alias release (always the newest
+/// stable Client release; see release-client.yml) and downloads the Cloud Imaging Client
+/// binaries asset for the GenerateBootImageView's "Automatic download" source option
+/// (T152/T153, FR-051a).
 ///
 /// Per FR-051a's clarified error-handling behavior: if the GitHub releases API or the asset
 /// download fails, this retries up to <see cref="MaxAttempts"/> times with exponential backoff.
@@ -20,7 +21,7 @@ namespace CloudImaging.MediaBuilder.Services;
 /// </summary>
 public sealed partial class GitHubReleasesClient
 {
-    private const string ReleasesApiUrl = "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/latest";
+    private const string ReleasesApiUrl = "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/client-latest";
     private const string ClientAssetName = "CloudImaging.Client.zip";
     private const int MaxAttempts = 3;
 
@@ -41,9 +42,9 @@ public sealed partial class GitHubReleasesClient
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
     /// <summary>
-    /// Resolves the latest release, downloads the <c>CloudImaging.Client.zip</c> asset, and
-    /// extracts it into a fresh directory under <c>%TEMP%</c>. Returns the extracted folder
-    /// path, ready to use as a Client binaries source.
+    /// Resolves the "client-latest" alias release, downloads the <c>CloudImaging.Client.zip</c>
+    /// asset, and extracts it into a fresh directory under <c>%TEMP%</c>. Returns the extracted
+    /// folder path, ready to use as a Client binaries source.
     /// </summary>
     public async Task<string> DownloadLatestClientAsync(CancellationToken ct = default)
     {
@@ -55,6 +56,14 @@ public sealed partial class GitHubReleasesClient
             try
             {
                 return await DownloadOnceAsync(attempt, ct);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                // Not a transient failure — no stable Client release has ever been published.
+                throw new InvalidOperationException(
+                    "No published Cloud Imaging Client release was found (the \"client-latest\" " +
+                    "release doesn't exist yet). Switch to the Custom local path option, or publish " +
+                    "a stable client-vX.Y.Z release first.", ex);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -77,7 +86,7 @@ public sealed partial class GitHubReleasesClient
 
     private async Task<string> DownloadOnceAsync(int attempt, CancellationToken ct)
     {
-        ReportProgress($"Resolving latest GitHub release (attempt {attempt}/{MaxAttempts})", 0);
+        ReportProgress($"Resolving latest Cloud Imaging Client release (attempt {attempt}/{MaxAttempts})", 0);
         var release = await _http.GetFromJsonAsync<GitHubReleaseDto>(ReleasesApiUrl, ct)
             ?? throw new InvalidOperationException("GitHub returned an empty release response.");
 
@@ -90,7 +99,10 @@ public sealed partial class GitHubReleasesClient
         Directory.CreateDirectory(extractDir);
         var zipPath = Path.Combine(extractDir, ClientAssetName);
 
-        ReportProgress($"Downloading Cloud Imaging Client {release.TagName}", 10);
+        // release.Name embeds the real client-vX.Y.Z version (see release-client.yml); TagName
+        // alone would just say "client-latest", which isn't informative to the technician.
+        var displayVersion = string.IsNullOrEmpty(release.Name) ? release.TagName : release.Name;
+        ReportProgress($"Downloading Cloud Imaging Client {displayVersion}", 10);
         await DownloadWithProgressAsync(asset.BrowserDownloadUrl, zipPath, ct);
 
         ReportProgress("Extracting Cloud Imaging Client", 90);
@@ -98,7 +110,7 @@ public sealed partial class GitHubReleasesClient
         try { File.Delete(zipPath); } catch { /* best-effort */ }
 
         ReportProgress("Cloud Imaging Client ready", 100);
-        LogDownloaded(_logger, release.TagName, asset.Name);
+        LogDownloaded(_logger, displayVersion, asset.Name);
         return extractDir;
     }
 
@@ -144,6 +156,9 @@ public sealed partial class GitHubReleasesClient
     {
         [JsonPropertyName("tag_name")]
         public string TagName { get; init; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string Name { get; init; } = string.Empty;
 
         [JsonPropertyName("assets")]
         public List<GitHubReleaseAssetDto> Assets { get; init; } = [];

@@ -1,7 +1,9 @@
-name: GitHub Release - Package & Publish
+name: GitHub Release - IaC/Backend Package & Publish
 
-# Triggered on version tags (e.g. v1.2.0).
-# Builds all components, assembles the release archive, and creates a GitHub Release.
+# Triggered on backend/infra version tags (e.g. v1.2.0).
+# Builds the 3 Function Apps + portal + Bicep/deploy scripts, assembles the release
+# bundle, and creates a GitHub Release. Cloud Imaging Client and Media Builder ship
+# from their own release streams (release-client.yml / release-mediabuilder.yml).
 
 on:
   push:
@@ -10,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to package (e.g. v1.0.0). Defaults to latest tag if blank.'
+        description: 'Tag to package (e.g. v1.0.0). Defaults to latest matching tag if blank.'
         required: false
 
 env:
@@ -61,18 +63,6 @@ jobs:
             -c Release -o publish/ImagingCoreApi --no-restore
           Compress-Archive publish/ImagingCoreApi/* release-artifacts/ImagingCoreApi.zip
 
-      - name: Build CloudImaging.Client (WPF)
-        run: |
-          dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `
-            -c Release -r win-x64 --self-contained -o publish/Client --no-restore
-          Compress-Archive publish/Client/* release-artifacts/CloudImaging.Client.zip
-
-      - name: Build CloudImaging.MediaBuilder (WPF)
-        run: |
-          dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj `
-            -c Release -r win-x64 --self-contained -o publish/MediaBuilder --no-restore
-          Compress-Archive publish/MediaBuilder/* release-artifacts/CloudImaging.MediaBuilder.zip
-
       # ── Portal builds ────────────────────────────────────────────────────────
 
       - name: Build portal server
@@ -103,11 +93,11 @@ jobs:
         id: tag
         run: |
           $tag = "${{ github.ref_name }}"
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'v[0-9]*' }
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag"
 
-      - name: Assemble full release bundle
+      - name: Assemble backend/IaC release bundle
         run: |
           $version = "${{ steps.tag.outputs.tag }}"
           $bundleName = "cloud-imaging-$version"
@@ -117,8 +107,6 @@ jobs:
           Copy-Item release-artifacts/DeviceGatewayApi.zip     $bundleDir/
           Copy-Item release-artifacts/OperatorApi.zip          $bundleDir/
           Copy-Item release-artifacts/ImagingCoreApi.zip       $bundleDir/
-          Copy-Item release-artifacts/CloudImaging.Client.zip  $bundleDir/
-          Copy-Item release-artifacts/CloudImaging.MediaBuilder.zip $bundleDir/
           Copy-Item release-artifacts/portal-backend.zip       $bundleDir/
           Copy-Item release-artifacts/portal-frontend.zip      $bundleDir/
           Copy-Item release-artifacts/deploy.zip               $bundleDir/
@@ -144,10 +132,14 @@ jobs:
           body:      |
             ## Cloud Imaging ${{ steps.tag.outputs.tag }}
 
+            Backend/IaC release: the 3 Function Apps, portal (frontend + backend), and
+            Bicep/deploy scripts. Cloud Imaging Client and Media Builder ship from their own
+            release streams (tags `client-v*` / `mediabuilder-v*`).
+
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `cloud-imaging-*.zip` | Full release bundle (all 7 components + deploy scripts) |
+            | `cloud-imaging-*.zip` | Backend/IaC bundle (5 components + deploy scripts) |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
 
             ### Upgrade instructions
@@ -158,3 +150,21 @@ jobs:
             release-bundle/SHA256SUMS
           draft: false
           prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+
+      # ── Move the 'iac-latest' alias (stable releases only) ────────────────────
+      # update.ps1's -Version latest resolves this fixed tag instead of GitHub's
+      # repo-wide /releases/latest, which would be unsafe once the client/mediabuilder
+      # streams interleave with this one.
+      - name: Move 'iac-latest' alias to this release
+        if: ${{ !contains(steps.tag.outputs.tag, '-') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete iac-latest --yes --cleanup-tag
+          gh release create iac-latest `
+            "release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip" `
+            "release-bundle/SHA256SUMS" `
+            --target "${{ github.sha }}" `
+            --title "Cloud Imaging (latest — ${{ steps.tag.outputs.tag }})" `
+            --notes "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes." `
+            --latest=false

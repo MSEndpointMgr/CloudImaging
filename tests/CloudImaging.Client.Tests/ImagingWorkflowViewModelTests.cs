@@ -97,4 +97,40 @@ public sealed class ImagingWorkflowViewModelTests
         vm.StatusMessage = "Applying image…";
         vm.StatusMessage.Should().Be("Applying image…");
     }
+
+    // ── On-screen error detail truncation (FR-002b: no scrolling in ResultsView) ─────────────
+
+    [Fact]
+    public void BuildOnScreenErrorDetail_ShortDetail_IsReturnedUnchanged()
+    {
+        var detail = "diskpart exited with code -2147024894.";
+        var result = InvokeBuildOnScreenErrorDetail(detail);
+        result.Should().Be(detail);
+    }
+
+    [Fact]
+    public void BuildOnScreenErrorDetail_LongDetail_TruncatesAtWordBoundary_NotMidWord()
+    {
+        // Regression test: a raw character-count cut previously produced "...DiskPar..." (cutting
+        // the word "DiskPart" in half), which read as broken/unbounded rather than intentionally
+        // summarized.
+        var detail = string.Concat(Enumerable.Repeat("DiskPart succeeded in cleaning the disk. ", 20));
+
+        var result = InvokeBuildOnScreenErrorDetail(detail);
+
+        result.Should().Contain("See \"View Log\" for the full detail.");
+        var summary = result[..result.IndexOf('…')];
+        detail.Should().StartWith(summary, "the summary must be a verbatim, unmutated prefix of the original text");
+        char.IsWhiteSpace(detail[summary.Length]).Should().BeTrue(
+            "truncation must land right before a whitespace boundary, never mid-word");
+    }
+
+    private static string InvokeBuildOnScreenErrorDetail(string errorDetail)
+    {
+        var method = typeof(ImagingWorkflowViewModel).GetMethod(
+            "BuildOnScreenErrorDetail",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        return (string)method.Invoke(null, [errorDetail])!;
+    }
 }
+

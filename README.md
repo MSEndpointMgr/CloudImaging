@@ -1,40 +1,98 @@
 # CloudImaging
 
-Cloud-orchestrated Windows OS imaging for bare-metal devices running WinPE.  
-A self-hostable, Azure-native solution for enterprise device provisioning.
+Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 
 ---
 
 ## Overview
 
 CloudImaging provisions Windows OS images from Azure Blob Storage to bare-metal
-devices over the network. A technician boots a target device into WinPE, where
-the **Cloud Imaging Client** application launches automatically and guides the
-imaging session from start to finish. An operator in a web portal couples the
-session, assigns an OS image, and monitors progress in real time — all from a
-browser, with no physical access to the device required.
+devices over the network. A technician boots a target device from a prepared
+USB drive; a lightweight client launches automatically in WinPE and displays
+a one-time passcode. The same technician then opens the Cloud Imaging Portal
+in a browser, on their phone, a second screen, or a nearby workstation, enters
+the passcode to couple the session, assigns an OS image, and confirms. From
+that point the device formats, downloads, and applies the image on its own,
+reporting progress in real time.
 
-The solution is packaged as a reproducible, self-hostable deployment bundle.
-Organizations deploy it into their own Azure tenant using an Azure Template Spec
-wizard and a Bicep-based infrastructure-as-code package. No external hosting or
-dependency on MSEndpointMgr infrastructure is required.
+The solution is deployed into your own Azure subscription with a Bicep
+infrastructure-as-code package, published through an Azure Template Spec.
+Everything runs on Azure PaaS services inside your tenant: there is no
+on-premises server to build (no PXE, MDT, or WDS role), and no dependency on
+MSEndpointMgr-hosted infrastructure. The resource group, network boundary,
+and identity configuration are yours to manage.
+
+The same workflow scales to multiple devices at once: a technician can boot
+several devices in sequence, then couple, assign, and monitor all of them
+from the same portal session, including bulk assignment of one OS image to
+several coupled sessions at a time.
+
+---
+
+## How it works
+
+1. **Deploy the solution.** The Bicep package is published and deployed into
+   your Azure subscription as a Template Spec (see [Deployment](#deployment)
+   below).
+2. **Set up Entra ID access.** Create the app registrations for the Portal
+   and Media Builder, add the `CloudImaging.Administrator` and
+   `CloudImaging.Technician` app roles to each, and assign at least one
+   person or group the Administrator role so someone can sign in to the
+   portal. See [docs/roles-and-access.md](docs/roles-and-access.md) for the
+   full role model.
+3. **Configure the environment.** An administrator signs in to the Cloud
+   Imaging Portal and sets up the prerequisites: generates the boot media
+   certificate used for mTLS, adds OS images to the catalog, and optionally
+   configures branding and device pre-flight authorization.
+4. **Generate a boot image.** An administrator generates a WinPE boot image
+   in Media Builder, embedding the client app and the configured
+   certificate/branding. Administrator-only, since the image embeds the
+   active mTLS boot-media certificate.
+5. **Prepare a USB drive.** A technician (or administrator) writes the
+   generated boot image to a USB drive in Media Builder. One boot image can
+   be written to as many USB drives as needed for a bulk rollout.
+6. **Boot the target device.** The technician boots the device from the USB
+   drive; the client launches automatically and shows a session passcode.
+7. **Couple the session.** The technician opens the portal, enters the
+   passcode, assigns an OS image, and confirms. Multiple devices can be
+   booted and coupled this way, then assigned and started together.
+8. **Imaging runs.** Each device formats, downloads the OS image over a
+   time-limited SAS URL, and applies it, reporting progress at every step.
+9. **Result.** The client displays a success or failure screen; the portal
+   reflects the final state of each session in real time, with a support
+   reference code if imaging failed.
+
+---
+
+## Requirements
+
+| Requirement | Detail |
+|---|---|
+| Azure subscription | Owner (or Contributor + User Access Administrator) on the target resource group, to deploy the Bicep package |
+| Entra ID admin access | **Application Administrator** or **Cloud Application Administrator**, to create the app registrations, app roles, and admin consent used for Portal and Media Builder sign-in |
+| Windows workstation with the ADK + WinPE add-on | Required to run Media Builder and generate boot images |
+| USB drive per boot media set (≥ 26 GB) | Holds the WinPE boot partition (≥ 2 GB) and the OS image cache partition (≥ 24 GB) |
+| Target devices with outbound HTTPS access | No inbound connectivity or VPN to the device is required |
+
+See [docs/self-hosting-guide.md](docs/self-hosting-guide.md) for the full
+tenant setup walkthrough.
 
 ---
 
 ## Architecture
 
-CloudImaging is a six-component polyglot system:
+CloudImaging is a six-component system:
 
 | Component | Technology | Role |
 |---|---|---|
-| **Cloud Imaging Client** | WPF / .NET 10 / WinPE | Runs on the target device; drives the imaging session end-to-end |
+| **Cloud Imaging Client** | WPF / .NET 10 / WinPE | Runs on the target device; drives the imaging session end to end |
 | **Cloud Imaging Media Builder** | WPF / .NET 10 / Windows | Technician workstation app for generating WinPE boot images and preparing USB media |
 | **Device Gateway API** | Azure Functions v4 / .NET 10 | Public HTTPS entry point for device-originated calls; enforces mTLS |
 | **Operator API** | Azure Functions v4 / .NET 10 | Authenticated API for Portal and Media Builder; Entra ID + app-role secured |
 | **Imaging Core API** | Azure Functions v4 / .NET 10 | Private, VNet-isolated service that owns session state, SAS tokens, and image catalog |
-| **Cloud Imaging Portal** | React 19 + Node.js/Express | Web application for operators to manage sessions, OS images, and configuration |
+| **Cloud Imaging Portal** | React 19 + Node.js/Express | Web application for coupling sessions, assigning OS images, and managing configuration |
 
-### Component Interaction
+### Component interaction
 
 ```
 Cloud Imaging Client (WinPE)
@@ -62,7 +120,7 @@ Operator API
 - Auto-launches in WinPE and displays an operation selection screen (Imaging and
   Decommissioning cards; Decommissioning is reserved for a future release)
 - Registers a device session and displays a **6-character alphanumeric passcode**
-  for operator coupling without requiring Entra ID sign-in on the device
+  for coupling in the portal, without requiring Entra ID sign-in on the device
 - Performs device pre-flight authorization against Autopilot and Intune Corporate
   Identifier records via Microsoft Graph; unauthorized devices are immediately shown
   a Not Authorized result with enrollment guidance
@@ -81,8 +139,8 @@ Operator API
 
 - **Left-sidebar navigation** with five sections: Sessions, OS Images, Boot Images,
   Branding, and Configuration
-- **Sessions section** displays a live table with four filter tabs — Active (default),
-  Completed, Failed, and All — each with a real-time count badge
+- **Sessions section** displays a live table with four filter tabs (Active by
+  default, Completed, Failed, and All), each with a real-time count badge
 - **Session coupling** via a persistent Couple Device button that opens a passcode
   modal; the passcode is case-insensitive and resolved server-side
 - **OS image assignment** via an inline modal listing the active catalog (searchable,
@@ -152,36 +210,21 @@ Operator API
 - WPF applications write structured diagnostic logs to a local rolling log file only;
   no external APM connectivity required from WinPE or technician workstations
 
----
-
-## How It Works
-
-1. **Prepare boot media**: a Media Builder operator generates a WinPE boot image
-   embedding the Cloud Imaging Client and prepares a USB drive
-2. **Boot the target device**: the technician inserts the USB drive; the Cloud
-   Imaging Client launches automatically and displays a session passcode
-3. **Couple the session**: a portal operator enters the passcode in the Cloud
-   Imaging Portal, assigns an OS image, and confirms
-4. **Imaging runs**: the Cloud Imaging Client downloads the OS image via a SAS URL
-   and applies it, reporting progress at each step
-5. **Result**: the client displays a success or failure screen; the portal reflects
-   the final session state in real time
+</details>
 
 ---
 
 ## Deployment
 
-CloudImaging uses an **Azure Template Spec** deployment model.
+CloudImaging is deployed as an Azure Template Spec: the Bicep package is
+published once per environment, then deployed through the standard Azure
+portal Template Spec wizard.
 
-1. **Prerequisites**
-   - An Azure subscription where the deploying user holds Owner (or Contributor +
-     User Access Administrator) at the resource group scope
-   - An Entra ID shared app registration with the two user-facing app roles
-     (`CloudImaging.Administrator`, `CloudImaging.Technician`) configured — see the
-     deployment guide in the release bundle for step-by-step instructions
-   - Windows ADK and WinPE add-on installed on the Media Builder workstation
+1. **Check prerequisites** (see [Requirements](#requirements) above). For a
+   full walkthrough of the Entra ID app registrations and tenant setup,
+   follow [docs/self-hosting-guide.md](docs/self-hosting-guide.md).
 
-2. **Publish the Template Spec** (one-time per environment)
+2. **Publish the Template Spec** (one-time per environment):
    ```powershell
    .\src\deploy\scripts\publish-template-spec.ps1 `
        -ResourceGroupName 'rg-contoso-dev-cloudimaging' `
@@ -189,42 +232,64 @@ CloudImaging uses an **Azure Template Spec** deployment model.
        -Version '1.0.0'
    ```
 
-3. **Deploy from the Azure portal**: navigate to the Template Spec resource and
-   select **Deploy** to launch the full tabbed wizard; supply your Entra ID app
-   registration IDs and environment parameters
+3. **Deploy from the Azure portal**: open the Template Spec resource and
+   select **Deploy** to launch the full tabbed wizard; supply your Entra ID
+   app registration IDs and environment parameters.
 
-4. **Upgrade** (code-only): use the included `update.ps1` script to push new
-   component packages to existing Azure resources via zip deploy — no
-   infrastructure re-provisioning required
+4. **Upgrade later without redeploying infrastructure**: the included
+   `update.ps1` script pushes new component packages to existing Azure
+   resources via zip deploy, no re-provisioning required.
 
-### Deployed Resources
+### Deployed resources
 
 The Bicep IaC package provisions the following Azure resources:
 
-- Azure Functions Premium EP1 — Device Gateway API, Operator API, Imaging Core API
-- Azure App Service (Linux, Node.js 22) — Portal backend
-- Azure Static Web Apps — Portal frontend
-- Azure Storage Account — OS images, boot images, branding assets, Table Storage
-  for session and catalog state
-- Azure Virtual Network with Private Endpoint and Private DNS — isolates Imaging
-  Core API from public access
-- Azure Application Insights — shared telemetry workspace
-- Azure Key Vault — boot media client certificate storage
+- Azure Functions Premium EP1: Device Gateway API, Operator API, Imaging Core API
+- Azure App Service (Linux, Node.js 22): Portal backend
+- Azure Static Web Apps: Portal frontend
+- Azure Storage Account: OS images, boot images, branding assets, and Table
+  Storage for session and catalog state
+- Azure Virtual Network with Private Endpoint and Private DNS: isolates the
+  Imaging Core API from public access
+- Azure Application Insights: shared telemetry workspace
+- Azure Key Vault: boot media client certificate storage
 - Managed Identities and RBAC role assignments
+
+---
+
+## Documentation
+
+| Guide | Use it to |
+|---|---|
+| [Self-hosting guide](docs/self-hosting-guide.md) | Set up Entra ID app registrations and deploy into your tenant, step by step |
+| [Operations runbook](docs/operations-runbook.md) | Day-2 operations: monitoring, certificate rotation, upgrades, troubleshooting |
+| [Roles and access](docs/roles-and-access.md) | The full Entra ID app role and service role model |
 
 ---
 
 ## Release Model
 
-Every versioned GitHub Release contains a complete bundle with artifacts from all
-six components: three Function App packages, Portal frontend and backend, Cloud
-Imaging Client WinPE binary, Media Builder Windows installer, IaC templates,
-parameter templates, and documentation. All components are included in every
-release regardless of which changed since the prior release. Versioning is
-solution-level.
+Releases are split into three independently-versioned streams, each with its own tag
+prefix and GitHub Release history:
+
+| Stream | Tag | Contents |
+|--------|-----|----------|
+| Backend/IaC | `v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep/deploy scripts, `update.ps1` |
+| Cloud Imaging Client | `client-v#.#.#` | The WinPE client binary embedded into boot images |
+| Media Builder | `mediabuilder-v#.#.#` | The technician-workstation Windows app |
+
+Each stream is cut on its own cadence: a Client hotfix doesn't require a new backend
+release, and vice versa. Because GitHub's Releases page is a flat list (not grouped by
+stream), the backend/IaC and Client streams also maintain a moving "latest" alias release
+(`iac-latest`, `client-latest`) that always points at the newest *stable* release in that
+stream. `update.ps1 -Version latest` and Media Builder's "Automatic download" source
+option resolve these aliases directly instead of GitHub's repo-wide latest release, which
+would otherwise resolve to whichever stream published most recently. Media Builder has no
+alias, since nothing auto-downloads it.
 
 ---
 
 ## License
 
 [MIT](LICENSE)
+
