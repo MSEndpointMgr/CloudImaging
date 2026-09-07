@@ -345,6 +345,45 @@
       }
     },
     {
+      "label": "Release: Push Backend/IaC tag (mse-ci-v#.#.#)",
+      "type": "shell",
+      "command": "git fetch origin main --tags; git tag mse-ci-v${input:releaseVersion} origin/main; git push origin mse-ci-v${input:releaseVersion}",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Tags origin/main's tip (not local HEAD, so it always points at what's actually on GitHub) mse-ci-v<version> and pushes it, triggering release-iac.yml (3 Function Apps + portal + deploy scripts). A version with no '-' suffix also moves the mse-ci-iac-latest alias.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
+    },
+    {
+      "label": "Release: Push Client tag (mse-ci-client-v#.#.#)",
+      "type": "shell",
+      "command": "git fetch origin main --tags; git tag mse-ci-client-v${input:releaseVersion} origin/main; git push origin mse-ci-client-v${input:releaseVersion}",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Tags origin/main's tip (not local HEAD) mse-ci-client-v<version> and pushes it, triggering release-client.yml (CloudImaging.Client). A version with no '-' suffix also moves the mse-ci-client-latest alias that Media Builder's 'Automatic download' resolves.",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
+    },
+    {
+      "label": "Release: Push Media Builder tag (mse-ci-mediabuilder-v#.#.#)",
+      "type": "shell",
+      "command": "git fetch origin main --tags; git tag mse-ci-mediabuilder-v${input:releaseVersion} origin/main; git push origin mse-ci-mediabuilder-v${input:releaseVersion}",
+      "problemMatcher": [],
+      "group": "none",
+      "detail": "Tags origin/main's tip (not local HEAD) mse-ci-mediabuilder-v<version> and pushes it, triggering release-mediabuilder.yml (CloudImaging.MediaBuilder). No 'latest' alias for this stream (nothing auto-downloads it).",
+      "options": {
+        "statusbar": {
+          "hide" : true
+        }
+      }
+    },
+    {
       "label": "Dev: Simulate device session",
       "type": "shell",
       "command": "pwsh -NonInteractive -File src/deploy/scripts/simulate-device-session.ps1 -DeviceGatewayBaseUrl '${input:deviceGatewayBaseUrl}' -PfxPath '${input:bootMediaPfxPath}' -PollStatus",
@@ -388,6 +427,12 @@
       "type": "promptString",
       "description": "Path to the boot-media PFX (exported without password)",
       "default": "./bootmedia.pfx"
+    },
+    {
+      "id": "releaseVersion",
+      "type": "promptString",
+      "description": "Release version, no prefix (e.g. 1.0.0 or 1.0.0-beta.1)",
+      "default": "1.0.0"
     }
   ]
 }
