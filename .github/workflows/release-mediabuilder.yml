@@ -1,6 +1,6 @@
 name: GitHub Release - Media Builder Package & Publish
 
-# Triggered on Media Builder version tags (e.g. mediabuilder-v1.2.0).
+# Triggered on Media Builder version tags (e.g. mse-ci-mediabuilder-v1.2.0).
 # Builds the CloudImaging.MediaBuilder technician-workstation app and creates a
 # GitHub Release. Installed via Win32/Intune packaging (see
 # docs/self-hosting-guide.md "Packaging as a Win32 app") — nothing auto-downloads
@@ -9,11 +9,11 @@ name: GitHub Release - Media Builder Package & Publish
 on:
   push:
     tags:
-      - 'mediabuilder-v[0-9]+.[0-9]+.[0-9]+'
+      - 'mse-ci-mediabuilder-v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to package (e.g. mediabuilder-v1.0.0). Defaults to latest matching tag if blank.'
+        description: 'Tag to package (e.g. mse-ci-mediabuilder-v1.0.0). Defaults to latest matching tag if blank.'
         required: false
 
 env:
@@ -52,7 +52,7 @@ jobs:
         id: tag
         run: |
           $tag = "${{ github.ref_name }}"
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mediabuilder-v*' }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-mediabuilder-v*' }
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag"
 

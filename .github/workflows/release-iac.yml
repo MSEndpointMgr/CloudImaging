@@ -1,6 +1,6 @@
 name: GitHub Release - IaC/Backend Package & Publish
 
-# Triggered on backend/infra version tags (e.g. v1.2.0).
+# Triggered on backend/infra version tags (e.g. mse-ci-v1.2.0).
 # Builds the 3 Function Apps + portal + Bicep/deploy scripts, assembles the release
 # bundle, and creates a GitHub Release. Cloud Imaging Client and Media Builder ship
 # from their own release streams (release-client.yml / release-mediabuilder.yml).
@@ -8,11 +8,11 @@ name: GitHub Release - IaC/Backend Package & Publish
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'mse-ci-v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to package (e.g. v1.0.0). Defaults to latest matching tag if blank.'
+        description: 'Tag to package (e.g. mse-ci-v1.0.0). Defaults to latest matching tag if blank.'
         required: false
 
 env:
@@ -93,7 +93,7 @@ jobs:
         id: tag
         run: |
           $tag = "${{ github.ref_name }}"
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'v[0-9]*' }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-v[0-9]*' }
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag"
 
@@ -134,7 +134,7 @@ jobs:
 
             Backend/IaC release: the 3 Function Apps, portal (frontend + backend), and
             Bicep/deploy scripts. Cloud Imaging Client and Media Builder ship from their own
-            release streams (tags `client-v*` / `mediabuilder-v*`).
+            release streams (tags `mse-ci-client-v*` / `mse-ci-mediabuilder-v*`).
 
             ### Release artifacts
             | File | Description |
@@ -151,17 +151,17 @@ jobs:
           draft: false
           prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
 
-      # ── Move the 'iac-latest' alias (stable releases only) ────────────────────
+      # ── Move the 'mse-ci-iac-latest' alias (stable releases only) ─────────────
       # update.ps1's -Version latest resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the client/mediabuilder
       # streams interleave with this one.
-      - name: Move 'iac-latest' alias to this release
+      - name: Move 'mse-ci-iac-latest' alias to this release
         if: ${{ !contains(steps.tag.outputs.tag, '-') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete iac-latest --yes --cleanup-tag
-          gh release create iac-latest `
+          gh release delete mse-ci-iac-latest --yes --cleanup-tag
+          gh release create mse-ci-iac-latest `
             "release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip" `
             "release-bundle/SHA256SUMS" `
             --target "${{ github.sha }}" `

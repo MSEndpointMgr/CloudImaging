@@ -10,7 +10,7 @@ using Xunit;
 namespace CloudImaging.MediaBuilder.Tests;
 
 /// <summary>
-/// Tests for <see cref="GitHubReleasesClient"/>'s resolution of the "client-latest" alias
+/// Tests for <see cref="GitHubReleasesClient"/>'s resolution of the "mse-ci-client-latest" alias
 /// release (release-client.yml keeps this pointed at the newest stable Client release, so
 /// Media Builder's "Automatic download" source option never needs GitHub's repo-wide
 /// /releases/latest, which would be unsafe once the iac/mediabuilder streams interleave).
@@ -18,7 +18,7 @@ namespace CloudImaging.MediaBuilder.Tests;
 public sealed class GitHubReleasesClientTests
 {
     private const string ClientLatestApiUrl =
-        "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/client-latest";
+        "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/mse-ci-client-latest";
 
     [Fact]
     public async Task DownloadLatestClientAsync_ResolvesViaClientLatestAlias_AndExtractsAsset()
@@ -37,8 +37,8 @@ public sealed class GitHubReleasesClientTests
                     Content = JsonContent(
                         """
                         {
-                          "tag_name": "client-latest",
-                          "name": "Cloud Imaging Client (latest — client-v1.2.3)",
+                          "tag_name": "mse-ci-client-latest",
+                          "name": "Cloud Imaging Client (latest — mse-ci-client-v1.2.3)",
                           "assets": [
                             { "name": "CloudImaging.Client.zip", "browser_download_url": "https://example.com/download/CloudImaging.Client.zip" },
                             { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
@@ -63,7 +63,7 @@ public sealed class GitHubReleasesClientTests
         try
         {
             requestedUrls.Should().Contain(ClientLatestApiUrl,
-                "the client must resolve the moving 'client-latest' alias release, never GitHub's repo-wide /releases/latest");
+                "the client must resolve the moving 'mse-ci-client-latest' alias release, never GitHub's repo-wide /releases/latest");
             Directory.Exists(extractDir).Should().BeTrue();
             File.Exists(Path.Combine(extractDir, "CloudImaging.Client.exe")).Should().BeTrue(
                 "the downloaded CloudImaging.Client.zip asset must be extracted into the returned directory");
@@ -83,7 +83,7 @@ public sealed class GitHubReleasesClientTests
         Func<Task> act = async () => await svc.DownloadLatestClientAsync();
 
         await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*client-latest*",
+            .WithMessage("*mse-ci-client-latest*",
                 "a missing alias release (no stable Client version ever published) must surface a clear, actionable error instead of a generic HTTP failure");
     }
 

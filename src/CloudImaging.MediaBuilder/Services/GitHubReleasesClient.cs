@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
-/// Resolves the MSEndpointMgr/CloudImaging "client-latest" alias release (always the newest
+/// Resolves the MSEndpointMgr/CloudImaging "mse-ci-client-latest" alias release (always the newest
 /// stable Client release; see release-client.yml) and downloads the Cloud Imaging Client
 /// binaries asset for the GenerateBootImageView's "Automatic download" source option
 /// (T152/T153, FR-051a).
@@ -21,7 +21,7 @@ namespace CloudImaging.MediaBuilder.Services;
 /// </summary>
 public sealed partial class GitHubReleasesClient
 {
-    private const string ReleasesApiUrl = "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/client-latest";
+    private const string ReleasesApiUrl = "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/mse-ci-client-latest";
     private const string ClientAssetName = "CloudImaging.Client.zip";
     private const int MaxAttempts = 3;
 
@@ -42,7 +42,7 @@ public sealed partial class GitHubReleasesClient
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
     /// <summary>
-    /// Resolves the "client-latest" alias release, downloads the <c>CloudImaging.Client.zip</c>
+    /// Resolves the "mse-ci-client-latest" alias release, downloads the <c>CloudImaging.Client.zip</c>
     /// asset, and extracts it into a fresh directory under <c>%TEMP%</c>. Returns the extracted
     /// folder path, ready to use as a Client binaries source.
     /// </summary>
@@ -61,9 +61,9 @@ public sealed partial class GitHubReleasesClient
             {
                 // Not a transient failure — no stable Client release has ever been published.
                 throw new InvalidOperationException(
-                    "No published Cloud Imaging Client release was found (the \"client-latest\" " +
+                    "No published Cloud Imaging Client release was found (the \"mse-ci-client-latest\" " +
                     "release doesn't exist yet). Switch to the Custom local path option, or publish " +
-                    "a stable client-vX.Y.Z release first.", ex);
+                    "a stable mse-ci-client-vX.Y.Z release first.", ex);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -99,8 +99,8 @@ public sealed partial class GitHubReleasesClient
         Directory.CreateDirectory(extractDir);
         var zipPath = Path.Combine(extractDir, ClientAssetName);
 
-        // release.Name embeds the real client-vX.Y.Z version (see release-client.yml); TagName
-        // alone would just say "client-latest", which isn't informative to the technician.
+        // release.Name embeds the real mse-ci-client-vX.Y.Z version (see release-client.yml); TagName
+        // alone would just say "mse-ci-client-latest", which isn't informative to the technician.
         var displayVersion = string.IsNullOrEmpty(release.Name) ? release.TagName : release.Name;
         ReportProgress($"Downloading Cloud Imaging Client {displayVersion}", 10);
         await DownloadWithProgressAsync(asset.BrowserDownloadUrl, zipPath, ct);

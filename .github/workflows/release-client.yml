@@ -1,18 +1,18 @@
 name: GitHub Release - Cloud Imaging Client Package & Publish
 
-# Triggered on Client version tags (e.g. client-v1.2.0).
+# Triggered on Client version tags (e.g. mse-ci-client-v1.2.0).
 # Builds the CloudImaging.Client WinPE binary and creates a GitHub Release. This
 # is the asset Media Builder's "Automatic download" source option pulls, via the
-# 'client-latest' alias release (see GitHubReleasesClient.cs).
+# 'mse-ci-client-latest' alias release (see GitHubReleasesClient.cs).
 
 on:
   push:
     tags:
-      - 'client-v[0-9]+.[0-9]+.[0-9]+'
+      - 'mse-ci-client-v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to package (e.g. client-v1.0.0). Defaults to latest matching tag if blank.'
+        description: 'Tag to package (e.g. mse-ci-client-v1.0.0). Defaults to latest matching tag if blank.'
         required: false
 
 env:
@@ -51,7 +51,7 @@ jobs:
         id: tag
         run: |
           $tag = "${{ github.ref_name }}"
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'client-v*' }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-client-v*' }
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag"
 
@@ -71,7 +71,7 @@ jobs:
 
             WinPE-runnable Cloud Imaging Client binary. Embedded into boot images by Media
             Builder, either via the "Automatic download" source option (always resolves the
-            `client-latest` alias release) or by pointing Media Builder at a local extracted
+            `mse-ci-client-latest` alias release) or by pointing Media Builder at a local extracted
             copy of this ZIP.
 
             ### Release artifacts
@@ -85,17 +85,17 @@ jobs:
           draft: false
           prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
 
-      # ── Move the 'client-latest' alias (stable releases only) ─────────────────
+      # ── Move the 'mse-ci-client-latest' alias (stable releases only) ───────────
       # GitHubReleasesClient.cs resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the iac/mediabuilder
       # streams interleave with this one.
-      - name: Move 'client-latest' alias to this release
+      - name: Move 'mse-ci-client-latest' alias to this release
         if: ${{ !contains(steps.tag.outputs.tag, '-') }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete client-latest --yes --cleanup-tag
-          gh release create client-latest `
+          gh release delete mse-ci-client-latest --yes --cleanup-tag
+          gh release create mse-ci-client-latest `
             "release-artifacts/CloudImaging.Client.zip" `
             "release-artifacts/SHA256SUMS" `
             --target "${{ github.sha }}" `

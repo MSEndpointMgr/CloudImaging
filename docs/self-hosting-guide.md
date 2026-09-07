@@ -396,7 +396,7 @@ the always-on-top Cloud Imaging Client window:
 .\update.ps1 -ResourceGroupName corp-prod-rg
 
 # Or from a local archive
-.\update.ps1 -ResourceGroupName corp-prod-rg -ArchivePath C:\Downloads\cloud-imaging-v1.1.0.zip
+.\update.ps1 -ResourceGroupName corp-prod-rg -ArchivePath C:\Downloads\cloud-imaging-mse-ci-v1.1.0.zip
 ```
 
 > **Storage permission (handled automatically):** the Function App components are deployed with

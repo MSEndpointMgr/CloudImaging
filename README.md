@@ -274,14 +274,14 @@ prefix and GitHub Release history:
 
 | Stream | Tag | Contents |
 |--------|-----|----------|
-| Backend/IaC | `v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep/deploy scripts, `update.ps1` |
-| Cloud Imaging Client | `client-v#.#.#` | The WinPE client binary embedded into boot images |
-| Media Builder | `mediabuilder-v#.#.#` | The technician-workstation Windows app |
+| Backend/IaC | `mse-ci-v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep/deploy scripts, `update.ps1` |
+| Cloud Imaging Client | `mse-ci-client-v#.#.#` | The WinPE client binary embedded into boot images |
+| Media Builder | `mse-ci-mediabuilder-v#.#.#` | The technician-workstation Windows app |
 
 Each stream is cut on its own cadence: a Client hotfix doesn't require a new backend
 release, and vice versa. Because GitHub's Releases page is a flat list (not grouped by
 stream), the backend/IaC and Client streams also maintain a moving "latest" alias release
-(`iac-latest`, `client-latest`) that always points at the newest *stable* release in that
+(`mse-ci-iac-latest`, `mse-ci-client-latest`) that always points at the newest *stable* release in that
 stream. `update.ps1 -Version latest` and Media Builder's "Automatic download" source
 option resolve these aliases directly instead of GitHub's repo-wide latest release, which
 would otherwise resolve to whichever stream published most recently. Media Builder has no
