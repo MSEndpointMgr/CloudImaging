@@ -55,8 +55,11 @@ jobs:
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-client-' prefix itself contains hyphens, so a naive contains('-') is always true.
           $stable = $tag -match '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+$'
+          # Bare version for display (title already says "Client"; avoid repeating it via the tag).
+          $version = $tag -replace '^mse-ci-client-', ''
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
           "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable)"
 
       - name: Generate SHA-256 checksum manifest
@@ -69,7 +72,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name:  ${{ steps.tag.outputs.tag }}
-          name:      "Cloud Imaging Client ${{ steps.tag.outputs.tag }}"
+          name:      "Cloud Imaging Client ${{ steps.tag.outputs.version }}"
           body:      |
             WinPE-runnable binary embedded into boot images by Media Builder, either via the
             "Automatic download" source option (always resolves the `mse-ci-client-latest` alias
@@ -100,6 +103,6 @@ jobs:
             "release-artifacts/CloudImaging.Client.zip" `
             "release-artifacts/SHA256SUMS" `
             --target "${{ github.sha }}" `
-            --title "Cloud Imaging Client (latest — ${{ steps.tag.outputs.tag }})" `
+            --title "Cloud Imaging Client (latest — ${{ steps.tag.outputs.version }})" `
             --notes "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes." `
             --latest=false

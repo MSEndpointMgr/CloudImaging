@@ -56,8 +56,11 @@ jobs:
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-mediabuilder-' prefix itself contains hyphens, so a naive contains('-') is always true.
           $stable = $tag -match '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+$'
+          # Bare version for display (title already says "Media Builder"; avoid repeating it via the tag).
+          $version = $tag -replace '^mse-ci-mediabuilder-', ''
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
           "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable)"
 
       - name: Generate SHA-256 checksum manifest
@@ -70,7 +73,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name:  ${{ steps.tag.outputs.tag }}
-          name:      "Cloud Imaging Media Builder ${{ steps.tag.outputs.tag }}"
+          name:      "Cloud Imaging Media Builder ${{ steps.tag.outputs.version }}"
           body:      |
             Technician-workstation WPF app used to generate WinPE boot images and prepare USB
             storage devices. Packages cleanly as a Win32 app (Intune, ConfigMgr, etc.) — see
