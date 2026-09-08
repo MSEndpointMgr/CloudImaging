@@ -2,6 +2,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,6 +26,7 @@ public sealed class GitHubReleasesClientTests
     {
         var requestedUrls = new List<string>();
         var zipBytes = CreateFakeClientZip();
+        var validSums = $"{Convert.ToHexStringLower(SHA256.HashData(zipBytes))}  CloudImaging.Client.zip\n";
 
         var handler = new FakeHttpMessageHandler(req =>
         {
@@ -53,6 +55,11 @@ public sealed class GitHubReleasesClientTests
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
             }
 
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/SHA256SUMS")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(validSums) };
+            }
+
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
@@ -64,6 +71,8 @@ public sealed class GitHubReleasesClientTests
         {
             requestedUrls.Should().Contain(ClientLatestApiUrl,
                 "the client must resolve the moving 'mse-ci-client-latest' alias release, never GitHub's repo-wide /releases/latest");
+            requestedUrls.Should().Contain("https://example.com/download/SHA256SUMS",
+                "the download must be verified against the release's published checksum before use");
             Directory.Exists(extractDir).Should().BeTrue();
             File.Exists(Path.Combine(extractDir, "CloudImaging.Client.exe")).Should().BeTrue(
                 "the downloaded CloudImaging.Client.zip asset must be extracted into the returned directory");
@@ -72,6 +81,61 @@ public sealed class GitHubReleasesClientTests
         {
             if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task DownloadLatestClientAsync_ThrowsAndCleansUpTempDir_WhenChecksumDoesNotMatch()
+    {
+        var zipBytes = CreateFakeClientZip();
+        const string wrongSums = "0000000000000000000000000000000000000000000000000000000000000000  CloudImaging.Client.zip\n";
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri == ClientLatestApiUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent(
+                        """
+                        {
+                          "tag_name": "mse-ci-client-latest",
+                          "name": "Cloud Imaging Client (latest — mse-ci-client-v1.2.3)",
+                          "assets": [
+                            { "name": "CloudImaging.Client.zip", "browser_download_url": "https://example.com/download/CloudImaging.Client.zip" },
+                            { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
+                          ]
+                        }
+                        """)
+                };
+            }
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/CloudImaging.Client.zip")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
+            }
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/SHA256SUMS")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(wrongSums) };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var tempDirsBefore = Directory.GetDirectories(Path.GetTempPath(), "ci-client-*");
+
+        var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
+
+        Func<Task> act = async () => await svc.DownloadLatestClientAsync();
+
+        var assertion = await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*after 3 attempts*");
+        assertion.Which.InnerException.Should().NotBeNull();
+        assertion.Which.InnerException!.Message.Should().Contain("SHA-256",
+            "a mismatched checksum must never be silently ignored and extracted into a boot image");
+
+        Directory.GetDirectories(Path.GetTempPath(), "ci-client-*").Should().BeEquivalentTo(tempDirsBefore,
+            "every failed attempt's extraction directory must be cleaned up, not leaked into %TEMP%");
     }
 
     [Fact]
