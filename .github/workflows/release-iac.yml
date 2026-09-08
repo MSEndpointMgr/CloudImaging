@@ -130,8 +130,6 @@ jobs:
           tag_name:  ${{ steps.tag.outputs.tag }}
           name:      "Cloud Imaging ${{ steps.tag.outputs.tag }}"
           body:      |
-            ## Cloud Imaging ${{ steps.tag.outputs.tag }}
-
             Backend/IaC release: the 3 Function Apps, portal (frontend + backend), and
             Bicep/deploy scripts. Cloud Imaging Client and Media Builder ship from their own
             release streams (tags `mse-ci-client-v*` / `mse-ci-mediabuilder-v*`).

@@ -68,8 +68,6 @@ jobs:
           tag_name:  ${{ steps.tag.outputs.tag }}
           name:      "Cloud Imaging Media Builder ${{ steps.tag.outputs.tag }}"
           body:      |
-            ## Cloud Imaging Media Builder ${{ steps.tag.outputs.tag }}
-
             Technician-workstation WPF app used to generate WinPE boot images and prepare USB
             storage devices. Packages cleanly as a Win32 app (Intune, ConfigMgr, etc.) — see
             `docs/self-hosting-guide.md` → "Packaging as a Win32 app".
