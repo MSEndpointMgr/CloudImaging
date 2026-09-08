@@ -8,7 +8,11 @@ import { AuthenticatedRequest } from './auth.js';
  * Called after the auth middleware; reads the resolved JWT from req.user.
  */
 
-export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician' | 'CloudImaging.PortalAccess';
+export type PortalRole =
+  | 'CloudImaging.Administrator'
+  | 'CloudImaging.Technician'
+  | 'CloudImaging.PortalAccess'
+  | 'CloudImaging.Reader';
 
 /**
  * Implied-role hierarchy. Portal SPA user tokens only ever carry
@@ -16,6 +20,10 @@ export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician
  * is a service role on the portal backend managed identity and never appears in a user
  * token. Any signed-in user (Administrator or Technician) is granted PortalAccess so the
  * portal's read routes remain reachable, while Administrator-only writes stay restricted.
+ *
+ * `CloudImaging.Reader` is deliberately NOT part of this chain — it's a standalone,
+ * narrowly-scoped role (Dashboard + Reports only) allowlisted explicitly on the handful of
+ * routes those pages need, so it never gains the broad read access PortalAccess implies.
  */
 const ROLE_IMPLICATIONS: Record<string, readonly PortalRole[]> = {
   'CloudImaging.Administrator': ['CloudImaging.Technician', 'CloudImaging.PortalAccess'],

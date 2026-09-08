@@ -339,20 +339,38 @@
                         <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
                     </Border.Resources>
                     <!--
-                        Plain, read-only, selectable text (not a ListBox/ItemsControl) so the whole
-                        log can be selected and copied like a real console — one line per entry,
-                        no wrapping (horizontal scroll instead), no extra per-row chrome/spacing.
+                        The WPF UI TextBox control template's own PART_ContentHost ScrollViewer
+                        never surfaces a horizontal scrollbar thumb (only vertical), no matter
+                        what HorizontalScrollBarVisibility is set to on the TextBox itself — so
+                        long unwrapped lines (e.g. full command lines/paths) were readable only
+                        by clicking in and using the keyboard. Handing horizontal scrolling to an
+                        explicit outer ScrollViewer instead (Disabled on the TextBox so the two
+                        don't fight over the same axis) gets a real, visible horizontal scrollbar.
+
+                        Focusable="False" so this wrapper never keeps the default WPF focus-visual
+                        rectangle drawn around itself once the inner TextBox is clicked/selected
+                        (with the ScrollViewer focusable, that rectangle stayed stuck around the
+                        whole log box with no click-away to dismiss it).
                     -->
-                    <TextBox x:Name="LogTextBox"
-                             Text="{Binding LogText, Mode=OneWay}"
-                             IsReadOnly="True" IsReadOnlyCaretVisible="True"
-                             Background="Transparent" BorderThickness="0" Padding="6,4"
-                             FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
-                             Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                             TextWrapping="NoWrap"
-                             AcceptsReturn="True"
-                             VerticalScrollBarVisibility="Visible"
-                             HorizontalScrollBarVisibility="Auto" />
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                  Focusable="False">
+                        <!--
+                            Plain, read-only, selectable text (not a ListBox/ItemsControl) so the
+                            whole log can be selected and copied like a real console — one line
+                            per entry, no wrapping (horizontal scroll instead), no extra per-row
+                            chrome/spacing.
+                        -->
+                        <TextBox x:Name="LogTextBox"
+                                 Text="{Binding LogText, Mode=OneWay}"
+                                 IsReadOnly="True" IsReadOnlyCaretVisible="True"
+                                 Background="Transparent" BorderThickness="0" Padding="6,4"
+                                 FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                 TextWrapping="NoWrap"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Visible"
+                                 HorizontalScrollBarVisibility="Disabled" />
+                    </ScrollViewer>
                 </Border>
 
                 <!--

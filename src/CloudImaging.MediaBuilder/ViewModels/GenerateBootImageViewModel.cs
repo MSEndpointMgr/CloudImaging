@@ -472,11 +472,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
     private async Task<string> DownloadLatestClientAsync()
     {
-        void OnProgress(object? _, (string Message, int Percent) e) =>
+        void OnProgress(object? _, (string Message, int Percent, bool Replace) e) =>
             OnUi(() =>
             {
                 ProgressMessage = e.Message;
-                AppendLogLine(e.Message);
+                // Per-chunk byte progress (Replace) overwrites the same line in place, same as the
+                // DISM heartbeat ticker below, instead of flooding the log with one line per tick.
+                if (e.Replace)
+                    UpdateHeartbeatLine(e.Message);
+                else
+                    AppendLogLine(e.Message);
             });
 
         _gitHubReleasesClient.ProgressChanged += OnProgress;
@@ -544,9 +549,10 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     }
 
     /// <summary>
-    /// Updates the trailing "still running (Ns elapsed)…" heartbeat line in place instead of
-    /// appending a new one each tick, so a long-running, silent step (e.g. DISM mount/unmount)
-    /// shows one line ticking over rather than flooding the log every few seconds.
+    /// Updates the trailing progress line in place instead of appending a new one each tick —
+    /// used for both the "still running (Ns elapsed)…" DISM heartbeat and the Cloud Imaging
+    /// Client per-chunk download byte count — so a rapidly-ticking status doesn't flood the log
+    /// with one line per update.
     /// </summary>
     private void UpdateHeartbeatLine(string line)
     {

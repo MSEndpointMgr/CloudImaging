@@ -45,8 +45,8 @@ public sealed partial class BootImageDownloadService
             ct.ThrowIfCancellationRequested();
             try
             {
-                await DownloadOnceAsync(sasUrl, destinationPath, ct);
-                await VerifyHashAsync(destinationPath, expectedHash, ct);
+                await DownloadOnceAsync(sasUrl, destinationPath, ct).ConfigureAwait(false);
+                await VerifyHashAsync(destinationPath, expectedHash, ct).ConfigureAwait(false);
                 return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -58,7 +58,7 @@ public sealed partial class BootImageDownloadService
                 if (attempt < MaxAttempts)
                 {
                     var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // 2s, 4s
-                    await Task.Delay(delay, ct);
+                    await Task.Delay(delay, ct).ConfigureAwait(false);
                 }
             }
         }
@@ -74,24 +74,35 @@ public sealed partial class BootImageDownloadService
         LogDownloadStarting(_logger, destinationPath);
         Directory.CreateDirectory(Path.GetDirectoryName(destinationPath) ?? string.Empty);
 
-        using var response = await _httpClient.GetAsync(sasUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await _httpClient.GetAsync(sasUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var total      = response.Content.Headers.ContentLength ?? -1;
         long downloaded = 0;
 
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         await using var file   = File.OpenWrite(destinationPath);
 
         var buffer = new byte[BufferSize];
         int read;
-        while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+        var lastReportUtc = DateTime.MinValue;
+        while ((read = await stream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
         {
-            await file.WriteAsync(buffer.AsMemory(0, read), ct);
+            await file.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
             downloaded += read;
-            ProgressChanged?.Invoke(this, (downloaded, total));
+
+            // A read loop over an 80 KB buffer fires hundreds of times for a multi-hundred-MB
+            // WIM — each tick marshals onto the UI thread, so throttle to a short interval instead
+            // of dispatching on every single chunk.
+            var now = DateTime.UtcNow;
+            if (now - lastReportUtc >= TimeSpan.FromMilliseconds(200))
+            {
+                ProgressChanged?.Invoke(this, (downloaded, total));
+                lastReportUtc = now;
+            }
         }
 
+        ProgressChanged?.Invoke(this, (downloaded, total));
         LogDownloadComplete(_logger, downloaded);
     }
 
@@ -99,7 +110,7 @@ public sealed partial class BootImageDownloadService
     {
         LogVerifyingHash(_logger, filePath);
         await using var stream = File.OpenRead(filePath);
-        var hash    = await System.Security.Cryptography.SHA256.HashDataAsync(stream, ct);
+        var hash    = await System.Security.Cryptography.SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
         var actual  = Convert.ToHexString(hash).ToLowerInvariant();
 
         if (!string.Equals(actual, expectedHash, StringComparison.OrdinalIgnoreCase))

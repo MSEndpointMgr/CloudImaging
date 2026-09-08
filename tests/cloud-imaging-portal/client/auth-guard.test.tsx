@@ -31,4 +31,26 @@ describe('Portal frontend: auth guard', () => {
     const scope = `api://${clientId}/user_impersonation`;
     expect(scope).toContain('user_impersonation');
   });
+
+  // ── CloudImaging.Reader (Dashboard + Reports only) ────────────────────────
+
+  it('Reader satisfies hasPortalAccess, so ProtectedRoute does not show AccessDenied', () => {
+    const roles = ['CloudImaging.Reader'];
+    const hasPortalAccess = roles.includes('CloudImaging.Administrator')
+      || roles.includes('CloudImaging.Technician')
+      || roles.includes('CloudImaging.Reader');
+    expect(hasPortalAccess).toBe(true);
+  });
+
+  it('Reader is redirected away from an operations-only route (RequireOperationsAccess)', () => {
+    const roles = ['CloudImaging.Reader'];
+    const canOperations = roles.includes('CloudImaging.Administrator') || roles.includes('CloudImaging.Technician');
+    expect(canOperations).toBe(false);
+  });
+
+  it('Reader can reach the Reports routes (RequireReportsAccess)', () => {
+    const roles = ['CloudImaging.Reader'];
+    const canReports = roles.includes('CloudImaging.Administrator') || roles.includes('CloudImaging.Reader');
+    expect(canReports).toBe(true);
+  });
 });

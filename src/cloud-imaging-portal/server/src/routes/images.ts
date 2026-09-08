@@ -5,13 +5,14 @@ import { isAllowedImageFile, OS_IMAGE_EXTENSIONS } from '../utils/imageFileValid
 
 /**
  * Images router. OS image catalog CRUD proxy to the Operator API (T086, FR-036, FR-037).
- * Read endpoints require PortalAccess; write endpoints require Administrator.
+ * Read endpoints require PortalAccess (or Reader, for the Image Inventory report); write
+ * endpoints require Administrator.
  */
 const router = Router();
 
 // ── GET /api/images ───────────────────────────────────────────────────────────
 
-router.get('/', requireRole('CloudImaging.PortalAccess'), async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireRole('CloudImaging.PortalAccess', 'CloudImaging.Reader'), async (_req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.getImages());
   } catch (err) { next(err); }

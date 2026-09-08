@@ -13,7 +13,8 @@ namespace CloudImaging.Client.Services;
 ///   {CacheRoot}\images\{imageId}\metadata.json  — JSON with hash, cachedAt, sizeBytes
 ///
 /// Only valid, hash-verified WIM files are persisted in the cache.
-/// Cache entries older than 30 days are eligible for auto-purge (T056d).
+/// Cache entries idle for 30 days (no cache hit) are eligible for auto-purge (T056d); a hit
+/// refreshes the entry's clock, so an actively-reused image is never purged for being old.
 /// </summary>
 public sealed partial class ImageCacheService
 {
@@ -71,6 +72,11 @@ public sealed partial class ImageCacheService
             SafeDelete(metaPath);
             return null;
         }
+
+        // Refresh the TTL clock on every hit so an actively-reused image is never purged just
+        // because it's old; the 30-day window tracks idle time since last use, not download age.
+        // Staleness/correctness is handled separately above via the hash comparison.
+        await WriteMetaAsync(metaPath, meta with { CachedAt = DateTimeOffset.UtcNow }, ct);
 
         LogCacheHit(_logger, imageId, meta.Sha256Hash[..8]);
         return wimPath;

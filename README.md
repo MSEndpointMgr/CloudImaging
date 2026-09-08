@@ -36,10 +36,11 @@ several coupled sessions at a time.
    below).
 2. **Set up Entra ID access.** Create the app registrations for the Portal
    and Media Builder, add the `CloudImaging.Administrator` and
-   `CloudImaging.Technician` app roles to each, and assign at least one
-   person or group the Administrator role so someone can sign in to the
-   portal. See [docs/roles-and-access.md](docs/roles-and-access.md) for the
-   full role model.
+   `CloudImaging.Technician` app roles to each (the Portal registration also
+   gets a read-only `CloudImaging.Reader` role, scoped to the Dashboard and
+   Reports), and assign at least one person or group the Administrator role
+   so someone can sign in to the portal. See
+   [docs/roles-and-access.md](docs/roles-and-access.md) for the full role model.
 3. **Configure the environment.** An administrator signs in to the Cloud
    Imaging Portal and sets up the prerequisites: generates the boot media
    certificate used for mTLS, adds OS images to the catalog, and optionally
@@ -94,21 +95,35 @@ CloudImaging is a six-component system:
 
 ### Component interaction
 
-```
-Cloud Imaging Client (WinPE)
-    │  mTLS
-    ▼
-Device Gateway API (public)  ──── Private Link ────►  Imaging Core API (private)
-                                                              ▲
-Cloud Imaging Portal (browser)                               │ Private Link
-    │  Entra ID                                              │
-    ▼                                                        │
-Portal Backend (App Service)  ──►  Operator API (public) ───┘
+```mermaid
+flowchart TB
+    subgraph row1[ ]
+        direction LR
+        Client["&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Client&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>(WinPE)"]
+        Portal["&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Portal&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<br/>(browser)"]
+        MediaBuilder["Media Builder<br/>(Windows workstation)"]
+    end
 
-Cloud Imaging Media Builder (Windows workstation)
-    │  Entra ID
-    ▼
-Operator API
+    PortalBackend["Portal Backend<br/>(App Service)"]
+
+    subgraph row3[ ]
+        direction LR
+        DeviceGateway["Device Gateway API<br/>(public)"]
+        OperatorApi["Operator API<br/>(public)"]
+    end
+
+    ImagingCore["Imaging Core API<br/>(private)"]
+
+    Client -- mTLS --> DeviceGateway
+    DeviceGateway -- Private Link --> ImagingCore
+    Portal -- Entra ID --> PortalBackend
+    PortalBackend --> OperatorApi
+    OperatorApi -- Private Link --> ImagingCore
+    MediaBuilder -- Entra ID --> OperatorApi
+    PortalBackend ~~~ ImagingCore
+
+    style row1 fill:none,stroke:none
+    style row3 fill:none,stroke:none
 ```
 
 ---
@@ -117,8 +132,8 @@ Operator API
 
 ### Cloud Imaging Client
 
-- Auto-launches in WinPE and displays an operation selection screen (Imaging and
-  Decommissioning cards; Decommissioning is reserved for a future release)
+- Auto-launches in WinPE and displays an operation selection screen (Imaging only;
+  Decommissioning is reserved for a future release and is currently hidden)
 - Registers a device session and displays a **6-character alphanumeric passcode**
   for coupling in the portal, without requiring Entra ID sign-in on the device
 - Performs device pre-flight authorization against Autopilot and Intune Corporate
@@ -126,9 +141,9 @@ Operator API
   a Not Authorized result with enrollment guidance
 - Executes three visible imaging steps with real-time progress reporting:
   **Format**, **Download**, and **Apply**
-- Downloads the OS image (.wim / .esd) directly from Azure Blob Storage via a
-  time-limited SAS token URL; caches images to the USB cache partition with a
-  30-day auto-purge policy; skips cache when space is insufficient
+- Downloads the OS image (.wim) directly from Azure Blob Storage via a time-limited
+  SAS token URL; caches images to the USB cache partition, purging entries not
+  reused within 30 days; skips cache when space is insufficient
 - Refreshes SAS tokens automatically when expiry is within 15 minutes
 - Displays a terminal result screen on success or failure; on failure, shows a
   structured support reference code (e.g. `CIC-A1B2C3D4-DWN-1750000000`)

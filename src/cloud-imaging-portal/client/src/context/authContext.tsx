@@ -4,7 +4,7 @@ import type { AccountInfo } from '@azure/msal-browser';
 import { getApiScope } from '../lib/msal.ts';
 
 /** Portal application roles carried in a signed-in user's token. */
-export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician';
+export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician' | 'CloudImaging.Reader';
 
 /**
  * Delegated Microsoft Graph scope needed to read the signed-in user's own profile photo
@@ -25,7 +25,11 @@ interface AuthContextValue {
   roles: string[];
   /** True when the user holds the CloudImaging.Administrator role. */
   isAdministrator: boolean;
-  /** True when the user holds any portal role (Administrator or Technician). */
+  /** True when the user holds the CloudImaging.Technician role. */
+  isTechnician: boolean;
+  /** True when the user holds the CloudImaging.Reader role (Dashboard + Reports only). */
+  isReader: boolean;
+  /** True when the user holds any portal role (Administrator, Technician, or Reader). */
   hasPortalAccess: boolean;
   /**
    * Object URL for the signed-in user's Entra ID profile photo, or null when one isn't
@@ -56,7 +60,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
 
   const roles = rolesFromAccount(account);
   const isAdministrator = roles.includes('CloudImaging.Administrator');
-  const hasPortalAccess = isAdministrator || roles.includes('CloudImaging.Technician');
+  const isTechnician = roles.includes('CloudImaging.Technician');
+  const isReader = roles.includes('CloudImaging.Reader');
+  const hasPortalAccess = isAdministrator || isTechnician || isReader;
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const avatarUrlRef = useRef<string | null>(null);
@@ -126,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   };
 
   return (
-    <AuthContext.Provider value={{ account, isAuthenticated, roles, isAdministrator, hasPortalAccess, avatarUrl, getAccessToken, signOut }}>
+    <AuthContext.Provider value={{ account, isAuthenticated, roles, isAdministrator, isTechnician, isReader, hasPortalAccess, avatarUrl, getAccessToken, signOut }}>
       {children}
     </AuthContext.Provider>
   );

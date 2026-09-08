@@ -6,6 +6,8 @@
     <!--
         FR-001: Device boot into WinPE, operator selects Imaging or Decommissioning.
         Imaging selection triggers silent hardware metadata collection before registration.
+        Decommissioning is not implemented yet; its card is collapsed below rather than
+        removed, so it can be re-enabled for a future release without re-authoring the view.
     -->
     <Grid>
         <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="720">
@@ -62,9 +64,9 @@
         </StackPanel>
 
         <!-- Operation cards -->
-        <UniformGrid Grid.Row="2" Columns="2">
+        <UniformGrid Grid.Row="2" HorizontalAlignment="Center">
             <!-- Imaging card -->
-            <Border Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <Border Width="340" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -100,8 +102,8 @@
                 </StackPanel>
             </Border>
 
-            <!-- Decommissioning card -->
-            <Border Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <!-- Decommissioning card: not implemented, hidden until a future release -->
+            <Border Visibility="Collapsed" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />

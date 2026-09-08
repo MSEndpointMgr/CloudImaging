@@ -94,6 +94,8 @@ interface StatCard {
   to: string;
   /** Whether to show the trend pill/sparkline for this card. Off for catalogs that aren't expected to change often. */
   showTrend: boolean;
+  /** Undefined = visible to any signed-in portal role; 'operations' = Administrator/Technician only. */
+  access?: 'operations';
 }
 
 /** Duration (ms) of the stat-card count-up animation. */
@@ -128,10 +130,10 @@ function AnimatedNumber({ value }: { value: number }): React.ReactElement {
 }
 
 const STAT_CARDS: StatCard[] = [
-  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions',    showTrend: true },
+  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions',    showTrend: true,  access: 'operations' },
   { key: 'completedSessions', label: 'Completed Sessions', icon: <CheckCircle2 size={16} />, to: '/sessions',    showTrend: true },
-  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images',   showTrend: false },
-  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images', showTrend: false },
+  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images',   showTrend: false, access: 'operations' },
+  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images', showTrend: false, access: 'operations' },
 ];
 
 interface NavCard {
@@ -139,7 +141,8 @@ interface NavCard {
   title: string;
   description: string;
   icon: React.ReactNode;
-  adminOnly?: boolean;
+  /** Undefined = visible to any signed-in portal role. */
+  access?: 'operations' | 'reports' | 'admin';
 }
 
 const NAV_CARDS: NavCard[] = [
@@ -148,52 +151,56 @@ const NAV_CARDS: NavCard[] = [
     title: 'Devices',
     description: 'Monitor and manage active imaging sessions. Couple devices, assign images, and track progress.',
     icon: <Monitor size={18} />,
+    access: 'operations',
   },
   {
     to: '/os-images',
     title: 'OS Images',
     description: 'Browse and manage the operating system image catalog uploaded for deployment.',
     icon: <HardDrive size={18} />,
+    access: 'operations',
   },
   {
     to: '/boot-images',
     title: 'Boot Images',
     description: 'WinPE boot media published from the Media Builder app.',
     icon: <Disc size={18} />,
+    access: 'operations',
   },
   {
     to: '/recovery-images',
     title: 'Recovery Images',
     description: 'Custom Windows Recovery Environment (WinRE) images published for deployment.',
     icon: <LifeBuoy size={18} />,
+    access: 'operations',
   },
   {
     to: '/reports',
     title: 'Reports',
     description: 'Session outcomes, failure details, and image inventory across the fleet.',
     icon: <BarChart3 size={18} />,
-    adminOnly: true,
+    access: 'reports',
   },
   {
     to: '/locations',
     title: 'Locations',
     description: 'Manage the site catalog devices are registered against.',
     icon: <MapPin size={18} />,
-    adminOnly: true,
+    access: 'admin',
   },
   {
     to: '/branding',
     title: 'Branding',
     description: 'Customise how the portal and boot media appear to operators.',
     icon: <Palette size={18} />,
-    adminOnly: true,
+    access: 'admin',
   },
   {
     to: '/configuration',
     title: 'Configuration',
     description: 'Deployment settings, security options, and boot media certificate management.',
     icon: <Settings size={18} />,
-    adminOnly: true,
+    access: 'admin',
   },
 ];
 
@@ -202,7 +209,9 @@ const NAV_CARDS: NavCard[] = [
  * into each section. Stat counts load asynchronously with skeleton placeholders.
  */
 export default function DashboardPage(): React.ReactElement {
-  const { isAdministrator } = useAuth();
+  const { isAdministrator, isTechnician, isReader } = useAuth();
+  const canOperations = isAdministrator || isTechnician;
+  const canReports = isAdministrator || isReader;
   const { branding } = useBranding();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [trends, setTrends] = useState<DashboardTrends | null>(null);
@@ -214,15 +223,18 @@ export default function DashboardPage(): React.ReactElement {
     void (async () => {
       try {
         const historyFrom = new Date(Date.now() - TREND_DAYS * 2 * 86_400_000).toISOString();
+        // Reader holds none of the roles the sessions/images/boot-images endpoints accept, so
+        // skip those fetches entirely rather than let them 403 — session-history alone covers
+        // Reader's one visible stat (Completed Sessions).
         const [sRes, iRes, bRes, hRes] = await Promise.all([
-          apiFetchWithRetry('/api/sessions',    { credentials: 'include' }),
-          apiFetchWithRetry('/api/images',      { credentials: 'include' }),
-          apiFetchWithRetry('/api/boot-images', { credentials: 'include' }),
+          canOperations ? apiFetchWithRetry('/api/sessions',    { credentials: 'include' }) : Promise.resolve(null),
+          canOperations ? apiFetchWithRetry('/api/images',      { credentials: 'include' }) : Promise.resolve(null),
+          canOperations ? apiFetchWithRetry('/api/boot-images', { credentials: 'include' }) : Promise.resolve(null),
           apiFetchWithRetry(`/api/session-history?from=${encodeURIComponent(historyFrom)}`, { credentials: 'include' }),
         ]);
-        const sessions   = sRes.ok ? (await sRes.json() as SessionLike[])   : [];
-        const osImages   = iRes.ok ? (await iRes.json() as TimestampedLike[]) : [];
-        const bootImages = bRes.ok ? (await bRes.json() as TimestampedLike[]) : [];
+        const sessions   = sRes?.ok ? (await sRes.json() as SessionLike[])   : [];
+        const osImages   = iRes?.ok ? (await iRes.json() as TimestampedLike[]) : [];
+        const bootImages = bRes?.ok ? (await bRes.json() as TimestampedLike[]) : [];
         // Completed-session counts/trends are sourced from the durable SessionHistory audit
         // table rather than the live `/api/sessions` list, which only ever reflects sessions
         // still within the (much shorter) live-session purge window — using it here would
@@ -252,15 +264,23 @@ export default function DashboardPage(): React.ReactElement {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [canOperations]);
 
-  const visibleNavCards = NAV_CARDS.filter(c => !c.adminOnly || isAdministrator);
+  const visibleStatCards = STAT_CARDS.filter(c => c.access !== 'operations' || canOperations);
+  const visibleNavCards = NAV_CARDS.filter(c => {
+    switch (c.access) {
+      case 'operations': return canOperations;
+      case 'reports':    return canReports;
+      case 'admin':      return isAdministrator;
+      default:           return true;
+    }
+  });
 
   return (
     <div className="space-y-8">
       {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {STAT_CARDS.map(card => {
+        {visibleStatCards.map(card => {
           const trend = card.showTrend ? trends?.[card.key] : undefined;
           const changePct = trend?.changePct ?? null;
           // A trend pill comparing against zero is meaningless (e.g. "0%" next to a 0 count), and
