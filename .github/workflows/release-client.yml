@@ -71,10 +71,9 @@ jobs:
           tag_name:  ${{ steps.tag.outputs.tag }}
           name:      "Cloud Imaging Client ${{ steps.tag.outputs.tag }}"
           body:      |
-            WinPE-runnable Cloud Imaging Client binary. Embedded into boot images by Media
-            Builder, either via the "Automatic download" source option (always resolves the
-            `mse-ci-client-latest` alias release) or by pointing Media Builder at a local extracted
-            copy of this ZIP.
+            WinPE-runnable binary embedded into boot images by Media Builder, either via the
+            "Automatic download" source option (always resolves the `mse-ci-client-latest` alias
+            release) or by pointing Media Builder at a local extracted copy of this ZIP.
 
             ### Release artifacts
             | File | Description |
