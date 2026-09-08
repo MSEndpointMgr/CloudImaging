@@ -52,8 +52,12 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-client-v*' }
+          # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
+          # 'mse-ci-client-' prefix itself contains hyphens, so a naive contains('-') is always true.
+          $stable = $tag -match '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+$'
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
-          Write-Host "Release tag: $tag"
+          "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Release tag: $tag (stable: $stable)"
 
       - name: Generate SHA-256 checksum manifest
         run: |
@@ -81,14 +85,14 @@ jobs:
             release-artifacts/CloudImaging.Client.zip
             release-artifacts/SHA256SUMS
           draft: false
-          prerelease: ${{ contains(steps.tag.outputs.tag, '-') }}
+          prerelease: ${{ steps.tag.outputs.stable != 'true' }}
 
       # ── Move the 'mse-ci-client-latest' alias (stable releases only) ───────────
       # GitHubReleasesClient.cs resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the iac/mediabuilder
       # streams interleave with this one.
       - name: Move 'mse-ci-client-latest' alias to this release
-        if: ${{ !contains(steps.tag.outputs.tag, '-') }}
+        if: ${{ steps.tag.outputs.stable == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
