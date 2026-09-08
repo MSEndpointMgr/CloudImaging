@@ -3,10 +3,10 @@ import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 import { isAllowedImageFile, WIM_ONLY_EXTENSIONS } from '../utils/imageFileValidation.js';
 
-/** Boot images router (T117, US7). */
+/** Boot images router (T117, US7). GET also allows Reader, for the Image Inventory report. */
 const router = Router();
 
-router.get('/', requireRole('CloudImaging.PortalAccess'), async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/', requireRole('CloudImaging.PortalAccess', 'CloudImaging.Reader'), async (_req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.getBootImages());
   } catch (err) { next(err); }

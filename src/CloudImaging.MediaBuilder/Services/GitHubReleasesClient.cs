@@ -41,8 +41,12 @@ public sealed partial class GitHubReleasesClient
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("CloudImaging-MediaBuilder");
     }
 
-    /// <summary>Raised with a message and 0-100 percent as the release is resolved and the asset downloads/extracts.</summary>
-    public event EventHandler<(string Message, int Percent)>? ProgressChanged;
+    /// <summary>
+    /// Raised with a message and 0-100 percent as the release is resolved and the asset downloads/extracts.
+    /// Replace is true for rapid-fire ticks (per-chunk download progress) that should overwrite the
+    /// previous line in place rather than start a new one — see GenerateBootImageViewModel.UpdateHeartbeatLine.
+    /// </summary>
+    public event EventHandler<(string Message, int Percent, bool Replace)>? ProgressChanged;
 
     /// <summary>
     /// Resolves the "mse-ci-client-latest" alias release, downloads the <c>CloudImaging.Client.zip</c>
@@ -58,7 +62,7 @@ public sealed partial class GitHubReleasesClient
             ct.ThrowIfCancellationRequested();
             try
             {
-                return await DownloadOnceAsync(attempt, ct);
+                return await DownloadOnceAsync(attempt, ct).ConfigureAwait(false);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -77,7 +81,7 @@ public sealed partial class GitHubReleasesClient
                 {
                     var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // 2s, 4s
                     ReportProgress($"Download failed, retrying in {delay.TotalSeconds:0}s ({attempt}/{MaxAttempts} attempts used)", 0);
-                    await Task.Delay(delay, ct);
+                    await Task.Delay(delay, ct).ConfigureAwait(false);
                 }
             }
         }
@@ -90,7 +94,7 @@ public sealed partial class GitHubReleasesClient
     private async Task<string> DownloadOnceAsync(int attempt, CancellationToken ct)
     {
         ReportProgress($"Resolving latest Cloud Imaging Client release (attempt {attempt}/{MaxAttempts})", 0);
-        var release = await _http.GetFromJsonAsync<GitHubReleaseDto>(ReleasesApiUrl, ct)
+        var release = await _http.GetFromJsonAsync<GitHubReleaseDto>(ReleasesApiUrl, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("GitHub returned an empty release response.");
 
         var asset = release.Assets.FirstOrDefault(a =>
@@ -113,10 +117,10 @@ public sealed partial class GitHubReleasesClient
             // alone would just say "mse-ci-client-latest", which isn't informative to the technician.
             var displayVersion = string.IsNullOrEmpty(release.Name) ? release.TagName : release.Name;
             ReportProgress($"Downloading Cloud Imaging Client {displayVersion}", 10);
-            await DownloadWithProgressAsync(asset.BrowserDownloadUrl, zipPath, ct);
+            await DownloadWithProgressAsync(asset.BrowserDownloadUrl, zipPath, ct).ConfigureAwait(false);
 
             ReportProgress("Verifying download integrity", 92);
-            await VerifyChecksumAsync(checksumAsset.BrowserDownloadUrl, zipPath, ct);
+            await VerifyChecksumAsync(checksumAsset.BrowserDownloadUrl, zipPath, ct).ConfigureAwait(false);
 
             ReportProgress("Extracting Cloud Imaging Client", 95);
             ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
@@ -143,7 +147,7 @@ public sealed partial class GitHubReleasesClient
     /// </summary>
     private async Task VerifyChecksumAsync(string checksumUrl, string zipPath, CancellationToken ct)
     {
-        var sumsText = await _http.GetStringAsync(checksumUrl, ct);
+        var sumsText = await _http.GetStringAsync(checksumUrl, ct).ConfigureAwait(false);
         var expectedHash = ParseExpectedHash(sumsText, ClientAssetName)
             ?? throw new InvalidOperationException(
                 $"\"{ChecksumAssetName}\" does not contain an entry for \"{ClientAssetName}\".");
@@ -151,7 +155,7 @@ public sealed partial class GitHubReleasesClient
         string actualHash;
         await using (var stream = File.OpenRead(zipPath))
         {
-            actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct));
+            actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false));
         }
 
         if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
@@ -180,19 +184,21 @@ public sealed partial class GitHubReleasesClient
 
     private async Task DownloadWithProgressAsync(string url, string destinationPath, CancellationToken ct)
     {
-        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
 
         var totalBytes = response.Content.Headers.ContentLength;
-        await using var httpStream = await response.Content.ReadAsStreamAsync(ct);
+        await using var httpStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         await using var fileStream = File.Create(destinationPath);
 
         var buffer = new byte[81920];
         long totalRead = 0;
         int read;
-        while ((read = await httpStream.ReadAsync(buffer, ct)) > 0)
+        var lastReportedPercent = -1;
+        var lastReportUtc = DateTime.MinValue;
+        while ((read = await httpStream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, read), ct);
+            await fileStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
             totalRead += read;
 
             if (totalBytes is > 0)
@@ -200,12 +206,26 @@ public sealed partial class GitHubReleasesClient
                 // Downloading spans 10-90% of this client's own progress range (see
                 // DownloadOnceAsync), leaving room either side for release resolution/extraction.
                 var percent = 10 + (int)(totalRead * 80 / totalBytes.Value);
-                ReportProgress($"Downloading Cloud Imaging Client ({FormatBytes(totalRead)}/{FormatBytes(totalBytes.Value)})", percent);
+                var now = DateTime.UtcNow;
+
+                // A read loop over an 80 KB buffer fires hundreds of times for a multi-MB asset —
+                // reporting every single chunk would flood the log with one line each, so only
+                // report when the percent actually ticks up or a short interval has passed, same
+                // as the DISM-style heartbeat elsewhere in this app.
+                if (percent != lastReportedPercent || now - lastReportUtc >= TimeSpan.FromMilliseconds(200))
+                {
+                    ReportProgress($"Downloading Cloud Imaging Client ({FormatBytes(totalRead)}/{FormatBytes(totalBytes.Value)})", percent, replace: true);
+                    lastReportedPercent = percent;
+                    lastReportUtc = now;
+                }
             }
         }
+
+        if (totalBytes is > 0)
+            ReportProgress($"Downloading Cloud Imaging Client ({FormatBytes(totalRead)}/{FormatBytes(totalBytes.Value)})", 90, replace: true);
     }
 
-    private void ReportProgress(string message, int percent) => ProgressChanged?.Invoke(this, (message, percent));
+    private void ReportProgress(string message, int percent, bool replace = false) => ProgressChanged?.Invoke(this, (message, percent, replace));
 
     private static string FormatBytes(long bytes) =>
         bytes >= 1024 * 1024 ? $"{bytes / (1024.0 * 1024.0):0.0} MB" : $"{bytes / 1024.0:0} KB";

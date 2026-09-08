@@ -8,17 +8,18 @@ This page is the single reference for **who can do what** in Cloud Imaging. For 
 
 ---
 
-## 1. The four app roles
+## 1. The five app roles
 
-Cloud Imaging defines four Entra ID app roles across its three app registrations
+Cloud Imaging defines five Entra ID app roles across its three app registrations
 (see [self-hosting-guide.md, Step 1](self-hosting-guide.md#step-1--create-three-app-registrations)).
-Two are **user-facing** (you assign them to people); two are **service-facing** (assigned to an
+Three are **user-facing** (you assign them to people); two are **service-facing** (assigned to an
 app/identity, not a person).
 
 | Role | Defined on | Assigned to | Purpose |
 |---|---|---|---|
 | `CloudImaging.Administrator` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Full access: catalog writes, branding, configuration, boot-media certificate, plus everything Technician can do |
 | `CloudImaging.Technician` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Day-to-day imaging operations: sessions, coupling, assignment, read-only catalogs |
+| `CloudImaging.Reader` | **Cloud Imaging Portal** registration only | Users / groups | Read-only visibility: Dashboard summary and Reports, nothing else. No Media Builder equivalent. |
 | `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `assign-service-roles.ps1` — nothing to do manually. |
 | `CloudImaging.MediaBuilderAccess` | **Cloud Imaging Operator API** registration | Users / groups (and the Portal MI, if needed) | Lets a signed-in technician's Media Builder client actually call the Operator API. Required **in addition to** `CloudImaging.Administrator`/`Technician` — see [Step 7](self-hosting-guide.md#step-7--configure-the-media-builder). |
 
@@ -27,14 +28,15 @@ app/identity, not a person).
 > **not** automatically grant them anything on the Media Builder registration, and vice versa. A
 > technician who only ever uses the Portal doesn't need a Media Builder assignment at all.
 
-### How to assign `Administrator` / `Technician` to a user or group
+### How to assign `Administrator` / `Technician` / `Reader` to a user or group
 
-For **each** registration the person needs (Portal, Media Builder, or both):
+For **each** registration the person needs (Portal, Media Builder, or both — `Reader` only exists
+on the Portal registration):
 
 1. Entra ID → **Enterprise applications** → select **Cloud Imaging Portal** (or **Cloud Imaging
    Media Builder**) → **Users and groups** → **Add user/group**
-2. Select the user or group, choose the role (`CloudImaging.Administrator` or
-   `CloudImaging.Technician`), and click **Assign**
+2. Select the user or group, choose the role (`CloudImaging.Administrator`,
+   `CloudImaging.Technician`, or — Portal only — `CloudImaging.Reader`), and click **Assign**
 
 A user with **no role assigned** on a registration can sign in, but the app shows an
 "Access denied" screen (Portal) or blocks every workflow (Media Builder) — the identity check and
@@ -56,26 +58,36 @@ managed identity.
 
 ## 2. What each role can do in the Portal
 
-| Area | No role | Technician | Administrator |
-|---|---|---|---|
-| Sign in | Allowed, but "Access denied" screen | ✅ | ✅ |
-| **Sessions**: view, couple, single-assign, bulk-assign | ❌ | ✅ | ✅ |
-| **OS Images** catalog: view | ❌ | ✅ (read-only) | ✅ |
-| **OS Images** catalog: upload / edit / delete | ❌ | ❌ | ✅ |
-| **Boot Images** catalog: view | ❌ | ✅ (read-only) | ✅ |
-| **Boot Images** catalog: upload / edit / delete | ❌ | ❌ | ✅ |
-| **Branding**: view / edit logo | ❌ | ❌ | ✅ |
-| **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view) | ❌ | ❌ | ✅ |
+| Area | No role | Reader | Technician | Administrator |
+|---|---|---|---|---|
+| Sign in | Allowed, but "Access denied" screen | ✅ | ✅ | ✅ |
+| **Dashboard**: Completed Sessions summary | ❌ | ✅ (only stat shown) | ✅ (full) | ✅ (full) |
+| **Reports**: session outcomes, image inventory, failure detail | ❌ | ✅ | ❌ | ✅ |
+| **Sessions**: view, couple, single-assign, bulk-assign | ❌ | ❌ | ✅ | ✅ |
+| **OS Images** catalog: view | ❌ | ❌ | ✅ (read-only) | ✅ |
+| **OS Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |
+| **Boot Images** / **Recovery Images** catalog: view | ❌ | ❌ | ✅ (read-only) | ✅ |
+| **Boot Images** / **Recovery Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |
+| **Locations** catalog | ❌ | ❌ | ❌ | ✅ |
+| **Branding**: view / edit logo | ❌ | ❌ | ❌ | ✅ |
+| **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view) | ❌ | ❌ | ❌ | ✅ |
 
 The Technician role's read access to Sessions/Images is what makes day-to-day imaging operations
 possible without granting catalog or configuration changes. Administrator is a superset of
-Technician — there is no capability a Technician has that Administrator lacks.
+Technician — there is no capability a Technician has that Administrator lacks. Reader is **not**
+a subset of Technician or a superset of "no role" in the same hierarchical sense — it's a
+separate, narrow lane: full Reports access, but none of Technician's Sessions/Images visibility.
 
 > **Implementation note**: the Portal backend expands roles through an implication hierarchy
 > (`Administrator` ⟹ `Technician` ⟹ `PortalAccess`) so that any signed-in user satisfies the
 > internal `PortalAccess` check used on read routes, while writes stay gated on the real
 > `Administrator` role. You never assign `PortalAccess` to a person — it's a byproduct of holding
 > `Administrator` or `Technician`, used only for the Portal backend's own authorization plumbing.
+> `CloudImaging.Reader` is deliberately **outside** this chain: it never implies `PortalAccess`,
+> and is instead allowlisted explicitly on only the handful of read routes Reports needs
+> (session history, and the OS/boot/recovery image catalogs for the Image Inventory report). A
+> Reader's token is rejected by every other route — including `/api/sessions` — even if called
+> directly, not just hidden from the navigation menu.
 
 ---
 
@@ -113,8 +125,9 @@ Administrator with `CloudImaging.MediaBuilderAccess` on the Operator API can use
 
 | Symptom | Likely cause |
 |---|---|
-| Portal shows "Access denied" after sign-in | No `Administrator`/`Technician` role assigned on the **Cloud Imaging Portal** enterprise application |
-| Portal loads, but Branding/Configuration pages are missing or writes return 403 | Signed in as Technician, not Administrator |
+| Portal shows "Access denied" after sign-in | No `Administrator`/`Technician`/`Reader` role assigned on the **Cloud Imaging Portal** enterprise application |
+| Portal loads, but Branding/Configuration pages are missing or writes return 403 | Signed in as Technician or Reader, not Administrator |
+| Reader signed in but Sessions/OS Images/Boot Images/Locations are missing from the nav and Dashboard | Expected — Reader is scoped to Dashboard + Reports only, by design |
 | Media Builder sign-in succeeds but every API call returns 403 | Missing `CloudImaging.MediaBuilderAccess` on the **Cloud Imaging Operator API** enterprise application |
 | Media Builder shows "restricted by role" on Generate Boot Image | Signed in as Technician — only Administrators can generate boot images |
 | Media Builder shows an ADK-related message on Generate Boot Image | Role is fine; the Windows ADK/WinPE add-on isn't installed (or the two are mismatched versions) on this workstation |

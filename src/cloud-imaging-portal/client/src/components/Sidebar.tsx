@@ -8,27 +8,37 @@ interface NavItem {
   label: string;
   path: string;
   icon: React.ReactNode;
-  adminOnly?: boolean;
+  /** Undefined = visible to any signed-in portal role (Administrator/Technician/Reader). */
+  access?: 'operations' | 'reports' | 'admin';
 }
 
 const navItems: NavItem[] = [
   { label: 'Dashboard',   path: '/',              icon: <LayoutDashboard size={18} /> },
-  { label: 'Devices',     path: '/sessions',      icon: <Monitor   size={18} /> },
-  { label: 'OS Images',   path: '/os-images',     icon: <HardDrive size={18} /> },
-  { label: 'Boot Images', path: '/boot-images',   icon: <Disc      size={18} /> },
-  { label: 'Recovery Images', path: '/recovery-images', icon: <LifeBuoy size={18} /> },
-  { label: 'Reports',     path: '/reports',       icon: <BarChart3 size={18} />, adminOnly: true },
-  { label: 'Locations',   path: '/locations',     icon: <MapPin    size={18} />, adminOnly: true },
-  { label: 'Branding',    path: '/branding',      icon: <Palette   size={18} />, adminOnly: true },
-  { label: 'Configuration', path: '/configuration', icon: <Settings size={18} />, adminOnly: true },
+  { label: 'Devices',     path: '/sessions',      icon: <Monitor   size={18} />, access: 'operations' },
+  { label: 'OS Images',   path: '/os-images',     icon: <HardDrive size={18} />, access: 'operations' },
+  { label: 'Boot Images', path: '/boot-images',   icon: <Disc      size={18} />, access: 'operations' },
+  { label: 'Recovery Images', path: '/recovery-images', icon: <LifeBuoy size={18} />, access: 'operations' },
+  { label: 'Reports',     path: '/reports',       icon: <BarChart3 size={18} />, access: 'reports' },
+  { label: 'Locations',   path: '/locations',     icon: <MapPin    size={18} />, access: 'admin' },
+  { label: 'Branding',    path: '/branding',      icon: <Palette   size={18} />, access: 'admin' },
+  { label: 'Configuration', path: '/configuration', icon: <Settings size={18} />, access: 'admin' },
 ];
 
 export function Sidebar(): React.ReactElement {
   const { pathname } = useLocation();
   const { branding, logoUrl, isLoaded } = useBranding();
-  const { isAdministrator } = useAuth();
+  const { isAdministrator, isTechnician, isReader } = useAuth();
+  const canOperations = isAdministrator || isTechnician;
+  const canReports = isAdministrator || isReader;
   const appName = branding.applicationName ?? 'Cloud Imaging';
-  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdministrator);
+  const visibleNavItems = navItems.filter((item) => {
+    switch (item.access) {
+      case 'operations': return canOperations;
+      case 'reports':    return canReports;
+      case 'admin':      return isAdministrator;
+      default:           return true;
+    }
+  });
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">

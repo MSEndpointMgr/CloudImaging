@@ -27,7 +27,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private readonly Action<CreateSessionResponse, string> _navigate;
     private readonly Action<bool>? _setMainWindowTopmost;
     private readonly CommandPromptLauncherService _commandPromptLauncher;
-    private string? _selectedOperation;
+    // Decommissioning card is hidden (not implemented for the first release), so Imaging is
+    // pre-selected rather than requiring an operator click before Continue is enabled.
+    private string? _selectedOperation = "Imaging";
     private string? _statusMessage;
     private bool _isWaitingForNetwork;
     private bool _isBusy;

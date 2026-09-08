@@ -36,6 +36,18 @@ function RequireAdmin({ children }: { children: React.ReactElement }): React.Rea
   return isAdministrator ? children : <Navigate to="/" replace />;
 }
 
+/** Route guard for Sessions/OS/Boot/Recovery Images; Reader cannot browse to these directly. */
+function RequireOperationsAccess({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { isAdministrator, isTechnician } = useAuth();
+  return isAdministrator || isTechnician ? children : <Navigate to="/" replace />;
+}
+
+/** Route guard for the Reports pages; grants Reader access without opening them to Technician. */
+function RequireReportsAccess({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { isAdministrator, isReader } = useAuth();
+  return isAdministrator || isReader ? children : <Navigate to="/" replace />;
+}
+
 export default function App(): React.ReactElement {
   return (
     <ThemeProvider>
@@ -51,17 +63,17 @@ export default function App(): React.ReactElement {
                     <Routes>
                       <Route element={<AppShell />}>
                         <Route index                   element={<DashboardPage />} />
-                        <Route path="sessions"         element={<SessionsPage />} />
-                        <Route path="os-images"        element={<OsImagesPage />} />
-                        <Route path="boot-images"      element={<BootImagesPage />} />
-                        <Route path="recovery-images"  element={<RecoveryImagesPage />} />
+                        <Route path="sessions"         element={<RequireOperationsAccess><SessionsPage /></RequireOperationsAccess>} />
+                        <Route path="os-images"        element={<RequireOperationsAccess><OsImagesPage /></RequireOperationsAccess>} />
+                        <Route path="boot-images"      element={<RequireOperationsAccess><BootImagesPage /></RequireOperationsAccess>} />
+                        <Route path="recovery-images"  element={<RequireOperationsAccess><RecoveryImagesPage /></RequireOperationsAccess>} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
                         <Route path="locations"                   element={<RequireAdmin><LocationsPage /></RequireAdmin>} />
-                        <Route path="reports"                     element={<RequireAdmin><ReportsPage /></RequireAdmin>} />
-                        <Route path="reports/session-outcomes"    element={<RequireAdmin><ReportSessionOutcomesPage /></RequireAdmin>} />
-                        <Route path="reports/image-inventory"     element={<RequireAdmin><ReportImageInventoryPage /></RequireAdmin>} />
-                        <Route path="reports/failures"            element={<RequireAdmin><ReportFailureDetailPage /></RequireAdmin>} />
+                        <Route path="reports"                     element={<RequireReportsAccess><ReportsPage /></RequireReportsAccess>} />
+                        <Route path="reports/session-outcomes"    element={<RequireReportsAccess><ReportSessionOutcomesPage /></RequireReportsAccess>} />
+                        <Route path="reports/image-inventory"     element={<RequireReportsAccess><ReportImageInventoryPage /></RequireReportsAccess>} />
+                        <Route path="reports/failures"            element={<RequireReportsAccess><ReportFailureDetailPage /></RequireReportsAccess>} />
                         <Route path="*"                element={<Navigate to="/" replace />} />
                       </Route>
                     </Routes>

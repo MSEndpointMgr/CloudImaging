@@ -41,11 +41,20 @@ public sealed partial class BootImageGenerationService
     private const string ElevatedIpcDirPrefix = "ci-elevated-";
 
     /// <summary>
+    /// How often to tick the generic "still running" heartbeat for a silent external command
+    /// (see <see cref="ReportHeartbeatAsync"/>) — only fires while the command has produced no
+    /// output of its own for at least this long, so it never fights with real output (including
+    /// DISM's own collated progress-bar heartbeat, see <see cref="DismProgressBarLineRegex"/>).
+    /// </summary>
+    private const int HeartbeatIntervalSeconds = 5;
+
+    /// <summary>
     /// How long a single external command (dism.exe, copype.cmd) must run before the live log
     /// gets an actionable hint about the likely cause, instead of just a ticking heartbeat.
     /// DISM mount/unmount legitimately takes tens of seconds — this is set well above that so
     /// the hint only fires when a step is running unusually long.
     /// </summary>
+    private const int LongRunningHintThresholdSeconds = 90;
 
     /// <summary>
     /// Conservative allowance for the WinPE media copype.cmd produces plus DISM mount
@@ -1162,8 +1171,10 @@ public sealed partial class BootImageGenerationService
         // in-place heartbeat line rather than appended as separate log lines (see
         // DismProgressBarLineRegex), so the log isn't flooded with a new line per percentage tick.
         var output = new System.Text.StringBuilder();
+        var lastOutputUtc = DateTime.UtcNow;
         void HandleOutputLine(string data)
         {
+            lastOutputUtc = DateTime.UtcNow;
             output.AppendLine(data);
 
             // Trim rather than pass the raw line through as-is: external tools (notably
@@ -1186,7 +1197,24 @@ public sealed partial class BootImageGenerationService
         process.BeginErrorReadLine();
         ct.Register(() => { try { process.Kill(); } catch { } });
 
-        var code = await tcs.Task;
+        // DISM /Mount-Image and /Unmount-Image in particular can run for 30+ seconds with no
+        // output at all, and copype.cmd has its own quiet stretches too — without this, the
+        // log/step UI looks stalled with no way to tell a slow step from a hung one. Only ticks
+        // once the command has been silent for a while, so it never fights with real output
+        // (including DISM's own collated progress-bar heartbeat above).
+        using var heartbeatCts = new CancellationTokenSource();
+        var heartbeatTask = ReportHeartbeatAsync(exe, () => lastOutputUtc, heartbeatCts.Token);
+
+        int code;
+        try
+        {
+            code = await tcs.Task;
+        }
+        finally
+        {
+            heartbeatCts.Cancel();
+            try { await heartbeatTask; } catch (OperationCanceledException) { /* expected */ }
+        }
 
         // The ct.Register above kills the process on cancellation, which makes it exit with a
         // non-zero code — surface that as a clean cancellation rather than a confusing generic
@@ -1334,6 +1362,47 @@ public sealed partial class BootImageGenerationService
     {
         LogHeartbeat?.Invoke(this, line);
         LogCommandLine(_logger, line);
+    }
+
+    /// <summary>
+    /// Ticks a generic "still running (Ns elapsed)" heartbeat for <paramref name="exe"/> every
+    /// <see cref="HeartbeatIntervalSeconds"/> while it has produced no output of its own for at
+    /// least that long (see <paramref name="getLastOutputUtc"/>), so a silent stretch (e.g. a
+    /// DISM mount/unmount, or one of copype.cmd's own quiet steps) never looks stalled. Once the
+    /// command has run past <see cref="LongRunningHintThresholdSeconds"/>, also logs a one-time
+    /// hint about the likely cause. Runs until <paramref name="ct"/> is cancelled by the caller
+    /// once the command exits.
+    /// </summary>
+    private async Task ReportHeartbeatAsync(string exe, Func<DateTime> getLastOutputUtc, CancellationToken ct)
+    {
+        var exeName        = System.IO.Path.GetFileName(exe);
+        var elapsedSeconds = 0;
+        var hintShown      = false;
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(HeartbeatIntervalSeconds), ct);
+                elapsedSeconds += HeartbeatIntervalSeconds;
+
+                if (DateTime.UtcNow - getLastOutputUtc() < TimeSpan.FromSeconds(HeartbeatIntervalSeconds))
+                    continue;
+
+                RaiseHeartbeat($"{exeName} still running ({elapsedSeconds}s elapsed)");
+
+                if (!hintShown && elapsedSeconds >= LongRunningHintThresholdSeconds)
+                {
+                    hintShown = true;
+                    RaiseLog($"{exeName} is taking longer than usual ({elapsedSeconds}s elapsed). This can happen " +
+                        "with a slow disk, antivirus scanning of the mounted image, or a large boot image — " +
+                        "it will keep running.");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected once the command exits and RunExternalAsync cancels this task.
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information,

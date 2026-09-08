@@ -60,4 +60,21 @@ describe('Portal backend: role hierarchy', () => {
     expect(isAdministrator(reqWithRoles(['CloudImaging.Administrator']))).toBe(true);
     expect(isAdministrator(reqWithRoles(['CloudImaging.Technician']))).toBe(false);
   });
+
+  it('Reader does not imply PortalAccess or Administrator', () => {
+    const roles = getUserRoles(reqWithRoles(['CloudImaging.Reader']));
+    expect(roles.has('CloudImaging.Reader')).toBe(true);
+    expect(roles.has('CloudImaging.PortalAccess')).toBe(false);
+    expect(roles.has('CloudImaging.Administrator')).toBe(false);
+    expect(roles.has('CloudImaging.Technician')).toBe(false);
+  });
+
+  it('Reader alone is rejected by a plain PortalAccess-only guard', () => {
+    expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.PortalAccess'])).toBe(403);
+  });
+
+  it('Reader is accepted only where explicitly allowlisted alongside PortalAccess', () => {
+    expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.PortalAccess', 'CloudImaging.Reader'])).toBe(200);
+    expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.Administrator'])).toBe(403);
+  });
 });

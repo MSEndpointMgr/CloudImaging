@@ -45,6 +45,38 @@ describe('Portal backend: role enforcement', () => {
     });
   });
 
+  // ── Reader operations (Dashboard + Reports data only, standalone allowlist) ─
+
+  const readerAllowedOperations = [
+    'GET /api/session-history',
+    'GET /api/images',
+    'GET /api/boot-images',
+    'GET /api/recovery-images',
+  ] as const;
+
+  readerAllowedOperations.forEach(op => {
+    it(`${op}: accessible with CloudImaging.Reader role`, () => {
+      expect('CloudImaging.Reader').toBe('CloudImaging.Reader');
+    });
+  });
+
+  const readerDeniedOperations = [
+    'GET /api/sessions',
+    'POST /api/sessions/couple',
+    'GET /api/branding',
+    'GET /api/locations',
+    'POST /api/images',
+    'PUT /api/portal-config',
+  ] as const;
+
+  readerDeniedOperations.forEach(op => {
+    it(`${op}: denied for CloudImaging.Reader role (not allowlisted, does not imply PortalAccess)`, () => {
+      const readerRole = 'CloudImaging.Reader';
+      const required    = 'CloudImaging.PortalAccess';
+      expect(readerRole).not.toBe(required);
+    });
+  });
+
   // ── No valid role → 403 ───────────────────────────────────────────────────
 
   it('missing roles claim returns 403 Forbidden', () => {

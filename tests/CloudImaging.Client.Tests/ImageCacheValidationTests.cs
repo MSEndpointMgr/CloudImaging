@@ -1,6 +1,7 @@
 using CloudImaging.Client.Services;
 using FluentAssertions;
 using System.IO;
+using System.Linq;
 using Xunit;
 
 namespace CloudImaging.Client.Tests;
@@ -77,6 +78,37 @@ public sealed class ImageCacheValidationTests : IDisposable
         finally { File.Delete(tempFile); }
     }
 
+    // ── Cache hit refreshes the TTL clock ─────────────────────────────────────
+
+    [Fact]
+    public async Task CacheHit_RefreshesCachedAt_SoActivelyReusedImageIsNotPurged()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(tempFile, [0x01, 0x02, 0x03, 0x04]);
+            var hash    = await CloudImaging.Client.Services.ImageCacheService.ComputeSha256Async(tempFile, CancellationToken.None);
+            var imageId = "cache-hit-refresh-test";
+
+            await _cache.WriteAsync(imageId, tempFile, hash, CancellationToken.None);
+            var entriesAfterWrite = await _cache.ListEntriesAsync(CancellationToken.None);
+            var cachedAtAfterWrite = entriesAfterWrite.Single(e => e.ImageId == imageId).CachedAt;
+
+            // Simulate the passage of time between the initial write and a later reuse.
+            await Task.Delay(50);
+
+            var result = await _cache.TryGetCachedWimAsync(imageId, hash, CancellationToken.None);
+            result.Should().NotBeNull();
+
+            var entriesAfterHit = await _cache.ListEntriesAsync(CancellationToken.None);
+            var cachedAtAfterHit = entriesAfterHit.Single(e => e.ImageId == imageId).CachedAt;
+
+            cachedAtAfterHit.Should().BeAfter(cachedAtAfterWrite,
+                "a cache hit must refresh the entry's clock so an actively-reused, still-valid image is never purged for being old");
+        }
+        finally { File.Delete(tempFile); }
+    }
+
     // ── Insufficient space disables cache writes ──────────────────────────────
 
     [Fact]
@@ -94,7 +126,7 @@ public sealed class ImageCacheValidationTests : IDisposable
         writeEnabled.Should().BeTrue("cache write should be enabled on a test machine with adequate disk space");
     }
 
-    // ── 30-day TTL ────────────────────────────────────────────────────────────
+    // ── 30-day TTL (idle time since last use, refreshed on every cache hit) ──
 
     [Fact]
     public void CacheTtl_Is30Days()

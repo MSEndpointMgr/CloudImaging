@@ -6,7 +6,8 @@ namespace CloudImaging.Client.Services;
 /// Runs cache maintenance on application startup (T056d, FR-009d).
 ///
 /// Maintenance policy:
-///   1. Purge entries older than 30 days (expired TTL).
+///   1. Purge entries not used (no cache hit) in the last 30 days (expired TTL); a cache hit
+///      refreshes the entry's clock, so an actively-reused image is never purged for being old.
 ///   2. Remove orphaned directories (dirs with no valid metadata.json).
 ///   3. If insufficient free space remains after purge, proceed WITHOUT caching
 ///      (do NOT perform LRU eviction of valid entries).

@@ -47,6 +47,7 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 7. Under **App roles**, add:
    - `CloudImaging.Administrator` (value: `CloudImaging.Administrator`, allowed for: Users/Groups)
    - `CloudImaging.Technician` (value: `CloudImaging.Technician`, allowed for: Users/Groups)
+   - `CloudImaging.Reader` (value: `CloudImaging.Reader`, allowed for: Users/Groups) — read-only, limited to the Dashboard and Reports; see [roles-and-access.md](roles-and-access.md).
 8. *(Optional)* Under **API permissions**, add Microsoft Graph → **Delegated** → `User.Read` and grant admin consent — lets the portal display the signed-in user's name.
 9. Record the **Application (client) ID** → this is `portalClientId`
 
