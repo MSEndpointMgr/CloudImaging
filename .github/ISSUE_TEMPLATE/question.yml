@@ -1,0 +1,44 @@
+name: Question
+description: Usage, setup, or contribution question
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/setup-instructions.md](https://github.com/MSEndpointMgr/CloudImaging/blob/main/docs/setup-instructions.md),
+        [docs/upgrade-instructions.md](https://github.com/MSEndpointMgr/CloudImaging/blob/main/docs/upgrade-instructions.md),
+        and [docs/operations-runbook.md](https://github.com/MSEndpointMgr/CloudImaging/blob/main/docs/operations-runbook.md)
+        first, then search [existing issues](https://github.com/MSEndpointMgr/CloudImaging/issues).
+        Never include tenant IDs, secrets, certificates, tokens, or unredacted logs.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Cloud Imaging Client (WinPE)
+        - Media Builder
+        - Device Gateway API
+        - Operator API
+        - Imaging Core API
+        - Cloud Imaging Portal
+        - Infrastructure / Bicep / deployment scripts
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: release
+    attributes:
+      label: Release tag or version
+      placeholder: mse-ci-v1.2.0
+    validations:
+      required: false
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true

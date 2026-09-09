@@ -1,0 +1,78 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, search [existing issues](https://github.com/MSEndpointMgr/CloudImaging/issues).
+        Never include tenant IDs, client secrets, certificates or private keys, device-session
+        tokens, SAS/download links, hardware hashes, device identifiers, or unredacted logs.
+        Suspected security vulnerability? Use [private reporting](https://github.com/MSEndpointMgr/CloudImaging/security/advisories/new) instead.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Cloud Imaging Client (WinPE)
+        - Media Builder
+        - Device Gateway API
+        - Operator API
+        - Imaging Core API
+        - Cloud Imaging Portal
+        - Infrastructure / Bicep / deployment scripts
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: release
+    attributes:
+      label: Release tag or version
+      description: The tag(s) deployed/installed, e.g. mse-ci-v1.2.0, mse-ci-client-v1.0.3
+      placeholder: mse-ci-v1.2.0
+    validations:
+      required: true
+
+  - type: input
+    id: azure-region
+    attributes:
+      label: Azure region
+      description: The region the MSEndpointMgr Cloud Imaging resource group is deployed to, if applicable
+      placeholder: westeurope
+    validations:
+      required: false
+
+  - type: input
+    id: support-reference
+    attributes:
+      label: Support reference code
+      description: If the Client showed a failure screen, include the code shown (e.g. CIC-A1B2C3D4-DWN-1750000000)
+      placeholder: CIC-A1B2C3D4-DWN-1750000000
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected to happen, and what happened instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro-steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, or other evidence
+      description: Redact secrets and tenant-identifying data before pasting.
+    validations:
+      required: false
