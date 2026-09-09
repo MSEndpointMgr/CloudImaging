@@ -26,6 +26,16 @@ export function createMsalInstance(): PublicClientApplication {
     cache: {
       cacheLocation: 'sessionStorage',
     },
+    system: {
+      // Entra caps the refresh token it issues to a browser SPA at 24 hours, so a tab left
+      // open overnight always comes back with a dead token. MSAL's only silent fallback is a
+      // hidden prompt=none iframe against login.microsoftonline.com, which browsers that
+      // partition third-party storage will never let complete. MSAL's 10s default meant every
+      // caller that hit this path stalled for 10s before we could react; 3s is well clear of
+      // a genuine same-tenant silent renewal (typically well under a second) while making the
+      // hopeless case fail fast enough to redirect before the user notices.
+      iframeBridgeTimeout: 3000,
+    },
   });
   return instance;
 }

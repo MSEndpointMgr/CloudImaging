@@ -17,7 +17,7 @@ namespace CloudImaging.Client.Tests;
 /// BOOT-labelled USB volume via WMI, which has no seam for faking in a unit test and never
 /// resolves to anything on a dev/CI machine (no such volume exists) — so its full happy path
 /// (version-mismatch triggers download+verify+overwrite) is exercised at the manual/validation
-/// level (see docs/validation-usb-autostart-matrix.md), not here. These tests instead cover the
+/// level (see specs/001-cloud-windows-imaging/validation-usb-autostart-matrix.md), not here. These tests instead cover the
 /// two things that ARE safely verifiable in-process: (1) the "never throws" contract that makes
 /// it safe to fire-and-forget at Client startup, and (2) the download/hash helper methods in
 /// isolation via reflection, since they contain the actual download-then-verify logic.

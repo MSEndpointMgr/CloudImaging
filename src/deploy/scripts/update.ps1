@@ -89,6 +89,29 @@ if ($ArchivePath -eq '') {
     Write-Host "Downloading $($asset.name) ($([math]::Round($asset.size/1MB,1)) MB)…"
     Invoke-WebRequest $asset.browser_download_url -OutFile $ArchivePath -Headers $headers
     Write-Host "Downloaded to $ArchivePath"
+
+    # Verify the download against the release's SHA256SUMS manifest before extracting and
+    # deploying anything from it. Every release publishes this alongside the bundle; without
+    # checking it, a corrupted download or a tampered asset would be deployed straight into
+    # the customer's subscription.
+    $sumsAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
+    if ($null -eq $sumsAsset) {
+        Write-Warning "Release $resolvedVersion publishes no SHA256SUMS manifest, so the download could not be integrity-checked. Continuing."
+    } else {
+        $manifest = (Invoke-WebRequest $sumsAsset.browser_download_url -Headers $headers).Content
+        $expected = ($manifest -split '\r?\n' |
+            Where-Object { $_ -match "^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($asset.name))\s*$" } |
+            ForEach-Object { $Matches[1] } | Select-Object -First 1)
+        if (-not $expected) {
+            throw "SHA256SUMS for release $resolvedVersion contains no entry for '$($asset.name)'. Refusing to deploy an unverifiable archive."
+        }
+        $actual = (Get-FileHash $ArchivePath -Algorithm SHA256).Hash
+        if ($actual -ne $expected.ToUpperInvariant()) {
+            Remove-Item $ArchivePath -Force -ErrorAction SilentlyContinue
+            throw "Integrity check FAILED for $($asset.name).`n  Expected: $($expected.ToLowerInvariant())`n  Actual:   $($actual.ToLowerInvariant())`nThe download was discarded. Re-run the upgrade; if it fails again, do not deploy this archive."
+        }
+        Write-Host "✓ Integrity verified (SHA-256 matches the release manifest)."
+    }
 } else {
     if (-not (Test-Path $ArchivePath)) { throw "Archive not found: $ArchivePath" }
     Write-Host "Using local archive: $ArchivePath"
@@ -336,14 +359,30 @@ if ($null -ne $swa) {
     $frontendZip = Join-Path $extractDir 'portal-frontend.zip'
     if (Test-Path $frontendZip) {
         if ($PSCmdlet.ShouldProcess($swa.Name, "Deploy Static Web App from $frontendZip")) {
+            if (-not (Get-Command swa -ErrorAction SilentlyContinue)) {
+                throw "The Azure Static Web Apps CLI ('swa') is not installed, so the portal frontend cannot be deployed. Install it with 'npm install -g @azure/static-web-apps-cli' and re-run. The backend components above are already upgraded, so re-running is safe."
+            }
+
+            # swa deploy takes a DIRECTORY of built assets, not a zip. The bundle ships the
+            # frontend as portal-frontend.zip, so it has to be expanded first.
+            $frontendDir = Join-Path $extractDir 'portal-frontend'
+            Expand-Archive -Path $frontendZip -DestinationPath $frontendDir -Force
+
             Write-Host "Deploying Static Web App $($swa.Name)…"
             $swaToken = (Invoke-AzRestMethod -Method POST `
                 -Path "/subscriptions/$($(Get-AzContext).Subscription.Id)/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/staticSites/$($swa.Name)/listSecrets?api-version=2023-01-01" `
                 ).Content | ConvertFrom-Json | Select-Object -ExpandProperty properties | Select-Object -ExpandProperty apiKey
-            swa deploy --deployment-token $swaToken --app-artifact-location (Join-Path $extractDir 'portal-frontend')
+            swa deploy --deployment-token $swaToken --app-artifact-location $frontendDir --env production
+            if ($LASTEXITCODE -ne 0) {
+                throw "swa deploy failed with exit code $LASTEXITCODE. The portal frontend is still running the previous version; the backend components above are already upgraded. Fix the error and re-run."
+            }
             Write-Host "✓ Static Web App deployed."
         }
+    } else {
+        Write-Warning "portal-frontend.zip not found in the archive — the portal frontend was NOT upgraded."
     }
+} else {
+    Write-Warning "No Static Web App found in '$ResourceGroupName' — the portal frontend was NOT upgraded."
 }
 
 # ── Step 6: Cleanup temp files ─────────────────────────────────────────────────────

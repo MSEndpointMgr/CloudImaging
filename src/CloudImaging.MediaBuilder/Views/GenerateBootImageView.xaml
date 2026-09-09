@@ -351,9 +351,15 @@
                         rectangle drawn around itself once the inner TextBox is clicked/selected
                         (with the ScrollViewer focusable, that rectangle stayed stuck around the
                         whole log box with no click-away to dismiss it).
+
+                        Horizontal Padding lives here rather than on the TextBox: this ScrollViewer
+                        (not the TextBox) now owns horizontal scrolling, and it's the ScrollViewer's
+                        own Padding that correctly extends into its scrollable extent on both sides
+                        — the TextBox's own Padding only ever inset its content relative to its own
+                        bounds, which stayed flush with the right edge once scrolled to the end.
                     -->
                     <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                                  Focusable="False">
+                                  Focusable="False" Padding="6,0">
                         <!--
                             Plain, read-only, selectable text (not a ListBox/ItemsControl) so the
                             whole log can be selected and copied like a real console — one line
@@ -363,7 +369,7 @@
                         <TextBox x:Name="LogTextBox"
                                  Text="{Binding LogText, Mode=OneWay}"
                                  IsReadOnly="True" IsReadOnlyCaretVisible="True"
-                                 Background="Transparent" BorderThickness="0" Padding="6,4"
+                                 Background="Transparent" BorderThickness="0" Padding="0,4"
                                  FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12"
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                  TextWrapping="NoWrap"

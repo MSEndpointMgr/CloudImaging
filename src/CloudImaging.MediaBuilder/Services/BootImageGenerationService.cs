@@ -726,8 +726,11 @@ public sealed partial class BootImageGenerationService
         }
         finally
         {
-            // Best-effort cleanup
-            TryDeleteDirectoryRecursive(workDir);
+            // Best-effort cleanup — a failure here is exactly what CleanupOrphanedWorkDirsAsync
+            // finds (and re-reports) on the next run, so surface it now instead of leaving the
+            // technician to wonder why that count keeps growing.
+            if (!TryDeleteDirectoryRecursive(workDir))
+                RaiseLog($"Could not fully clean up working folder \"{workDir}\" — it will be swept up on the next run.");
         }
     }
 
@@ -811,7 +814,8 @@ public sealed partial class BootImageGenerationService
                 }
             }
 
-            TryDeleteDirectoryRecursive(dir);
+            if (!TryDeleteDirectoryRecursive(dir))
+                RaiseLog($"Still could not remove leftover folder \"{dir}\" — it will be retried next run.");
         }
     }
 
@@ -1248,7 +1252,7 @@ public sealed partial class BootImageGenerationService
     /// run. Best-effort throughout: a cleanup failure must never mask the real generation
     /// result/error.
     /// </summary>
-    private static void TryDeleteDirectoryRecursive(string path) => ElevationHelper.TryDeleteDirectoryRecursive(path);
+    private static bool TryDeleteDirectoryRecursive(string path) => ElevationHelper.TryDeleteDirectoryRecursive(path);
 
 
     /// <summary>

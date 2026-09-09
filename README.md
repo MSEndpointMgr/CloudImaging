@@ -2,6 +2,29 @@
 
 Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 
+[![License](https://img.shields.io/github/license/MSEndpointMgr/CloudImaging?color=blue)](LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/MSEndpointMgr/CloudImaging/total?label=downloads)](https://github.com/MSEndpointMgr/CloudImaging/releases)
+![Platform](https://img.shields.io/badge/platform-Azure-0078D4?logo=microsoftazure&logoColor=white)
+![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
+![Deploys with](https://img.shields.io/badge/deploys%20with-Bicep-1BA1E2)
+
+**Guides** &nbsp;
+[**Set up a deployment**](docs/setup-instructions.md) ·
+[Upgrade](docs/upgrade-instructions.md) ·
+[Roles and access](docs/roles-and-access.md) ·
+[Operations runbook](docs/operations-runbook.md) ·
+[Releases](https://github.com/MSEndpointMgr/CloudImaging/releases) ·
+[Report an issue](https://github.com/MSEndpointMgr/CloudImaging/issues)
+
+**This page** &nbsp;
+[Overview](#overview) ·
+[How it works](#how-it-works) ·
+[Requirements](#requirements) ·
+[Architecture](#architecture) ·
+[Features](#features) ·
+[Deployment](#deployment) ·
+[Release model](#release-model)
+
 ---
 
 ## Overview
@@ -17,7 +40,7 @@ reporting progress in real time.
 
 The solution is deployed into your own Azure subscription with a Bicep
 infrastructure-as-code package, published through an Azure Template Spec.
-Everything runs on Azure PaaS services inside your tenant: there is no
+Everything runs on managed Azure services inside your tenant: there is no
 on-premises server to build (no PXE, MDT, or WDS role), and no dependency on
 MSEndpointMgr-hosted infrastructure. The resource group, network boundary,
 and identity configuration are yours to manage.
@@ -34,17 +57,18 @@ several coupled sessions at a time.
 1. **Deploy the solution.** The Bicep package is published and deployed into
    your Azure subscription as a Template Spec (see [Deployment](#deployment)
    below).
-2. **Set up Entra ID access.** Create the app registrations for the Portal
-   and Media Builder, add the `CloudImaging.Administrator` and
-   `CloudImaging.Technician` app roles to each (the Portal registration also
-   gets a read-only `CloudImaging.Reader` role, scoped to the Dashboard and
-   Reports), and assign at least one person or group the Administrator role
-   so someone can sign in to the portal. See
+2. **Set up Entra ID access.** Create three app registrations, one each for the
+   Portal, the Operator API, and Media Builder. Add the
+   `CloudImaging.Administrator` and `CloudImaging.Technician` app roles to the
+   Portal and Media Builder registrations (the Portal registration also gets a
+   read-only `CloudImaging.Reader` role, scoped to the Dashboard and Reports),
+   and assign at least one person or group the Administrator role so someone can
+   sign in to the portal. See
    [docs/roles-and-access.md](docs/roles-and-access.md) for the full role model.
 3. **Configure the environment.** An administrator signs in to the Cloud
    Imaging Portal and sets up the prerequisites: generates the boot media
-   certificate used for mTLS, adds OS images to the catalog, and optionally
-   configures branding and device pre-flight authorization.
+   certificate used for mutual TLS (mTLS), adds OS images to the catalog, and
+   optionally configures branding and device pre-flight authorization.
 4. **Generate a boot image.** An administrator generates a WinPE boot image
    in Media Builder, embedding the client app and the configured
    certificate/branding. Administrator-only, since the image embeds the
@@ -58,7 +82,8 @@ several coupled sessions at a time.
    passcode, assigns an OS image, and confirms. Multiple devices can be
    booted and coupled this way, then assigned and started together.
 8. **Imaging runs.** Each device formats, downloads the OS image over a
-   time-limited SAS URL, and applies it, reporting progress at every step.
+   time-limited shared access signature (SAS) link, and applies it, reporting
+   progress at every step.
 9. **Result.** The client displays a success or failure screen; the portal
    reflects the final state of each session in real time, with a support
    reference code if imaging failed.
@@ -71,12 +96,20 @@ several coupled sessions at a time.
 |---|---|
 | Azure subscription | Owner (or Contributor + User Access Administrator) on the target resource group, to deploy the Bicep package |
 | Entra ID admin access | **Application Administrator** or **Cloud Application Administrator**, to create the app registrations, app roles, and admin consent used for Portal and Media Builder sign-in |
-| Windows workstation with the ADK + WinPE add-on | Required to run Media Builder and generate boot images |
-| USB drive per boot media set (≥ 26 GB) | Holds the WinPE boot partition (≥ 2 GB) and the OS image cache partition (≥ 24 GB) |
+| Windows workstation with the Windows Assessment and Deployment Kit (ADK) + WinPE add-on | Required to run Media Builder and generate boot images |
+| USB drive per boot media set (32 GB or larger) | Partitioned into a WinPE boot partition (2 GB) and an OS image cache partition (24 GB minimum) |
 | Target devices with outbound HTTPS access | No inbound connectivity or VPN to the device is required |
 
-See [docs/self-hosting-guide.md](docs/self-hosting-guide.md) for the full
-tenant setup walkthrough.
+> **Why User Access Administrator?** The Bicep package assigns Azure role assignments to the
+> deployed managed identities (Storage, Key Vault, package containers) as part of the deployment.
+> Built-in **Contributor** explicitly excludes `Microsoft.Authorization/*/Write`, so it can't
+> create those role assignments on its own, hence the extra role (or Owner, which already
+> includes it). `update.ps1` needs the same permission later to grant itself Storage Blob
+> Data Contributor for release uploads.
+
+See [docs/setup-instructions.md](docs/setup-instructions.md) for the full
+tenant setup walkthrough, from prerequisites through deploying the Azure
+resources to the post-deployment configuration.
 
 ---
 
@@ -130,6 +163,9 @@ flowchart TB
 
 ## Features
 
+<details>
+<summary>Expand the full feature list for each component</summary>
+
 ### Cloud Imaging Client
 
 - Auto-launches in WinPE and displays an operation selection screen (Imaging only;
@@ -142,9 +178,9 @@ flowchart TB
 - Executes three visible imaging steps with real-time progress reporting:
   **Format**, **Download**, and **Apply**
 - Downloads the OS image (.wim) directly from Azure Blob Storage via a time-limited
-  SAS token URL; caches images to the USB cache partition, purging entries not
-  reused within 30 days; skips cache when space is insufficient
-- Refreshes SAS tokens automatically when expiry is within 15 minutes
+  shared access signature link; caches images to the USB cache partition, purging
+  entries not reused within 30 days; skips cache when space is insufficient
+- Refreshes download links automatically when expiry is within 15 minutes
 - Displays a terminal result screen on success or failure; on failure, shows a
   structured support reference code (e.g. `CIC-A1B2C3D4-DWN-1750000000`)
 - Retry after failure navigates back to the operation selection screen without
@@ -171,8 +207,8 @@ flowchart TB
 - **Branding configuration**: upload a custom organization logo embedded into boot
   images; falls back to the MSEndpointMgr default logo if none is configured
 - **Configuration section** (Administrators only): toggle device pre-flight
-  authorization, set SAS token URL expiry (default 4 hours), and manage the active
-  boot media client certificate used for mTLS
+  authorization, set the OS image download link expiry (default 4 hours), and manage
+  the active boot media client certificate used for mutual TLS
 
 ### Cloud Imaging Media Builder
 
@@ -195,8 +231,8 @@ flowchart TB
   require a boot media client certificate embedded at boot image generation time;
   the Device Gateway API runs on Azure Functions Premium EP1 with
   `clientCertificateMode=require`; an optional Azure Application Gateway can be
-  deployed as additive edge enforcement via the `deployApplicationGateway` IaC
-  parameter
+  deployed as additive edge enforcement via the `deployApplicationGateway`
+  deployment parameter
 - **Entra ID + app roles**: the Portal and Media Builder each have their own app
   registration, but share the same two user-level roles (`CloudImaging.Administrator`,
   `CloudImaging.Technician`), assigned independently per registration; service-level
@@ -212,9 +248,9 @@ flowchart TB
 - **Token replay prevention**: replayed or stale device-session tokens are rejected
   with a configurable clock-skew tolerance window; replay events are emitted as
   structured security audit events
-- **Log redaction**: passcodes, device-session tokens, SAS token URLs, and
+- **Log redaction**: passcodes, device-session tokens, image download links, and
   certificate private material are redacted from all structured logs and telemetry
-  before persistence; CI security scan gates block merge if prohibited patterns are
+  before persistence; automated security scans block merge if prohibited patterns are
   detected in output
 
 ### Observability
@@ -223,7 +259,8 @@ flowchart TB
   Portal backend) emit structured telemetry to a **shared Azure Application Insights
   workspace** (requests, dependencies, exceptions, custom traces)
 - WPF applications write structured diagnostic logs to a local rolling log file only;
-  no external APM connectivity required from WinPE or technician workstations
+  no connection to an external monitoring service is required from WinPE or technician
+  workstations
 
 </details>
 
@@ -237,7 +274,8 @@ portal Template Spec wizard.
 
 1. **Check prerequisites** (see [Requirements](#requirements) above). For a
    full walkthrough of the Entra ID app registrations and tenant setup,
-   follow [docs/self-hosting-guide.md](docs/self-hosting-guide.md).
+   follow **[docs/setup-instructions.md](docs/setup-instructions.md)**: this
+   is the file to follow start to finish for a new deployment.
 
 2. **Publish the Template Spec** (one-time per environment):
    ```powershell
@@ -257,7 +295,7 @@ portal Template Spec wizard.
 
 ### Deployed resources
 
-The Bicep IaC package provisions the following Azure resources:
+The Bicep package provisions the following Azure resources:
 
 - Azure Functions Premium EP1: Device Gateway API, Operator API, Imaging Core API
 - Azure App Service (Linux, Node.js 22): Portal backend
@@ -268,7 +306,7 @@ The Bicep IaC package provisions the following Azure resources:
   Imaging Core API from public access
 - Azure Application Insights: shared telemetry workspace
 - Azure Key Vault: boot media client certificate storage
-- Managed Identities and RBAC role assignments
+- Managed identities and their Azure role assignments
 
 ---
 
@@ -276,8 +314,9 @@ The Bicep IaC package provisions the following Azure resources:
 
 | Guide | Use it to |
 |---|---|
-| [Self-hosting guide](docs/self-hosting-guide.md) | Set up Entra ID app registrations and deploy into your tenant, step by step |
-| [Operations runbook](docs/operations-runbook.md) | Day-2 operations: monitoring, certificate rotation, upgrades, troubleshooting |
+| [Setup instructions](docs/setup-instructions.md) | **Start here for a new deployment.** Prerequisites, Entra ID app registrations, deploying the Azure resources, and post-deployment/initial portal configuration, step by step |
+| [Upgrade instructions](docs/upgrade-instructions.md) | Moving an existing deployment to a newer release: the three release streams, running `update.ps1`, applying infrastructure changes, rebuilding boot media, and rolling back |
+| [Operations runbook](docs/operations-runbook.md) | Running it day to day: monitoring, certificate rotation, upgrades, troubleshooting |
 | [Roles and access](docs/roles-and-access.md) | The full Entra ID app role and service role model |
 
 ---
@@ -289,13 +328,13 @@ prefix and GitHub Release history:
 
 | Stream | Tag | Contents |
 |--------|-----|----------|
-| Backend/IaC | `mse-ci-v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep/deploy scripts, `update.ps1` |
+| Backend/infrastructure | `mse-ci-v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep/deploy scripts, `update.ps1` |
 | Cloud Imaging Client | `mse-ci-client-v#.#.#` | The WinPE client binary embedded into boot images |
 | Media Builder | `mse-ci-mediabuilder-v#.#.#` | The technician-workstation Windows app |
 
 Each stream is cut on its own cadence: a Client hotfix doesn't require a new backend
 release, and vice versa. Because GitHub's Releases page is a flat list (not grouped by
-stream), the backend/IaC and Client streams also maintain a moving "latest" alias release
+stream), the backend/infrastructure and Client streams also maintain a moving "latest" alias release
 (`mse-ci-iac-latest`, `mse-ci-client-latest`) that always points at the newest *stable* release in that
 stream. `update.ps1 -Version latest` and Media Builder's "Automatic download" source
 option resolve these aliases directly instead of GitHub's repo-wide latest release, which

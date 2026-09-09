@@ -13,6 +13,8 @@ describe('Portal backend: role enforcement', () => {
     'POST /api/boot-images/publish',
     'DELETE /api/boot-images/:id',
     'PUT /api/branding',
+    'POST /api/locations',
+    'DELETE /api/locations/:locationId',
     'GET /api/portal-config',
     'PUT /api/portal-config',
     'GET /api/cert/active',
@@ -37,6 +39,7 @@ describe('Portal backend: role enforcement', () => {
     'GET /api/images',
     'GET /api/boot-images',
     'GET /api/branding',
+    'GET /api/locations',
   ] as const;
 
   portalAccessOperations.forEach(op => {
@@ -44,6 +47,10 @@ describe('Portal backend: role enforcement', () => {
       expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');
     });
   });
+
+  // Locations read is deliberately NOT Administrator-only: the Header account menu picker,
+  // Devices filter, and Media Builder USB prep screen all need Technician read access, even
+  // though managing the catalog (POST/DELETE above) stays Administrator-only.
 
   // ── Reader operations (Dashboard + Reports data only, standalone allowlist) ─
 

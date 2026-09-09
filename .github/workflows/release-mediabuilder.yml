@@ -3,7 +3,7 @@ name: GitHub Release - Media Builder Package & Publish
 # Triggered on Media Builder version tags (e.g. mse-ci-mediabuilder-v1.2.0).
 # Builds the CloudImaging.MediaBuilder technician-workstation app and creates a
 # GitHub Release. Installed via Win32/Intune packaging (see
-# docs/self-hosting-guide.md "Packaging as a Win32 app") — nothing auto-downloads
+# docs/setup-instructions.md "Packaging as a Win32 app") — nothing auto-downloads
 # it, so this stream has no moving "latest" alias (unlike release-client.yml).
 
 on:
@@ -77,7 +77,7 @@ jobs:
           body:      |
             Technician-workstation WPF app used to generate WinPE boot images and prepare USB
             storage devices. Packages cleanly as a Win32 app (Intune, ConfigMgr, etc.) — see
-            `docs/self-hosting-guide.md` → "Packaging as a Win32 app".
+            `docs/setup-instructions.md` → "Packaging as a Win32 app".
 
             ### Release artifacts
             | File | Description |

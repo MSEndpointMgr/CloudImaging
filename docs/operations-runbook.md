@@ -1,26 +1,28 @@
 # Cloud Imaging Operations Runbook
 
-**Spec reference**: T109  
-**Audience**: IT administrators and SREs operating Cloud Imaging in production
+**Audience**: IT administrators and operations engineers running Cloud Imaging in production
 
 ---
 
-## 1. Session / Token / SAS Troubleshooting
+## 1. Session, Token, and Download Link Troubleshooting
 
 ### Symptom: Device displays passcode but coupling fails with 404
 
 **Cause**: Passcode expired or session transitioned out of `SessionAllowed` state.
 
 **Resolution**:
-1. Restart the Cloud Imaging Client on the device — this creates a new session with a fresh passcode.
-2. Couple within 10 minutes of the passcode appearing (default TTL).
-3. If the problem recurs frequently, check `PortalConfiguration.passcodeTtlMinutes` (default 10).
+1. Restart the Cloud Imaging Client on the device: this creates a new session with a fresh passcode.
+2. Couple within 30 minutes of the passcode appearing (the default lifetime).
+3. If the problem recurs frequently, raise **Session Passcode TTL (minutes)**. This is a
+   *deployment* parameter, not a portal setting: it's set in the deployment wizard and stored as
+   the `Security__PasscodeTtlMinutes` application setting on the Imaging Core API Function App,
+   so changing it means either redeploying or editing that application setting directly.
 
 ---
 
 ### Symptom: Portal shows 409 when coupling
 
-**Cause**: Passcode already consumed — session was previously coupled.
+**Cause**: Passcode already consumed; session was previously coupled.
 
 **Resolution**: Check session state in Table Storage (`DeviceSessions` table, `active` partition). If state is `SessionAssigned` the session is already coupled. Assign an image or restart the device to begin a new session.
 
@@ -31,18 +33,22 @@
 **Cause**: Device-session token expired or mTLS certificate mismatch.
 
 **Resolution**:
-1. **Token expiry**: Restart the device — the Client re-registers and gets a new token.
+1. **Token expiry**: Restart the device; the Client re-registers and gets a new token.
 2. **mTLS mismatch**: The boot media certificate has been rotated since the USB was prepared. Regenerate the boot image (Media Builder → Generate Boot Image) and re-prepare the USB drive.
 
 ---
 
-### Symptom: SAS download URL returns 403
+### Symptom: Image download link returns 403
 
-**Cause**: SAS token expired before the download completed.
+**Cause**: The shared access signature (SAS) on the download link expired before the download completed.
 
-**Resolution**: The SAS refresh coordinator should handle this automatically. If it persists:
-1. Check `PortalConfiguration.sasTokenUrlExpiryMinutes` — increase from default 60 to 240 if downloads take longer.
-2. Verify the Device Gateway API can reach the Imaging Core API over Private Link (check NSG rules).
+**Resolution**: The refresh coordinator renews the link automatically whenever it is within 15
+minutes of expiring. If 403s persist:
+1. In the portal, raise **Configuration → OS image download link expiry (minutes)** above its
+   240-minute (4-hour) default. Devices on slow links downloading very large images are the
+   usual reason to need more.
+2. Verify the Device Gateway API can reach the Imaging Core API over Private Link (check the
+   network security group rules on the Function App subnets).
 
 ---
 
@@ -51,9 +57,13 @@
 **Cause**: Network interruption or inactivity timeout.
 
 **Resolution**:
-1. The session lifecycle timer expires inactive sessions after 30 minutes.
-2. Verify network connectivity on the device.
-3. Restart the device to create a new session.
+1. Verify network connectivity on the device.
+2. Restart the device to create a new session.
+
+Sessions are expired by a timer that runs every 5 minutes, using two different thresholds: a
+session that is **actively imaging** (formatting, downloading, or applying) is given **4 hours**
+since its last heartbeat, while a session sitting idle at any other stage is given **30 minutes**.
+A long-running download is therefore not at risk of being expired at 30 minutes.
 
 ---
 
@@ -62,7 +72,7 @@
 **Resolution**: On the Operation Selection screen, click **Connect to Wi-Fi** (always available,
 no opt-in required) to scan and connect to an Open or WPA2/WPA3-Personal network via `netsh wlan`.
 Enterprise/802.1X networks are listed but cannot be connected to via this flow. No credential is
-persisted — see [self-hosting-guide.md](self-hosting-guide.md#client-support-tools).
+persisted; see [setup-instructions.md](setup-instructions.md#client-support-tools).
 
 ---
 
@@ -74,7 +84,7 @@ default, per boot image).
 
 **Resolution**: Regenerate the boot image with that checkbox enabled (Media Builder → Generate
 Boot Image → Support Tools) and re-prepare the USB drive. See
-[self-hosting-guide.md](self-hosting-guide.md#client-support-tools) for the security
+[setup-instructions.md](setup-instructions.md#client-support-tools) for the security
 considerations before enabling it broadly.
 
 ---
@@ -84,23 +94,44 @@ considerations before enabling it broadly.
 ### Rotating the Boot Media Certificate
 
 ```
-Portal → Configuration → Boot Media Certificate → Rotate Certificate
+Portal → Configuration → Certificates → Rotate…
 ```
 
-⚠️ **Warning**: All boot media using the current certificate will stop authenticating immediately. Regenerate the boot image and redistribute USB drives **before** rotating in production.
+⚠️ **There is no way to stage a certificate in advance.** Both **Generate/Regenerate** and
+**Rotate** issue the new certificate *and activate it immediately*, retiring the previous one in
+the same operation. The moment either completes, every USB drive built with the old certificate
+stops authenticating against the Device Gateway API. Plan for that, rather than expecting to
+prepare new media ahead of the switch.
 
-**Safe rotation procedure**:
-1. Generate a new certificate (Portal → Configuration → Generate Certificate) — this does NOT activate it yet.
-2. Regenerate boot images with the new cert embedded (Media Builder).
-3. Test the new USB media on at least one device.
-4. Perform the rotation during a maintenance window.
-5. Redistribute new USB media to all imaging stations.
+**Rotation procedure**:
+1. Schedule a maintenance window. Imaging cannot run between the rotation and the point where
+   new media is in technicians' hands.
+2. Confirm you have a technician workstation ready with Media Builder and the Windows ADK, so
+   new boot images can be built immediately after rotating.
+3. Rotate the certificate in the portal and confirm the impact dialog.
+4. Regenerate boot images in Media Builder; they pick up the newly activated certificate
+   automatically.
+5. Test the new media on at least one device before wider distribution.
+6. Re-prepare and redistribute USB media to every imaging station.
+
+If you need to validate a rotation without disrupting production, do it in a separate
+(for example `dev`) deployment first; a single deployment only ever has one active certificate.
 
 ---
 
 ### Certificate Expiry Monitoring
 
-Check the **Boot Media Certificate** panel in Portal → Configuration for `expiresAt`. Set up an Azure Monitor alert on Key Vault certificate expiry (90 days before expiry recommended).
+The portal is the authoritative source: **Configuration → Certificates** shows the active
+certificate's expiry date and raises a warning banner as it approaches, and again once expired.
+Check it as part of routine operations.
+
+Do **not** rely on Key Vault's built-in certificate near-expiry events for this. The boot media
+certificate is stored as a Key Vault *secret* (a base64 PKCS#12 blob), not as a Key Vault managed
+certificate object, so those events never fire for it. If you want an external alert, build it
+from the expiry date reported by the portal rather than from Key Vault.
+
+The certificate's validity period is fixed when it is issued, from the **Boot Media Certificate
+Validity (days)** deployment parameter (default 365).
 
 ---
 
@@ -109,14 +140,14 @@ Check the **Boot Media Certificate** panel in Portal → Configuration for `expi
 ### Symptom: Session creation takes > 5 s
 
 **Resolution**:
-1. Check Device Gateway API Function App plan — must be Premium EP1 or higher for VNet integration.
+1. Check Device Gateway API Function App plan: must be Premium EP1 or higher for VNet integration.
 2. Check Private Link connectivity between Device Gateway and Imaging Core.
 3. Review Application Insights for dependency failures.
 
 ### Symptom: Bulk assignment times out for 20+ sessions
 
 **Resolution**:
-1. `BulkAssignmentService` processes sessions sequentially — large batches take proportionally longer.
+1. `BulkAssignmentService` processes sessions sequentially; large batches take proportionally longer.
 2. For fleets > 50 devices, stagger bulk assignments into groups of 20.
 
 ---
@@ -125,7 +156,7 @@ Check the **Boot Media Certificate** panel in Portal → Configuration for `expi
 
 | Component | Log location |
 |---|---|
-| Device Gateway API | Application Insights → Traces (APPLICATIONINSIGHTS_CONNECTION_STRING) |
+| Device Gateway API | Application Insights → Traces |
 | Operator API | Application Insights → Traces |
 | Imaging Core API | Application Insights → Traces |
 | Portal backend | Application Insights → Traces |
@@ -140,8 +171,7 @@ Check the **Boot Media Certificate** panel in Portal → Configuration for `expi
 
 | Table | Partitions | Description |
 |---|---|---|
-| `DeviceSessions` | `active`, `terminal` | Active sessions moved to `terminal` on completion |
-| `DeviceSessions` | `terminal` | Purged after 24 hours by lifecycle timer |
+| `DeviceSessions` | `active`, `terminal` | Sessions move from `active` to `terminal` on completion; `terminal` rows are purged after 24 hours by the lifecycle timer |
 | `OSImages` | `catalog` | All uploaded OS image metadata |
 | `BootImages` | `catalog` | Boot image entries, max 5 active |
 | `BootMediaCertificate` | `cert` | Exactly one row with `IsActive=true` |
@@ -171,16 +201,18 @@ traces
 
 ### Recovery Point Objective (RPO)
 
-Azure Table Storage has built-in geo-redundancy with LRS/ZRS/GRS options. Set Storage Account replication to GRS for production.
+Azure Table Storage is replicated according to the storage account's redundancy setting. For
+production, use geo-redundant storage (GRS) rather than locally redundant (LRS) or
+zone-redundant (ZRS), so session and catalog state survives the loss of a region.
 
 ### Recovery Time Objective (RTO)
 
-All components are stateless (state in Table Storage + Blob Storage + Key Vault). Re-deploy from latest release archive with `update.ps1` — estimated 15 minutes.
+All components are stateless (state in Table Storage + Blob Storage + Key Vault). Re-deploy from latest release archive with `update.ps1`, about 15 minutes. See [upgrade-instructions.md](upgrade-instructions.md).
 
 ### Key Vault Backup
 
 ```powershell
-# Back up the boot media certificate PFX
+# Back up the boot media certificate (stored as a Key Vault secret holding a base64 PKCS#12 blob)
 # Key Vault name follows the naming convention {prefix}-{env}-kv (e.g. corp-prod-kv)
 $secret = Get-AzKeyVaultSecret -VaultName <prefix>-<env>-kv -Name boot-media-cert-<thumbprint>
 $secret | ConvertTo-Json | Out-File cert-backup.json

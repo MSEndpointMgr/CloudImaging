@@ -88,7 +88,7 @@ Run once after Bicep completes:
 
 ### 4. Configure GitHub Actions (core dev team only)
 
-See `docs/self-hosting-guide.md` for OIDC federated credential setup.
+See `docs/setup-instructions.md` for OIDC federated credential setup.
 
 ---
 
@@ -162,4 +162,4 @@ Get-FileHash cloud-imaging-v1.0.0.zip -Algorithm SHA256
 
 ---
 
-*For troubleshooting, see `docs/operations-runbook.md`. For quick start, see `docs/self-hosting-guide.md`.*
+*For troubleshooting, see `docs/operations-runbook.md`. For quick start, see `docs/setup-instructions.md`.*
