@@ -17,6 +17,6 @@ public partial class ProgressView : Page
     /// <summary>Opens the read-only local log viewer (FR-066) — see <see cref="LogViewerWindow"/>.</summary>
     private void ViewLogButton_Click(object sender, RoutedEventArgs e)
     {
-        new LogViewerWindow { Owner = Window.GetWindow(this) }.ShowDialog();
+        DialogHost.ShowDimmed(new LogViewerWindow(), Window.GetWindow(this));
     }
 }

@@ -18,6 +18,13 @@
         on disk and never uploads or transmits its contents (see Services.LogUploadService for the
         separate, best-effort failure-path upload).
     -->
+    <!--
+        Outer accent-colored Border: WinPE has no DWM composition, so this window has no native
+        drop shadow, and it shares MainWindow's exact ApplicationBackgroundBrush, so without an
+        explicit outline it's visually indistinguishable from MainWindow behind it when centered
+        over it. CornerRadius matches WindowCornerPreference="Round" above.
+    -->
+    <Border BorderBrush="{DynamicResource SystemAccentColorBrush}" BorderThickness="2" CornerRadius="8">
     <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -93,4 +100,5 @@
                      Padding="10" />
         </Border>
     </Grid>
+    </Border>
 </ui:FluentWindow>

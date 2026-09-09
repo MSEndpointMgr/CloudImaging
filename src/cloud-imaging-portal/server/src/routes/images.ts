@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
+import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 import { isAllowedImageFile, OS_IMAGE_EXTENSIONS } from '../utils/imageFileValidation.js';
 
@@ -47,7 +48,7 @@ router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (r
 // Publish only performs a cheap file-signature check and enqueues a background job, so it
 // answers 202 Accepted with the job. The client polls GET /api/upload-jobs/:uploadId until the
 // image is actually in the catalog.
-router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator'), requireGuidParams('uploadId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const job = await operatorApiClient.publishOsImageUpload(req.params['uploadId'] as string, req.body as unknown);
     res.status(202).json(job);
@@ -55,7 +56,7 @@ router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator
 });
 
 // Best-effort cleanup for a cancelled/discarded upload — deletes the uncommitted staged blob.
-router.post('/upload/:uploadId/abandon', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload/:uploadId/abandon', requireRole('CloudImaging.Administrator'), requireGuidParams('uploadId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.abandonOsImageUpload(req.params['uploadId'] as string, req.body as unknown);
     res.status(204).send();
@@ -64,7 +65,7 @@ router.post('/upload/:uploadId/abandon', requireRole('CloudImaging.Administrator
 
 // ── PATCH /api/images/:id: update metadata (Administrator) ───────────────────
 
-router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:imageId', requireRole('CloudImaging.Administrator'), requireGuidParams('imageId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.updateImage(req.params['imageId'] as string, req.body as unknown));
   } catch (err) { next(err); }
@@ -72,7 +73,7 @@ router.patch('/:imageId', requireRole('CloudImaging.Administrator'), async (req:
 
 // ── DELETE /api/images/:id (Administrator) ────────────────────────────────────
 
-router.delete('/:imageId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:imageId', requireRole('CloudImaging.Administrator'), requireGuidParams('imageId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.deleteImage(req.params['imageId'] as string);
     res.status(204).send();

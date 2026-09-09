@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
+import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
@@ -22,7 +23,7 @@ router.get('/', requireRole('CloudImaging.PortalAccess'), async (req: Request, r
 
 // ── GET /api/sessions/:id: get single session ────────────────────────────
 
-router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await operatorApiClient.getSession(req.params['sessionId'] as string);
     res.json(data);
@@ -33,7 +34,7 @@ router.get('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: 
 
 // ── GET /api/sessions/:id/logs: list uploaded diagnostic logs ────────────
 
-router.get('/:sessionId/logs', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:sessionId/logs', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await operatorApiClient.getSessionLogs(req.params['sessionId'] as string);
     res.json(data);
@@ -44,7 +45,7 @@ router.get('/:sessionId/logs', requireRole('CloudImaging.PortalAccess'), async (
 
 // ── GET /api/sessions/:id/logs/:fileName/download-url: issue a download URL ──
 
-router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await operatorApiClient.getSessionLogDownloadUrl(
       req.params['sessionId'] as string, req.params['fileName'] as string);
@@ -72,7 +73,7 @@ router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Req
 
 // ── POST /api/sessions/:sessionId/assign: assign image (PortalAccess) ────
 
-router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { osImageId } = req.body as { osImageId: string };
     if (!osImageId) {
@@ -101,7 +102,7 @@ router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req
 // ── DELETE /api/sessions/:sessionId: remove a coupled session that was ───
 // aborted before imaging started (e.g. device/VM rebooted after coupling). ─
 
-router.delete('/:sessionId', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:sessionId', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.cancelSession(req.params['sessionId'] as string);
     res.status(204).send();

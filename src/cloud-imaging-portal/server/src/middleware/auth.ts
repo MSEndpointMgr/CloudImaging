@@ -47,6 +47,7 @@ export async function auth(req: AuthenticatedRequest, res: Response, next: NextF
 
     const signingKey = await getSigningKey(decoded.header);
     const payload = jwt.verify(token, signingKey, {
+      algorithms: ['RS256'],
       audience: clientId,
       issuer,
     }) as JwtPayload;

@@ -26,7 +26,7 @@ public partial class OperationSelectionView : Page
     /// </summary>
     private void ConnectWifiButton_Click(object sender, RoutedEventArgs e)
     {
-        new WifiConnectionWindow { Owner = Window.GetWindow(this) }.ShowDialog();
+        DialogHost.ShowDimmed(new WifiConnectionWindow(), Window.GetWindow(this));
     }
 
     /// <summary>

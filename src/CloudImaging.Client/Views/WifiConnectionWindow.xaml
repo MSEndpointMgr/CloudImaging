@@ -25,6 +25,13 @@
         directly below it, styled like a selected card (same accent-border language as
         OperationSelectionView's operation cards) instead of a form that's always on screen.
     -->
+    <!--
+        Outer accent-colored Border: WinPE has no DWM composition, so this window has no native
+        drop shadow, and it shares MainWindow's exact ApplicationBackgroundBrush, so without an
+        explicit outline it's visually indistinguishable from MainWindow behind it when centered
+        over it. CornerRadius matches WindowCornerPreference="Round" above.
+    -->
+    <Border BorderBrush="{DynamicResource SystemAccentColorBrush}" BorderThickness="2" CornerRadius="8">
     <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -161,5 +168,6 @@
             <ui:Button Content="Close" Appearance="Secondary" Click="CloseButton_Click" />
         </StackPanel>
     </Grid>
+    </Border>
 </ui:FluentWindow>
 

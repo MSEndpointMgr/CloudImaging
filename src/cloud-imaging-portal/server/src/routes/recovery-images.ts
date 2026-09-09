@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
+import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 import { isAllowedImageFile, WIM_ONLY_EXTENSIONS } from '../utils/imageFileValidation.js';
 
@@ -24,14 +25,14 @@ router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (r
 });
 
 // Publish enqueues a background job (202 Accepted); the client polls /api/upload-jobs/:id.
-router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload/:uploadId/publish', requireRole('CloudImaging.Administrator'), requireGuidParams('uploadId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const job = await operatorApiClient.publishRecoveryImageUpload(req.params['uploadId'] as string, req.body as unknown);
     res.status(202).json(job);
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.deleteRecoveryImage(req.params['id'] as string);
     res.status(204).send();

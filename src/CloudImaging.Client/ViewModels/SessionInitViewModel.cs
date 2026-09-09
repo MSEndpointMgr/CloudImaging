@@ -32,6 +32,25 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     private bool _hasCertError;
     private string? _certErrorMessage;
 
+    // Guards against the manual RefreshCommand racing the automatic 30s poll loop: without this,
+    // both could independently observe the same terminal/hand-off state and each fire
+    // _navigateToProgress/_navigateToResults, constructing a second ImagingWorkflowViewModel that
+    // restarts the pipeline from Format Disk and replaces the already-progressing ProgressView —
+    // visible to the user as the Format Disk step "reverting" to active after Download had
+    // already started. Only the first caller to reach a terminal/hand-off state may navigate.
+    private readonly object _terminalGate = new();
+    private bool _hasReachedTerminal;
+
+    private bool TryClaimTerminalTransition()
+    {
+        lock (_terminalGate)
+        {
+            if (_hasReachedTerminal) return false;
+            _hasReachedTerminal = true;
+            return true;
+        }
+    }
+
     public SessionInitViewModel(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -120,6 +139,11 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
 
     private async Task PollOnceAsync()
     {
+        // Already reached a terminal/hand-off state on a previous (possibly concurrent) call —
+        // e.g. the manual Refresh button was clicked around the same time the automatic 30s loop
+        // fired. Ignore this call entirely rather than issuing a redundant status GET.
+        if (!IsPolling) return;
+
         try
         {
             var session = await _gatewayClient.GetSessionStatusAsync(_sessionId, _cts.Token);
@@ -131,6 +155,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
             switch (state)
             {
                 case SessionState.SessionNotAuthorized:
+                    if (!TryClaimTerminalTransition()) break;
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.NotAuthorized,
@@ -140,11 +165,13 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                     break;
 
                 case SessionState.SessionCompleted:
+                    if (!TryClaimTerminalTransition()) break;
                     IsPolling = false;
                     _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
                     break;
 
                 case SessionState.SessionFailed:
+                    if (!TryClaimTerminalTransition()) break;
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.Failure,
@@ -157,6 +184,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                 // elapsed — a benign timeout, not a real failure, so it must not be presented as
                 // one (see ResultsViewModel.Outcome.Expired).
                 case SessionState.SessionExpired:
+                    if (!TryClaimTerminalTransition()) break;
                     IsPolling = false;
                     _navigateToResults(
                         ResultsViewModel.Outcome.Expired,
@@ -179,6 +207,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
 
                 case SessionState.SessionStarted:
                 case SessionState.SessionInProgress:
+                    if (!TryClaimTerminalTransition()) break;
                     IsPolling = false;
                     _navigateToProgress(session, _deviceSerialNumber);
                     break;
