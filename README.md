@@ -1,4 +1,4 @@
-# CloudImaging
+# MSEndpointMgr Cloud Imaging
 
 Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 
@@ -29,7 +29,7 @@ Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 
 ## Overview
 
-CloudImaging provisions Windows OS images from Azure Blob Storage to bare-metal
+MSEndpointMgr Cloud Imaging provisions Windows OS images from Azure Blob Storage to bare-metal
 devices over the network. A technician boots a target device from a prepared
 USB drive; a lightweight client launches automatically in WinPE and displays
 a one-time passcode. The same technician then opens the Cloud Imaging Portal
@@ -115,7 +115,7 @@ resources to the post-deployment configuration.
 
 ## Architecture
 
-CloudImaging is a six-component system:
+MSEndpointMgr Cloud Imaging is a six-component system:
 
 | Component | Technology | Role |
 |---|---|---|
@@ -268,7 +268,7 @@ flowchart TB
 
 ## Deployment
 
-CloudImaging is deployed as an Azure Template Spec: the Bicep package is
+MSEndpointMgr Cloud Imaging is deployed as an Azure Template Spec: the Bicep package is
 published once per environment, then deployed through the standard Azure
 portal Template Spec wizard.
 

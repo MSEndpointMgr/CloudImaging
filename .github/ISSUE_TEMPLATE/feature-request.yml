@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest an improvement or a new capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, search [existing issues](https://github.com/MSEndpointMgr/CloudImaging/issues).
+        For substantial architecture or schema changes, describe the goal here first
+        rather than opening a pull request directly; see [CONTRIBUTING.md](https://github.com/MSEndpointMgr/CloudImaging/blob/main/CONTRIBUTING.md).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - Cloud Imaging Client (WinPE)
+        - Media Builder
+        - Device Gateway API
+        - Operator API
+        - Imaging Core API
+        - Cloud Imaging Portal
+        - Infrastructure / Bicep / deployment scripts
+        - Documentation
+        - Not sure / cross-cutting
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What is missing or difficult today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should change, at a high level?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
