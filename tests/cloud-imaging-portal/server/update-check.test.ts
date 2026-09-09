@@ -128,6 +128,33 @@ describe('Portal backend: update check service', () => {
     expect(result.updateAvailable).toBe(false);
   });
 
+  it('keeps serving a cached version when a refresh is rate-limited, but reports it honestly', async () => {
+    vi.useFakeTimers();
+    try {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ name: 'mse-ci-v9.9.9', html_url: 'https://example.invalid/release' }),
+      });
+      const first = await getUpdateStatus(true);
+      expect(first.status).toBe('ok');
+
+      // Expire the cache, then have the refresh come back rate-limited.
+      vi.advanceTimersByTime(7 * 60 * 60 * 1000);
+      fetchMock.mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
+      const second = await getUpdateStatus(true);
+
+      // The known-good version is still served, so the banner doesn't flap off and back on.
+      expect(second.latest).toBe('mse-ci-v9.9.9');
+      // But the status must not claim 'ok' for a call that failed, and checkedAt must still be
+      // when the data was actually obtained rather than when the failed attempt happened.
+      expect(second.status).toBe('rate-limited');
+      expect(second.checkedAt).toBe(first.checkedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('degrades to unknown when the alias release does not exist', async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
     const result = await getUpdateStatus(true);

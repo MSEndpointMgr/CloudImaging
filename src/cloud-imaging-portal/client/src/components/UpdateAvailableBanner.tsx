@@ -20,6 +20,12 @@ export function UpdateAvailableBanner(): React.ReactElement | null {
   const accountKey = account?.homeAccountId || account?.username || '';
 
   useEffect(() => {
+    // Clear anything resolved for a previous identity before deciding whether to fetch again,
+    // so a role change or account switch can't leave an earlier result on screen.
+    setVersion(null);
+    setReleaseUrl(null);
+    setDismissed(false);
+
     if (!isAdministrator || !accountKey) return;
     let cancelled = false;
 
@@ -34,7 +40,10 @@ export function UpdateAvailableBanner(): React.ReactElement | null {
     return () => { cancelled = true; };
   }, [isAdministrator, accountKey]);
 
-  if (!version || dismissed) return null;
+  // Gate the render on the identity too, not just the effect. State set for an administrator
+  // would otherwise survive a role change or account switch and keep the banner on screen for
+  // someone who should not see it, since the effect's early return leaves state untouched.
+  if (!isAdministrator || !accountKey || !version || dismissed) return null;
 
   const onDismiss = () => {
     dismissUpdate(accountKey, version);

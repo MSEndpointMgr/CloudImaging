@@ -111,10 +111,12 @@ export async function getUpdateStatus(enabled: boolean): Promise<UpdateCheckResu
 
   if (!cache || cache.expiresAt <= Date.now()) {
     const fresh = await lookupLatest();
-    // Keep serving a previously good answer through a rate-limit window rather than
-    // flapping the banner off and back on again.
-    cache = fresh.status === 'rate-limited' && cache?.status === 'ok'
-      ? { ...cache, checkedAt: fresh.checkedAt, expiresAt: fresh.expiresAt }
+    // A rate-limited refresh keeps serving the last known-good version, so the banner doesn't
+    // flap off and back on. Report the real status though, and keep the ORIGINAL checkedAt:
+    // claiming 'ok' with the failed attempt's timestamp would tell the administrator the data
+    // was just refreshed when it wasn't.
+    cache = fresh.status === 'rate-limited' && cache?.latest
+      ? { ...cache, status: 'rate-limited', expiresAt: fresh.expiresAt }
       : fresh;
   }
 

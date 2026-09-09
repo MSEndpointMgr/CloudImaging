@@ -86,12 +86,46 @@ try {
 
 function Get-AppOrFail {
     param([Parameter(Mandatory)] [string] $ClientId, [Parameter(Mandatory)] [string] $Label)
-    $app = Get-MgApplication -Filter "appId eq '$ClientId'"
+    # Ask for the nested properties explicitly rather than relying on Graph's default set, and
+    # collapse to a single object so a collection result can't reach the property checks below.
+    $app = @(Get-MgApplication -Filter "appId eq '$ClientId'" -Property @(
+        'appId', 'displayName', 'signInAudience', 'identifierUris', 'isFallbackPublicClient',
+        'spa', 'publicClient', 'api', 'appRoles', 'requiredResourceAccess'
+    ) -ErrorAction SilentlyContinue) | Select-Object -First 1
+
     if (-not $app) {
         Write-Host "  [FAIL] $Label app registration not found for client ID $ClientId" -ForegroundColor Red
         $script:failCount++
     }
     return $app
+}
+
+<#
+.SYNOPSIS
+    Counts the items in a possibly-absent nested collection.
+.DESCRIPTION
+    An app registration with no platform configured at all returns $null for spa/publicClient,
+    and under Set-StrictMode -Version Latest a chained "$app.Spa.RedirectUris.Count" then throws
+    "The property 'RedirectUris' cannot be found on this object" instead of evaluating to 0.
+    That aborted the whole script on precisely the misconfigurations it exists to report.
+#>
+function Get-NestedCount {
+    param($Object, [Parameter(Mandatory)] [string] $Property)
+    if ($null -eq $Object) { return 0 }
+    $value = $Object.PSObject.Properties[$Property]
+    if ($null -eq $value -or $null -eq $value.Value) { return 0 }
+    return @($value.Value).Count
+}
+
+<# Returns a nested collection, or an empty array when any link in the chain is absent.
+   The unary comma matters: a bare "return @()" unrolls to $null on the way out, so callers
+   doing .Count on the result would hit the same StrictMode failure this helper exists to avoid. #>
+function Get-NestedValue {
+    param($Object, [Parameter(Mandatory)] [string] $Property)
+    if ($null -eq $Object) { return ,@() }
+    $value = $Object.PSObject.Properties[$Property]
+    if ($null -eq $value -or $null -eq $value.Value) { return ,@() }
+    return ,@($value.Value)
 }
 
 # ── Registration 1: Cloud Imaging Portal ──────────────────────────────────────
@@ -102,19 +136,19 @@ $portalApp = Get-AppOrFail -ClientId $PortalClientId -Label 'Portal'
 if ($portalApp) {
     Test-Check "Single tenant" ($portalApp.SignInAudience -eq 'AzureADMyOrg') `
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
-    Test-Check "Has a Single-page application redirect URI" ($portalApp.Spa.RedirectUris.Count -gt 0) `
+    Test-Check "Has a Single-page application redirect URI" ((Get-NestedCount $portalApp.Spa 'RedirectUris') -gt 0) `
         "Add a platform -> Single-page application with at least a placeholder redirect URI."
-    Test-Check "No Mobile/desktop platform added" ($portalApp.PublicClient.RedirectUris.Count -eq 0) `
+    Test-Check "No Mobile/desktop platform added" ((Get-NestedCount $portalApp.PublicClient 'RedirectUris') -eq 0) `
         "A Mobile/desktop platform on this registration causes AADSTS9002326. Remove it."
     Test-Check "'Allow public client flows' is No" (-not $portalApp.IsFallbackPublicClient) `
         "Authentication -> Advanced settings -> Allow public client flows must be No (also AADSTS9002326)."
-    Test-Check "Application ID URI is set" ($portalApp.IdentifierUris.Count -gt 0) `
+    Test-Check "Application ID URI is set" ((Get-NestedCount $portalApp 'IdentifierUris') -gt 0) `
         "Expose an API -> set the Application ID URI (accept the default api://<clientId>)."
-    $portalScope = $portalApp.Api.Oauth2PermissionScopes | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
+    $portalScope = Get-NestedValue $portalApp.Api 'Oauth2PermissionScopes' | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
     Test-Check "'user_impersonation' scope exposed and enabled" ($null -ne $portalScope) `
         "Expose an API -> Add a scope named 'user_impersonation', state Enabled. Missing this causes AADSTS500011."
     foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Technician', 'CloudImaging.Reader') {
-        $r = $portalApp.AppRoles | Where-Object { $_.Value -eq $role }
+        $r = Get-NestedValue $portalApp 'AppRoles' | Where-Object { $_.Value -eq $role }
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."
     }
@@ -128,15 +162,15 @@ $operatorApp = Get-AppOrFail -ClientId $OperatorApiClientId -Label 'Operator API
 if ($operatorApp) {
     Test-Check "Single tenant" ($operatorApp.SignInAudience -eq 'AzureADMyOrg') `
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
-    Test-Check "Application ID URI is set" ($operatorApp.IdentifierUris.Count -gt 0) `
+    Test-Check "Application ID URI is set" ((Get-NestedCount $operatorApp 'IdentifierUris') -gt 0) `
         "Expose an API -> set the Application ID URI (accept the default api://<clientId>)."
-    $operatorScope = $operatorApp.Api.Oauth2PermissionScopes | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
+    $operatorScope = Get-NestedValue $operatorApp.Api 'Oauth2PermissionScopes' | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
     Test-Check "'user_impersonation' scope exposed and enabled" ($null -ne $operatorScope) `
         "Expose an API -> Add a scope named 'user_impersonation', state Enabled. Missing this causes AADSTS650057."
-    $portalAccessRole = $operatorApp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.PortalAccess' }
+    $portalAccessRole = Get-NestedValue $operatorApp 'AppRoles' | Where-Object { $_.Value -eq 'CloudImaging.PortalAccess' }
     Test-Check "App role 'CloudImaging.PortalAccess' exists (Applications)" ($portalAccessRole -and $portalAccessRole.AllowedMemberTypes -contains 'Application') `
         "App roles -> add 'CloudImaging.PortalAccess', allowed for Applications."
-    $mediaBuilderAccessRole = $operatorApp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.MediaBuilderAccess' }
+    $mediaBuilderAccessRole = Get-NestedValue $operatorApp 'AppRoles' | Where-Object { $_.Value -eq 'CloudImaging.MediaBuilderAccess' }
     Test-Check "App role 'CloudImaging.MediaBuilderAccess' exists (Users/Groups + Applications)" `
         ($mediaBuilderAccessRole -and $mediaBuilderAccessRole.AllowedMemberTypes -contains 'User' -and $mediaBuilderAccessRole.AllowedMemberTypes -contains 'Application') `
         "App roles -> add 'CloudImaging.MediaBuilderAccess', allowed for Both (Users/Groups + Applications). Must include Users/Groups or Media Builder calls return 403."
@@ -150,17 +184,17 @@ $mediaBuilderApp = Get-AppOrFail -ClientId $MediaBuilderClientId -Label 'Media B
 if ($mediaBuilderApp) {
     Test-Check "Single tenant" ($mediaBuilderApp.SignInAudience -eq 'AzureADMyOrg') `
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
-    Test-Check "Has a Mobile/desktop redirect URI of http://localhost" ($mediaBuilderApp.PublicClient.RedirectUris -contains 'http://localhost') `
+    Test-Check "Has a Mobile/desktop redirect URI of http://localhost" ((Get-NestedValue $mediaBuilderApp.PublicClient 'RedirectUris') -contains 'http://localhost') `
         "Add a platform -> Mobile and desktop applications -> redirect URI http://localhost."
     foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Technician') {
-        $r = $mediaBuilderApp.AppRoles | Where-Object { $_.Value -eq $role }
+        $r = Get-NestedValue $mediaBuilderApp 'AppRoles' | Where-Object { $_.Value -eq $role }
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."
     }
     if ($operatorApp) {
-        $hasPermission = $mediaBuilderApp.RequiredResourceAccess |
+        $hasPermission = Get-NestedValue $mediaBuilderApp 'RequiredResourceAccess' |
             Where-Object { $_.ResourceAppId -eq $operatorApp.AppId } |
-            ForEach-Object { $_.ResourceAccess } |
+            ForEach-Object { Get-NestedValue $_ 'ResourceAccess' } |
             Where-Object { $operatorScope -and $_.Id -eq $operatorScope.Id }
         Test-Check "Requests the Operator API's 'user_impersonation' permission" ($null -ne $hasPermission) `
             "Registration 3, step 7: API permissions -> Add a permission -> My APIs -> Cloud Imaging Operator API -> user_impersonation."

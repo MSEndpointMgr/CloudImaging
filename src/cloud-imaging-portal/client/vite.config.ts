@@ -30,6 +30,14 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['../../../tests/cloud-imaging-portal/client/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
+    // Tests live outside this package, so a bare specifier in a test file resolves to a
+    // different module id than the same specifier inside src/, and vi.mock() then silently
+    // fails to bind. Pinning them to this package's copy lets a test mock a component's
+    // dependencies and assert real behaviour. Test-only: the production build is unaffected.
+    alias: {
+      '@azure/msal-react': path.resolve(__dirname, './node_modules/@azure/msal-react'),
+      '@azure/msal-browser': path.resolve(__dirname, './node_modules/@azure/msal-browser'),
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

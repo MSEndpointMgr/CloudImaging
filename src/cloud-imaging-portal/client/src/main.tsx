@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { MsalProvider } from '@azure/msal-react';
 import { loadRuntimeConfig } from './lib/runtimeConfig.ts';
 import { createMsalInstance } from './lib/msal.ts';
-import { consumeReturnPath } from './lib/apiClient.ts';
+import { consumeReturnPath, isSafeReturnPath } from './lib/apiClient.ts';
 import App from './App.tsx';
 import './index.css';
 
@@ -42,8 +42,13 @@ async function bootstrap(): Promise<void> {
     // the user to a page they didn't ask for.
     const returnPath = consumeReturnPath();
     const current = window.location.pathname + window.location.search + window.location.hash;
-    if (redirectResult && returnPath && returnPath !== current) {
-      window.history.replaceState(null, '', returnPath);
+    if (redirectResult && returnPath && returnPath !== current && isSafeReturnPath(returnPath)) {
+      try {
+        window.history.replaceState(null, '', returnPath);
+      } catch {
+        // replaceState rejects anything it considers cross-origin. Landing on the app root is
+        // a perfectly good outcome; failing to boot the portal over it is not.
+      }
     }
 
     root.render(

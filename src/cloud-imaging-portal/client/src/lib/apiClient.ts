@@ -38,13 +38,16 @@ function rememberReturnPath(): void {
 }
 
 /**
- * Returns the path the user was on when an interactive sign-in started, always clearing it.
+ * Reads and clears the path the user was on when an interactive sign-in started.
  *
- * Only call this on the return leg of a redirect. The key is written when a redirect *starts*,
- * but a redirect can start and never finish (MSAL throws, the user presses Back, the tab is
- * closed mid-flow). Restoring it on an ordinary page load would silently rewrite the URL to a
- * path the user never asked for, so bootstrap clears it unconditionally and only uses the
- * value when MSAL confirms a redirect response was actually processed.
+ * Call this on EVERY page load. Clearing is the point: the key is written when a redirect
+ * *starts*, but a redirect can start and never finish (MSAL throws, the user presses Back, the
+ * tab is closed mid-flow), and a value left behind would then be applied to an unrelated later
+ * load. Leaving it in place is what previously rewrote the URL on an ordinary refresh and
+ * stranded the portal on an error screen until browser storage was cleared by hand.
+ *
+ * Deciding whether to *use* the returned value is the caller's job, and bootstrap only does so
+ * when `handleRedirectPromise()` confirms this load really is the return leg of a redirect.
  */
 export function consumeReturnPath(): string | null {
   try {
@@ -53,6 +56,25 @@ export function consumeReturnPath(): string | null {
     return path;
   } catch {
     return null;
+  }
+}
+
+/**
+ * True when a stored return path is a plain same-origin path that is safe to restore.
+ *
+ * The value round-trips through sessionStorage, so it must be treated as untrusted input
+ * rather than assumed to be what `rememberReturnPath` wrote. A protocol-relative (`//host`)
+ * or absolute value would either navigate the user off-origin or make `replaceState` throw
+ * a SecurityError and take the whole bootstrap down with it.
+ */
+export function isSafeReturnPath(path: string): boolean {
+  if (!path.startsWith('/') || path.startsWith('//')) return false;
+  try {
+    // Resolving against the current origin catches anything that escapes it, including
+    // backslash and encoded variants that a naive prefix check would let through.
+    return new URL(path, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
   }
 }
 
