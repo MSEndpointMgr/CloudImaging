@@ -138,7 +138,7 @@ jobs:
         run: dotnet format src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj --verify-no-changes
       - name: Test
         run: dotnet test tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj -c Release --no-restore
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -208,7 +208,7 @@ jobs:
         run: dotnet format src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj --verify-no-changes
       - name: Test
         run: dotnet test tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj -c Release --no-restore
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -274,7 +274,7 @@ jobs:
         run: dotnet format src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj --verify-no-changes
       - name: Test
         run: dotnet test tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj -c Release --no-restore
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -387,7 +387,7 @@ jobs:
       - name: Build
         working-directory: src/cloud-imaging-portal/server
         run: npm run build
-      - uses: azure/login@v2
+      - uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
