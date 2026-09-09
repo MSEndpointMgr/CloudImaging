@@ -59,6 +59,7 @@ public sealed partial class PortalConfigurationRepository
             [nameof(PortalConfiguration.CertValidityPeriodDays)] = config.CertValidityPeriodDays,
             [nameof(PortalConfiguration.ClockSkewToleranceSeconds)] = config.ClockSkewToleranceSeconds,
             [nameof(PortalConfiguration.SessionHistoryRetentionDays)] = config.SessionHistoryRetentionDays,
+            [nameof(PortalConfiguration.UpdateCheckEnabled)] = config.UpdateCheckEnabled,
         };
 
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -76,6 +77,7 @@ public sealed partial class PortalConfigurationRepository
             CertValidityPeriodDays = e.GetInt32(nameof(PortalConfiguration.CertValidityPeriodDays)) ?? 365,
             ClockSkewToleranceSeconds = e.GetInt32(nameof(PortalConfiguration.ClockSkewToleranceSeconds)) ?? 30,
             SessionHistoryRetentionDays = e.GetInt32(nameof(PortalConfiguration.SessionHistoryRetentionDays)) ?? 90,
+            UpdateCheckEnabled = e.GetBoolean(nameof(PortalConfiguration.UpdateCheckEnabled)) ?? false,
         };
 
     private static PortalConfiguration PortalConfigurationDefaults() =>
@@ -87,6 +89,7 @@ public sealed partial class PortalConfigurationRepository
             CertValidityPeriodDays = 365,
             ClockSkewToleranceSeconds = 30,
             SessionHistoryRetentionDays = 90,
+            UpdateCheckEnabled = false,
         };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No PortalConfiguration row found — returning defaults.")]

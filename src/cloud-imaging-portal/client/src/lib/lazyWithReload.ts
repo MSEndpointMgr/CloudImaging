@@ -13,10 +13,15 @@ export function lazyWithReload<T extends { default: ComponentType<object> }>(
   factory: () => Promise<T>,
 ): LazyExoticComponent<T['default']> {
   return lazy(async () => {
+    const reloadKey = `ci-chunk-reload:${window.location.pathname}`;
     try {
-      return await factory();
+      const mod = await factory();
+      // Disarm the retry latch on success. Left set, a single transient failure would mean the
+      // *next* unrelated failure on this path skips the automatic reload and goes straight to
+      // the error screen, for the rest of the browser session.
+      sessionStorage.removeItem(reloadKey);
+      return mod;
     } catch (error) {
-      const reloadKey = `ci-chunk-reload:${window.location.pathname}`;
       if (!sessionStorage.getItem(reloadKey)) {
         sessionStorage.setItem(reloadKey, '1');
         window.location.reload();

@@ -38,9 +38,16 @@ function rememberReturnPath(): void {
 }
 
 /**
- * Returns the path the user was on when an interactive sign-in started, clearing it so a
- * later manual reload doesn't bounce them somewhere unexpected. Returns null when the
- * redirect did not originate from a deep link.
+ * Reads and clears the path the user was on when an interactive sign-in started.
+ *
+ * Call this on EVERY page load. Clearing is the point: the key is written when a redirect
+ * *starts*, but a redirect can start and never finish (MSAL throws, the user presses Back, the
+ * tab is closed mid-flow), and a value left behind would then be applied to an unrelated later
+ * load. Leaving it in place is what previously rewrote the URL on an ordinary refresh and
+ * stranded the portal on an error screen until browser storage was cleared by hand.
+ *
+ * Deciding whether to *use* the returned value is the caller's job, and bootstrap only does so
+ * when `handleRedirectPromise()` confirms this load really is the return leg of a redirect.
  */
 export function consumeReturnPath(): string | null {
   try {
@@ -49,6 +56,25 @@ export function consumeReturnPath(): string | null {
     return path;
   } catch {
     return null;
+  }
+}
+
+/**
+ * True when a stored return path is a plain same-origin path that is safe to restore.
+ *
+ * The value round-trips through sessionStorage, so it must be treated as untrusted input
+ * rather than assumed to be what `rememberReturnPath` wrote. A protocol-relative (`//host`)
+ * or absolute value would either navigate the user off-origin or make `replaceState` throw
+ * a SecurityError and take the whole bootstrap down with it.
+ */
+export function isSafeReturnPath(path: string): boolean {
+  if (!path.startsWith('/') || path.startsWith('//')) return false;
+  try {
+    // Resolving against the current origin catches anything that escapes it, including
+    // backslash and encoded variants that a naive prefix check would let through.
+    return new URL(path, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
   }
 }
 
@@ -70,9 +96,12 @@ function triggerInteractiveRedirect(account: AccountInfo | null): Promise<never>
         account: account ?? undefined,
         scopes: [getApiScope()],
       })
-      // Swallow errors here (e.g. a raced 'interaction_in_progress' from an overlapping
-      // call), either way a redirect is already underway, so just keep waiting for it.
-      .catch(() => undefined)
+      .catch(() => {
+        // A rejection here (e.g. a raced 'interaction_in_progress') means this attempt did not
+        // navigate. Release the latch so a later call can retry, otherwise every subsequent 401
+        // joins this dead promise and the app wedges for the rest of the page's life.
+        redirectInFlight = null;
+      })
       .then(pendingForever);
   }
   return redirectInFlight;

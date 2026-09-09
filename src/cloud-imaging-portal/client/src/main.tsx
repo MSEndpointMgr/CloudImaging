@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { MsalProvider } from '@azure/msal-react';
 import { loadRuntimeConfig } from './lib/runtimeConfig.ts';
 import { createMsalInstance } from './lib/msal.ts';
-import { consumeReturnPath } from './lib/apiClient.ts';
+import { consumeReturnPath, isSafeReturnPath } from './lib/apiClient.ts';
 import App from './App.tsx';
 import './index.css';
 
@@ -29,19 +29,26 @@ async function bootstrap(): Promise<void> {
     // Entra cost two full page loads: one back to the redirect URI, then another to the page
     // the user actually came from, with the app booting and tearing down in between. We
     // restore that path below with replaceState instead.
-    await msalInstance.handleRedirectPromise({ navigateToLoginRequestUrl: false });
+    const redirectResult = await msalInstance.handleRedirectPromise({ navigateToLoginRequestUrl: false });
 
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       msalInstance.setActiveAccount(accounts[0]);
     }
 
-    // We opted out of MSAL restoring the deep link (it does so with a second full page
-    // navigation). Rewrite the URL in place instead, before React Router reads it, so the
-    // user lands back where they were with no extra load.
+    // Always clear the stored path, but only act on it when this load genuinely is the return
+    // leg of a redirect (redirectResult is non-null exactly then). A redirect can start and
+    // never finish, and restoring a leftover path on an ordinary refresh would silently send
+    // the user to a page they didn't ask for.
     const returnPath = consumeReturnPath();
-    if (returnPath && returnPath !== window.location.pathname + window.location.search + window.location.hash) {
-      window.history.replaceState(null, '', returnPath);
+    const current = window.location.pathname + window.location.search + window.location.hash;
+    if (redirectResult && returnPath && returnPath !== current && isSafeReturnPath(returnPath)) {
+      try {
+        window.history.replaceState(null, '', returnPath);
+      } catch {
+        // replaceState rejects anything it considers cross-origin. Landing on the app root is
+        // a perfectly good outcome; failing to boot the portal over it is not.
+      }
     }
 
     root.render(

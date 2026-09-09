@@ -3,6 +3,7 @@ import { Lock, Link as LinkIcon, RotateCcw } from 'lucide-react';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
+import { UpdateCheckPanel } from '../components/UpdateCheckPanel.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
@@ -23,6 +24,7 @@ interface PortalConfig {
   certValidityPeriodDays: number;
   clockSkewToleranceSeconds: number;
   sessionHistoryRetentionDays: number;
+  updateCheckEnabled: boolean;
 }
 
 interface CertMeta {
@@ -49,7 +51,8 @@ function portalConfigEquals(a: PortalConfig, b: PortalConfig): boolean {
     && a.bootImageSasExpiryMinutes === b.bootImageSasExpiryMinutes
     && a.certValidityPeriodDays === b.certValidityPeriodDays
     && a.clockSkewToleranceSeconds === b.clockSkewToleranceSeconds
-    && a.sessionHistoryRetentionDays === b.sessionHistoryRetentionDays;
+    && a.sessionHistoryRetentionDays === b.sessionHistoryRetentionDays
+    && a.updateCheckEnabled === b.updateCheckEnabled;
 }
 
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
@@ -100,6 +103,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
     certValidityPeriodDays:    365,
     clockSkewToleranceSeconds: 30,
     sessionHistoryRetentionDays: 90,
+    updateCheckEnabled: false,
   };
   const [config, setConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
   /** Snapshot of the config as last loaded/saved. Used to detect unsaved changes. */
@@ -280,6 +284,11 @@ export default function DeploymentConfigPage(): React.ReactElement {
 
       {/* Miscellaneous */}
       {activeTab === 'misc' && (
+        <div className="space-y-6">
+        <UpdateCheckPanel
+          enabled={config.updateCheckEnabled}
+          onChange={v => setConfig(c => ({ ...c, updateCheckEnabled: v }))}
+        />
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -300,6 +309,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
               'How long completed session outcomes are kept for reporting before being purged.', DEFAULT_CONFIG.sessionHistoryRetentionDays)}
           </CardContent>
         </Card>
+        </div>
       )}
 
       {/* Save controls apply to the Security/Preflight/Miscellaneous tabs; the boot

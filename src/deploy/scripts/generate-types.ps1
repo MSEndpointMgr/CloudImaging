@@ -116,6 +116,8 @@ export interface PortalConfiguration {
   bootImageSasExpiryMinutes: number;
   certValidityPeriodDays: number;
   clockSkewToleranceSeconds: number;
+  sessionHistoryRetentionDays: number;
+  updateCheckEnabled: boolean;
 }
 
 export interface BrandingConfiguration {
