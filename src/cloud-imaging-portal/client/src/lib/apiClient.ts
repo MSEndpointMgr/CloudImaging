@@ -13,6 +13,45 @@ import { getMsalInstance, getApiScope } from './msal.ts';
  */
 let redirectInFlight: Promise<never> | null = null;
 
+/**
+ * Where to send the user back to once an interactive sign-in redirect completes.
+ *
+ * MSAL's own `navigateToLoginRequestUrl` (default `true`) restores the deep link by
+ * navigating a *second* time, from the redirect URI back to the originating URL. That
+ * produced a visible double page load: one navigation returning from Entra, then another
+ * straight afterwards, with the app booting and tearing down in between. We opt out of it
+ * (see {@link triggerInteractiveRedirect}) and instead stash the path here, so bootstrap can
+ * restore it with `history.replaceState` before React renders. One navigation, one load.
+ */
+const RETURN_PATH_KEY = 'cloudimaging.auth.returnPath';
+
+function rememberReturnPath(): void {
+  const { pathname, search, hash } = window.location;
+  // Nothing to restore for the app root; leaving the key unset keeps bootstrap's fast path.
+  if (pathname === '/' && !search && !hash) return;
+  try {
+    sessionStorage.setItem(RETURN_PATH_KEY, `${pathname}${search}${hash}`);
+  } catch {
+    // Storage unavailable (private mode quota). Losing the deep link is acceptable;
+    // failing sign-in over it is not.
+  }
+}
+
+/**
+ * Returns the path the user was on when an interactive sign-in started, clearing it so a
+ * later manual reload doesn't bounce them somewhere unexpected. Returns null when the
+ * redirect did not originate from a deep link.
+ */
+export function consumeReturnPath(): string | null {
+  try {
+    const path = sessionStorage.getItem(RETURN_PATH_KEY);
+    sessionStorage.removeItem(RETURN_PATH_KEY);
+    return path;
+  } catch {
+    return null;
+  }
+}
+
 /** Never resolves. Used while the browser is navigating away to the sign-in page. */
 function pendingForever(): Promise<never> {
   return new Promise<never>(() => { /* intentionally never settles; navigation is in flight */ });
@@ -24,18 +63,49 @@ function pendingForever(): Promise<never> {
  * it only resolves once the browser has navigated away.
  */
 function triggerInteractiveRedirect(account: AccountInfo | null): Promise<never> {
-  redirectInFlight ??= getMsalInstance()
-    .acquireTokenRedirect({ account: account ?? undefined, scopes: [getApiScope()] })
-    // Swallow errors here (e.g. a raced 'interaction_in_progress' from an overlapping
-    // call), either way a redirect is already underway, so just keep waiting for it.
-    .catch(() => undefined)
-    .then(pendingForever);
+  if (!redirectInFlight) {
+    rememberReturnPath();
+    redirectInFlight = getMsalInstance()
+      .acquireTokenRedirect({
+        account: account ?? undefined,
+        scopes: [getApiScope()],
+      })
+      // Swallow errors here (e.g. a raced 'interaction_in_progress' from an overlapping
+      // call), either way a redirect is already underway, so just keep waiting for it.
+      .catch(() => undefined)
+      .then(pendingForever);
+  }
   return redirectInFlight;
 }
 
 function resolveAccount(): AccountInfo | null {
   const msalInstance = getMsalInstance();
   return msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0] ?? null;
+}
+
+/**
+ * Verifies up front that the cached session can still produce an API token, and starts the
+ * interactive redirect immediately if it can't.
+ *
+ * Without this, staleness was only ever discovered lazily, by whichever data fetch happened
+ * to run first after the user came back to a tab that had been open past the refresh token's
+ * 24-hour lifetime. That meant the page rendered, fired its queries, and *then* sat on a dead
+ * silent-renewal iframe before anything visible happened. Calling this at bootstrap and
+ * whenever the tab regains focus moves the detection to a point where showing a sign-in
+ * redirect is expected rather than surprising.
+ *
+ * Returns true when the session is usable. Returns false when there is no signed-in account
+ * to check; when the session is stale this never returns, because the browser navigates away.
+ */
+export async function ensureSessionFresh(): Promise<boolean> {
+  const account = resolveAccount();
+  if (!account) return false;
+  try {
+    await getMsalInstance().acquireTokenSilent({ account, scopes: [getApiScope()] });
+    return true;
+  } catch {
+    return triggerInteractiveRedirect(account);
+  }
 }
 
 /**

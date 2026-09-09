@@ -95,10 +95,10 @@
                   "visible": true
                 },
                 {
-                  "name": "mediaBuilderClientId",
+                  "name": "operatorApiClientId",
                   "type": "Microsoft.Common.TextBox",
-                  "label": "Cloud Imaging Media Builder - Application (client) ID",
-                  "toolTip": "Client ID of the Cloud Imaging Media Builder native (public client) app registration. Used by the Media Builder desktop app for user sign-in; its tokens are validated by the Operator API.",
+                  "label": "Operator API - Application (client) ID",
+                  "toolTip": "Client ID of the Cloud Imaging Operator API app registration (Registration 2 in the setup instructions). Contains the CloudImaging.PortalAccess and CloudImaging.MediaBuilderAccess service-level roles.",
                   "constraints": {
                     "required": true,
                     "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -107,10 +107,10 @@
                   "visible": true
                 },
                 {
-                  "name": "operatorApiClientId",
+                  "name": "mediaBuilderClientId",
                   "type": "Microsoft.Common.TextBox",
-                  "label": "Operator API - Application (client) ID",
-                  "toolTip": "Client ID of the Operator API app registration (Registration B). Contains CloudImaging.PortalAccess and CloudImaging.MediaBuilderAccess service-level roles.",
+                  "label": "Cloud Imaging Media Builder - Application (client) ID",
+                  "toolTip": "Client ID of the Cloud Imaging Media Builder native (public client) app registration. Used by the Media Builder desktop app for user sign-in; its tokens are validated by the Operator API.",
                   "constraints": {
                     "required": true,
                     "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { MsalProvider } from '@azure/msal-react';
 import { loadRuntimeConfig } from './lib/runtimeConfig.ts';
 import { createMsalInstance } from './lib/msal.ts';
+import { consumeReturnPath } from './lib/apiClient.ts';
 import App from './App.tsx';
 import './index.css';
 
@@ -19,9 +20,28 @@ async function bootstrap(): Promise<void> {
     const msalInstance = createMsalInstance();
     await msalInstance.initialize();
 
+    // Process a pending sign-in response *before* reading accounts, so the account we make
+    // active below is the one this redirect just produced rather than the stale entry it
+    // replaced. MsalProvider reuses this same resolved response, so calling it here is free.
+    //
+    // navigateToLoginRequestUrl: false is the important part. Left at its default of true,
+    // MSAL restores the originating deep link by navigating a second time, so returning from
+    // Entra cost two full page loads: one back to the redirect URI, then another to the page
+    // the user actually came from, with the app booting and tearing down in between. We
+    // restore that path below with replaceState instead.
+    await msalInstance.handleRedirectPromise({ navigateToLoginRequestUrl: false });
+
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       msalInstance.setActiveAccount(accounts[0]);
+    }
+
+    // We opted out of MSAL restoring the deep link (it does so with a second full page
+    // navigation). Rewrite the URL in place instead, before React Router reads it, so the
+    // user lands back where they were with no extra load.
+    const returnPath = consumeReturnPath();
+    if (returnPath && returnPath !== window.location.pathname + window.location.search + window.location.hash) {
+      window.history.replaceState(null, '', returnPath);
     }
 
     root.render(

@@ -1,31 +1,33 @@
 <#
 .SYNOPSIS
-    Assign service-level Operator API app roles to the Portal backend
-    managed identity and the Media Builder service principal.
+    Assign the CloudImaging.PortalAccess Operator API app role to the Portal
+    backend's managed identity.
 
 .DESCRIPTION
-    Performs the post-deployment Entra ID role assignments that enable
-    service-to-service authentication against the Operator API:
+    Performs the one post-deployment Entra ID role assignment that a script is
+    required for: granting CloudImaging.PortalAccess (on the Cloud Imaging
+    Operator API app registration) to the Portal backend's managed identity,
+    so the Portal backend can call the Operator API.
 
-    1. Assigns CloudImaging.PortalAccess to the Portal backend managed
-       identity so the Portal backend can call the Operator API.
+    This can't be done from the Azure Portal: the "Enterprise applications ->
+    Users and groups -> Add user/group" picker only lists users and groups,
+    never managed identities, so a managed identity's app role assignment must
+    be created through Microsoft Graph instead.
 
-    2. Assigns CloudImaging.MediaBuilderAccess to the Media Builder
-       app registration service principal so the Media Builder can call
-       the Operator API on behalf of signed-in users.
+    (The CloudImaging.MediaBuilderAccess role, by contrast, is assigned
+    directly to people in the Azure Portal -- see Step 5 in
+    setup-instructions.md -- because it's the signed-in technician's own
+    delegated token that the Operator API checks, not anything belonging to
+    the Media Builder application itself.)
 
     Run this script ONCE after the Bicep deployment completes.
-    It is safe to re-run — existing assignments are skipped.
+    It is safe to re-run — the existing assignment is skipped.
 
 .PARAMETER ResourceGroupName
     The Azure resource group containing the deployed resources.
 
 .PARAMETER OperatorApiClientId
     Application (client) ID of the Cloud Imaging Operator API app registration.
-
-.PARAMETER MediaBuilderClientId
-    Application (client) ID of the Cloud Imaging Media Builder app registration
-    (native/public client). Its service principal receives CloudImaging.MediaBuilderAccess.
 
 .PARAMETER ResourcePrefix
     Resource prefix used when the environment was deployed (e.g. 'mse').
@@ -41,7 +43,6 @@
     .\assign-service-roles.ps1 `
         -ResourceGroupName  "rg-<prefix>-<env>-cloudimaging" `
         -OperatorApiClientId "00000000-0000-0000-0000-000000000000" `
-        -MediaBuilderClientId "11111111-1111-1111-1111-111111111111" `
         -ResourcePrefix      "<prefix>" `
         -Environment         "<env>"
 #>
@@ -52,9 +53,6 @@ param(
 
     [Parameter(Mandatory)]
     [string] $OperatorApiClientId,
-
-    [Parameter(Mandatory)]
-    [string] $MediaBuilderClientId,
 
     [string] $ResourcePrefix = '',
     [string] $Environment    = 'dev'
@@ -118,24 +116,13 @@ if (-not $operatorApiSp) {
 }
 Write-Host "  → Object ID: $($operatorApiSp.Id)"
 
-# ── 5. Resolve Media Builder service principal ────────────────────────────
-
-Write-Host "Looking up Media Builder service principal (appId: $MediaBuilderClientId)..."
-$mediaBuilderSp = Get-MgServicePrincipal -Filter "appId eq '$MediaBuilderClientId'"
-if (-not $mediaBuilderSp) {
-    throw "Media Builder service principal not found. Verify the app registration exists in this tenant and the client ID is correct."
-}
-Write-Host "  → Object ID: $($mediaBuilderSp.Id)"
-
-# ── 6. Resolve role definitions ───────────────────────────────────────────────
+# ── 5. Resolve role definition ────────────────────────────────────────────────
 
 $portalRole = $operatorApiSp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.PortalAccess' }
-$mbRole     = $operatorApiSp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.MediaBuilderAccess' }
 
-if (-not $portalRole)  { throw "Role 'CloudImaging.PortalAccess' not found on the Operator API app registration. Verify the role was created in Registration B." }
-if (-not $mbRole)      { throw "Role 'CloudImaging.MediaBuilderAccess' not found on the Operator API app registration. Verify the role was created in Registration B." }
+if (-not $portalRole)  { throw "Role 'CloudImaging.PortalAccess' not found on the Operator API app registration. Verify the role was created in Registration 2." }
 
-# ── 7. Assign CloudImaging.PortalAccess → Portal backend MSI ────────────────
+# ── 6. Assign CloudImaging.PortalAccess → Portal backend managed identity ───
 
 Write-Host ""
 Write-Host "Assigning CloudImaging.PortalAccess to Portal backend MSI ($portalMsiName)..."
@@ -156,26 +143,8 @@ try {
     }
 }
 
-# ── 8. Assign CloudImaging.MediaBuilderAccess → Media Builder service principal ─
-
-Write-Host "Assigning CloudImaging.MediaBuilderAccess to Media Builder service principal..."
-try {
-    New-MgServicePrincipalAppRoleAssignment `
-        -ServicePrincipalId $mediaBuilderSp.Id `
-        -BodyParameter @{
-            principalId = $mediaBuilderSp.Id
-            resourceId  = $operatorApiSp.Id
-            appRoleId   = $mbRole.Id
-        } | Out-Null
-    Write-Host "  [OK] CloudImaging.MediaBuilderAccess assigned."
-} catch {
-    if ($_.Exception.Message -like '*Permission being assigned already exists*') {
-        Write-Host "  [SKIP] Assignment already exists."
-    } else {
-        throw
-    }
-}
-
 Write-Host ""
-Write-Host "=== Service-level role assignments complete ==="
-Write-Host "The Portal backend and Media Builder can now authenticate against the Operator API."
+Write-Host "=== Service-level role assignment complete ==="
+Write-Host "The Portal backend can now authenticate against the Operator API."
+Write-Host "Remember: CloudImaging.MediaBuilderAccess still needs to be assigned to your Media"
+Write-Host "Builder users/groups manually -- see Step 5 in setup-instructions.md."

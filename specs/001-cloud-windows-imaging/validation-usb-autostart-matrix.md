@@ -136,6 +136,5 @@ Date: [YYYY-MM-DD]
 
 ## Related Artifacts
 
-- Media Builder user guide: `docs/media-builder-user-guide.md`
-- Boot image generation: `docs/boot-image-generation.md`
+- Setup and boot image generation walkthrough: `docs/setup-instructions.md`
 - T106 implementation task

@@ -256,8 +256,8 @@ All gates must pass before merge.
 | 5 — OS Image CRUD + Upload | FR-036, FR-037, US5 | ✅ Validated (automated) | Catalog contract tests pass |
 | 6 — Branding Runtime Update | FR-038, US6 | ✅ Validated (automated) | Branding contract tests pass |
 | 6b — Portal Configuration | FR-022, FR-026a | ✅ Validated (automated) | Config contract tests pass |
-| USB Autostart Matrix (SC-014) | 20-device matrix | ⏳ Pending | Requires physical hardware — see docs/validation-usb-autostart-matrix.md |
-| Walking Skeleton E2E (SC-017) | Full cycle | ⏳ Pending | Requires deployed Azure environment — see docs/validation-walking-skeleton.md |
+| USB Autostart Matrix (SC-014) | 20-device matrix | ⏳ Pending | Requires physical hardware — see validation-usb-autostart-matrix.md |
+| Walking Skeleton E2E (SC-017) | Full cycle | ⏳ Pending | Requires deployed Azure environment — see validation-walking-skeleton.md |
 
 ### Build Quality
 

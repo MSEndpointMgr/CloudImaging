@@ -1,4 +1,4 @@
-# Walking Skeleton Validation — SC-017
+# Walking Skeleton Validation: SC-017
 
 **Spec reference**: SC-017, T026a  
 **Milestone**: SC-017 gates the start of full-feature iteration on all components
@@ -42,7 +42,7 @@ prefix/environment for the placeholders below:
 
 ## Validation Steps
 
-### Step 1 — Device Registration
+### Step 1: Device Registration
 
 **On test device (WinPE USB)**:
 1. Boot from prepared USB drive
@@ -55,7 +55,7 @@ prefix/environment for the placeholders below:
 
 ---
 
-### Step 2 — Portal Authentication
+### Step 2: Portal Authentication
 
 **On operator workstation**:
 1. Navigate to the portal URL
@@ -67,7 +67,7 @@ prefix/environment for the placeholders below:
 
 ---
 
-### Step 3 — Coupling
+### Step 3: Coupling
 
 1. Click **Couple Device**
 2. Enter the passcode from the device screen
@@ -77,7 +77,7 @@ prefix/environment for the placeholders below:
 
 ---
 
-### Step 4 — Image Assignment
+### Step 4: Image Assignment
 
 1. Find the coupled session row (shows **Assign Image** button)
 2. Click **Assign Image**
@@ -88,7 +88,7 @@ prefix/environment for the placeholders below:
 
 ---
 
-### Step 5 — Client Assignment Detection
+### Step 5: Client Assignment Detection
 
 **On test device**:
 1. Client is polling every 5 seconds (session in `SessionStarted`)
@@ -100,7 +100,7 @@ prefix/environment for the placeholders below:
 
 ---
 
-### Step 6 — Terminal State
+### Step 6: Terminal State
 
 For a quick smoke test (no full download):
 - Manually transition session to `SessionCompleted` via Table Storage, or
@@ -114,13 +114,13 @@ For a quick smoke test (no full download):
 
 | Step | Result | Date | Notes |
 |---|---|---|---|
-| 1 — Device Registration | ⏳ Pending | — | Requires physical hardware + deployed environment |
-| 2 — Portal Authentication | ⏳ Pending | — | |
-| 3 — Coupling | ⏳ Pending | — | |
-| 4 — Image Assignment | ⏳ Pending | — | |
-| 5 — Client Assignment Detection | ⏳ Pending | — | |
-| 6 — Terminal State | ⏳ Pending | — | |
-| **Overall SC-017 Gate** | ⏳ Pending | — | Must be PASS before full-feature iteration begins |
+| 1: Device Registration | ⏳ Pending | - | Requires physical hardware + deployed environment |
+| 2: Portal Authentication | ⏳ Pending | - | |
+| 3: Coupling | ⏳ Pending | - | |
+| 4: Image Assignment | ⏳ Pending | - | |
+| 5: Client Assignment Detection | ⏳ Pending | - | |
+| 6: Terminal State | ⏳ Pending | - | |
+| **Overall SC-017 Gate** | ⏳ Pending | - | Must be PASS before full-feature iteration begins |
 
 ---
 
@@ -128,11 +128,11 @@ For a quick smoke test (no full download):
 
 While the full end-to-end validation requires physical hardware, the automated test suite validates each component contract individually:
 
-- **T027** — CreateSession contract test (DeviceGateway)
-- **T035/T035a** — Couple + assign contract tests (OperatorApi)
-- **T036/T036a** — Passcode consume + assign integration tests (ImagingCore)
-- **T043** — Status polling response contract (DeviceGateway)
-- **T044** — Assignment poller transition logic (Client)
+- **T027**: CreateSession contract test (DeviceGateway)
+- **T035/T035a**: Couple + assign contract tests (OperatorApi)
+- **T036/T036a**: Passcode consume + assign integration tests (ImagingCore)
+- **T043**: Status polling response contract (DeviceGateway)
+- **T044**: Assignment poller transition logic (Client)
 
 **Current automated proxy status**: ✅ All 280 tests passing
 

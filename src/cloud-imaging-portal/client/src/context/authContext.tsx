@@ -2,19 +2,18 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import type { AccountInfo } from '@azure/msal-browser';
 import { getApiScope } from '../lib/msal.ts';
+import { ensureSessionFresh } from '../lib/apiClient.ts';
 
 /** Portal application roles carried in a signed-in user's token. */
 export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician' | 'CloudImaging.Reader';
 
 /**
  * Delegated Microsoft Graph scope needed to read the signed-in user's own profile photo
- * (`GET /me/photo/$value`). MSAL only ever returns a token for this scope from
- * {@link AuthProvider}'s silent `acquireTokenSilent` call below if the user has already
- * consented to it — which requires it to be included in the initial interactive sign-in
- * request (see {@link ProtectedRoute}'s `useMsalAuthentication` scopes) alongside the portal
- * API scope, so both are consented together in a single sign-in prompt. If a tenant admin has
- * blocked user consent for this scope, silent acquisition simply fails and Header/AccessDenied
- * fall back to the initials avatar — never an interactive prompt.
+ * (`GET /me/photo/$value`). Purely cosmetic: Header/AccessDenied always render the user's
+ * name and initials from ID token claims regardless of this scope. It is requested only
+ * after sign-in (see {@link AuthProvider}'s avatar effect below), never bundled with the
+ * mandatory portal API scope, so a tenant that blocks user consent to Graph (or an admin
+ * who hasn't pre-consented it) can never break sign-in — worst case, no avatar photo.
  */
 export const GRAPH_PHOTO_SCOPE = 'User.Read';
 
@@ -67,6 +66,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const avatarUrlRef = useRef<string | null>(null);
 
+  // Re-check the session whenever the tab comes back to the foreground. A portal left open
+  // overnight always returns with a refresh token Entra has already expired (24h ceiling for
+  // browser SPAs), and without this the staleness only surfaced once the user clicked
+  // something and that page's queries stalled on a doomed silent renewal. Checking on focus
+  // means the sign-in redirect happens while the user is still orienting, not mid-click.
+  useEffect(() => {
+    if (!account) return;
+
+    const check = (): void => {
+      if (document.visibilityState === 'visible') void ensureSessionFresh();
+    };
+
+    check();
+    document.addEventListener('visibilitychange', check);
+    return () => document.removeEventListener('visibilitychange', check);
+    // Keyed on the account identity, not the object, so ordinary MSAL re-renders don't re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.homeAccountId]);
+
   const setAvatarObjectUrl = (url: string | null) => {
     if (avatarUrlRef.current) {
       URL.revokeObjectURL(avatarUrlRef.current);
@@ -85,9 +103,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
 
     void (async () => {
       try {
-        // Silent-only: acquireTokenSilent throws (rather than prompting) whenever
-        // GRAPH_PHOTO_SCOPE hasn't been consented for this tenant, so this never
-        // interrupts sign-in with an extra consent screen.
+        // Silent only. A failure here is nearly always one of two things: the scope was never
+        // consented, or the whole session is stale (in which case the session check above is
+        // already redirecting). Neither is worth an interactive popup: outside a user gesture
+        // the browser blocks it anyway, and it used to sit on MSAL's iframe timeout first,
+        // adding a second stall on top of the one the data fetches were already paying.
         const result = await instance.acquireTokenSilent({ account, scopes: [GRAPH_PHOTO_SCOPE] });
         const res = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
           headers: { Authorization: `Bearer ${result.accessToken}` },

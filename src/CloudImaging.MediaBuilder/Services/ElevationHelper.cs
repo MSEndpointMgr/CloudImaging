@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Threading;
 
 namespace CloudImaging.MediaBuilder.Services;
 
@@ -45,28 +46,51 @@ internal static class ElevationHelper
     /// copype.cmd or DISM). <see cref="Directory.Delete(string, bool)"/> throws
     /// <see cref="UnauthorizedAccessException"/> on a read-only file regardless of process
     /// privilege — elevation does not bypass the attribute; it must be cleared first.
-    /// Best-effort throughout: a cleanup failure must never mask the real workflow result/error.
+    ///
+    /// Retries a few times with a short delay before giving up: right after a DISM
+    /// <c>/Unmount-Image /Commit</c>, a handle on a file under this path (held by DISM itself
+    /// or by antivirus real-time scanning of the just-written WIM) can take a moment longer to
+    /// release, so a single un-retried delete attempt here was failing often enough in practice
+    /// to leave a working folder behind on nearly every run. Returns whether the directory was
+    /// actually removed so callers can tell an orphaned-folder count is genuinely growing rather
+    /// than silently swallowing that.
     /// </summary>
-    public static void TryDeleteDirectoryRecursive(string path)
+    public static bool TryDeleteDirectoryRecursive(string path)
     {
-        try
+        const int maxAttempts        = 4;
+        const int retryDelayMs       = 250;
+
+        if (!Directory.Exists(path))
+            return true;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            if (!Directory.Exists(path))
-                return;
-
-            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            try
             {
-                try
+                foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
                 {
-                    var attrs = File.GetAttributes(file);
-                    if ((attrs & FileAttributes.ReadOnly) != 0)
-                        File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly);
+                    try
+                    {
+                        var attrs = File.GetAttributes(file);
+                        if ((attrs & FileAttributes.ReadOnly) != 0)
+                            File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly);
+                    }
+                    catch { /* best effort — Directory.Delete below will surface anything that still blocks removal */ }
                 }
-                catch { /* best effort — Directory.Delete below will surface anything that still blocks removal */ }
-            }
 
-            Directory.Delete(path, recursive: true);
+                Directory.Delete(path, recursive: true);
+                return true;
+            }
+            catch when (attempt < maxAttempts)
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch
+            {
+                return false;
+            }
         }
-        catch { /* best-effort cleanup — never let this mask the real workflow result/error */ }
+
+        return false;
     }
 }

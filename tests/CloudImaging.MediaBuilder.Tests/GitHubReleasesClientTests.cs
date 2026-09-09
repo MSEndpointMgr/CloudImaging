@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -134,7 +135,10 @@ public sealed class GitHubReleasesClientTests
         assertion.Which.InnerException!.Message.Should().Contain("SHA-256",
             "a mismatched checksum must never be silently ignored and extracted into a boot image");
 
-        Directory.GetDirectories(Path.GetTempPath(), "ci-client-*").Should().BeEquivalentTo(tempDirsBefore,
+        // Only assert that *this* call leaked nothing new. An exact snapshot comparison also
+        // trips when an unrelated ci-client-* directory disappears mid-test, which happens
+        // because xUnit runs test classes in parallel and %TEMP% is shared between them.
+        Directory.GetDirectories(Path.GetTempPath(), "ci-client-*").Except(tempDirsBefore).Should().BeEmpty(
             "every failed attempt's extraction directory must be cleaned up, not leaked into %TEMP%");
     }
 

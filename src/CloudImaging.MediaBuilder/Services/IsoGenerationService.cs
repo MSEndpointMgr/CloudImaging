@@ -148,7 +148,11 @@ public sealed partial class IsoGenerationService
         }
         finally
         {
-            TryDeleteDirectoryRecursive(workDir);
+            // Best-effort cleanup — ElevationHelper retries briefly since a handle on this
+            // folder (DISM, antivirus) can take a moment to release right after copype.cmd's
+            // own mount work finishes.
+            if (!TryDeleteDirectoryRecursive(workDir))
+                LogWorkDirCleanupFailed(_logger, workDir);
         }
     }
 
@@ -221,11 +225,7 @@ public sealed partial class IsoGenerationService
                 $"{Path.GetFileName(fileName)} failed with exit code {process.ExitCode}.{Environment.NewLine}{stdOut}{Environment.NewLine}{stdErr}");
     }
 
-    private static void TryDeleteDirectoryRecursive(string path)
-    {
-        try { if (Directory.Exists(path)) Directory.Delete(path, recursive: true); }
-        catch { /* best-effort cleanup */ }
-    }
+    private static bool TryDeleteDirectoryRecursive(string path) => ElevationHelper.TryDeleteDirectoryRecursive(path);
 
     private async Task RunElevatedChildProcessAsync(
         string wimPath, string outputIsoPath, Action<string, int>? onProgress, CancellationToken ct)
@@ -450,4 +450,7 @@ public sealed partial class IsoGenerationService
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to scan for orphaned elevated ISO-generation IPC directories.")]
     private static partial void LogOrphanedIpcDirScanFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not fully clean up working folder {WorkDir} — it will be swept up on a later run.")]
+    private static partial void LogWorkDirCleanupFailed(ILogger logger, string workDir);
 }
