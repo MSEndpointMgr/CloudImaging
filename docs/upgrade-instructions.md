@@ -23,6 +23,13 @@ Check the [Releases page](https://github.com/MSEndpointMgr/CloudImaging/releases
 streams have actually moved since your last upgrade. The page is a single flat list, so read
 the tag prefix rather than assuming the newest entry applies to you.
 
+> **Let the portal tell you instead.** **Configuration** → **Miscellaneous** → **Version** shows
+> the release this deployment is running, and enabling **Check GitHub for new releases** makes
+> the portal notify administrators when a newer backend release is published. It is off by
+> default because it is the only outbound call the portal makes outside your tenant. It only
+> ever tracks the backend and infrastructure stream, and it never installs anything: upgrading
+> stays the deliberate, manual procedure below.
+
 ### What `update.ps1` does and does not do
 
 It is worth being precise about this, because the boundary catches people out.

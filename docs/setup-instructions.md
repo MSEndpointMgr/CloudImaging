@@ -312,6 +312,13 @@ without them; the rest are optional and can be revisited any time from **Configu
    (**Security**), whether devices require pre-flight authorization before imaging
    (**Preflight**), and session history retention (**Miscellaneous**). Sensible defaults are
    pre-filled, so these only need attention if your organization has specific requirements.
+6. **Turn on version checking** *(optional)*. **Configuration** → **Miscellaneous** → **Version**
+   shows the release this deployment is running. Enabling **Check GitHub for new releases** lets
+   the portal backend periodically read the latest published release number from github.com and
+   notify administrators when an upgrade is available. It is **off by default**: it is the only
+   outbound call the portal makes outside your tenant, so leave it off if your network policy
+   prohibits that, or if the deployment has no outbound internet access. Nothing is ever
+   installed automatically; see [upgrade-instructions.md](upgrade-instructions.md).
 
 ---
 

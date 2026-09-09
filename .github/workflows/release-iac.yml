@@ -69,6 +69,13 @@ jobs:
         working-directory: src/cloud-imaging-portal/server
         run: |
           npm ci
+          # Stamp the release tag into the build. The deployed version has to be intrinsic to
+          # the deployed code: an app setting written at deploy time would be silently dropped
+          # the next time the Template Spec is redeployed, since Bicep rewrites appSettings
+          # wholesale. Overwrites the committed placeholder, which reads 'dev'.
+          "export const DEPLOYED_VERSION = '${{ github.ref_name }}';" |
+            Out-File -Encoding utf8 src/version.ts
+          Write-Host "Stamped portal backend version: ${{ github.ref_name }}"
           npm run build
           Compress-Archive dist/* ../../../release-artifacts/portal-backend.zip
 

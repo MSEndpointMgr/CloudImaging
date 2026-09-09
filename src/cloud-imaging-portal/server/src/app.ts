@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import axios from 'axios';
+import { DEPLOYED_VERSION } from './version.js';
 
 // Application Insights. Must be set up before importing any other modules (FR-065, FR-067)
 const aiConnectionString = process.env['APPLICATIONINSIGHTS_CONNECTION_STRING'];
@@ -60,6 +61,9 @@ app.get('/api/config', (_req, res) => {
     tenantId,
     authority,
     apiScope: clientId ? `api://${clientId}/user_impersonation` : '',
+    // Stamped into the build at release time (see version.ts). A product version is not
+    // sensitive, and this is already the SPA's bootstrap call.
+    version: DEPLOYED_VERSION,
   });
 });
 
@@ -77,6 +81,7 @@ import { sessionHistoryRouter } from './routes/session-history.js';
 import { locationsRouter } from './routes/locations.js';
 import { userPreferencesRouter } from './routes/user-preferences.js';
 import { uploadJobsRouter } from './routes/upload-jobs.js';
+import { updateCheckRouter } from './routes/update-check.js';
 
 // Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
@@ -96,6 +101,7 @@ app.use('/api/session-history',     sessionHistoryRouter);
 app.use('/api/locations',           locationsRouter);
 app.use('/api/user-preferences',    userPreferencesRouter);
 app.use('/api/upload-jobs',         uploadJobsRouter);
+app.use('/api/update-check',        updateCheckRouter);
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error', err);

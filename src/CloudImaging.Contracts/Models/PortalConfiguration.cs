@@ -44,5 +44,14 @@ public sealed class PortalConfiguration
     /// </summary>
     public int SessionHistoryRetentionDays { get; init; } = 90;
 
+    /// <summary>
+    /// Opt-in: allows the portal backend to check GitHub for a newer Cloud Imaging release.
+    /// Default: false. Off by default because it is the only outbound call the portal makes to
+    /// an endpoint outside the customer's tenant, which some deployments prohibit and
+    /// air-gapped ones cannot satisfy at all. Enforced server-side, so while this is false no
+    /// request to github.com is issued.
+    /// </summary>
+    public bool UpdateCheckEnabled { get; init; }
+
     public DateTimeOffset LastModifiedAt { get; init; }
 }

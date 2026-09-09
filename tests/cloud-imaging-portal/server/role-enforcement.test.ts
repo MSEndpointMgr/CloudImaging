@@ -20,6 +20,7 @@ describe('Portal backend: role enforcement', () => {
     'GET /api/cert/active',
     'POST /api/cert/generate',
     'POST /api/cert/rotate',
+    'GET /api/update-check',
   ] as const;
 
   adminOnlyOperations.forEach(op => {
