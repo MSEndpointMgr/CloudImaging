@@ -173,7 +173,11 @@ public sealed partial class ImageCacheService
 
     private static async Task WriteMetaAsync(string path, CacheEntryMetadata meta, CancellationToken ct)
     {
-        await using var stream = File.OpenWrite(path);
+        // File.Create truncates; File.OpenWrite does not. Rewriting an existing entry with a
+        // shorter payload would otherwise leave the tail of the previous content in place and
+        // produce unparseable JSON. The payloads differ in length in normal use because
+        // System.Text.Json trims trailing zeros from a DateTimeOffset's fractional seconds.
+        await using var stream = File.Create(path);
         await JsonSerializer.SerializeAsync(stream, meta, cancellationToken: ct);
     }
 

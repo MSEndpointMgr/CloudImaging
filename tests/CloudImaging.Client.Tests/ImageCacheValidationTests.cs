@@ -109,6 +109,41 @@ public sealed class ImageCacheValidationTests : IDisposable
         finally { File.Delete(tempFile); }
     }
 
+    // ── Metadata rewrite must fully replace the previous content ──────────────
+
+    [Fact]
+    public async Task CacheHit_RewritingShorterMetadata_DoesNotCorruptTheEntry()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(tempFile, [0x01, 0x02, 0x03, 0x04]);
+            var hash    = await ImageCacheService.ComputeSha256Async(tempFile, CancellationToken.None);
+            var imageId = "cache-meta-truncate-test";
+
+            await _cache.WriteAsync(imageId, tempFile, hash, CancellationToken.None);
+
+            // Make the stored metadata deliberately longer than what a cache hit will rewrite.
+            // A non-truncating write leaves the tail of this behind, producing trailing bytes
+            // after the closing brace that make the file unparseable. Timestamp serialisation
+            // varies in length (System.Text.Json trims trailing zeros from the fractional
+            // seconds), so in production this happens on its own, intermittently.
+            var metaPath = Path.Combine(_cacheRoot, "images", imageId, "metadata.json");
+            var original = await File.ReadAllTextAsync(metaPath);
+            await File.WriteAllTextAsync(metaPath, original.Replace(",", " ,                    "));
+
+            var result = await _cache.TryGetCachedWimAsync(imageId, hash, CancellationToken.None);
+            result.Should().NotBeNull("the padded metadata is still valid JSON, so this is a hit");
+
+            var entries = await _cache.ListEntriesAsync(CancellationToken.None);
+            entries.Should().ContainSingle(e => e.ImageId == imageId,
+                "rewriting the metadata on a cache hit must replace the file's entire contents; "
+                + "leftover bytes from a longer previous write corrupt the entry, which then "
+                + "silently disappears from the cache and is re-downloaded and never purged");
+        }
+        finally { File.Delete(tempFile); }
+    }
+
     // ── Insufficient space disables cache writes ──────────────────────────────
 
     [Fact]
