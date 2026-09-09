@@ -29,18 +29,20 @@ async function bootstrap(): Promise<void> {
     // Entra cost two full page loads: one back to the redirect URI, then another to the page
     // the user actually came from, with the app booting and tearing down in between. We
     // restore that path below with replaceState instead.
-    await msalInstance.handleRedirectPromise({ navigateToLoginRequestUrl: false });
+    const redirectResult = await msalInstance.handleRedirectPromise({ navigateToLoginRequestUrl: false });
 
     const accounts = msalInstance.getAllAccounts();
     if (accounts.length > 0) {
       msalInstance.setActiveAccount(accounts[0]);
     }
 
-    // We opted out of MSAL restoring the deep link (it does so with a second full page
-    // navigation). Rewrite the URL in place instead, before React Router reads it, so the
-    // user lands back where they were with no extra load.
+    // Always clear the stored path, but only act on it when this load genuinely is the return
+    // leg of a redirect (redirectResult is non-null exactly then). A redirect can start and
+    // never finish, and restoring a leftover path on an ordinary refresh would silently send
+    // the user to a page they didn't ask for.
     const returnPath = consumeReturnPath();
-    if (returnPath && returnPath !== window.location.pathname + window.location.search + window.location.hash) {
+    const current = window.location.pathname + window.location.search + window.location.hash;
+    if (redirectResult && returnPath && returnPath !== current) {
       window.history.replaceState(null, '', returnPath);
     }
 

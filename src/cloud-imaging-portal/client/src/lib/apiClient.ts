@@ -38,9 +38,13 @@ function rememberReturnPath(): void {
 }
 
 /**
- * Returns the path the user was on when an interactive sign-in started, clearing it so a
- * later manual reload doesn't bounce them somewhere unexpected. Returns null when the
- * redirect did not originate from a deep link.
+ * Returns the path the user was on when an interactive sign-in started, always clearing it.
+ *
+ * Only call this on the return leg of a redirect. The key is written when a redirect *starts*,
+ * but a redirect can start and never finish (MSAL throws, the user presses Back, the tab is
+ * closed mid-flow). Restoring it on an ordinary page load would silently rewrite the URL to a
+ * path the user never asked for, so bootstrap clears it unconditionally and only uses the
+ * value when MSAL confirms a redirect response was actually processed.
  */
 export function consumeReturnPath(): string | null {
   try {
@@ -70,9 +74,12 @@ function triggerInteractiveRedirect(account: AccountInfo | null): Promise<never>
         account: account ?? undefined,
         scopes: [getApiScope()],
       })
-      // Swallow errors here (e.g. a raced 'interaction_in_progress' from an overlapping
-      // call), either way a redirect is already underway, so just keep waiting for it.
-      .catch(() => undefined)
+      .catch(() => {
+        // A rejection here (e.g. a raced 'interaction_in_progress') means this attempt did not
+        // navigate. Release the latch so a later call can retry, otherwise every subsequent 401
+        // joins this dead promise and the app wedges for the rest of the page's life.
+        redirectInFlight = null;
+      })
       .then(pendingForever);
   }
   return redirectInFlight;
