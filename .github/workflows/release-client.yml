@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Version or tag to package (e.g. 1.0.0, v1.0.0 or mse-ci-client-v1.0.0). Defaults to the latest matching tag if blank.'
+        description: 'Version or tag to package (e.g. 1.0.0, v1.0.0 or mse-ci-client-v1.0.0). Defaults to the latest matching tag if blank. Created automatically at the current commit if it does not exist yet.'
         required: false
 
 env:
@@ -67,7 +67,15 @@ jobs:
           # Fully qualified: a stray branch-named tag would otherwise make a bare name ambiguous.
           git rev-parse -q --verify "refs/tags/$tag" > $null
           if ($LASTEXITCODE -ne 0) {
-            throw "Tag '$tag' does not exist. Create it first: git tag $tag origin/main; git push origin $tag"
+            # A tag-triggered run's tag always exists (it's what triggered the push event) -- this
+            # branch is only reachable on a workflow_dispatch run, where it's fine to mint the tag
+            # the caller asked for on the commit they dispatched from.
+            if ($env:REF_TYPE -eq 'tag') {
+              throw "Tag '$tag' does not exist even though this run was triggered by a tag push."
+            }
+            Write-Host "Tag '$tag' does not exist yet -- creating it at $env:GITHUB_SHA."
+            git tag $tag $env:GITHUB_SHA
+            git push origin $tag
           }
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-client-' prefix itself contains hyphens, so a naive contains('-') is always true.
