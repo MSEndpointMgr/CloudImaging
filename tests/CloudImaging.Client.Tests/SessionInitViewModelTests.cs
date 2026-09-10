@@ -105,6 +105,35 @@ public sealed class SessionInitViewModelTests
         vm.IsPolling.Should().BeFalse("polling stops once a terminal state is reached");
     }
 
+    /// <summary>
+    /// Regression test: nothing previously guarded <c>PollOnceAsync</c> against concurrent
+    /// invocation — the manual RefreshCommand racing the automatic 30s poll loop could both
+    /// observe a hand-off state (e.g. SessionStarted) and each independently fire
+    /// <c>navigateToProgress</c>, constructing a second <c>ImagingWorkflowViewModel</c> that
+    /// restarted the imaging pipeline from Format Disk and replaced the already-progressing
+    /// ProgressView — visible to the user as the Format Disk step "reverting" to active right
+    /// after Download had already begun. Only the first caller to observe the hand-off state may
+    /// navigate, no matter how many polls race to get there.
+    /// </summary>
+    [Fact]
+    public async Task ConcurrentPolls_OnlyNavigateToProgressOnce()
+    {
+        using var vm = CreateViewModel("SessionStarted", out var progressCalls, out var resultsCalls);
+
+        // Simulate a user mashing "Refresh Status" concurrently with the automatic first poll.
+        var tasks = Enumerable.Range(0, 5)
+            .Select(_ => Task.Run(() => vm.RefreshCommand.Execute(null)))
+            .ToArray();
+        await Task.WhenAll(tasks);
+
+        await WaitForAsync(() => progressCalls.Count > 0);
+        await Task.Delay(100); // give any (buggy) duplicate navigation time to land
+
+        progressCalls.Should().HaveCount(1,
+            "only one navigation to the progress view may occur, regardless of how many concurrent polls raced to the hand-off state");
+        resultsCalls.Should().BeEmpty();
+    }
+
     private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>

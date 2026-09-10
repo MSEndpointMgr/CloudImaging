@@ -1,0 +1,15 @@
+# Configuration for GitBook Git Sync (https://gitbook.com/docs/getting-started/git-sync).
+#
+# Only the curated administrator/operator documentation under docs/ is published. Everything else
+# in this repository — the root README (which is written for a GitHub landing page, badges and
+# all), CONTRIBUTING/SECURITY/CODE_OF_CONDUCT, and the specs/ folder (internal engineering
+# specifications, plans and task lists) — is deliberately left out of the GitBook space.
+#
+# Both paths below are resolved relative to `root`, i.e. docs/README.md and docs/SUMMARY.md.
+# SUMMARY.md is the single source of truth for the space's page order and sidebar grouping, so a
+# new guide is only published once it is listed there.
+root: ./docs/
+
+structure:
+  readme: README.md
+  summary: SUMMARY.md

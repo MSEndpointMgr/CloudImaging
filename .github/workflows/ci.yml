@@ -91,6 +91,7 @@ jobs:
             media-builder:
               - *shared
               - 'src/CloudImaging.MediaBuilder/**'
+              - 'src/CloudImaging.MediaBuilder.Installer/**'
               - 'tests/CloudImaging.MediaBuilder.Tests/**'
             portal-backend:
               - 'src/cloud-imaging-portal/server/**'
@@ -357,6 +358,14 @@ jobs:
         run: dotnet build src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj -c Release --no-restore
       - name: Test
         run: dotnet test tests/CloudImaging.MediaBuilder.Tests/CloudImaging.MediaBuilder.Tests.csproj -c Release --no-restore
+      # The MSI is only produced for real by release-mediabuilder.yml, but the WiX authoring
+      # references file names, the app icon and the HKLM configuration keys that App.xaml.cs reads.
+      # Building it here means a rename or a moved asset fails on the PR rather than at release time.
+      - name: Smoke-build installer (WiX MSI)
+        run: |
+          dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj `
+            -c Release -r win-x64 --self-contained -o publish/MediaBuilder
+          dotnet build src/CloudImaging.MediaBuilder.Installer/CloudImaging.MediaBuilder.Installer.wixproj -c Release
 
   # ── Component: Portal backend (build + lint + test + deploy) ─────────────────
   portal-backend:

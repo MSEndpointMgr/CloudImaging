@@ -40,7 +40,11 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<
     <th
       ref={ref}
       className={cn(
-        'h-10 select-none cursor-default px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground [&:has([role=checkbox])]:pr-0',
+        // text-foreground/75 rather than text-muted-foreground: these labels are 12px bold, which
+        // does not qualify for the WCAG large-text exemption, and muted-foreground over the
+        // --table-header surface only reaches ~3.8:1. Blending the full foreground at 75% keeps the
+        // secondary appearance while clearing AA (~7.5:1 light, higher in dark).
+        'h-10 select-none cursor-default px-3 text-left align-middle text-xs font-semibold uppercase tracking-wide text-foreground/75 [&:has([role=checkbox])]:pr-0',
         className,
       )}
       {...props}
@@ -54,7 +58,10 @@ const TableCell = React.forwardRef<HTMLTableCellElement, React.TdHTMLAttributes<
     <td
       ref={ref}
       className={cn(
-        'select-none cursor-default px-3 py-3 align-middle [&:has([role=checkbox])]:pr-0',
+        // Data cells are selectable even though the app disables selection globally: a table cell
+        // holds the values operators transcribe against hardware and paste into tickets. The
+        // cursor stays an arrow because rows are clickable in several tables.
+        'select-text cursor-default px-3 py-3 align-middle [&:has([role=checkbox])]:pr-0',
         className,
       )}
       {...props}

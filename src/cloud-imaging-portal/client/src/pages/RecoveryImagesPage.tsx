@@ -6,15 +6,18 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { EmptyState } from '../components/ui/empty-state';
+import { TableSkeletonRows } from '../components/ui/skeleton';
+import { CopyableId } from '../components/ui/copyable-id.tsx';
+import { RelativeTime } from '../components/ui/relative-time.tsx';
+import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
-import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
-import { formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
@@ -86,10 +89,18 @@ export default function RecoveryImagesPage(): React.ReactElement {
     if (!confirm('Delete this recovery image?')) return;
     const res = await apiFetch(`/api/recovery-images/${id}`, { method: 'DELETE', credentials: 'include' });
     if (res.ok || res.status === 204) { void loadImages(); return; }
-    if (res.status === 409) {
-      const msg = await res.text().catch(() => null);
-      notify({ status: 'error', title: msg || 'Cannot delete the currently published recovery image. Publish a replacement first.' });
-    }
+    // extractErrorDetail, not res.text(): the portal server wraps upstream errors as
+    // ProblemDetails JSON, so the raw text is a `{"type":...,"detail":...}` blob. Every failing
+    // status is reported, not just 409, so a delete can never fail silently.
+    notify({
+      status: 'error',
+      title: 'Failed to delete recovery image.',
+      description: await extractErrorDetail(
+        res,
+        res.status === 409
+          ? 'Cannot delete the currently published recovery image. Publish a replacement first.'
+          : `The server responded with status ${String(res.status)}.`),
+    });
   };
 
   const used      = images.length;
@@ -130,7 +141,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
             </div>
           </div>
           <div className="flex-1">
-            <div className="mb-1.5 flex items-center justify-between text-xs">
+            <div className="mb-2 flex items-center justify-between text-xs">
               <span className={atCapacity ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
                 {atCapacity
                   ? 'At capacity. The oldest entry is replaced on the next upload'
@@ -162,14 +173,20 @@ export default function RecoveryImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableSkeletonRows columns={isAdministrator ? 6 : 5} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={isAdministrator ? 6 : 5} className="p-0">
                   <EmptyState
                     icon={ShieldCheck}
                     title="No recovery images"
-                    description="Publish a recovery image from the Media Builder app to get started."
+                    description="Upload a recovery image here, or publish one directly from the Media Builder app."
+                    action={isAdministrator ? (
+                      <Button onClick={() => setUploadOpen(true)}>
+                        <Upload className="h-4 w-4" />
+                        Upload recovery image
+                      </Button>
+                    ) : undefined}
                   />
                 </TableCell>
               </TableRow>
@@ -182,8 +199,15 @@ export default function RecoveryImagesPage(): React.ReactElement {
                   )}
                 </TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{formatDateTime(img.createdAt)}</TableCell>
+                <TableCell>
+                  <CopyableId
+                    value={img.sha256Hash}
+                    display={`${img.sha256Hash.slice(0, 12)}\u2026`}
+                    label="SHA-256 digest"
+                    className="font-mono text-xs text-muted-foreground"
+                  />
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground"><RelativeTime value={img.createdAt} /></TableCell>
                 <TableCell>
                   {img.isLatestPublished
                     ? <Badge variant="info" dot>Latest</Badge>
@@ -191,16 +215,18 @@ export default function RecoveryImagesPage(): React.ReactElement {
                 </TableCell>
                 {isAdministrator && (
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title={img.isLatestPublished ? 'Publish a replacement before deleting' : 'Delete'}
-                      disabled={img.isLatestPublished}
-                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => void handleDelete(img.recoveryImageId)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <Tooltip content={img.isLatestPublished ? 'Publish a replacement before deleting' : 'Delete'}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Delete recovery image"
+                        disabled={img.isLatestPublished}
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => void handleDelete(img.recoveryImageId)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </Tooltip>
                   </TableCell>
                 )}
               </TableRow>
@@ -301,7 +327,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
         <CardContent className="space-y-4 py-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Upload recovery image</h2>
-            <Button variant="ghost" size="icon" onClick={onClose} disabled={busy} title="Close">
+            <Button variant="ghost" size="icon" onClick={onClose} disabled={busy} aria-label="Close">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -312,33 +338,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
             </p>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="recoveryImageVersion">Version</Label>
-            <Input
-              id="recoveryImageVersion"
-              placeholder="e.g. 2026.07.1"
-              value={version}
-              disabled={busy}
-              aria-invalid={duplicateVersion}
-              onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
-            />
-            {duplicateVersion && (
-              <p className="text-xs text-destructive">Version "{trimmedVersion}" already exists.</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="recoveryImageDescription">Description (optional)</Label>
-            <Input
-              id="recoveryImageDescription"
-              placeholder="e.g. WinRE build for 24H2"
-              value={description}
-              disabled={busy}
-              onChange={e => setDescription(e.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="recoveryImageFile">Recovery media (.wim)</Label>
             <input
               ref={fileInputRef}
@@ -379,6 +379,32 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
                 {file ? `${file.name} · ${fmtSize(file.size)}` : 'No file selected'}
               </span>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="recoveryImageVersion">Version</Label>
+            <Input
+              id="recoveryImageVersion"
+              placeholder="e.g. 2026.07.1"
+              value={version}
+              disabled={busy}
+              aria-invalid={duplicateVersion}
+              onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
+            />
+            {duplicateVersion && (
+              <p className="text-sm text-destructive">Version "{trimmedVersion}" already exists.</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="recoveryImageDescription">Description (optional)</Label>
+            <Input
+              id="recoveryImageDescription"
+              placeholder="e.g. WinRE build for 24H2"
+              value={description}
+              disabled={busy}
+              onChange={e => setDescription(e.target.value)}
+            />
           </div>
 
           {busy && <UploadProgressBar percent={stagePercent} label={stageLabel} />}

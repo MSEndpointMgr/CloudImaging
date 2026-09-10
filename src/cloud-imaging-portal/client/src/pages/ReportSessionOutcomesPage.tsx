@@ -7,8 +7,9 @@ import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent } from '../components/ui/card.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
+import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 
@@ -29,8 +30,15 @@ function isoDateInputValue(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Turns a `SessionState` name into a display label. Defensively coerces rather than assuming a
+ * string: this runs inside render, so a single unexpected value (a backend that serialized the
+ * enum as an ordinal, say) would otherwise throw and replace the entire report with the route
+ * error boundary instead of degrading one cell.
+ */
 function stateLabel(state: string): string {
-  return state.replace('Session', '').replace(/([A-Z])/g, ' $1').trim();
+  if (state === null || state === undefined) return '-';
+  return String(state).replace('Session', '').replace(/([A-Z])/g, ' $1').trim();
 }
 
 function stateBadgeVariant(state: string): BadgeProps['variant'] {
@@ -119,17 +127,17 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex items-end gap-3">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="from">From</Label>
             <Input id="from" type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} className="w-40" />
           </div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="to">To</Label>
             <Input id="to" type="date" value={to} min={from} onChange={e => setTo(e.target.value)} className="w-40" />
           </div>
         </div>
         <Button variant="secondary" onClick={handleExport} disabled={!records || records.length === 0}>
-          <FileDown size={14} /> Export CSV
+          <FileDown /> Export CSV
         </Button>
       </div>
 
@@ -171,11 +179,7 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {records === null && Array.from({ length: 4 }).map((_, i) => (
-            <TableRow key={i}>
-              <TableCell colSpan={6}><Skeleton className="h-5 w-full" /></TableCell>
-            </TableRow>
-          ))}
+          {records === null && <TableSkeletonRows columns={6} rows={4} />}
           {records?.length === 0 && (
             <TableRow>
               <TableCell colSpan={6}>
@@ -187,7 +191,9 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
           {records?.map(r => (
             <TableRow key={r.sessionId}>
               <TableCell><Badge variant={stateBadgeVariant(r.finalState)} dot>{stateLabel(r.finalState)}</Badge></TableCell>
-              <TableCell className="font-mono text-xs">{r.deviceSerialNumber}</TableCell>
+              <TableCell>
+                <CopyableId value={r.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+              </TableCell>
               <TableCell>{r.deviceManufacturer} {r.deviceModel}</TableCell>
               <TableCell>{formatDateTime(r.createdAt)}</TableCell>
               <TableCell>{formatDateTime(r.terminalAt)}</TableCell>

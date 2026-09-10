@@ -1,0 +1,11 @@
+<Project>
+
+  <!--
+    Deliberately empty, and deliberately NOT importing the repository root Directory.Build.targets.
+
+    MSBuild walks up the directory tree until it finds a Directory.Build.targets, so this file
+    terminates the search. The root file contains only the WPF _wpftmp source-generator workaround,
+    which is meaningless for a .wixproj.
+  -->
+
+</Project>

@@ -70,12 +70,25 @@ public partial class MainWindow : FluentWindow
     }
 
     /// <summary>
+    /// Shows/hides the semi-transparent overlay that dims this window while a modal child
+    /// (<see cref="LogViewerWindow"/>, <see cref="WifiConnectionWindow"/>) is open on top of it.
+    /// See <see cref="DialogHost"/>, which calls this around every such <c>ShowDialog()</c>.
+    /// </summary>
+    public void SetDimmed(bool dimmed)
+    {
+        if (Dispatcher.CheckAccess())
+            DimOverlay.Visibility = dimmed ? Visibility.Visible : Visibility.Collapsed;
+        else
+            Dispatcher.Invoke(() => DimOverlay.Visibility = dimmed ? Visibility.Visible : Visibility.Collapsed);
+    }
+
+    /// <summary>
     /// Opens the read-only local log viewer (FR-066) — see <see cref="LogViewerWindow"/>.
     /// Available from every screen since it's hosted on <see cref="MainWindow"/> itself rather
     /// than any individual <see cref="Page"/>.
     /// </summary>
     private void ViewLogButton_Click(object sender, RoutedEventArgs e)
     {
-        new LogViewerWindow { Owner = this }.ShowDialog();
+        DialogHost.ShowDimmed(new LogViewerWindow(), this);
     }
 }

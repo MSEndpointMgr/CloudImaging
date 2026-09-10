@@ -28,7 +28,7 @@ export function SessionFilterTabs({ activeFilter, onFilterChange, counts }: Filt
             key={tab.key}
             onClick={() => onFilterChange(tab.key)}
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               isActive
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',
@@ -37,7 +37,7 @@ export function SessionFilterTabs({ activeFilter, onFilterChange, counts }: Filt
             {tab.label}
             <span
               className={cn(
-                'inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold',
+                'inline-flex min-w-5 items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold',
                 isActive ? 'bg-primary text-primary-foreground' : 'bg-background/70 text-muted-foreground',
               )}
             >

@@ -2,9 +2,10 @@ name: GitHub Release - Media Builder Package & Publish
 
 # Triggered on Media Builder version tags (e.g. mse-ci-mediabuilder-v1.2.0).
 # Builds the CloudImaging.MediaBuilder technician-workstation app and creates a
-# GitHub Release. Installed via Win32/Intune packaging (see
-# docs/setup-instructions.md "Packaging as a Win32 app") — nothing auto-downloads
-# it, so this stream has no moving "latest" alias (unlike release-client.yml).
+# GitHub Release carrying both a plain self-contained zip and a per-machine MSI
+# for Intune/ConfigMgr deployment (see docs/setup-instructions.md "Deploying the
+# Media Builder with Intune") — nothing auto-downloads either artifact, so this
+# stream has no moving "latest" alias (unlike release-client.yml).
 
 on:
   push:
@@ -35,6 +36,27 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # Runs before the build because the MSI's ProductVersion is derived from the tag.
+      - name: Determine version tag
+        id: tag
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-mediabuilder-v*' }
+          # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
+          # 'mse-ci-mediabuilder-' prefix itself contains hyphens, so a naive contains('-') is always true.
+          $stable = $tag -match '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+$'
+          # Bare version for display (title already says "Media Builder"; avoid repeating it via the tag).
+          $version = $tag -replace '^mse-ci-mediabuilder-', ''
+          # MSI ProductVersion must be a bare numeric major.minor.build: Windows Installer rejects a
+          # leading 'v' and ignores anything after the third field, so a pre-release suffix is dropped
+          # (which is why the MSI is built with AllowSameVersionUpgrades — see the .wixproj).
+          $msiVersion = ($version -replace '^v', '') -replace '-.*$', ''
+          "tag=$tag"                 | Out-File $env:GITHUB_OUTPUT -Append
+          "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          "version=$version"         | Out-File $env:GITHUB_OUTPUT -Append
+          "msi_version=$msiVersion"  | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Release tag: $tag (stable: $stable, MSI ProductVersion: $msiVersion)"
+
       # CloudImaging.MediaBuilder.csproj has no <RuntimeIdentifiers>, so a plain solution restore
       # produces an assets file with no win-x64 target -- the later --no-restore publish
       # then fails with NETSDK1047. Restore the project itself with the RID instead.
@@ -48,26 +70,25 @@ jobs:
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
           Compress-Archive publish/MediaBuilder/* release-artifacts/CloudImaging.MediaBuilder.zip
 
-      - name: Determine version tag
-        id: tag
+      # Harvests the same publish/MediaBuilder payload that was just zipped, so the MSI and the zip
+      # in a given release are always byte-identical in content.
+      - name: Build CloudImaging.MediaBuilder.msi (WiX)
         run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-mediabuilder-v*' }
-          # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
-          # 'mse-ci-mediabuilder-' prefix itself contains hyphens, so a naive contains('-') is always true.
-          $stable = $tag -match '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+$'
-          # Bare version for display (title already says "Media Builder"; avoid repeating it via the tag).
-          $version = $tag -replace '^mse-ci-mediabuilder-', ''
-          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
-          "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
-          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
-          Write-Host "Release tag: $tag (stable: $stable)"
+          dotnet build src/CloudImaging.MediaBuilder.Installer/CloudImaging.MediaBuilder.Installer.wixproj `
+            -c Release -p:MsiProductVersion=${{ steps.tag.outputs.msi_version }}
+          Copy-Item src/CloudImaging.MediaBuilder.Installer/bin/Release/CloudImaging.MediaBuilder.msi release-artifacts/
 
       - name: Generate SHA-256 checksum manifest
         run: |
-          $hash = (Get-FileHash release-artifacts/CloudImaging.MediaBuilder.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  CloudImaging.MediaBuilder.zip" | Out-File "release-artifacts/SHA256SUMS"
-          Write-Host "Media Builder zip SHA-256: $hash"
+          # Enumerate into a variable first: streaming Get-ChildItem straight into Out-File would
+          # race the directory listing against the manifest file being created and could hash it.
+          $artifacts = @(Get-ChildItem release-artifacts -File | Sort-Object Name)
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash $artifact.FullName -Algorithm SHA256).Hash.ToLower()
+            Write-Host "$($artifact.Name) SHA-256: $hash"
+            "$hash  $($artifact.Name)"
+          }
+          $lines | Out-File "release-artifacts/SHA256SUMS"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -76,15 +97,28 @@ jobs:
           name:      "Cloud Imaging Media Builder ${{ steps.tag.outputs.version }}"
           body:      |
             Technician-workstation WPF app used to generate WinPE boot images and prepare USB
-            storage devices. Packages cleanly as a Win32 app (Intune, ConfigMgr, etc.) — see
-            `docs/setup-instructions.md` → "Packaging as a Win32 app".
+            storage devices.
+
+            Deploy it with the MSI — it installs per-machine and takes the tenant configuration as
+            install properties, so there is no need to repackage the payload per tenant. See
+            `docs/setup-instructions.md` → "Deploying the Media Builder with Intune".
+
+            ```
+            msiexec /i CloudImaging.MediaBuilder.msi /qn /norestart ^
+              ENTRAIDCLIENTID=<media builder app registration id> ^
+              ENTRAIDTENANTID=<tenant id> ^
+              OPERATORAPICLIENTID=<operator api app registration id> ^
+              OPERATORAPIBASEURL=https://<operator api function app>.azurewebsites.net
+            ```
 
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `CloudImaging.MediaBuilder.zip` | Self-contained win-x64 WPF app (net10.0-windows) |
-            | `SHA256SUMS` | SHA-256 checksum for integrity verification |
+            | `CloudImaging.MediaBuilder.msi` | Per-machine installer (x64). Configured via MSI properties; upgrades in place and keeps existing configuration. |
+            | `CloudImaging.MediaBuilder.zip` | The same self-contained win-x64 payload (net10.0-windows), unpackaged — for xcopy deployment or custom packaging. |
+            | `SHA256SUMS` | SHA-256 checksums for integrity verification |
           files: |
+            release-artifacts/CloudImaging.MediaBuilder.msi
             release-artifacts/CloudImaging.MediaBuilder.zip
             release-artifacts/SHA256SUMS
           draft: false

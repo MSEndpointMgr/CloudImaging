@@ -34,9 +34,12 @@ export default defineConfig({
     // different module id than the same specifier inside src/, and vi.mock() then silently
     // fails to bind. Pinning them to this package's copy lets a test mock a component's
     // dependencies and assert real behaviour. Test-only: the production build is unaffected.
+    // `@testing-library/react` is here for the plainer reason that Node resolution walks up
+    // from the *test* file, which never reaches this package's node_modules at all.
     alias: {
       '@azure/msal-react': path.resolve(__dirname, './node_modules/@azure/msal-react'),
       '@azure/msal-browser': path.resolve(__dirname, './node_modules/@azure/msal-browser'),
+      '@testing-library/react': path.resolve(__dirname, './node_modules/@testing-library/react'),
     },
     coverage: {
       provider: 'v8',

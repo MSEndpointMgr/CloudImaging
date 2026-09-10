@@ -202,7 +202,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
         <CardContent className="space-y-4 py-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Upload OS image</h2>
-            <Button variant="ghost" size="icon" onClick={handleClose} disabled={busy} title="Close">
+            <Button variant="ghost" size="icon" onClick={handleClose} disabled={busy} aria-label="Close">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -214,33 +214,22 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
           )}
 
           {resumable && !resuming && state === 'idle' && (
-            <div className="space-y-1.5 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+            <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
               <p className="break-words">
                 A previous upload of <span className="font-medium break-all">{resumable.fileName}</span> ({resumable.version}) was
                 interrupted. Re-select the same file to resume it, or discard the partial upload.
               </p>
-              <button type="button" onClick={handleDiscardResumable} className="text-xs text-primary hover:underline">
+              <button
+                type="button"
+                onClick={handleDiscardResumable}
+                className="rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
                 Discard partial upload
               </button>
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="osImageVersion">Version</Label>
-            <Input
-              id="osImageVersion"
-              placeholder="e.g. Windows 11 24H2"
-              value={version}
-              disabled={state === 'uploading' || state === 'finalizing' || resuming}
-              aria-invalid={duplicateVersion}
-              onChange={e => setVersion(e.target.value)}
-            />
-            {duplicateVersion && (
-              <p className="text-xs text-destructive">Version "{version.trim()}" already exists.</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="osImageFile">Image file (.wim or .iso)</Label>
             <input
               ref={fileInputRef}
@@ -291,6 +280,21 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
               <p className="truncate font-mono text-xs text-muted-foreground" title={sha256}>
                 SHA-256: {sha256}
               </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="osImageVersion">Version</Label>
+            <Input
+              id="osImageVersion"
+              placeholder="e.g. Windows 11 24H2"
+              value={version}
+              disabled={state === 'uploading' || state === 'finalizing' || resuming}
+              aria-invalid={duplicateVersion}
+              onChange={e => setVersion(e.target.value)}
+            />
+            {duplicateVersion && (
+              <p className="text-sm text-destructive">Version "{version.trim()}" already exists.</p>
             )}
           </div>
 

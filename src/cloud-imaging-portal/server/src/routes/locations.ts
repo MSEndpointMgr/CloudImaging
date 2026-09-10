@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
+import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
@@ -28,7 +29,7 @@ router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request,
   }
 });
 
-router.delete('/:locationId', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:locationId', requireRole('CloudImaging.Administrator'), requireGuidParams('locationId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.deleteLocation(req.params['locationId'] as string);
     res.status(204).send();

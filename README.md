@@ -224,6 +224,10 @@ flowchart TB
 - **Prepare USB Storage Device**: lists qualifying removable USB drives (USB bus
   type + removable flag); writes the WinPE boot partition (≥ 2 GB) and an OS image
   cache partition (≥ 24 GB); auto-refreshes the device list on plug/unplug events
+- Ships as a per-machine **MSI** alongside the plain zip. Tenant configuration is
+  passed as MSI install properties rather than baked into the payload, so the same
+  package works in any tenant and upgrades keep the existing configuration. See
+  [Deploying the Media Builder with Intune](docs/setup-instructions.md#deploying-the-media-builder-with-intune)
 
 ### Security
 

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Management;
 using System.Net.Http;
 using System.Text.Json;
 using CloudImaging.Contracts.Enums;
@@ -37,7 +38,20 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     private readonly ProgressViewModel _progress;
     private readonly Action<ResultsViewModel.Outcome, string?, string?, string?> _navigateToResults;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly string _cacheRoot;
+
+    // Null until resolved. An explicit constructor override or a discovered CACHE-labelled USB
+    // volume resolves this immediately; otherwise it stays null until the Format step completes
+    // and falls back to the freshly-formatted target Windows volume (see RunAsync) — never to
+    // Path.GetTempPath(), which is the WinPE boot RAM disk (X:) and has nowhere near enough space
+    // for a multi-GB OS image.
+    private string? _cacheRoot;
+
+    // True when _cacheRoot resolved to the target Windows volume rather than to durable boot
+    // media. That location is only ever scratch space: it is wiped by the next session's Format
+    // step, so persisting a cross-session cache there is worthless — and it would ship a
+    // multi-GB duplicate of the WIM inside the OS that is about to be handed to the end user.
+    // Drives both "don't persist to the cache" and "delete the staged WIMs afterwards" below.
+    private bool _cacheRootIsTargetVolume;
 
     private Services.SasRefreshCoordinator? _sasCoordinator;
     private Services.SessionHeartbeatCoordinator? _heartbeatCoordinator;
@@ -60,7 +74,44 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         _progress           = progress;
         _navigateToResults  = navigateToResults;
         _loggerFactory      = loggerFactory;
-        _cacheRoot          = cacheRoot ?? Path.Combine(Path.GetTempPath(), "CloudImagingCache");
+
+        // Resolve immediately if possible: an explicit override (tests) always wins, otherwise try
+        // the USB boot media's dedicated CACHE-labelled NTFS partition (created by
+        // UsbPartitionProvisioningService during USB preparation, sized at a 24 GB minimum
+        // specifically to hold one OS image — FR-055). If neither is available — e.g. WinPE
+        // running in a Hyper-V VM with no physical USB attached, an ISO/PXE boot, or dev/test —
+        // this stays null and is resolved later in RunAsync once the target Windows volume is
+        // known (see the fallback there for why Path.GetTempPath() must never be the default).
+        var cacheVolume = FindCacheVolumeDriveLetter();
+        _cacheRoot = cacheRoot ?? (cacheVolume is not null ? Path.Combine(cacheVolume, "CloudImagingCache") : null);
+    }
+
+    /// <summary>
+    /// Locates the CACHE-labelled NTFS volume this Client's USB boot media was prepared with —
+    /// mirrors <see cref="Services.BootImageSelfUpdateService"/>'s analogous BOOT-volume lookup,
+    /// and <c>UsbPartitionProvisioningService.FindCacheVolumeDriveLetter</c> in the Media Builder,
+    /// which creates and labels this same volume during USB preparation.
+    /// </summary>
+    private static string? FindCacheVolumeDriveLetter()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='CACHE'");
+            using var results = searcher.Get();
+            foreach (ManagementObject volume in results)
+            {
+                var letter = volume["DriveLetter"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(letter))
+                    return letter;
+            }
+        }
+        catch (ManagementException)
+        {
+            // Treated the same as "not found" by the caller — which defers cache-root resolution
+            // to the post-Format fallback in RunAsync.
+        }
+        return null;
     }
 
     /// <summary>Starts the imaging pipeline in the background. Fire-and-forget by design.</summary>
@@ -133,20 +184,42 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.Completed, ct: ct);
             _progress.OverallPercent = 8;
 
+            // No dedicated CACHE-labelled USB partition was found when this view model was
+            // constructed — e.g. WinPE running in a Hyper-V VM with no physical USB attached, an
+            // ISO/PXE boot, or dev/test. Fall back to the freshly-formatted target Windows volume,
+            // which is guaranteed to exist with ample free space, unlike the WinPE boot RAM disk
+            // (X:). This mirrors ConfigMgr OSD's SMSTSLocalDataDrive behavior: when the boot
+            // media's own cache location is unusable or too small, the client falls back to a real
+            // local fixed disk rather than the tiny WinPE RAM disk.
+            if (_cacheRoot is null)
+            {
+                _cacheRoot = Path.Combine($"{diskFormat.WindowsVolume}\\", "CloudImagingCache");
+                _cacheRootIsTargetVolume = true;
+            }
+
             // ── Download OS image ──────────────────────────────────────────────
             _progress.StatusMessage = "Downloading operating system image…";
             _progress.UpdateStep(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress);
 
-            var cache = new Services.ImageCacheService(_cacheRoot, _loggerFactory.CreateLogger<Services.ImageCacheService>());
-            var cacheMaintenance = new Services.ImageCacheMaintenanceService(cache, _loggerFactory.CreateLogger<Services.ImageCacheMaintenanceService>());
-            await cacheMaintenance.RunAsync(ct);
+            // The persistent cache only pays off on durable boot media, so it is skipped entirely
+            // when the cache root is the target Windows volume (see _cacheRootIsTargetVolume). The
+            // WIM is still downloaded to that volume and still hash-verified — ImageApplyService /
+            // RecoveryImageService verify SHA-256 before DISM runs, independently of the cache.
+            Services.ImageCacheService? cache = null;
+            if (!_cacheRootIsTargetVolume)
+            {
+                var cacheService = new Services.ImageCacheService(_cacheRoot, _loggerFactory.CreateLogger<Services.ImageCacheService>());
+                var cacheMaintenance = new Services.ImageCacheMaintenanceService(cacheService, _loggerFactory.CreateLogger<Services.ImageCacheMaintenanceService>());
+                await cacheMaintenance.RunAsync(ct);
+                if (cacheMaintenance.CacheWriteEnabled) cache = cacheService;
+            }
 
             var downloadService = new Services.ImageDownloadService(
                 new HttpClient(),
                 pipelineLoggerFactory.CreateLogger<Services.ImageDownloadService>(),
-                cacheMaintenance.CacheWriteEnabled ? cache : null);
+                cache);
 
-            var destinationPath = Path.Combine(Path.GetTempPath(), $"ci-image-{_sessionId:N}.wim");
+            var destinationPath = Path.Combine(_cacheRoot, $"ci-image-{_sessionId:N}.wim");
 
             string wimPath;
             try
@@ -159,8 +232,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8–55%
+                        _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
+                    onBytesProgress: _progress.SetTransferProgress,
                     ct: ct);
             }
             catch (Exception ex)
@@ -187,6 +262,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.OverallPercent = 55 + (int)(pct * 0.25); // 55–80%
+                        _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
                     ct: ct);
@@ -206,9 +282,17 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.UpdateStep(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress);
             await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress, ct: ct);
 
+            var driveLetterService = new Services.OfflineDriveLetterService(pipelineLoggerFactory.CreateLogger<Services.OfflineDriveLetterService>());
             var bootConfigService = new Services.BootConfigurationService(pipelineLoggerFactory.CreateLogger<Services.BootConfigurationService>());
             try
             {
+                // The Windows partition is mounted under whichever letter WinPE had spare (often
+                // something like H:), and a custom-captured image can carry the letter mappings of
+                // the machine it came from. Re-point the applied image's own mount-manager state at
+                // C: before writing boot files, so the device boots as C: — see
+                // OfflineDriveLetterService for why this is not automatic.
+                await driveLetterService.EnsureWindowsVolumeBootsAsCAsync(diskFormat.WindowsVolume, ct);
+
                 await bootConfigService.ConfigureAsync(diskFormat.WindowsVolume, diskFormat.EfiSystemVolume, ct);
             }
             catch (Exception ex)
@@ -262,7 +346,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 return;
             }
 
-            var recoveryDestinationPath = Path.Combine(Path.GetTempPath(), $"ci-recovery-{_sessionId:N}.wim");
+            var recoveryDestinationPath = Path.Combine(_cacheRoot, $"ci-recovery-{_sessionId:N}.wim");
             string recoveryWimPath;
             try
             {
@@ -274,8 +358,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85–95%
+                        _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
+                    onBytesProgress: _progress.SetTransferProgress,
                     ct: ct);
             }
             catch (Exception ex)
@@ -285,6 +371,9 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             }
 
             _progress.StatusMessage = "Applying recovery image…";
+            // Second phase of the same step: DISM reports nothing here, so empty the bar rather
+            // than leaving it full from the download that just finished.
+            _progress.ResetStepProgress();
             try
             {
                 await recoveryService.ApplyAsync(
@@ -315,7 +404,32 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         {
             _sasCoordinator?.Dispose();
             _heartbeatCoordinator?.Dispose();
+            CleanUpTargetVolumeCacheRoot();
         }
+    }
+
+    /// <summary>
+    /// Removes the staging directory when it lives on the target Windows volume, so the machine
+    /// does not boot into its new OS with a multi-GB <c>\CloudImagingCache</c> folder at the root
+    /// of the system drive. No-op when the cache root is the USB CACHE partition (which is meant
+    /// to retain images across sessions) or an explicit test override. Resetting the field lets a
+    /// Retry re-resolve it against the volume its own Format step produces.
+    /// </summary>
+    private void CleanUpTargetVolumeCacheRoot()
+    {
+        if (!_cacheRootIsTargetVolume || _cacheRoot is null) return;
+
+        try
+        {
+            if (Directory.Exists(_cacheRoot)) Directory.Delete(_cacheRoot, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort: leftover scratch files must never fail an otherwise successful image.
+        }
+
+        _cacheRoot = null;
+        _cacheRootIsTargetVolume = false;
     }
 
     /// <summary>

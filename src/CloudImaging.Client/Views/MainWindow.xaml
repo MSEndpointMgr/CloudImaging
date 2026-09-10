@@ -45,7 +45,13 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!--
+            Titled rather than blank: with ExtendsContentIntoTitleBar the bar occupies a full row
+            above every hosted page regardless, so leaving it empty just reads as dead space at the
+            top of dense pages (ProgressView especially). Matches the Media Builder's title bar.
+        -->
         <ui:TitleBar Grid.Row="0"
+                     Title="Cloud Imaging"
                      ShowMaximize="False" />
 
         <Grid Grid.Row="1">
@@ -78,5 +84,20 @@
                 </StackPanel>
             </ui:Button>
         </Grid>
+
+        <!--
+            Dims this window while a modal child (LogViewerWindow, WifiConnectionWindow) is open
+            on top of it. WinPE has no DWM composition, so the child window has no drop shadow
+            and shares this window's exact background brush — without this overlay the two are
+            visually indistinguishable when the child is centered over the owner. Spans both rows
+            so the title bar dims too. IsHitTestVisible="False" because ShowDialog() already
+            blocks input to this window at the Win32 level; this is purely a visual cue. Toggled
+            via SetDimmed, see DialogHost.
+        -->
+        <Border x:Name="DimOverlay"
+                Grid.Row="0" Grid.RowSpan="2"
+                Background="#99000000"
+                IsHitTestVisible="False"
+                Visibility="Collapsed" />
     </Grid>
 </ui:FluentWindow>

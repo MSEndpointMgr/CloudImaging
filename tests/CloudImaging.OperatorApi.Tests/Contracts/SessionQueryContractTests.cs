@@ -41,6 +41,7 @@ public sealed class SessionQueryContractTests
         var summaryFields = new[]
         {
             "sessionId", "state", "deviceSerialNumber", "deviceManufacturer", "deviceModel",
+            "macAddress", "hardware",
             "preFlightAuthorizationResult", "assignedOsImageId", "overallProgressPercent",
             "currentStep", "createdAt", "lastHeartbeatAt", "terminalAt",
         };

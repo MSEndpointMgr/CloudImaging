@@ -9,6 +9,7 @@ import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Label } from '../components/ui/label.tsx';
+import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card.tsx';
 import { PageLoading } from '../components/PageLoading.tsx';
 import { useToast } from '../context/toastContext.tsx';
@@ -191,9 +192,9 @@ export default function DeploymentConfigPage(): React.ReactElement {
     description: string,
     defaultValue: number,
   ) => (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label htmlFor={key}>{label}</Label>
-      <p className="text-xs text-muted-foreground">{description}</p>
+      <p className="text-sm text-muted-foreground">{description}</p>
       <div className="flex items-center gap-2">
         <Input
           id={key}
@@ -204,16 +205,18 @@ export default function DeploymentConfigPage(): React.ReactElement {
           onChange={e => setConfig(c => ({ ...c, [key]: Number(e.target.value) }))}
           className="w-40"
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => setConfig(c => ({ ...c, [key]: defaultValue }))}
-          disabled={(config[key] as number) === defaultValue}
-          title="Reset to default"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </Button>
+        <Tooltip content={`Reset to ${defaultValue}`}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setConfig(c => ({ ...c, [key]: defaultValue }))}
+            disabled={(config[key] as number) === defaultValue}
+            aria-label={`Reset ${label} to default`}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );
@@ -326,7 +329,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
             Save Configuration
           </Button>
           {isDirty && saveStatus === 'idle' && (
-            <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
+            <p className="text-sm text-muted-foreground">You have unsaved changes.</p>
           )}
         </div>
       )}

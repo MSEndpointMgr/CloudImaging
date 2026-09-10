@@ -32,12 +32,28 @@ public static class BlobSasUrlGenerator
     /// the client supports it (e.g. local dev with a connection-string-backed client); otherwise signs
     /// with an Azure AD user delegation key.
     /// </summary>
+    public static Task<string> GenerateAsync(
+        BlobServiceClient blobServiceClient,
+        string containerName,
+        string blobName,
+        BlobSasPermissions permissions,
+        TimeSpan expiry,
+        CancellationToken cancellationToken = default) =>
+        GenerateAsync(blobServiceClient, containerName, blobName, permissions, expiry, null, cancellationToken);
+
+    /// <summary>
+    /// As above, but also overrides the Content-Type the blob service returns for this URL (the
+    /// SAS <c>rsct</c> parameter). Use it to pin a charset on text blobs so browsers don't guess
+    /// an encoding; because the override lives in the signed URL rather than on the blob, it also
+    /// applies to blobs that were uploaded with a less specific content type.
+    /// </summary>
     public static async Task<string> GenerateAsync(
         BlobServiceClient blobServiceClient,
         string containerName,
         string blobName,
         BlobSasPermissions permissions,
         TimeSpan expiry,
+        string? responseContentType,
         CancellationToken cancellationToken = default)
     {
         var blobClient = blobServiceClient.GetBlobContainerClient(containerName).GetBlobClient(blobName);
@@ -50,6 +66,11 @@ public static class BlobSasUrlGenerator
             ExpiresOn = expiresOn,
         };
         sasBuilder.SetPermissions(permissions);
+
+        if (!string.IsNullOrWhiteSpace(responseContentType))
+        {
+            sasBuilder.ContentType = responseContentType;
+        }
 
         if (blobClient.CanGenerateSasUri)
         {

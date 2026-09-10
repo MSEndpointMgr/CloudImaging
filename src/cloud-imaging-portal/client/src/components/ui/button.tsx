@@ -17,9 +17,11 @@ const buttonVariants = cva(
       },
       size: {
         // `sm` is the standard portal button size (see defaultVariants). Every button
-        // should use this size unless there is a specific reason not to.
+        // should use this size unless there is a specific reason not to. It deliberately
+        // inherits the base `text-sm`: a 32px control with a 14px label matches the `sm`
+        // variant of `Select` and keeps button labels readable next to body copy.
         default: 'h-9 px-4 py-2',
-        sm: 'h-8 rounded-md px-3 text-xs',
+        sm: 'h-8 rounded-md px-3',
         lg: 'h-10 rounded-md px-6',
         icon: 'h-8 w-8',
       },

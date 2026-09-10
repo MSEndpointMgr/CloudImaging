@@ -3,15 +3,16 @@
 **Audience**: IT administrators deploying Cloud Imaging into their own Azure tenant
 
 This is the guide to follow for a full deployment, start to finish. It's organized into five
-phases, run in order:
+phases, run in order. Step numbers restart within each phase, so a cross-reference to another
+phase names both ("Phase 3, Step 2").
 
 | Phase | Covers | Steps |
 |---|---|---|
-| [1. Prerequisites](#phase-1-prerequisites) | Install tooling, create the three Entra ID app registrations | Step 1 |
-| [2. Deploy the Azure resources](#phase-2-deploy-the-azure-resources) | Publish the Template Spec, run the deployment wizard | Steps 2–3 |
-| [3. Post-deployment setup](#phase-3-post-deployment-setup) | Run the post-deploy script, assign user roles, complete the initial portal configuration (boot media certificate, OS images, optional settings) | Steps 4–6 |
-| [4. Configure the Media Builder](#phase-4-configure-the-media-builder) | Point the desktop app at your tenant, install the Windows ADK, package for distribution | Step 7 |
-| [5. Operate Cloud Imaging](#phase-5-operate-cloud-imaging) | Generate a boot image, prepare USB media, image a device | Steps 8–10 |
+| [1. Prerequisites](#phase-1-prerequisites) | Install tooling, create the three Entra ID app registrations | 1 step |
+| [2. Deploy the Azure resources](#phase-2-deploy-the-azure-resources) | Publish the Template Spec, run the deployment wizard | 2 steps |
+| [3. Post-deployment setup](#phase-3-post-deployment-setup) | Run the post-deploy script, assign user roles, complete the initial portal configuration (boot media certificate, OS images, optional settings) | 3 steps |
+| [4. Configure the Media Builder](#phase-4-configure-the-media-builder) | Point the desktop app at your tenant, install the Windows ADK, deploy the MSI with Intune | 1 step |
+| [5. Operate Cloud Imaging](#phase-5-operate-cloud-imaging) | Generate a boot image, prepare USB media, image a device | 3 steps |
 
 ---
 
@@ -26,7 +27,7 @@ phases, run in order:
 | Az PowerShell | `Install-Module Az` |
 | Azure SWA CLI | `npm install -g @azure/static-web-apps-cli`; used by `update.ps1` to publish the portal frontend when upgrading |
 | Entra ID permissions | Create/update App Registrations |
-| Windows ADK + WinPE add-on | On every technician workstation that runs Media Builder: see [Step 7](#installing-the-windows-adk-on-technician-workstations) |
+| Windows ADK + WinPE add-on | On every technician workstation that runs Media Builder: see [Installing the Windows ADK](#installing-the-windows-adk-on-technician-workstations) |
 
 > **Why both Contributor *and* User Access Administrator?** The Bicep package creates Azure role
 > assignments for the deployed managed identities (Storage, Key Vault, package containers) as part
@@ -65,7 +66,7 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 5. Under **Authentication** → **Add a platform** → **Single-page application**: you don't have
    a Static Web App hostname yet, it's only created by the deployment in
    [Phase 2](#phase-2-deploy-the-azure-resources). Add a placeholder redirect URI for now (e.g.
-   `https://localhost`) and come back after [Step 3](#step-3-deploy-via-template-spec-wizard) to
+   `https://localhost`) and come back after [Phase 2, Step 2](#step-2-deploy-via-template-spec-wizard) to
    replace it with the real hostname (e.g. `https://<swa-name>.azurestaticapps.net`) from the
    deployment outputs. Do **not** add a *Mobile and desktop* platform to this registration; that
    reclassifies the app and breaks SPA sign-in with **AADSTS9002326**.
@@ -95,7 +96,7 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
    portal never bundles this scope with the required sign-in scope, so it can't affect
    sign-in either way.
 
-> The portal backend calls the Operator API using its **managed identity** (the `CloudImaging.PortalAccess` app role, assigned automatically in Step 4). The Portal registration therefore needs **no** API permission to the Operator API.
+> The portal backend calls the Operator API using its **managed identity** (the `CloudImaging.PortalAccess` app role, assigned automatically in Phase 3, Step 1). The Portal registration therefore needs **no** API permission to the Operator API.
 
 #### Registration 2: Cloud Imaging Operator API (service-to-service)
 
@@ -142,7 +143,7 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 `verify-app-registrations.ps1` re-checks the settings above via Microsoft Graph (read-only, no
 changes made) and prints a pass/fail checklist, so mistakes surface now instead of as a cryptic
 AADSTS error later. It ships in the deployment bundle, so download and extract that first
-([Step 2](#step-2-publish-the-template-spec)), then run it from the `deploy/` folder:
+([Phase 2, Step 1](#step-1-publish-the-template-spec)), then run it from the `deploy/` folder:
 
 ```powershell
 .\scripts\verify-app-registrations.ps1 `
@@ -158,7 +159,7 @@ the end as manual checks instead.
 
 ## Phase 2: Deploy the Azure Resources
 
-### Step 2: Publish the Template Spec
+### Step 1: Publish the Template Spec
 
 Download **`cloud-imaging-<version>.zip`** (e.g. `cloud-imaging-mse-ci-v1.0.0.zip`) from the
 backend/infrastructure release on the [GitHub Releases](https://github.com/MSEndpointMgr/CloudImaging/releases)
@@ -188,12 +189,12 @@ The script publishes a **Template Spec** named `CloudImaging` into `rg-cloudimag
 then prints a direct link to that resource in the Azure Portal (the marketplace `#create` URL
 doesn't work for Template Specs, so this manual link is how you reach it). Open the link
 (signed in to the target tenant) and click **Deploy** on the Template Spec resource's page;
-that launches the Form View wizard used in Step 3. If you'd rather navigate manually instead
+that launches the Form View wizard used in Step 2. If you'd rather navigate manually instead
 of using the link: **Resource groups → `rg-cloudimaging-specs` → CloudImaging → Deploy**.
 
 ---
 
-### Step 3: Deploy via Template Spec Wizard
+### Step 2: Deploy via Template Spec Wizard
 
 Fill in the wizard. It has two tabs:
 
@@ -207,7 +208,7 @@ Fill in the wizard. It has two tabs:
 
 **Configuration**
 
-- **Resource Prefix**: 1–4 lowercase letters/digits (e.g. `corp`). The wizard shows a live
+- **Resource Prefix**: 1 to 4 lowercase letters/digits (e.g. `corp`). The wizard shows a live
   preview of the resulting resource names beneath the field.
 - **Cloud Imaging Portal - Application (client) ID**: from Registration 1 (`portalClientId`)
 - **Operator API - Application (client) ID**: from Registration 2 (`operatorApiClientId`)
@@ -225,7 +226,7 @@ Click **Create** and wait ~15 minutes.
 resource group → the **Static Web App** resource → copy its **URL** from the Overview page
 (e.g. `https://<swa-name>.azurestaticapps.net`). Go back to **Registration 1 (Cloud Imaging
 Portal) → Authentication** and replace the placeholder redirect URI you added in
-[Step 1](#registration-1-cloud-imaging-portal-browser-spa) with this real hostname. Portal
+[Phase 1, Step 1](#registration-1-cloud-imaging-portal-browser-spa) with this real hostname. Portal
 sign-in fails with **AADSTS50011 (redirect URI mismatch)** until this is done.
 
 > **That's the only redirect URI this app needs.** The portal website and its backend are
@@ -236,7 +237,7 @@ sign-in fails with **AADSTS50011 (redirect URI mismatch)** until this is done.
 
 ## Phase 3: Post-Deployment Setup
 
-### Step 4: Run the Post-Deployment Scripts
+### Step 1: Run the Post-Deployment Scripts
 
 ```powershell
 $rg = "corp-prod-rg"   # your resource group
@@ -265,11 +266,11 @@ per person.
 
 ---
 
-### Step 5: Assign Access to Your Administrators and Technicians
+### Step 2: Assign Access to Your Administrators and Technicians
 
-The app roles created in Step 1 are just definitions; nobody can sign in successfully until they're
-assigned to actual users or groups. For the full access model (what each role grants in the Portal
-vs. the Media Builder), see [roles-and-access.md](roles-and-access.md). To assign access:
+The app roles created in Phase 1, Step 1 are just definitions; nobody can sign in successfully until
+they're assigned to actual users or groups. For the full access model (what each role grants in the
+Portal vs. the Media Builder), see [roles-and-access.md](roles-and-access.md). To assign access:
 
 1. **Portal users**: Entra ID → **Enterprise applications** → **Cloud Imaging Portal** →
    **Users and groups** → **Add user/group** → assign `CloudImaging.Administrator` or
@@ -289,7 +290,7 @@ screen (Portal) or has every workflow blocked (Media Builder).
 
 ---
 
-### Step 6: Initial Portal Configuration
+### Step 3: Initial Portal Configuration
 
 Before handing the portal to your technicians, sign in as **CloudImaging.Administrator** and
 complete these one-time setup tasks. The first two are **required**; imaging cannot happen
@@ -324,58 +325,102 @@ without them; the rest are optional and can be revisited any time from **Configu
 
 ## Phase 4: Configure the Media Builder
 
-### Step 7: Configure and Distribute the Media Builder
+### Step 1: Configure and Distribute the Media Builder
 
-The Media Builder is a desktop app that technicians run on their own workstations.
-Because Cloud Imaging is deployed into **your** tenant, each packaged build must be
-told which tenant, sign-in app, and Operator API to use. This is done with an
-`appsettings.json` file placed **next to `CloudImaging.MediaBuilder.exe`**.
+The Media Builder is a desktop app that technicians run on their own workstations. Each
+installation has to be told which tenant, sign-in app and Operator API to use, so collect these
+four values first:
 
-> **These values are public identifiers, not secrets.** The Media Builder is an MSAL
-> *public client*; it has no client secret. It is therefore safe (and expected) to
-> distribute a preconfigured `appsettings.json` alongside your packaged build. Do **not**
-> put certificates, client secrets, or connection strings in this file.
+| # | Value | Where it comes from |
+|---|---|---|
+| 1 | Media Builder client ID | [Phase 1, Registration 3](#registration-3-cloud-imaging-media-builder-desktop-public-client) → Application (client) ID |
+| 2 | Tenant ID | Entra ID → Overview → Directory (tenant) ID |
+| 3 | Operator API client ID | [Phase 1, Registration 2](#registration-2-cloud-imaging-operator-api-service-to-service) → Application (client) ID |
+| 4 | Operator API URL | The `operatorApiUrl` deployment output from [Phase 2, Step 2](#step-2-deploy-via-template-spec-wizard) |
 
-Create or edit `appsettings.json`:
+All four are public identifiers, not secrets. The Media Builder is an MSAL *public client* and has
+no client secret. Never put certificates, client secrets or connection strings in its configuration.
+
+Supply them either on the **MSI command line** (managed deployment, recommended) or in
+**`appsettings.json`** (manual install). Both are covered below.
+
+#### Building the msiexec command line
+
+One property per value, in the same order, all on a single line (as Intune requires):
+
+```
+msiexec /i CloudImaging.MediaBuilder.msi /qn /norestart ENTRAIDCLIENTID=<1. media builder client ID> ENTRAIDTENANTID=<2. tenant ID> OPERATORAPICLIENTID=<3. operator API client ID> OPERATORAPIBASEURL=<4. operator API URL>
+```
+
+Filled in:
+
+```
+msiexec /i CloudImaging.MediaBuilder.msi /qn /norestart ENTRAIDCLIENTID=6f1c2a84-3d5b-4e17-9a2c-0b7e5d81f430 ENTRAIDTENANTID=b3e7d902-14af-4c68-85d1-7f2a6c093e55 OPERATORAPICLIENTID=d84a5f61-27c9-4b03-9e8f-1a6d3c70b214 OPERATORAPIBASEURL=https://ci-operator-api-prod.azurewebsites.net
+```
+
+Rules when assembling it:
+
+- Property names are **uppercase**, with **no spaces** around `=`.
+- Quote any value containing a space: `INSTALLFOLDER="D:\Apps\Cloud Imaging Media Builder"`.
+- Give `OPERATORAPICLIENTID` the **bare client ID**. The MSI turns it into the
+  `api://<operatorApiClientId>/.default` scope; pasting a full `api://...` string there is rejected
+  with an error rather than installed as a broken doubled-up scope.
+- `OPERATORAPIBASEURL` is the hostname only: no `/api` suffix, no trailing slash.
+- Every property is optional. Omit them all to install now and configure later; the app runs but
+  the sign-in screen shows *"Entra ID sign-in is not configured"* until the values are present.
+
+Two optional properties exist beyond the four above:
+
+| Property | Purpose |
+|---|---|
+| `INSTALLFOLDER` | Install location. Defaults to `%ProgramFiles%\MSEndpointMgr\Cloud Imaging Media Builder`. |
+| `OPERATORAPISCOPE` | The complete scope string, replacing what `OPERATORAPICLIENTID` would derive. Only needed if you replaced the Operator API's default `api://<operatorApiClientId>` Application ID URI with a custom one. Wins when both are supplied. |
+
+Append `/l*v C:\Windows\Temp\mediabuilder-install.log` while troubleshooting a failed install.
+
+The MSI writes the values to `HKLM\SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder`. To confirm
+what a workstation actually received:
+
+```powershell
+Get-ItemProperty 'HKLM:\SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder' |
+  Select-Object ClientId, TenantId, OperatorApiScope, OperatorApiBaseUrl, InstallFolder
+```
+
+Those same registry values can be pushed by a Group Policy preference or an Intune remediation
+script, so a client ID rotation or an Operator API URL change never requires repackaging.
+
+#### Configuring a manual install
+
+For an xcopy install from `CloudImaging.MediaBuilder.zip` (no MSI), put the values in
+`appsettings.json` beside `CloudImaging.MediaBuilder.exe` instead:
 
 ```json
 {
   "EntraId": {
-    "ClientId": "<mediaBuilderClientId>",
-    "TenantId": "<your-tenant-id>",
-    "OperatorApiScope": "api://<operatorApiClientId>/.default"
+    "ClientId": "<1. media builder client ID>",
+    "TenantId": "<2. tenant ID>",
+    "OperatorApiScope": "api://<3. operator API client ID>/.default"
   },
   "OperatorApi": {
-    "BaseUrl": "https://<operator-api-hostname>"
+    "BaseUrl": "<4. operator API URL>"
   }
 }
 ```
 
-| Key | Value / where it comes from |
-|---|---|
-| `EntraId:ClientId` | **Cloud Imaging Media Builder** Application (client) ID, `mediaBuilderClientId` from Step 1 |
-| `EntraId:TenantId` | Your Entra **Directory (tenant) ID** (single-tenant sign-in) |
-| `EntraId:OperatorApiScope` | `api://` + **Operator API** client ID (`operatorApiClientId`) + `/.default` |
-| `OperatorApi:BaseUrl` | The Operator API Function App URL from the deployment outputs |
+Note that this file wants the **full scope**, not the bare client ID. Deriving it is something
+only the MSI does for you.
 
-**Why single-tenant + `appsettings.json`:** the Media Builder registration is a **single-tenant** app
-(Step 1), and the access token the Media Builder requests is audience-scoped to *your*
-Operator API (`api://<operatorApiClientId>`) and calls *your* Operator API URL. Those are
-per-deployment values, so a universal "sign in to any tenant" build is not possible; the
-configuration must ship with the build.
+The registry values take precedence over `appsettings.json`, value by value, so an MSI-managed
+workstation ignores whatever the file contains. Leave the shipped file at its empty defaults when
+you deploy the MSI.
 
 > **Two things are needed for a working Media Builder sign-in. Don't skip either:**
 > 1. The **`user_impersonation` delegated permission** on the Media Builder registration, added
->    *and* admin-consented ([Step 1, Registration 3](#registration-3-cloud-imaging-media-builder-desktop-public-client));
+>    *and* admin-consented ([Phase 1, Registration 3](#registration-3-cloud-imaging-media-builder-desktop-public-client));
 >    prevents `AADSTS650057` at sign-in.
 > 2. The **`CloudImaging.MediaBuilderAccess` role assignment** to the user or group on the Operator
->    API enterprise application ([Step 5](#step-5-assign-access-to-your-administrators-and-technicians));
+>    API enterprise application ([Phase 3, Step 2](#step-2-assign-access-to-your-administrators-and-technicians));
 >    prevents `403` on API calls.
-
-> **Packaging checklist (before public/internal distribution):** confirm `appsettings.json`
-> sits beside the executable, all four keys are filled in, and the file contains no secrets.
-> If the file is missing or incomplete, the app still launches but the sign-in screen shows
-> *"Entra ID sign-in is not configured"*.
 
 #### Installing the Windows ADK on technician workstations
 
@@ -422,45 +467,55 @@ older cached installer for one with a newer download for the other).
 Media Builder verifies the ADK + WinPE add-on are present (and blocks **Generate Boot Image**
 with a link to the page above if not) before you can start a build.
 
-#### Packaging as a Win32 app (e.g. Intune)
+#### Deploying the Media Builder with Intune
 
-The Media Builder is a self-contained `win-x64` publish (no separate .NET runtime needed on
-the target machine), so it packages cleanly as a Win32 app through whatever deployment
-tooling your organization already uses (Intune, ConfigMgr, etc.). Follow your existing Win32
-packaging process for the generic parts (wrapping, install/uninstall commands, assignment);
-the parts specific to Cloud Imaging are:
+Every [GitHub Release](https://github.com/MSEndpointMgr/CloudImaging/releases) in the
+`mse-ci-mediabuilder-v#.#.#` stream ships **`CloudImaging.MediaBuilder.msi`**, plus
+`CloudImaging.MediaBuilder.zip` with identical content if you prefer your own packaging process.
 
-- **Source content**: the extracted `CloudImaging.MediaBuilder.zip` from the
-  [GitHub Releases](https://github.com/MSEndpointMgr/CloudImaging/releases) page (or your own
-  `dotnet publish` output), with the tenant-specific `appsettings.json` from this step
-  substituted in **before** wrapping. This is the one file that makes the package specific to
-  your deployment; everything else in the folder is generic and identical for every tenant.
-- **Detection rule**: base it on `CloudImaging.MediaBuilder.exe` existing at the install
-  destination (optionally pinned to a file version), so re-deploying a new release is picked
-  up as an update rather than silently skipped.
-- **Dependency**: the **Windows ADK + WinPE add-on** (matching versions; see
-  [Installing the Windows ADK on technician workstations](#installing-the-windows-adk-on-technician-workstations)
-  above) must already be present on the technician's device; Media Builder detects the ADK
-  install path at runtime and fails boot image generation with a clear error if it's missing.
-  It is *not* bundled in the package; express it as a dependency in your packaging tool (or
-  ensure it's baked into the technician device image) rather than trying to include it in the
-  Media Builder app itself.
-- **Install behavior**: the config is machine-wide, not per-user; install it once per device
-  rather than per signed-in user.
+**1. Wrap the MSI** with the
+[Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool):
 
-> **Updating the config later** (e.g. rotating the client ID, or the Operator API URL
-> changing after a redeploy) requires repackaging with the updated `appsettings.json` and
-> publishing it as an app update; sign-in itself stays interactive per technician (MSAL
-> loopback flow) and isn't affected by the packaging.
+```
+IntuneWinAppUtil.exe -c <folder containing the msi> -s CloudImaging.MediaBuilder.msi -o <output folder>
+```
+
+**2. Create the Win32 app** (**Apps → Windows → Add → Windows app (Win32)**):
+
+| Setting | Value |
+|---|---|
+| Install command | The single-line `msiexec` command from [Building the msiexec command line](#building-the-msiexec-command-line) |
+| Uninstall command | `msiexec /x {ProductCode} /qn /norestart` |
+| Install behavior | **System** (the app installs per-machine) |
+| Detection rule | **MSI** → the product code, with *"MSI product version check"* set to greater-than-or-equal the version you are deploying |
+| Requirement | 64-bit Windows |
+| Dependency | Windows ADK + WinPE add-on |
+
+The **Windows ADK + WinPE add-on** is deliberately not bundled in the MSI. Express it as an Intune
+app dependency, or bake it into the technician device image.
+
+##### What the MSI does
+
+- Installs the self-contained app to `%ProgramFiles%\MSEndpointMgr\Cloud Imaging Media Builder`.
+- Writes the configuration to `HKLM\SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder`.
+- Creates a Start menu shortcut for **all users**.
+- Removes the app, the shortcut and the registry key on uninstall.
+- On upgrade, carries the existing configuration forward: a newer MSI installed *without* the
+  configuration properties reads the current values out of the registry and writes them back, so
+  "deploy the new version" never blanks a working configuration. Properties supplied on the command
+  line always win over the retained values.
+
+Sign-in itself stays interactive per technician (MSAL loopback flow) and is unaffected by any of
+the above.
 
 ---
 
 ## Phase 5: Operate Cloud Imaging
 
-### Step 8: Generate Your First Boot Image
+### Step 1: Generate Your First Boot Image
 
 1. Open the **Cloud Imaging Media Builder** on a technician workstation with the Windows ADK
-   + WinPE add-on installed (see [Step 7](#installing-the-windows-adk-on-technician-workstations))
+   + WinPE add-on installed (see [Installing the Windows ADK](#installing-the-windows-adk-on-technician-workstations))
 2. Sign in with your Entra ID credentials (must have `CloudImaging.Administrator` or `CloudImaging.Technician` role)
 3. Select **Generate Boot Image**
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path
@@ -499,7 +554,7 @@ the always-on-top Cloud Imaging Client window:
 
 ---
 
-### Step 9: Prepare USB Media
+### Step 2: Prepare USB Media
 
 1. In **Cloud Imaging Media Builder**, select **Prepare USB Storage Device**
 2. Select the boot image to deploy
@@ -508,7 +563,7 @@ the always-on-top Cloud Imaging Client window:
 
 ---
 
-### Step 10: Image a Device
+### Step 3: Image a Device
 
 1. Boot the target device from the USB drive
 2. The device auto-launches Cloud Imaging Client and displays a **passcode**

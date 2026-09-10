@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card.tsx';
+import { Switch } from './ui/switch.tsx';
 import { fetchUpdateStatus, displayVersion, type UpdateStatus, type UpdateCheckStatus } from '../lib/updateCheck.ts';
 
 /** Plain-language explanation for each non-`ok` status, so the panel never shows a bare code. */
@@ -77,10 +78,10 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
             href={status.releaseUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
+            className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
           >
             View the release notes
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </a>
         )}
 
@@ -99,23 +100,12 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
                 : 'Disabled. The portal makes no outbound request and no version comparison is shown.'}
             </p>
           </div>
-          <button
-            onClick={() => !disabled && onChange(!enabled)}
+          <Switch
+            checked={enabled}
+            onCheckedChange={onChange}
             disabled={disabled}
-            role="switch"
-            aria-checked={enabled}
-            aria-label="Check GitHub for new releases"
-            className={[
-              'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2',
-              enabled ? 'bg-primary' : 'bg-muted',
-              disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
-            ].join(' ')}
-          >
-            <span className={[
-              'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
-              enabled ? 'translate-x-6' : 'translate-x-1',
-            ].join(' ')} />
-          </button>
+            label="Check GitHub for new releases"
+          />
         </div>
       </CardContent>
     </Card>

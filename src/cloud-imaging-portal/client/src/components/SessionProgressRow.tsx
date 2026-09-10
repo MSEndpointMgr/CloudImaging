@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { CopyableId } from './ui/copyable-id.tsx';
 
 interface ImagingStep {
   stepName: string;
@@ -41,11 +42,19 @@ export function SessionProgressRow({
     <>
       <tr className="border-t border-border hover:bg-muted/30">
         <td className="px-3 py-2">
-          <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-foreground">
-            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Hide progress details' : 'Show progress details'}
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          >
+            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </button>
         </td>
-        <td className="px-3 py-2 font-mono text-xs">{deviceSerial}</td>
+        <td className="px-3 py-2">
+          <CopyableId value={deviceSerial} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+        </td>
         <td className="px-3 py-2 text-sm">{state.replace('Session', '')}</td>
         <td className="px-3 py-2">
           {overallPercent > 0 ? (

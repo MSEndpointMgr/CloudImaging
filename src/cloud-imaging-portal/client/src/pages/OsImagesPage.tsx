@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { Trash2, Pencil, Plus, ImageOff } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
-import { formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { CopyableId } from '../components/ui/copyable-id.tsx';
+import { RelativeTime } from '../components/ui/relative-time.tsx';
+import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
@@ -111,7 +113,7 @@ export default function OsImagesPage(): React.ReactElement {
         </span>
         {isAdministrator && (
           <Button onClick={() => setUploadOpen(true)} disabled={atCapacity} title={atCapacity ? 'Catalog is at capacity' : undefined}>
-            <Plus size={14} /> Upload Image
+            <Plus /> Upload Image
           </Button>
         )}
       </div>
@@ -123,7 +125,7 @@ export default function OsImagesPage(): React.ReactElement {
       )}
 
       {isAdministrator && selectedCount > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm">
+        <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
           <span className="font-medium">{selectedCount} image{selectedCount !== 1 ? 's' : ''} selected</span>
           <Button
             size="sm"
@@ -131,7 +133,7 @@ export default function OsImagesPage(): React.ReactElement {
             onClick={() => void handleRemoveSelected()}
             disabled={removing}
           >
-            <Trash2 size={14} /> {removing ? 'Removing…' : 'Remove Selected'}
+            <Trash2 /> {removing ? 'Removing…' : 'Remove Selected'}
           </Button>
         </div>
       )}
@@ -165,13 +167,7 @@ export default function OsImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={`skeleton-${i}`} className="hover:bg-transparent">
-                  {Array.from({ length: columnCount }).map((__, j) => (
-                    <TableCell key={j}><Skeleton className="h-4 w-full max-w-[8rem]" /></TableCell>
-                  ))}
-                </TableRow>
-              ))
+              <TableSkeletonRows columns={columnCount} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={columnCount} className="p-0">
@@ -179,6 +175,11 @@ export default function OsImagesPage(): React.ReactElement {
                     icon={ImageOff}
                     title="No images found in the catalog"
                     description="Upload an OS image to make it available for imaging."
+                    action={isAdministrator && !atCapacity ? (
+                      <Button onClick={() => setUploadOpen(true)}>
+                        <Plus /> Upload Image
+                      </Button>
+                    ) : undefined}
                   />
                 </TableCell>
               </TableRow>
@@ -204,9 +205,16 @@ export default function OsImagesPage(): React.ReactElement {
                 <TableCell className="max-w-0 truncate font-medium" title={img.name}>{img.name}</TableCell>
                 <TableCell className="truncate">{img.version}</TableCell>
                 <TableCell className="truncate">{fmtSize(img.sizeBytes)}</TableCell>
-                <TableCell className="truncate font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
+                <TableCell className="truncate">
+                  <CopyableId
+                    value={img.sha256Hash}
+                    display={`${img.sha256Hash.slice(0, 12)}\u2026`}
+                    label="SHA-256 digest"
+                    className="font-mono text-xs text-muted-foreground"
+                  />
+                </TableCell>
                 <TableCell className="truncate text-xs text-muted-foreground">
-                  {formatDateTime(img.uploadedAt)}
+                  <RelativeTime value={img.uploadedAt} />
                 </TableCell>
                 <TableCell>
                   {img.isInUse ? (
@@ -219,13 +227,29 @@ export default function OsImagesPage(): React.ReactElement {
                   <div className="flex items-center gap-1">
                     {isAdministrator ? (
                       <>
-                        <button onClick={() => setEditingImage(img)} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-primary" title="Edit">
-                          <Pencil size={14} />
-                        </button>
+                        <Tooltip content="Edit image details">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Edit ${img.name}`}
+                            className="text-muted-foreground hover:text-primary"
+                            onClick={() => setEditingImage(img)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
                         {!img.isInUse && (
-                          <button onClick={() => void handleDelete(img.imageId)} className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" title="Remove">
-                            <Trash2 size={14} />
-                          </button>
+                          <Tooltip content="Remove this image">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Remove ${img.name}`}
+                              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => void handleDelete(img.imageId)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </Tooltip>
                         )}
                       </>
                     ) : (

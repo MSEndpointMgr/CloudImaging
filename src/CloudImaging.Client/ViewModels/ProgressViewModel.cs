@@ -55,10 +55,12 @@ public sealed class ProgressStepItem : INotifyPropertyChanged
 /// <summary>
 /// View model for the ProgressView (T056, FR-007): a step sidebar (Format, Download, Apply,
 /// Configure Boot, Apply Recovery) alongside a progress ring, a short live-activity ticker, and
-/// an overall progress bar. The ticker and step captions surface genuinely-available detail
-/// (the same <see cref="StatusMessage"/> strings <see cref="ImagingWorkflowViewModel"/> already
-/// sets at each stage, plus wall-clock step durations) rather than fabricated telemetry the
-/// pipeline does not currently expose (e.g. byte-level transfer speed).
+/// a progress bar for the step currently running. The ticker and step captions surface
+/// genuinely-available detail (the same <see cref="StatusMessage"/> strings
+/// <see cref="ImagingWorkflowViewModel"/> already sets at each stage, plus wall-clock step
+/// durations and, for transfers, the real downloaded/total byte counts reported by
+/// <see cref="Services.ImageDownloadService"/>) rather than fabricated telemetry the pipeline
+/// does not expose (e.g. transfer speed or time remaining).
 /// </summary>
 public sealed class ProgressViewModel : INotifyPropertyChanged
 {
@@ -72,6 +74,8 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     private readonly List<string> _activityLines = new();
 
     private int _overallPercent;
+    private int _stepPercent;
+    private string? _transferDetail;
     private string _statusMessage = "Initialising…";
     private string? _errorMessage;
     private string? _supportReferenceCode;
@@ -103,6 +107,53 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(StepSubtitle));
         }
     }
+
+    /// <summary>
+    /// Progress of the step currently running, 0-100, driving the bar at the bottom of
+    /// ProgressView. Distinct from <see cref="OverallPercent"/>, which spans the whole pipeline
+    /// and is shown over the ring: the bar answers "how far into this operation", the ring
+    /// answers "how far into the session".
+    ///
+    /// <para>
+    /// Only steps that can report genuine progress set this (image download, image apply,
+    /// recovery image, and any future step such as driver injection). Steps that cannot — disk
+    /// format, boot configuration — leave it at 0 rather than showing a fabricated value.
+    /// <see cref="UpdateStep"/> resets it on every transition, so a new step always starts from
+    /// empty and never inherits the previous step's fill.
+    /// </para>
+    /// </summary>
+    public int StepPercent
+    {
+        get => _stepPercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 0, 100);
+            // The download loop reports far more often than the value actually changes; skipping
+            // no-op notifications keeps this from queueing thousands of redundant UI updates.
+            if (_stepPercent == clamped) return;
+            _stepPercent = clamped;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Byte counter shown under the step progress bar while a transfer is running, e.g.
+    /// "1.24 GB of 4.71 GB". Null whenever the current step is not transferring anything, which
+    /// hides the caption entirely (see <see cref="HasTransferDetail"/>).
+    /// </summary>
+    public string? TransferDetail
+    {
+        get => _transferDetail;
+        private set
+        {
+            if (_transferDetail == value) return;
+            _transferDetail = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasTransferDetail));
+        }
+    }
+
+    public bool HasTransferDetail => !string.IsNullOrEmpty(TransferDetail);
 
     public string StatusMessage
     {
@@ -165,6 +216,12 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     {
         var item = Steps.First(s => s.Step == step);
 
+        // Every step transition clears the step-scoped bar and its byte counter, so a step that
+        // reports no progress of its own (disk format, boot configuration) shows an empty bar
+        // instead of inheriting the previous step's fill, and a step that does report starts
+        // from zero. New steps added later get this behaviour without touching this method.
+        ResetStepProgress();
+
         item.State = status switch
         {
             ImagingStepStatus.InProgress => ProgressStepState.Active,
@@ -192,6 +249,41 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
 
     private static string FormatDuration(TimeSpan d) =>
         d.TotalMinutes >= 1 ? $"{(int)d.TotalMinutes}m {d.Seconds}s" : $"{Math.Max(1, (int)d.TotalSeconds)}s";
+
+    /// <summary>
+    /// Empties the step progress bar and its byte counter. Called on every step transition, and
+    /// directly by the pipeline when one step contains several phases (the recovery step
+    /// downloads and then applies) so the bar restarts instead of sitting at 100% through the
+    /// second phase.
+    /// </summary>
+    public void ResetStepProgress()
+    {
+        StepPercent = 0;
+        TransferDetail = null;
+    }
+
+    /// <summary>
+    /// Publishes the live byte counter for a transfer, e.g. "1.24 GB of 4.71 GB". Both figures
+    /// use the unit chosen from the total, so the pair stays directly comparable instead of the
+    /// left side switching from MB to GB partway through.
+    /// </summary>
+    /// <param name="transferredBytes">Bytes received so far.</param>
+    /// <param name="totalBytes">Total size, or a non-positive value when the server did not send
+    /// a Content-Length — in which case only the transferred amount is shown, since "of ?" is
+    /// worse than no denominator at all.</param>
+    public void SetTransferProgress(long transferredBytes, long totalBytes)
+    {
+        const double Mb = 1024d * 1024d;
+        const double Gb = Mb * 1024d;
+
+        var useGb = totalBytes > 0 ? totalBytes >= Gb : transferredBytes >= Gb;
+        var unit  = useGb ? "GB" : "MB";
+        var scale = useGb ? Gb : Mb;
+
+        TransferDetail = totalBytes > 0
+            ? $"{transferredBytes / scale:0.00} {unit} of {totalBytes / scale:0.00} {unit}"
+            : $"{transferredBytes / scale:0.00} {unit} downloaded";
+    }
 
     /// <summary>
     /// Appends a single timestamped line to <see cref="LogText"/>. Called both for each

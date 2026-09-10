@@ -9,6 +9,9 @@ namespace CloudImaging.ImagingCoreApi.Tests.Integration;
 /// <summary>
 /// Integration tests for overall imaging completion percentage calculation (T047d, FR-007).
 /// Validates the OverallProgressCalculator logic used by ReportProgressFunction.
+///
+/// The pipeline has 5 steps, weighted to match the bands the Client's own progress ring uses
+/// (FormatDisk 8, DownloadImage 47, ApplyImage 25, ConfigureBoot 5, ApplyRecoveryImage 15).
 /// </summary>
 public sealed class OverallProgressIntegrationTests
 {
@@ -21,23 +24,30 @@ public sealed class OverallProgressIntegrationTests
         OverallProgressCalculator.Calculate(null).Should().Be(0);
     }
 
+    [Fact]
+    public void PipelineStepCount_Matches_EveryDeclaredStep()
+    {
+        OverallProgressCalculator.PipelineStepCount.Should().Be(
+            Enum.GetValues<ImagingStepName>().Length,
+            "every step the Client can report must be weighted, otherwise a completed session " +
+            "never reaches 100% and never transitions to SessionCompleted");
+    }
+
     // ── Single step complete ──────────────────────────────────────────────────
 
     [Fact]
-    public void OneOfThreeStepsCompleted_Returns_33Percent()
+    public void FirstStepCompleted_Returns_ItsShare()
     {
         var steps = new List<ImagingStep>
         {
             new() { StepName = ImagingStepName.FormatDisk, Status = ImagingStepStatus.Completed },
         };
 
-        var result = OverallProgressCalculator.Calculate(steps);
-        result.Should().BeInRange(33, 34,
-            "1 of 3 equal-weight steps completing contributes ~33%");
+        OverallProgressCalculator.Calculate(steps).Should().Be(8);
     }
 
     [Fact]
-    public void TwoOfThreeStepsCompleted_Returns_67Percent()
+    public void TwoStepsCompleted_Returns_SumOfTheirShares()
     {
         var steps = new List<ImagingStep>
         {
@@ -45,22 +55,32 @@ public sealed class OverallProgressIntegrationTests
             new() { StepName = ImagingStepName.DownloadImage, Status = ImagingStepStatus.Completed },
         };
 
-        var result = OverallProgressCalculator.Calculate(steps);
-        result.Should().BeInRange(66, 67,
-            "2 of 3 equal-weight steps completing contributes ~67%");
+        OverallProgressCalculator.Calculate(steps).Should().Be(55);
     }
 
     [Fact]
-    public void AllThreeStepsCompleted_Returns_100Percent()
+    public void AllFiveStepsCompleted_Returns_100Percent()
+    {
+        var steps = Enum.GetValues<ImagingStepName>()
+            .Select(name => new ImagingStep { StepName = name, Status = ImagingStepStatus.Completed })
+            .ToList();
+
+        OverallProgressCalculator.Calculate(steps).Should().Be(100);
+    }
+
+    [Fact]
+    public void OsStepsCompleted_ButRecoveryOutstanding_IsNot100Percent()
     {
         var steps = new List<ImagingStep>
         {
             new() { StepName = ImagingStepName.FormatDisk,    Status = ImagingStepStatus.Completed },
             new() { StepName = ImagingStepName.DownloadImage, Status = ImagingStepStatus.Completed },
             new() { StepName = ImagingStepName.ApplyImage,    Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.ConfigureBoot, Status = ImagingStepStatus.Completed },
         };
 
-        OverallProgressCalculator.Calculate(steps).Should().Be(100);
+        OverallProgressCalculator.Calculate(steps).Should().Be(85,
+            "the recovery image step still has to run before the session is done");
     }
 
     // ── In-progress sub-progress ──────────────────────────────────────────────
@@ -68,16 +88,14 @@ public sealed class OverallProgressIntegrationTests
     [Fact]
     public void InProgressStep_WithSubProgress_ContributesFractionalShare()
     {
-        // FormatDisk complete (33%) + DownloadImage 50% in-progress (33%*0.5 = 16.5%) ≈ 50%
         var steps = new List<ImagingStep>
         {
             new() { StepName = ImagingStepName.FormatDisk,    Status = ImagingStepStatus.Completed },
             new() { StepName = ImagingStepName.DownloadImage, Status = ImagingStepStatus.InProgress, StepProgressPercent = 50 },
         };
 
-        var result = OverallProgressCalculator.Calculate(steps);
-        result.Should().BeInRange(49, 51,
-            "FormatDisk done (33%) + Download 50% in-progress (~17%) = ~50%");
+        OverallProgressCalculator.Calculate(steps).Should().Be(32,
+            "FormatDisk done (8%) + Download 50% of its 47% share (23.5%) = ~32%");
     }
 
     [Fact]
@@ -103,15 +121,14 @@ public sealed class OverallProgressIntegrationTests
             new() { StepName = ImagingStepName.DownloadImage, Status = ImagingStepStatus.Failed },
         };
 
-        var result = OverallProgressCalculator.Calculate(steps);
-        result.Should().BeInRange(33, 34,
+        OverallProgressCalculator.Calculate(steps).Should().Be(8,
             "a Failed step contributes 0% — only the completed step counts");
     }
 
-    // ── ActiveStepName ────────────────────────────────────────────────────────
+    // ── CurrentOrLastStepName ─────────────────────────────────────────────────
 
     [Fact]
-    public void ActiveStepName_ReturnsInProgressStepName()
+    public void CurrentOrLastStepName_ReturnsInProgressStepName()
     {
         var steps = new List<ImagingStep>
         {
@@ -119,18 +136,43 @@ public sealed class OverallProgressIntegrationTests
             new() { StepName = ImagingStepName.DownloadImage, Status = ImagingStepStatus.InProgress },
         };
 
-        OverallProgressCalculator.ActiveStepName(steps).Should().Be("DownloadImage");
+        OverallProgressCalculator.CurrentOrLastStepName(steps).Should().Be("DownloadImage");
     }
 
     [Fact]
-    public void ActiveStepName_ReturnsNull_WhenNoStepIsInProgress()
+    public void CurrentOrLastStepName_ReturnsFailedStep_SoTheFailedTabShowsWhereItStopped()
     {
         var steps = new List<ImagingStep>
         {
-            new() { StepName = ImagingStepName.FormatDisk, Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.FormatDisk,         Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.DownloadImage,      Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.ApplyImage,         Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.ConfigureBoot,      Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.ApplyRecoveryImage, Status = ImagingStepStatus.Failed },
         };
 
-        OverallProgressCalculator.ActiveStepName(steps).Should().BeNull();
+        OverallProgressCalculator.CurrentOrLastStepName(steps).Should().Be("ApplyRecoveryImage");
+    }
+
+    [Fact]
+    public void CurrentOrLastStepName_ReturnsFurthestCompletedStep_WhenNothingIsRunning()
+    {
+        // Table Storage returns step rows unordered, so the furthest step must win by pipeline
+        // position rather than by list order.
+        var steps = new List<ImagingStep>
+        {
+            new() { StepName = ImagingStepName.DownloadImage, Status = ImagingStepStatus.Completed },
+            new() { StepName = ImagingStepName.FormatDisk,    Status = ImagingStepStatus.Completed },
+        };
+
+        OverallProgressCalculator.CurrentOrLastStepName(steps).Should().Be("DownloadImage");
+    }
+
+    [Fact]
+    public void CurrentOrLastStepName_ReturnsNull_WhenNoStepsReported()
+    {
+        OverallProgressCalculator.CurrentOrLastStepName([]).Should().BeNull();
+        OverallProgressCalculator.CurrentOrLastStepName(null).Should().BeNull();
     }
 
     [Fact]

@@ -155,6 +155,8 @@ public sealed partial class SessionQueryFunctions
         s.DeviceSerialNumber,
         s.DeviceManufacturer,
         s.DeviceModel,
+        s.MacAddress,
+        ToHardwareSummary(s.HardwareMetadata),
         s.LocationId,
         s.LocationName,
         s.PreFlightAuthorizationResult.ToString(),
@@ -165,6 +167,19 @@ public sealed partial class SessionQueryFunctions
         s.LastHeartbeatAt,
         s.TerminalAt);
 
+    /// <summary>
+    /// Deliberately re-declared rather than returning <see cref="DeviceHardwareMetadata"/> directly:
+    /// this is a service boundary, so the portal projection stays an explicit allow-list. Adding a
+    /// field to the domain model must not silently publish it to the portal.
+    /// </summary>
+    private static HardwareSummary? ToHardwareSummary(DeviceHardwareMetadata? h) =>
+        h is null ? null : new HardwareSummary(
+            h.MotherboardManufacturer,
+            h.MotherboardModel,
+            h.BiosVersion,
+            h.NicIdentifiers,
+            h.StorageLayout);
+
     /// <summary>Secret-free portal projection of a device session.</summary>
     private sealed record SessionSummary(
         Guid SessionId,
@@ -172,6 +187,8 @@ public sealed partial class SessionQueryFunctions
         string DeviceSerialNumber,
         string DeviceManufacturer,
         string DeviceModel,
+        string? MacAddress,
+        HardwareSummary? Hardware,
         Guid? LocationId,
         string? LocationName,
         string PreFlightAuthorizationResult,
@@ -181,6 +198,17 @@ public sealed partial class SessionQueryFunctions
         DateTimeOffset CreatedAt,
         DateTimeOffset? LastHeartbeatAt,
         DateTimeOffset? TerminalAt);
+
+    /// <summary>
+    /// Hardware inventory collected silently at session init (FR-001a). Informational only — every
+    /// field is nullable/empty-able because WMI is not guaranteed to answer in WinPE.
+    /// </summary>
+    private sealed record HardwareSummary(
+        string? MotherboardManufacturer,
+        string? MotherboardModel,
+        string? BiosVersion,
+        IReadOnlyList<string> NicIdentifiers,
+        IReadOnlyList<string> StorageLayout);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Listed {Count} device session summaries for portal.")]
     private static partial void LogSessionsListed(ILogger logger, int count);

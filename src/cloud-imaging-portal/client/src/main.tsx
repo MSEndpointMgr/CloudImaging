@@ -5,6 +5,13 @@ import { loadRuntimeConfig } from './lib/runtimeConfig.ts';
 import { createMsalInstance } from './lib/msal.ts';
 import { consumeReturnPath, isSafeReturnPath } from './lib/apiClient.ts';
 import App from './App.tsx';
+// Self-hosted variable fonts. Bundled with the app rather than pulled from a CDN so the
+// portal makes no third-party requests and renders identically on an isolated network.
+// `wght.css` is the upright weight axis only (no italics, which the UI never uses); each
+// subset is a separate @font-face gated by unicode-range, so an English tenant only ever
+// downloads the ~47 KB latin file.
+import '@fontsource-variable/inter/wght.css';
+import '@fontsource-variable/jetbrains-mono/wght.css';
 import './index.css';
 
 /**

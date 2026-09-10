@@ -1,6 +1,6 @@
 ﻿# Operator API Contract
 
-> **Contract Revision — 2026-06-26** (post-freeze): Added boot media client certificate PFX endpoint introduced by FR-068, FR-069, FR-070, FR-071. Per contract freeze policy this constitutes a versioned revision; all implementation MUST target these updated semantics.
+> **Contract Revision, 2026-06-26** (post-freeze): Added boot media client certificate PFX endpoint introduced by FR-068, FR-069, FR-070, FR-071. Per contract freeze policy this constitutes a versioned revision; all implementation MUST target these updated semantics.
 
 **Service**: CloudImaging.OperatorApi  
 **Type**: Azure Functions v4 isolated worker (.NET 10)  
@@ -108,7 +108,7 @@ Authenticated operator boundary for administrative and technician operations. Th
   - Update portal configuration settings. The Portal backend MUST verify the calling user holds the `CloudImaging.Administrator` role before forwarding this request. Changes to `sasTokenUrlExpiryMinutes` take effect immediately for all newly issued SAS token URLs.
 
 - `GET /api/boot-images`
-  - List all active boot images and metadata. Response items include: `bootImageId`, `version`, `createdAt`, `sizeBytes`, `manifestVersion`, `sha256Hash` (of the WIM blob), and `isLatestPublished` (boolean; `true` for exactly one entry — the most recently published boot image). All active entries are eligible for USB preparation. The `isLatestPublished=true` entry is the recommended default and MUST be pre-selected in the Media Builder PrepareStorageDeviceView; the technician may choose a different active entry to use a previously known-good boot image.
+  - List all active boot images and metadata. Response items include: `bootImageId`, `version`, `createdAt`, `sizeBytes`, `manifestVersion`, `sha256Hash` (of the WIM blob), and `isLatestPublished` (boolean; `true` for exactly one entry, the most recently published boot image). All active entries are eligible for USB preparation. The `isLatestPublished=true` entry is the recommended default and MUST be pre-selected in the Media Builder PrepareStorageDeviceView; the technician may choose a different active entry to use a previously known-good boot image.
 - `POST /api/boot-images/{bootImageId}/sas`
   - Get time-limited SAS token URL for boot image download. Response includes `downloadUrl`, `expiresAt`, and `sha256Hash` (SHA256 hash of the WIM blob; Media Builder MUST verify the downloaded file against this value before deploying to USB partition, per FR-056).
 
@@ -159,14 +159,14 @@ OS image uploads support chunked transfer for large files (up to 20 GB). This pr
 
 ## Boot Media Certificate Endpoint (MediaBuilder role only)
 
-> **Added 2026-06-26** — post-freeze revision for FR-068, FR-070.
+> **Added 2026-06-26**: post-freeze revision for FR-068, FR-070.
 
 - `GET /api/bootmedia/certificate/pfx`
   - Returns the current active boot media client certificate PFX bytes (certificate + private key) from Azure Key Vault via the Imaging Core API.
   - **Role**: `CloudImaging.MediaBuilderAccess` only. `CloudImaging.PortalAccess` is explicitly excluded to prevent portal code from accessing private key material.
   - **Consumer**: Media Builder Generate Boot Image workflow exclusively. The Media Builder embeds the PFX at `certificates\bootmedia.pfx` relative to the Cloud Imaging Client executable directory within the boot image WIM (FR-070).
   - **Failure behaviour**: If no active boot media certificate is configured in the Portal, the endpoint returns HTTP 404. The Media Builder MUST abort boot image generation with a clear error instructing the technician to generate a certificate first in Portal Configuration.
-  - **Response**: `application/octet-stream` — raw PFX bytes. No JSON envelope; the entire response body is the PFX.
+  - **Response**: `application/octet-stream`, raw PFX bytes. No JSON envelope; the entire response body is the PFX.
   - **Security**: Transport is Entra ID bearer token + TLS. The PFX is never logged, never included in error responses, and is not cached by the Operator API layer.
 
 - `GET /api/bootmedia/certificate/metadata`

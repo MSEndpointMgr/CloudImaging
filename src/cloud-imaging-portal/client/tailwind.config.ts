@@ -9,6 +9,50 @@ export default {
       screens: { '2xl': '1400px' },
     },
     extend: {
+      fontFamily: {
+        // Inter for UI text: a neutral, high-legibility grotesque that reads cleanly at the
+        // 12-14px sizes this console is built on. Declared explicitly rather than inheriting
+        // Tailwind's system stack, which rendered a different typeface per operator OS.
+        sans: [
+          'Inter Variable',
+          'Inter',
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          'Segoe UI',
+          'Roboto',
+          'Helvetica Neue',
+          'Arial',
+          'sans-serif',
+        ],
+        // JetBrains Mono for machine identifiers (device serials, SHA-256 digests, certificate
+        // thumbprints). Chosen for disambiguated glyphs - slashed zero, seriffed 1, distinct
+        // l/I - because operators transcribe these values against physical hardware.
+        mono: [
+          'JetBrains Mono Variable',
+          'JetBrains Mono',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Consolas',
+          'Liberation Mono',
+          'monospace',
+        ],
+      },
+      // Type scale pinned explicitly so it is an intentional contract rather than an inherited
+      // default. Every step pairs a size with a line height that is a multiple of 4px, keeping
+      // text on the same 4/8pt grid as the spacing scale. Values match Tailwind's defaults, so
+      // pinning them changes no rendering today - it just makes an off-scale `text-[15px]`
+      // visible in review.
+      fontSize: {
+        xs: ['0.75rem', { lineHeight: '1rem' }],       // 12/16 - badges, uppercase column headers
+        sm: ['0.875rem', { lineHeight: '1.25rem' }],   // 14/20 - body text, labels, buttons
+        base: ['1rem', { lineHeight: '1.5rem' }],      // 16/24 - page title
+        lg: ['1.125rem', { lineHeight: '1.75rem' }],   // 18/28 - card and dialog titles
+        xl: ['1.25rem', { lineHeight: '1.75rem' }],    // 20/28 - section headings
+        '2xl': ['1.5rem', { lineHeight: '2rem' }],     // 24/32 - secondary stat values
+        '3xl': ['1.875rem', { lineHeight: '2.25rem' }],// 30/36 - dashboard stat values
+      },
       colors: {
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -93,6 +137,13 @@ export default {
           from: { transform: 'translateX(-100%)' },
           to: { transform: 'translateX(250%)' },
         },
+        // Shared entry for anything that pops over the page from a trigger: select option lists,
+        // the account menu. Scales from the top edge rather than the centre so the panel reads as
+        // unfolding out of the control it belongs to.
+        'popover-in': {
+          from: { opacity: '0', transform: 'translateY(-0.25rem) scale(0.98)' },
+          to: { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -100,7 +151,11 @@ export default {
         'toast-in': 'toast-in 0.22s cubic-bezier(0.22, 1, 0.36, 1)',
         'toast-out': 'toast-out 0.18s ease-in forwards',
         pop: 'pop 0.28s cubic-bezier(0.22, 1, 0.36, 1)',
-        'loading-bar': 'loading-bar 0.35s ease-in-out infinite',
+        // 1.4s, not the 0.35s this started at. The fill travels 350% of the track per cycle, so
+        // at 0.35s it crossed roughly three times a second - fast enough to read as an alarm
+        // rather than as work in progress, on a screen whose entire job is to say "waiting".
+        'loading-bar': 'loading-bar 1.4s ease-in-out infinite',
+        'popover-in': 'popover-in 0.12s cubic-bezier(0.22, 1, 0.36, 1)',
       },
     },
   },

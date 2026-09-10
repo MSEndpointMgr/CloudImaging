@@ -3,7 +3,11 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/utils';
 
 const badgeVariants = cva(
-  'inline-flex select-none cursor-default items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none',
+  // gap-1/px-2 rather than the shadcn default gap-1.5/px-2.5: both steps are on the 4pt grid,
+  // and the resulting pill is 6px narrower than before, which matters because badges render
+  // inside percentage-width table columns (e.g. the 12%-wide State column on Sessions) where
+  // a wider pill would wrap the label.
+  'inline-flex select-none cursor-default items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold transition-colors focus:outline-none',
   {
     variants: {
       variant: {

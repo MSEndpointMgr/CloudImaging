@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cloud Imaging Media Builder — per-machine MSI.
+
+  CONFIGURATION MODEL
+
+  The four tenant values the app needs (all public identifiers, no secrets) are supplied as MSI
+  properties and written to HKLM\SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder. The app reads
+  that key as an overlay on the shipped appsettings.json — see App.LoadConfiguration() in
+  src/CloudImaging.MediaBuilder/App.xaml.cs.
+
+  MSI has no native JSON writer, so rewriting appsettings.json would require a custom action.
+  Registry values are declarative instead: they are transacted and rolled back by Windows
+  Installer, restored by a repair, removed on uninstall, and can be corrected after the fact by
+  Group Policy or an Intune remediation script without repackaging the 200 MB payload.
+
+  Install (all four properties are optional; omitted values leave the app "not configured"):
+    msiexec /i CloudImaging.MediaBuilder.msi /qn ^
+      ENTRAIDCLIENTID=00000000-0000-0000-0000-000000000000 ^
+      ENTRAIDTENANTID=00000000-0000-0000-0000-000000000000 ^
+      OPERATORAPICLIENTID=00000000-0000-0000-0000-000000000000 ^
+      OPERATORAPIBASEURL=https://ci-operator-api.azurewebsites.net
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="Cloud Imaging Media Builder"
+    Manufacturer="MSEndpointMgr"
+    Version="$(Version)"
+    UpgradeCode="FC6651AC-B874-4EBF-B30F-16DAAF74D670"
+    Scope="perMachine"
+    Compressed="yes"
+    Language="1033"
+    Codepage="1252">
+
+    <SummaryInformation Description="Cloud Imaging Media Builder — technician workstation application for generating WinPE boot images and preparing USB boot media." />
+
+    <!--
+      AllowSameVersionUpgrades lets a rebuilt package with an unchanged version replace itself,
+      which is what happens when a pre-release tag is re-cut. Without it Windows Installer would
+      report "another version is already installed" instead of upgrading.
+    -->
+    <MajorUpgrade
+      AllowSameVersionUpgrades="yes"
+      DowngradeErrorMessage="A newer version of [ProductName] is already installed. Uninstall it before installing this version." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- The payload is a self-contained win-x64 publish; it cannot run on 32-bit Windows. -->
+    <Launch Condition="VersionNT64" Message="[ProductName] requires 64-bit Windows." />
+
+    <!--
+      Catches the most likely mistake with OPERATORAPICLIENTID: pasting the full scope
+      (api://<guid>/.default) instead of the bare client ID, which would silently produce
+      "api://api://<guid>/.default/.default" and break token acquisition on every workstation the
+      package reaches. Windows Installer has no regex, but '><' is its substring operator.
+    -->
+    <Launch Condition="NOT (OPERATORAPICLIENTID &gt;&lt; &quot;/&quot;)"
+            Message="OPERATORAPICLIENTID must be the Operator API application (client) ID on its own, for example 00000000-0000-0000-0000-000000000000. To supply a complete scope URI instead, use OPERATORAPISCOPE." />
+
+    <Icon Id="MediaBuilderIcon" SourceFile="$(MediaBuilderProjectDir)\Assets\taskbar.ico" />
+    <Property Id="ARPPRODUCTICON" Value="MediaBuilderIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/MSEndpointMgr/CloudImaging" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/MSEndpointMgr/CloudImaging" />
+    <!-- There is nothing to reconfigure through Add/Remove Programs; repair and uninstall remain. -->
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!--
+      Tenant configuration properties.
+
+      Secure="yes" is required for the values to survive the transition to the (elevated) server
+      side of the install, which is how every managed/silent deployment runs.
+
+      OPERATORAPICLIENTID is the documented input for the Operator API scope: the scope is always
+      the API's App ID URI plus "/.default", so asking for the URI as well would be asking for the
+      same GUID twice in two shapes. OPERATORAPISCOPE remains available as an override for the case
+      the default "api://<clientId>" App ID URI was replaced with a custom one (Entra allows e.g.
+      https://contoso.com/operator-api), and it wins when both are supplied.
+    -->
+    <Property Id="ENTRAIDCLIENTID" Secure="yes" />
+    <Property Id="ENTRAIDTENANTID" Secure="yes" />
+    <Property Id="OPERATORAPICLIENTID" Secure="yes" />
+    <Property Id="OPERATORAPISCOPE" Secure="yes" />
+    <Property Id="OPERATORAPIBASEURL" Secure="yes" />
+
+    <!--
+      Carry existing configuration across a major upgrade.
+
+      An upgrade published to Intune is just "install the new MSI"; the admin does not necessarily
+      repeat the four properties on the command line. Without these searches the new install would
+      write empty values over a working configuration and every technician on the box would be
+      signed out of a correctly deployed app.
+
+      The searches populate *separate* properties, which are then copied into the real properties
+      only when those are empty — so a command-line value always wins over the previous install's
+      value. (AppSearch writes directly into the property it is attached to and would otherwise
+      clobber an explicitly supplied one.)
+    -->
+    <Property Id="INSTALLEDCLIENTID" Secure="yes">
+      <RegistrySearch Id="SearchInstalledClientId" Root="HKLM" Bitness="always64"
+                      Key="SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder" Name="ClientId" Type="raw" />
+    </Property>
+    <Property Id="INSTALLEDTENANTID" Secure="yes">
+      <RegistrySearch Id="SearchInstalledTenantId" Root="HKLM" Bitness="always64"
+                      Key="SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder" Name="TenantId" Type="raw" />
+    </Property>
+    <Property Id="INSTALLEDSCOPE" Secure="yes">
+      <RegistrySearch Id="SearchInstalledScope" Root="HKLM" Bitness="always64"
+                      Key="SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder" Name="OperatorApiScope" Type="raw" />
+    </Property>
+    <Property Id="INSTALLEDBASEURL" Secure="yes">
+      <RegistrySearch Id="SearchInstalledBaseUrl" Root="HKLM" Bitness="always64"
+                      Key="SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder" Name="OperatorApiBaseUrl" Type="raw" />
+    </Property>
+
+    <SetProperty Id="ENTRAIDCLIENTID"    Value="[INSTALLEDCLIENTID]" After="AppSearch" Sequence="both" Condition="NOT ENTRAIDCLIENTID" />
+    <SetProperty Id="ENTRAIDTENANTID"    Value="[INSTALLEDTENANTID]" After="AppSearch" Sequence="both" Condition="NOT ENTRAIDTENANTID" />
+    <SetProperty Id="OPERATORAPIBASEURL" Value="[INSTALLEDBASEURL]"  After="AppSearch" Sequence="both" Condition="NOT OPERATORAPIBASEURL" />
+
+    <!--
+      Scope resolution, highest precedence first. Explicit Action names are required because a
+      single property is set by two actions and the generated "Set<PROPERTY>" name would collide.
+        1. OPERATORAPISCOPE given outright  — nothing to do.
+        2. OPERATORAPICLIENTID given        — build the default App ID URI scope from it.
+        3. neither                          — fall back to the previous install's retained value.
+    -->
+    <SetProperty Id="OPERATORAPISCOPE" Action="SetScopeFromOperatorApiClientId"
+                 Value="api://[OPERATORAPICLIENTID]/.default"
+                 After="AppSearch" Sequence="both"
+                 Condition="OPERATORAPICLIENTID AND NOT OPERATORAPISCOPE" />
+    <SetProperty Id="OPERATORAPISCOPE" Action="SetScopeFromInstalledValue"
+                 Value="[INSTALLEDSCOPE]"
+                 After="SetScopeFromOperatorApiClientId" Sequence="both"
+                 Condition="NOT OPERATORAPISCOPE" />
+
+    <!--
+      INSTALLFOLDER is a public property, so the install location can be overridden with
+      INSTALLFOLDER="D:\Apps\Cloud Imaging Media Builder" on the msiexec command line.
+    -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="ManufacturerFolder" Name="MSEndpointMgr">
+        <Directory Id="INSTALLFOLDER" Name="Cloud Imaging Media Builder" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="MediaBuilder" Title="Cloud Imaging Media Builder" Level="1" AllowAbsent="no">
+      <!--
+        Harvests the whole self-contained publish folder (~200 MB, several hundred runtime files).
+        Component GUIDs are generated deterministically from the file paths, so they stay stable
+        across releases and major upgrades behave correctly.
+      -->
+      <Files Include="$(MediaBuilderPublishDir)\**" Directory="INSTALLFOLDER">
+        <!--
+          Safety net for MSIs built from a developer machine: appsettings.Local.json is the
+          git-ignored dev overlay pointing at a dev tenant, it is copied to the publish output
+          when present, and it takes precedence over the HKLM values this MSI writes. Shipping it
+          would silently override every deployment's configuration.
+        -->
+        <Exclude Files="$(MediaBuilderPublishDir)\appsettings.Local.json" />
+      </Files>
+      <ComponentRef Id="MachineConfiguration" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <!--
+      Machine-wide configuration plus the Start menu shortcut, in a single component so they share
+      one key path and one GUID. InstallFolder is the key path because it is the only value
+      guaranteed to be non-empty (the four tenant values may legitimately be blank on an
+      unconfigured install), and Windows Installer requires a non-null key path for the component
+      to be considered installed — and therefore for repair to restore the other values.
+    -->
+    <Component Id="MachineConfiguration" Directory="INSTALLFOLDER" Bitness="always64"
+               Guid="297DBCB3-AB49-4E3E-87E1-9FFC3C56994F">
+      <RegistryKey Root="HKLM" Key="SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder" ForceDeleteOnUninstall="yes">
+        <RegistryValue Name="ClientId"           Type="string" Value="[ENTRAIDCLIENTID]" />
+        <RegistryValue Name="TenantId"           Type="string" Value="[ENTRAIDTENANTID]" />
+        <RegistryValue Name="OperatorApiScope"   Type="string" Value="[OPERATORAPISCOPE]" />
+        <RegistryValue Name="OperatorApiBaseUrl" Type="string" Value="[OPERATORAPIBASEURL]" />
+        <RegistryValue Name="InstallFolder"      Type="string" Value="[INSTALLFOLDER]" KeyPath="yes" />
+      </RegistryKey>
+
+      <Shortcut Id="StartMenuShortcut"
+                Directory="ProgramMenuFolder"
+                Name="Cloud Imaging Media Builder"
+                Description="Generate WinPE boot images and prepare USB boot media for Cloud Imaging."
+                Target="[INSTALLFOLDER]CloudImaging.MediaBuilder.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="MediaBuilderIcon" />
+    </Component>
+  </Fragment>
+
+</Wix>

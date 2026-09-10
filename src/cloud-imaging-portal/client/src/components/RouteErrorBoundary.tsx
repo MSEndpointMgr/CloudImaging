@@ -1,6 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { HardDriveDownload, RefreshCw } from 'lucide-react';
-import { Button } from './ui/button.tsx';
+import { RouteErrorScreen } from './RouteErrorScreen.tsx';
 
 interface RouteErrorBoundaryProps {
   children: ReactNode;
@@ -31,21 +30,6 @@ export class RouteErrorBoundary extends Component<RouteErrorBoundaryProps, Route
       return this.props.children;
     }
 
-    return (
-      <div className="flex h-screen w-full flex-col items-center justify-center gap-4 bg-background text-foreground">
-        <span className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-          <HardDriveDownload size={40} />
-        </span>
-        <div className="flex max-w-sm flex-col items-center gap-1 text-center">
-          <p className="text-lg font-semibold">Something went wrong</p>
-          <p className="text-sm text-muted-foreground">
-            This page failed to load. This usually clears up after a reload.
-          </p>
-        </div>
-        <Button onClick={() => window.location.reload()}>
-          <RefreshCw size={14} /> Reload
-        </Button>
-      </div>
-    );
+    return <RouteErrorScreen />;
   }
 }

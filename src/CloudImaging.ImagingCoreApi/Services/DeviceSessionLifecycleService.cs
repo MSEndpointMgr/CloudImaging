@@ -192,27 +192,9 @@ public sealed partial class DeviceSessionLifecycleService
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static DeviceSession BuildTransition(DeviceSession s, SessionState newState) =>
-        new()
+        s with
         {
-            SessionId = s.SessionId,
             State = newState,
-            DeviceSerialNumber = s.DeviceSerialNumber,
-            DeviceManufacturer = s.DeviceManufacturer,
-            DeviceModel = s.DeviceModel,
-            HardwareMetadata = s.HardwareMetadata,
-            PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
-            Passcode = s.Passcode,
-            PasscodeExpiresAt = s.PasscodeExpiresAt,
-            PasscodeConsumed = s.PasscodeConsumed,
-            DeviceSessionToken = s.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt = s.DeviceSessionTokenExpiresAt,
-            AssignedOsImageId = s.AssignedOsImageId,
-            SasTokenUrl = s.SasTokenUrl,
-            SasTokenUrlExpiresAt = s.SasTokenUrlExpiresAt,
-            OverallProgressPercent = s.OverallProgressPercent,
-            CurrentStep = s.CurrentStep,
-            CreatedAt = s.CreatedAt,
-            LastHeartbeatAt = s.LastHeartbeatAt,
             TerminalAt = DateTimeOffset.UtcNow,
             PurgeAt = DateTimeOffset.UtcNow + TerminalPurgeTtl,
         };

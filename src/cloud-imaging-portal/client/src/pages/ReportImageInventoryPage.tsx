@@ -4,7 +4,7 @@ import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { Button } from '../components/ui/button.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
@@ -138,7 +138,7 @@ export default function ReportImageInventoryPage(): React.ReactElement {
           {totals ? `${totals.count} images, ${fmtSize(totals.totalSize)} total` : <Skeleton className="h-4 w-48" />}
         </div>
         <Button variant="secondary" onClick={handleExport} disabled={!rows || rows.length === 0}>
-          <FileDown size={14} /> Export CSV
+          <FileDown /> Export CSV
         </Button>
       </div>
 
@@ -155,11 +155,7 @@ export default function ReportImageInventoryPage(): React.ReactElement {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows === null && Array.from({ length: 4 }).map((_, i) => (
-            <TableRow key={i}>
-              <TableCell colSpan={6}><Skeleton className="h-5 w-full" /></TableCell>
-            </TableRow>
-          ))}
+          {rows === null && <TableSkeletonRows columns={6} rows={4} />}
           {rows?.length === 0 && (
             <TableRow>
               <TableCell colSpan={6}>

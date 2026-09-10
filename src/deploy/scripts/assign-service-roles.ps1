@@ -15,7 +15,7 @@
     be created through Microsoft Graph instead.
 
     (The CloudImaging.MediaBuilderAccess role, by contrast, is assigned
-    directly to people in the Azure Portal -- see Step 5 in
+    directly to people in the Azure Portal -- see Phase 3, Step 2 in
     setup-instructions.md -- because it's the signed-in technician's own
     delegated token that the Operator API checks, not anything belonging to
     the Media Builder application itself.)
@@ -147,4 +147,4 @@ Write-Host ""
 Write-Host "=== Service-level role assignment complete ==="
 Write-Host "The Portal backend can now authenticate against the Operator API."
 Write-Host "Remember: CloudImaging.MediaBuilderAccess still needs to be assigned to your Media"
-Write-Host "Builder users/groups manually -- see Step 5 in setup-instructions.md."
+Write-Host "Builder users/groups manually -- see Phase 3, Step 2 in setup-instructions.md."

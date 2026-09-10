@@ -25,7 +25,6 @@ interface BrandingContextValue {
   branding: BrandingConfig;
   /** Data URL for the configured portal logo, or null when none is set. */
   logoUrl: string | null;
-  isLoaded: boolean;
   /** Re-fetches branding (and the portal logo) from the backend. */
   refresh: () => Promise<void>;
 }
@@ -33,7 +32,6 @@ interface BrandingContextValue {
 const BrandingContext = createContext<BrandingContextValue>({
   branding: {},
   logoUrl: null,
-  isLoaded: false,
   refresh: async () => { /* no-op default */ },
 });
 
@@ -41,7 +39,9 @@ const BrandingContext = createContext<BrandingContextValue>({
 // Branding is fetched asynchronously, so on every reload there is a window where the portal does
 // not yet know whether this tenant has a custom logo. Caching the resolved logo and application
 // name means a tenant that has configured a logo renders it immediately on every subsequent load,
-// and the built-in mark is only ever shown to a tenant that genuinely has no logo configured.
+// so the built-in mark is only ever on screen during a first-ever visit (or after the cache is
+// cleared) - the chrome paints it straight away rather than sitting blank, and swaps once if a
+// tenant logo turns out to be configured.
 //
 // The logo is held as a data URL rather than an object URL so it survives being written to
 // storage. Uploads are capped at 512 KB (see BrandingPage), which stays well inside the
@@ -88,7 +88,6 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
   const [branding, setBranding] = useState<BrandingConfig>(
     cached?.applicationName ? { applicationName: cached.applicationName } : {});
   const [logoUrl, setLogoUrl]   = useState<string | null>(cached?.portalLogoDataUrl ?? null);
-  const [isLoaded, setIsLoaded] = useState(cached !== null);
   const { theme } = useTheme();
 
   /**
@@ -126,28 +125,17 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
       }
     } catch {
       // Use default CSS variables (set in index.css)
-    } finally {
-      setIsLoaded(true);
     }
   }, [applyLogo]);
 
   useEffect(() => { void load(); }, [load]);
-
-  // On a first-ever visit there is no cached logo, so the chrome hides its mark until branding
-  // resolves rather than flashing the built-in one. `load` can never settle when its request is
-  // parked behind an interactive sign-in redirect, so reveal the default after a grace period
-  // rather than leaving the chrome blank indefinitely.
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoaded(true), 2_500);
-    return () => clearTimeout(timer);
-  }, []);
 
   // Re-applies branding CSS variables whenever the branding config or the active light/dark
   // theme changes, so surface-colour overrides pick the correct per-theme value immediately.
   useEffect(() => { applyBrandingCssVariables(branding, theme); }, [branding, theme]);
 
   return (
-    <BrandingContext.Provider value={{ branding, logoUrl, isLoaded, refresh: load }}>
+    <BrandingContext.Provider value={{ branding, logoUrl, refresh: load }}>
       {children}
     </BrandingContext.Provider>
   );

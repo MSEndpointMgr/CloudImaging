@@ -56,7 +56,7 @@ export class OperatorApiClient {
   }
 
   async getSession(sessionId: string): Promise<unknown> {
-    const { data } = await this.http.get<unknown>(`/api/sessions/${sessionId}`);
+    const { data } = await this.http.get<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}`);
     return data;
   }
 
@@ -66,7 +66,8 @@ export class OperatorApiClient {
   }
 
   async assignSession(sessionId: string, osImageId: string): Promise<unknown> {
-    const { data } = await this.http.post<unknown>(`/api/sessions/${sessionId}/assign`, { osImageId });
+    const { data } = await this.http.post<unknown>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/assign`, { osImageId });
     return data;
   }
 
@@ -84,7 +85,7 @@ export class OperatorApiClient {
   }
 
   async cancelSession(sessionId: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/sessions/${sessionId}`);
+    await this.http.delete<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}`);
   }
 
   // ── OS image operations ────────────────────────────────────────────────────
@@ -100,12 +101,12 @@ export class OperatorApiClient {
   }
 
   async updateImage(imageId: string, payload: unknown): Promise<unknown> {
-    const { data } = await this.http.patch<unknown>(`/api/images/${imageId}`, payload);
+    const { data } = await this.http.patch<unknown>(`/api/images/${encodeURIComponent(imageId)}`, payload);
     return data;
   }
 
   async deleteImage(imageId: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/images/${imageId}`);
+    await this.http.delete<unknown>(`/api/images/${encodeURIComponent(imageId)}`);
   }
 
   async startOsImageUpload(payload: unknown): Promise<unknown> {
@@ -115,12 +116,12 @@ export class OperatorApiClient {
 
   async publishOsImageUpload(uploadId: string, payload: unknown): Promise<unknown> {
     const { data } = await this.http.post<unknown>(
-      `/api/images/upload/${uploadId}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
+      `/api/images/upload/${encodeURIComponent(uploadId)}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
     return data;
   }
 
   async abandonOsImageUpload(uploadId: string, payload: unknown): Promise<void> {
-    await this.http.post<unknown>(`/api/images/upload/${uploadId}/abandon`, payload);
+    await this.http.post<unknown>(`/api/images/upload/${encodeURIComponent(uploadId)}/abandon`, payload);
   }
 
   // ── Upload job status ──────────────────────────────────────────────────────
@@ -148,12 +149,12 @@ export class OperatorApiClient {
 
   async publishBootImageUpload(token: string, payload: unknown): Promise<unknown> {
     const { data } = await this.http.post<unknown>(
-      `/api/boot-images/upload/${token}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
+      `/api/boot-images/upload/${encodeURIComponent(token)}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
     return data;
   }
 
   async deleteBootImage(bootImageId: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/boot-images/${bootImageId}`);
+    await this.http.delete<unknown>(`/api/boot-images/${encodeURIComponent(bootImageId)}`);
   }
 
   // ── Configuration ─────────────────────────────────────────────────────────
@@ -186,12 +187,13 @@ export class OperatorApiClient {
   }
 
   async getRecoveryImageSas(recoveryImageId: string): Promise<unknown> {
-    const { data } = await this.http.post<unknown>(`/api/recovery-images/${recoveryImageId}/sas`);
+    const { data } = await this.http.post<unknown>(
+      `/api/recovery-images/${encodeURIComponent(recoveryImageId)}/sas`);
     return data;
   }
 
   async deleteRecoveryImage(recoveryImageId: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/recovery-images/${recoveryImageId}`);
+    await this.http.delete<unknown>(`/api/recovery-images/${encodeURIComponent(recoveryImageId)}`);
   }
 
   async startRecoveryImageUpload(payload: unknown): Promise<unknown> {
@@ -201,20 +203,21 @@ export class OperatorApiClient {
 
   async publishRecoveryImageUpload(uploadId: string, payload: unknown): Promise<unknown> {
     const { data } = await this.http.post<unknown>(
-      `/api/recovery-images/upload/${uploadId}/publish`, payload, { timeout: PUBLISH_TIMEOUT_MS });
+      `/api/recovery-images/upload/${encodeURIComponent(uploadId)}/publish`, payload,
+      { timeout: PUBLISH_TIMEOUT_MS });
     return data;
   }
 
   // ── Session logs ──────────────────────────────────────────────────────────
 
   async getSessionLogs(sessionId: string): Promise<unknown> {
-    const { data } = await this.http.get<unknown>(`/api/sessions/${sessionId}/logs`);
+    const { data } = await this.http.get<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}/logs`);
     return data;
   }
 
   async getSessionLogDownloadUrl(sessionId: string, fileName: string): Promise<unknown> {
     const { data } = await this.http.get<unknown>(
-      `/api/sessions/${sessionId}/logs/${encodeURIComponent(fileName)}/download-url`);
+      `/api/sessions/${encodeURIComponent(sessionId)}/logs/${encodeURIComponent(fileName)}/download-url`);
     return data;
   }
 
@@ -293,7 +296,7 @@ export class OperatorApiClient {
   }
 
   async deleteLocation(locationId: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/locations/${locationId}`);
+    await this.http.delete<unknown>(`/api/locations/${encodeURIComponent(locationId)}`);
   }
 
   // ── User location preference ──────────────────────────────────────────────

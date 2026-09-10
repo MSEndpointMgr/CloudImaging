@@ -4,6 +4,8 @@ import { Card, CardContent } from '../components/ui/card.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
+import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { useUserPreferences } from '../context/userPreferencesContext.tsx';
@@ -134,7 +136,9 @@ export default function LocationsPage(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {!loading && locations.length === 0 ? (
+            {loading ? (
+              <TableSkeletonRows columns={3} rows={3} />
+            ) : locations.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={3} className="p-0">
                   <EmptyState
@@ -149,16 +153,18 @@ export default function LocationsPage(): React.ReactElement {
                 <TableCell className="font-medium">{loc.name}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{formatDateTime(loc.createdAt)}</TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title="Delete this location"
-                    disabled={deletingId === loc.locationId}
-                    className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => void handleDelete(loc.locationId, loc.name)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <Tooltip content="Delete this location">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete location ${loc.name}`}
+                      disabled={deletingId === loc.locationId}
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => void handleDelete(loc.locationId, loc.name)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </Tooltip>
                 </TableCell>
               </TableRow>
             ))}
