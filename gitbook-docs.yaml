@@ -1,0 +1,17 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+# Site-level manifest for GitBook Git Sync (https://gitbook.com/docs/docs-as-code/git-sync/content-configuration).
+#
+# This file maps the site to a single space backed by docs/. That space's own layout (readme,
+# summary/navigation file) is controlled by .gitbook.yaml at the repo root — see that file for
+# why only docs/ is published (root README, CONTRIBUTING/SECURITY/CODE_OF_CONDUCT and specs/ are
+# deliberately excluded).
+site:
+  title: Cloud Imaging documentation
+  structure:
+    - type: space
+      key: docs
+      title: Cloud Imaging documentation
+      path: ./
+      default: true
+      content:
+        directory: ./docs

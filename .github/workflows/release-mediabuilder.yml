@@ -39,9 +39,24 @@ jobs:
       # Runs before the build because the MSI's ProductVersion is derived from the tag.
       - name: Determine version tag
         id: tag
+        env:
+          # Read through the environment rather than interpolating `${{ }}` straight into the
+          # script body: a ref or input containing quotes would otherwise be executed as
+          # PowerShell.
+          INPUT_TAG: ${{ inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
-          $tag = "${{ github.ref_name }}"
+          # On a workflow_dispatch run the ref is the *branch*, so github.ref_name is 'main'. It is
+          # only a tag when ref_type says so. Taking it unconditionally is what made a manual run
+          # build "version main", which WiX rejects with WIX0108, and which would otherwise have
+          # published a release named after a branch.
+          $tag = "$env:INPUT_TAG".Trim()
+          if (-not $tag -and $env:REF_TYPE -eq 'tag') { $tag = $env:REF_NAME }
           if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-mediabuilder-v*' }
+          if ($tag -notmatch '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
+            throw "Could not resolve a Media Builder release tag (got '$tag'). Push a mse-ci-mediabuilder-v#.#.# tag, or pass one in the tag_name input."
+          }
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-mediabuilder-' prefix itself contains hyphens, so a naive contains('-') is always true.
           $stable = $tag -match '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+$'
@@ -49,13 +64,20 @@ jobs:
           $version = $tag -replace '^mse-ci-mediabuilder-', ''
           # MSI ProductVersion must be a bare numeric major.minor.build: Windows Installer rejects a
           # leading 'v' and ignores anything after the third field, so a pre-release suffix is dropped
-          # (which is why the MSI is built with AllowSameVersionUpgrades — see the .wixproj).
+          # (which is why the MSI is built with AllowSameVersionUpgrades, see the .wixproj).
           $msiVersion = ($version -replace '^v', '') -replace '-.*$', ''
           "tag=$tag"                 | Out-File $env:GITHUB_OUTPUT -Append
           "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
           "version=$version"         | Out-File $env:GITHUB_OUTPUT -Append
           "msi_version=$msiVersion"  | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable, MSI ProductVersion: $msiVersion)"
+
+      # A manual run checks out a branch, so the working tree holds whatever that branch points at
+      # rather than the tag being packaged. Without this the release would carry the tag's name and
+      # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
+      - name: Check out the resolved tag
+        if: github.ref_type != 'tag'
+        run: git checkout --detach "${{ steps.tag.outputs.tag }}"
 
       # CloudImaging.MediaBuilder.csproj has no <RuntimeIdentifiers>, so a plain solution restore
       # produces an assets file with no win-x64 target -- the later --no-restore publish
