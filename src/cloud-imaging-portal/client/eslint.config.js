@@ -26,6 +26,19 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // eslint-plugin-react-hooks v7 turns the React Compiler rules on as part of
+      // "recommended". Two of them fire across our existing pages and are opt-in
+      // improvements rather than correctness bugs, so they stay off for now:
+      //
+      // - set-state-in-effect flags the ordinary "fetch on mount in useEffect, then
+      //   setState with the result" pattern we use on every data-backed page. Silencing
+      //   it properly means moving those pages onto react-query, which is a separate
+      //   piece of work, not something to bundle into a lint upgrade.
+      // - immutability flags the mutually-recursive poll scheduling in SessionsPage.
+      //
+      // Revisit both when the pages move to react-query.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/immutability': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       // Allow async functions as JSX event handlers (standard React pattern)
