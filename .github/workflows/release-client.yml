@@ -34,6 +34,43 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      # Runs before the build so a manual run packages the tag's code, not the branch's.
+      - name: Determine version tag
+        id: tag
+        env:
+          # Read through the environment rather than interpolating `${{ }}` straight into the
+          # script body: a ref or input containing quotes would otherwise be executed as
+          # PowerShell.
+          INPUT_TAG: ${{ inputs.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          # On a workflow_dispatch run the ref is the *branch*, so github.ref_name is 'main'. It is
+          # only a tag when ref_type says so. Taking it unconditionally published a release named
+          # after a branch.
+          $tag = "$env:INPUT_TAG".Trim()
+          if (-not $tag -and $env:REF_TYPE -eq 'tag') { $tag = $env:REF_NAME }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-client-v*' }
+          if ($tag -notmatch '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
+            throw "Could not resolve a Client release tag (got '$tag'). Push a mse-ci-client-v#.#.# tag, or pass one in the tag_name input."
+          }
+          # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
+          # 'mse-ci-client-' prefix itself contains hyphens, so a naive contains('-') is always true.
+          $stable = $tag -match '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+$'
+          # Bare version for display (title already says "Client"; avoid repeating it via the tag).
+          $version = $tag -replace '^mse-ci-client-', ''
+          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
+          "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
+          Write-Host "Release tag: $tag (stable: $stable)"
+
+      # A manual run checks out a branch, so the working tree holds whatever that branch points at
+      # rather than the tag being packaged. Without this the release would carry the tag's name and
+      # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
+      - name: Check out the resolved tag
+        if: github.ref_type != 'tag'
+        run: git checkout --detach "${{ steps.tag.outputs.tag }}"
+
       # CloudImaging.Client.csproj has no <RuntimeIdentifiers>, so a plain solution restore
       # produces an assets file with no win-x64 target -- the later --no-restore publish
       # then fails with NETSDK1047. Restore the project itself with the RID instead.
@@ -46,21 +83,6 @@ jobs:
             -c Release -r win-x64 --self-contained -o publish/Client --no-restore
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
           Compress-Archive publish/Client/* release-artifacts/CloudImaging.Client.zip
-
-      - name: Determine version tag
-        id: tag
-        run: |
-          $tag = "${{ github.ref_name }}"
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-client-v*' }
-          # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
-          # 'mse-ci-client-' prefix itself contains hyphens, so a naive contains('-') is always true.
-          $stable = $tag -match '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+$'
-          # Bare version for display (title already says "Client"; avoid repeating it via the tag).
-          $version = $tag -replace '^mse-ci-client-', ''
-          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
-          "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
-          "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
-          Write-Host "Release tag: $tag (stable: $stable)"
 
       - name: Generate SHA-256 checksum manifest
         run: |
