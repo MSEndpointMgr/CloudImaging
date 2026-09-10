@@ -19,7 +19,7 @@
     "@azure/identity": "^4.13.2",
     "@azure/msal-node": "^6.0.0",
     "@azure/storage-blob": "^12.33.0",
-    "applicationinsights": "^2.9.8",
+    "applicationinsights": "^3.16.0",
     "axios": "^1.20.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
