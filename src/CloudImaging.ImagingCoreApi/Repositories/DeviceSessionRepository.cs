@@ -1,6 +1,6 @@
+using System.Text.Json;
 using Azure;
 using Azure.Data.Tables;
-using System.Text.Json;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 
@@ -276,7 +276,11 @@ public sealed class DeviceSessionRepository
     /// </summary>
     private static DeviceHardwareMetadata? DeserializeHardware(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return null;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
         try
         {
             return JsonSerializer.Deserialize<DeviceHardwareMetadata>(json, HardwareJsonOptions);
