@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to package (e.g. mse-ci-client-v1.0.0). Defaults to latest matching tag if blank.'
+        description: 'Version or tag to package (e.g. 1.0.0, v1.0.0 or mse-ci-client-v1.0.0). Defaults to the latest matching tag if blank.'
         required: false
 
 env:
@@ -48,18 +48,37 @@ jobs:
           # On a workflow_dispatch run the ref is the *branch*, so github.ref_name is 'main'. It is
           # only a tag when ref_type says so. Taking it unconditionally published a release named
           # after a branch.
-          $tag = "$env:INPUT_TAG".Trim()
+          $prefix = 'mse-ci-client-'
+          # The input is accepted as the full tag, as 'v1.0.0', or as a bare '1.0.0'. Requiring the
+          # full tag is an easy way to burn a CI run on a typo, and the prefix is fixed per
+          # workflow anyway, so there is nothing to disambiguate.
+          $requested = "$env:INPUT_TAG".Trim()
+          $tag = switch -Regex ($requested) {
+            '^$'       { '' }
+            "^$prefix" { $requested }
+            '^v'       { "$prefix$requested" }
+            default    { "${prefix}v$requested" }
+          }
           if (-not $tag -and $env:REF_TYPE -eq 'tag') { $tag = $env:REF_NAME }
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-client-v*' }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match "$prefix*" }
           if ($tag -notmatch '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
-            throw "Could not resolve a Client release tag (got '$tag'). Push a mse-ci-client-v#.#.# tag, or pass one in the tag_name input."
+            throw "Could not resolve a Client release tag (got '$tag'). Push a mse-ci-client-v#.#.# tag, or pass a version such as '1.0.0' in the tag_name input."
+          }
+          # Fully qualified: a stray branch-named tag would otherwise make a bare name ambiguous.
+          git rev-parse -q --verify "refs/tags/$tag" > $null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tag '$tag' does not exist. Create it first: git tag $tag origin/main; git push origin $tag"
           }
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-client-' prefix itself contains hyphens, so a naive contains('-') is always true.
           $stable = $tag -match '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+$'
           # Bare version for display (title already says "Client"; avoid repeating it via the tag).
           $version = $tag -replace '^mse-ci-client-', ''
+          # The alias release must point at the tag's commit. github.sha is the *branch* head on a
+          # manual run, which would make the alias serve code that was never in the tagged build.
+          $sha = git rev-parse "refs/tags/$tag^{commit}"
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Append
+          "sha=$sha" | Out-File $env:GITHUB_OUTPUT -Append
           "stable=$($stable.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append
           "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable)"
@@ -69,7 +88,7 @@ jobs:
       # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
       - name: Check out the resolved tag
         if: github.ref_type != 'tag'
-        run: git checkout --detach "${{ steps.tag.outputs.tag }}"
+        run: git checkout --detach "refs/tags/${{ steps.tag.outputs.tag }}"
 
       # CloudImaging.Client.csproj has no <RuntimeIdentifiers>, so a plain solution restore
       # produces an assets file with no win-x64 target -- the later --no-restore publish
@@ -120,11 +139,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete mse-ci-client-latest --yes --cleanup-tag
+          # The alias does not exist before the first stable release, and 'gh release delete' exits
+          # non-zero when it is missing, which would fail the job *after* the real release had
+          # already published. Treat "nothing to move" as success.
+          $ErrorActionPreference = 'Continue'
+          gh release delete mse-ci-client-latest --yes --cleanup-tag 2>&1 | Write-Host
+          $ErrorActionPreference = 'Stop'
           gh release create mse-ci-client-latest `
             "release-artifacts/CloudImaging.Client.zip" `
             "release-artifacts/SHA256SUMS" `
-            --target "${{ github.sha }}" `
-            --title "Cloud Imaging Client (latest — ${{ steps.tag.outputs.version }})" `
+            --target "${{ steps.tag.outputs.sha }}" `
+            --title "Cloud Imaging Client (latest: ${{ steps.tag.outputs.version }})" `
             --notes "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes." `
             --latest=false
