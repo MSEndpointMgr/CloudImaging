@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useState } from 'react';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { useTheme } from './themeContext.tsx';
 
@@ -83,8 +83,9 @@ function blobToDataUrl(blob: Blob): Promise<string> {
  */
 export function BrandingProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   // Seeded synchronously from the last resolved branding so the correct logo is on screen from
-  // the very first paint, then reconciled with the backend by `load` below.
-  const cached = useRef(readCachedBranding()).current;
+  // the very first paint, then reconciled with the backend by `load` below. Passed to useState as
+  // a lazy initialiser so localStorage is read once on mount rather than on every render.
+  const [cached] = useState(readCachedBranding);
   const [branding, setBranding] = useState<BrandingConfig>(
     cached?.applicationName ? { applicationName: cached.applicationName } : {});
   const [logoUrl, setLogoUrl]   = useState<string | null>(cached?.portalLogoDataUrl ?? null);
