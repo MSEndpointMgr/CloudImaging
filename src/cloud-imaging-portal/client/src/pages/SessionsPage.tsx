@@ -722,14 +722,16 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[24%]" />
-                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
-                {/* State is a fixed pixel width (not %) so it never shrinks below the space its
-                    badge needs — the other columns share whatever space remains. */}
-                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[140px]" />
+                {/* All six widths are percentages that sum to exactly 100% — table-fixed sizes
+                    columns as (percent + fixed px) of the table's own width, so mixing in a
+                    fixed px column (State was a flat 140px) made the row wider than its
+                    container on anything above ~1750px and forced a horizontal scrollbar. */}
+                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[22%]" />
+                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
+                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[10%]" />
                 <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
-                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -783,13 +785,17 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="w-[16%]" />
-                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="w-[22%]" />
-                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="w-[15%]" />
-                <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="w-[140px]" />
-                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="w-[17%]" />
-                <SortableHead label="Registered" sortKey="registered" sort={failedSort} onSort={toggleFailedSort} className="w-[14%]" />
-                <TableHead className="w-[150px]">Actions</TableHead>
+                {/* All seven widths are percentages that sum to exactly 100% — see the Monitor
+                    table's comment above for why fixed-px columns (State/Actions were
+                    140px/150px) can't be mixed in here without pushing the row past the
+                    container width. */}
+                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="w-[13%]" />
+                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="w-[19%]" />
+                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="w-[12%]" />
+                <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="w-[10%]" />
+                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="w-[15%]" />
+                <SortableHead label="Registered" sortKey="registered" sort={failedSort} onSort={toggleFailedSort} className="w-[11%]" />
+                <TableHead className="w-[20%]">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
