@@ -60,7 +60,7 @@ jobs:
             default    { "${prefix}v$requested" }
           }
           if (-not $tag -and $env:REF_TYPE -eq 'tag') { $tag = $env:REF_NAME }
-if (-not $tag) { $tag = git describe --tags --abbrev=0 --match "${prefix}v[0-9]*" }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match "${prefix}v[0-9]*" }
           if ($tag -notmatch '^mse-ci-client-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
             throw "Could not resolve a Client release tag (got '$tag'). Push a mse-ci-client-v#.#.# tag, or pass a version such as '1.0.0' in the tag_name input."
           }
