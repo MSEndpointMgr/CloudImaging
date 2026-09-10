@@ -4,7 +4,7 @@ name: GitHub Release - Media Builder Package & Publish
 # Builds the CloudImaging.MediaBuilder technician-workstation app and creates a
 # GitHub Release carrying both a plain self-contained zip and a per-machine MSI
 # for Intune/ConfigMgr deployment (see docs/setup-instructions.md "Deploying the
-# Media Builder with Intune") — nothing auto-downloads either artifact, so this
+# Media Builder with Intune"). Nothing auto-downloads either artifact, so this
 # stream has no moving "latest" alias (unlike release-client.yml).
 
 on:
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to package (e.g. mse-ci-mediabuilder-v1.0.0). Defaults to latest matching tag if blank.'
+        description: 'Version or tag to package (e.g. 1.0.0, v1.0.0 or mse-ci-mediabuilder-v1.0.0). Defaults to the latest matching tag if blank.'
         required: false
 
 env:
@@ -51,11 +51,26 @@ jobs:
           # only a tag when ref_type says so. Taking it unconditionally is what made a manual run
           # build "version main", which WiX rejects with WIX0108, and which would otherwise have
           # published a release named after a branch.
-          $tag = "$env:INPUT_TAG".Trim()
+          $prefix = 'mse-ci-mediabuilder-'
+          # The input is accepted as the full tag, as 'v1.0.0', or as a bare '1.0.0'. Requiring the
+          # full tag is an easy way to burn a five-minute CI run on a typo, and the prefix is fixed
+          # per workflow anyway, so there is nothing to disambiguate.
+          $requested = "$env:INPUT_TAG".Trim()
+          $tag = switch -Regex ($requested) {
+            '^$'            { '' }
+            "^$prefix"      { $requested }
+            '^v'            { "$prefix$requested" }
+            default         { "${prefix}v$requested" }
+          }
           if (-not $tag -and $env:REF_TYPE -eq 'tag') { $tag = $env:REF_NAME }
-          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match 'mse-ci-mediabuilder-v*' }
+          if (-not $tag) { $tag = git describe --tags --abbrev=0 --match "$prefix*" }
           if ($tag -notmatch '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
-            throw "Could not resolve a Media Builder release tag (got '$tag'). Push a mse-ci-mediabuilder-v#.#.# tag, or pass one in the tag_name input."
+            throw "Could not resolve a Media Builder release tag (got '$tag'). Push a mse-ci-mediabuilder-v#.#.# tag, or pass a version such as '1.0.0' in the tag_name input."
+          }
+          # Fully qualified: a stray branch-named tag would otherwise make a bare name ambiguous.
+          git rev-parse -q --verify "refs/tags/$tag" > $null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tag '$tag' does not exist. Create it first: git tag $tag origin/main; git push origin $tag"
           }
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-mediabuilder-' prefix itself contains hyphens, so a naive contains('-') is always true.
@@ -77,7 +92,7 @@ jobs:
       # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
       - name: Check out the resolved tag
         if: github.ref_type != 'tag'
-        run: git checkout --detach "${{ steps.tag.outputs.tag }}"
+        run: git checkout --detach "refs/tags/${{ steps.tag.outputs.tag }}"
 
       # CloudImaging.MediaBuilder.csproj has no <RuntimeIdentifiers>, so a plain solution restore
       # produces an assets file with no win-x64 target -- the later --no-restore publish
@@ -121,7 +136,7 @@ jobs:
             Technician-workstation WPF app used to generate WinPE boot images and prepare USB
             storage devices.
 
-            Deploy it with the MSI — it installs per-machine and takes the tenant configuration as
+            Deploy it with the MSI: it installs per-machine and takes the tenant configuration as
             install properties, so there is no need to repackage the payload per tenant. See
             `docs/setup-instructions.md` → "Deploying the Media Builder with Intune".
 
@@ -137,7 +152,7 @@ jobs:
             | File | Description |
             |------|-------------|
             | `CloudImaging.MediaBuilder.msi` | Per-machine installer (x64). Configured via MSI properties; upgrades in place and keeps existing configuration. |
-            | `CloudImaging.MediaBuilder.zip` | The same self-contained win-x64 payload (net10.0-windows), unpackaged — for xcopy deployment or custom packaging. |
+            | `CloudImaging.MediaBuilder.zip` | The same self-contained win-x64 payload (net10.0-windows), unpackaged, for xcopy deployment or custom packaging. |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
           files: |
             release-artifacts/CloudImaging.MediaBuilder.msi
