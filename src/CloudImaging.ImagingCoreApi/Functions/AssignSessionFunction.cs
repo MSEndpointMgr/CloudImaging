@@ -103,25 +103,13 @@ public sealed partial class AssignSessionFunction
         var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
 
         // Transition: SessionAssigned → SessionStarted
-        var assigned = new DeviceSession
+        var assigned = session with
         {
-            SessionId = session.SessionId,
             State = SessionState.SessionStarted,
-            DeviceSerialNumber = session.DeviceSerialNumber,
-            DeviceManufacturer = session.DeviceManufacturer,
-            DeviceModel = session.DeviceModel,
-            HardwareMetadata = session.HardwareMetadata,
-            PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-            Passcode = session.Passcode,
-            PasscodeExpiresAt = session.PasscodeExpiresAt,
-            PasscodeConsumed = session.PasscodeConsumed,
-            DeviceSessionToken = session.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
             AssignedOsImageId = imageId,
             SasTokenUrl = sasUrl,
             SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
             OverallProgressPercent = 0,
-            CreatedAt = session.CreatedAt,
             LastHeartbeatAt = DateTimeOffset.UtcNow,
         };
 

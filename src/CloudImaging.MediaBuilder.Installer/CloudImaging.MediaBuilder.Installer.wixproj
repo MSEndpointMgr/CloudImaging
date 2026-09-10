@@ -1,0 +1,77 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!--
+    Builds CloudImaging.MediaBuilder.msi — a per-machine installer for the technician workstation
+    app, intended to be wrapped as an Intune / ConfigMgr Win32 app.
+
+    Pinned to WiX v5 deliberately. WiX v6 introduced the Open Source Maintenance Fee, and v7 added
+    a hard build-time gate (error WIX7015) that requires explicitly accepting the OSMF EULA and
+    obliges organizations above a revenue threshold to sponsor the project. v5 predates OSMF, so
+    neither this repository's CI nor anyone building the installer from source takes on that
+    obligation. The .wxs authoring targets the v4 schema, which v5, v6 and v7 all share, so moving
+    forward later is a version bump.
+
+    This project is deliberately NOT part of CloudImaging.sln: it consumes the *published*
+    self-contained output of CloudImaging.MediaBuilder rather than its build output, so a plain
+    `dotnet build CloudImaging.sln` (which never publishes) would fail on a missing payload folder.
+    It is built explicitly by .github/workflows/release-mediabuilder.yml, and smoke-built by the
+    MediaBuilder job in .github/workflows/ci.yml.
+
+    Local build (see the VerifyMediaBuilderPayload target below for the exact publish command).
+  -->
+
+  <PropertyGroup>
+    <OutputName>CloudImaging.MediaBuilder</OutputName>
+    <OutputType>Package</OutputType>
+    <!-- The payload is a self-contained win-x64 publish, so the package is 64-bit only. -->
+    <InstallerPlatform>x64</InstallerPlatform>
+    <!-- Zero-warning build policy, matching Directory.Build.props for the C# projects. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Three ICE validations are false positives for this package and must be suppressed for the
+      zero-warning policy above to be meaningful (otherwise they would have to be ignored by hand
+      on every build):
+
+        ICE43 / ICE57 — "a component with a non-advertised shortcut should have an HKCU key path".
+                        Both rules assume shortcuts are per-user data. This package is
+                        Scope="perMachine", so ProgramMenuFolder resolves to the All Users Start
+                        menu, which *is* per-machine data; an HKCU key path would be wrong here and
+                        would make the shortcut disappear for every user but the installing one.
+
+        ICE61         — fires solely because MajorUpgrade/@AllowSameVersionUpgrades makes the
+                        upgrade version range inclusive of the current version. That is
+                        intentional: pre-release tags (mse-ci-mediabuilder-v1.0.0-beta.1 and
+                        -beta.2) both compile to MSI ProductVersion 1.0.0, and without it the
+                        second one refuses to replace the first.
+    -->
+    <SuppressIces>ICE43;ICE57;ICE61</SuppressIces>
+    <!--
+      The repo uses Central Package Management for the .NET projects, but the WiX SDK resolves its
+      own tool packages at their own pinned versions; CPM would fail restore on those.
+    -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      MSI ProductVersion. Overridden by the release workflow with the numeric part of the
+      mse-ci-mediabuilder-v#.#.# tag. The local default is intentionally low so a developer's
+      test MSI never appears "newer" than a real release and blocks its install.
+
+      Deliberately NOT the standard $(Version): MSBuild always defines that (defaulting to 1.0.0
+      via $(VersionPrefix)), so a `Condition="'$(Version)' == ''"` default would never apply and
+      every local build would silently produce a 1.0.0 package.
+    -->
+    <MsiProductVersion Condition="'$(MsiProductVersion)' == ''">0.0.1</MsiProductVersion>
+    <!-- Folder holding `dotnet publish` output for CloudImaging.MediaBuilder. No trailing slash. -->
+    <MediaBuilderPublishDir Condition="'$(MediaBuilderPublishDir)' == ''">$(MSBuildThisFileDirectory)..\..\publish\MediaBuilder</MediaBuilderPublishDir>
+    <MediaBuilderProjectDir>$(MSBuildThisFileDirectory)..\CloudImaging.MediaBuilder</MediaBuilderProjectDir>
+    <DefineConstants>Version=$(MsiProductVersion);MediaBuilderPublishDir=$(MediaBuilderPublishDir);MediaBuilderProjectDir=$(MediaBuilderProjectDir)</DefineConstants>
+  </PropertyGroup>
+
+  <Target Name="VerifyMediaBuilderPayload" BeforeTargets="Build">
+    <Error Condition="!Exists('$(MediaBuilderPublishDir)\CloudImaging.MediaBuilder.exe')"
+           Text="Media Builder payload not found at '$(MediaBuilderPublishDir)'. Run: dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj -c Release -r win-x64 --self-contained -o publish/MediaBuilder" />
+  </Target>
+
+</Project>

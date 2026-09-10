@@ -173,7 +173,7 @@ export function PartitioningSchemePanel(): React.ReactElement {
           <p className="text-xs text-muted-foreground">
             This is Microsoft's default UEFI layout. Recovery must stay last so a future WinRE
             update can grow it (by shrinking Windows). Extending Windows later requires removing
-            Recovery first (<code className="text-[11px]">reagentc /disable</code>, then resize).
+            Recovery first (<code className="text-xs">reagentc /disable</code>, then resize).
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -203,7 +203,7 @@ export function PartitioningSchemePanel(): React.ReactElement {
               </div>
               <div className="flex-1 space-y-1">
                 <Label>{PARTITION_LABELS[p.partitionType]}</Label>
-                <p className="text-xs text-muted-foreground">{PARTITION_DESCRIPTIONS[p.partitionType]}</p>
+                <p className="text-sm text-muted-foreground">{PARTITION_DESCRIPTIONS[p.partitionType]}</p>
               </div>
               <div className="w-48 space-y-1">
                 {p.partitionType === 'Windows' ? (
@@ -253,7 +253,7 @@ export function PartitioningSchemePanel(): React.ReactElement {
           Save Partitioning Scheme
         </Button>
         {isDirty && saveStatus === 'idle' && (
-          <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
+          <p className="text-sm text-muted-foreground">You have unsaved changes.</p>
         )}
       </div>
     </div>

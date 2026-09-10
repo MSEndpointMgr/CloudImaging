@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Button, type ButtonStatus } from '../components/ui/button';
+import { Tooltip } from '../components/ui/tooltip';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { PageLoading } from '../components/PageLoading.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
@@ -116,7 +117,7 @@ interface ColorFieldProps {
 /** A hex colour swatch + text input + "reset to default" button, shared by every colour field on this page. */
 function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFieldProps): React.ReactElement {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-2">
       <Label htmlFor={id}>{label}</Label>
       <div className="flex items-center gap-2">
         <input
@@ -133,18 +134,20 @@ function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFi
           className="font-mono"
           aria-invalid={!!error}
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => onChange(defaultValue)}
-          disabled={value.toLowerCase() === defaultValue.toLowerCase()}
-          title="Reset to default"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </Button>
+        <Tooltip content={`Reset to ${defaultValue}`}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => onChange(defaultValue)}
+            disabled={value.toLowerCase() === defaultValue.toLowerCase()}
+            aria-label={`Reset ${label} to default`}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        </Tooltip>
       </div>
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }
@@ -491,7 +494,7 @@ export default function BrandingPage(): React.ReactElement {
           <CardDescription>Application name and theme colours.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="applicationName">Application name</Label>
             <Input
               id="applicationName"
@@ -501,7 +504,7 @@ export default function BrandingPage(): React.ReactElement {
               aria-invalid={!!applicationNameError}
             />
             {applicationNameError && (
-              <p className="text-xs text-destructive">{applicationNameError}</p>
+              <p className="text-sm text-destructive">{applicationNameError}</p>
             )}
           </div>
 
@@ -545,7 +548,7 @@ export default function BrandingPage(): React.ReactElement {
             { title: 'Card background', lightKey: 'cardBackgroundLight', darkKey: 'cardBackgroundDark', lightDefault: DEFAULT_CARD_BG_LIGHT, darkDefault: DEFAULT_CARD_BG_DARK },
             { title: 'Page background', lightKey: 'pageBackgroundLight', darkKey: 'pageBackgroundDark', lightDefault: DEFAULT_PAGE_BG_LIGHT, darkDefault: DEFAULT_PAGE_BG_DARK },
           ] as const).map(surface => (
-            <div key={surface.title} className="space-y-1.5 border-t border-border pt-4 first:border-t-0 first:pt-0">
+            <div key={surface.title} className="space-y-2 border-t border-border pt-4 first:border-t-0 first:pt-0">
               <p className="text-sm font-medium">{surface.title}</p>
               <div className="flex gap-4">
                 <div className="flex-1">
@@ -584,7 +587,7 @@ export default function BrandingPage(): React.ReactElement {
           Save branding
         </Button>
         {isDirty && saveStatus === 'idle' && (
-          <p className="text-xs text-muted-foreground">You have unsaved changes.</p>
+          <p className="text-sm text-muted-foreground">You have unsaved changes.</p>
         )}
       </div>
     </div>

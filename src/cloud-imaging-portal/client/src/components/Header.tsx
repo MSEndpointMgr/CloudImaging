@@ -6,17 +6,8 @@ import { useAuth } from '../context/authContext.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useUserPreferences } from '../context/userPreferencesContext.tsx';
 import { Button } from './ui/button.tsx';
-
-const SECTION_TITLES: Record<string, string> = {
-  '/': 'Dashboard',
-  '/sessions': 'Devices',
-  '/os-images': 'OS Images',
-  '/boot-images': 'Boot Images',
-  '/recovery-images': 'Recovery Images',
-  '/locations': 'Locations',
-  '/branding': 'Branding',
-  '/configuration': 'Configuration',
-};
+import { Select } from './ui/select.tsx';
+import { resolveSectionTitle } from '../lib/routeTitles.ts';
 
 function initialsFrom(name: string): string {
   return name
@@ -38,11 +29,7 @@ export function Header(): React.ReactElement {
   const { locations, preferredLocationId, setPreferredLocation } = useUserPreferences();
 
   const path = useLocation().pathname;
-  const title =
-    SECTION_TITLES[path] ??
-    Object.entries(SECTION_TITLES).find(([key]) => key !== '/' && path.startsWith(key))?.[1] ??
-    branding.applicationName ??
-    'Cloud Imaging';
+  const title = resolveSectionTitle(path) ?? branding.applicationName ?? 'Cloud Imaging';
 
   const displayName = account?.name ?? account?.username ?? 'Signed in';
   const initials = initialsFrom(displayName) || 'U';
@@ -53,7 +40,12 @@ export function Header(): React.ReactElement {
   useEffect(() => {
     if (!menuOpen) return;
     const onClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+      const target = e.target as HTMLElement;
+      // A surface that portals itself to <body> (the location picker's option list) is logically
+      // inside this menu but is not a DOM descendant of it, so a plain containment test would
+      // treat picking an option as a click outside and close the menu mid-interaction.
+      if (target.closest?.('[data-portal-surface]')) return;
+      if (menuRef.current && !menuRef.current.contains(target)) setMenuOpen(false);
     };
     const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false); };
     document.addEventListener('mousedown', onClickOutside);
@@ -79,7 +71,7 @@ export function Header(): React.ReactElement {
             onClick={() => setMenuOpen(o => !o)}
             aria-haspopup="true"
             aria-expanded={menuOpen}
-            className="mx-1 flex items-center gap-2.5 rounded-full py-1 pl-1 pr-2.5 hover:bg-muted/60"
+            className="mx-1 flex items-center gap-3 rounded-full py-1 pl-1 pr-3 transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             {avatarUrl ? (
               <img src={avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
@@ -89,53 +81,62 @@ export function Header(): React.ReactElement {
               </span>
             )}
             <span className="hidden text-sm font-medium text-foreground sm:inline">{displayName}</span>
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform duration-150 ${menuOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
           </button>
 
           {menuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-72 rounded-md border border-border bg-popover p-3 shadow-lg">
-              <div className="pb-2">
-                <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
-                {account?.username && <p className="truncate text-xs text-muted-foreground">{account.username}</p>}
+            <div className="absolute right-0 top-full mt-2 w-72 origin-top-right animate-popover-in rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-xl ring-1 ring-black/5">
+              <div className="flex items-center gap-3 px-2 py-2">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                    {initials}
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-foreground">{displayName}</p>
+                  {account?.username && <p className="truncate text-xs text-muted-foreground">{account.username}</p>}
+                </div>
               </div>
 
-              <div className="border-t border-border pt-3">
-                <label htmlFor="header-location-select" className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <div className="my-1.5 h-px bg-border" role="presentation" />
+
+              <div className="px-2 py-1">
+                <label htmlFor="header-location-select" className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   My location
                 </label>
-                <div className="relative">
-                  <select
-                    id="header-location-select"
-                    value={preferredLocationId ?? ''}
-                    onChange={e => {
-                      const selected = locations.find(l => l.locationId === e.target.value);
-                      void setPreferredLocation(selected ?? null);
-                    }}
-                    className="h-8 w-full appearance-none rounded-md border border-input bg-background px-2 pr-8 text-sm shadow-sm"
-                  >
-                    <option value="">No location set</option>
-                    {locations.map(loc => (
-                      <option key={loc.locationId} value={loc.locationId}>{loc.name}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
+                <Select
+                  id="header-location-select"
+                  size="sm"
+                  allowEmpty
+                  placeholder="No location set"
+                  value={preferredLocationId ?? ''}
+                  onValueChange={locationId => {
+                    const selected = locations.find(l => l.locationId === locationId);
+                    void setPreferredLocation(selected ?? null);
+                  }}
+                  options={locations.map(loc => ({ value: loc.locationId, label: loc.name }))}
+                />
+                <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                   Filters the Devices page to devices registered at this location.
                 </p>
               </div>
 
-              <div className="mt-3 border-t border-border pt-2">
-                <button
-                  type="button"
-                  onClick={signOut}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground hover:bg-muted/60"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sign out
-                </button>
-              </div>
+              <div className="my-1.5 h-px bg-border" role="presentation" />
+
+              <button
+                type="button"
+                onClick={signOut}
+                className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <LogOut className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                Sign out
+              </button>
             </div>
           )}
         </div>

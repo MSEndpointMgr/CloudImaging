@@ -10,7 +10,7 @@ This page is the single reference for **who can do what** in Cloud Imaging. For 
 ## 1. The five app roles
 
 Cloud Imaging defines five Entra ID app roles across its three app registrations
-(see [setup-instructions.md, Step 1](setup-instructions.md#step-1-create-three-app-registrations)).
+(see [setup-instructions.md, Phase 1, Step 1](setup-instructions.md#step-1-create-three-app-registrations)).
 Three are **user-facing** (you assign them to people); two are **service-facing** (assigned to an
 app/identity, not a person).
 
@@ -20,7 +20,7 @@ app/identity, not a person).
 | `CloudImaging.Technician` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Day-to-day imaging operations: sessions, coupling, assignment, read-only catalogs |
 | `CloudImaging.Reader` | **Cloud Imaging Portal** registration only | Users / groups | Read-only visibility: Dashboard summary and Reports, nothing else. No Media Builder equivalent. |
 | `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `assign-service-roles.ps1`; nothing to do manually. |
-| `CloudImaging.MediaBuilderAccess` | **Cloud Imaging Operator API** registration | Users / groups | Lets a signed-in technician's Media Builder client actually call the Operator API. Required **in addition to** `CloudImaging.Administrator`/`Technician`; see [Step 5](setup-instructions.md#step-5-assign-access-to-your-administrators-and-technicians). |
+| `CloudImaging.MediaBuilderAccess` | **Cloud Imaging Operator API** registration | Users / groups | Lets a signed-in technician's Media Builder client actually call the Operator API. Required **in addition to** `CloudImaging.Administrator`/`Technician`; see [Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians). |
 
 > **Because the Portal and Media Builder are separate app registrations, `Administrator`/`Technician`
 > must be assigned separately on each one**: assigning a user Administrator on the Portal does
@@ -45,13 +45,13 @@ the authorization check are separate steps.
 
 Entra ID → **Enterprise applications** → **Cloud Imaging Operator API** → **Users and groups** →
 **Add user/group** → assign `CloudImaging.MediaBuilderAccess`. See
-[setup-instructions.md, Step 5](setup-instructions.md#step-5-assign-access-to-your-administrators-and-technicians)
+[setup-instructions.md, Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians)
 for why this is required in addition to the Media Builder registration's own
 `Administrator`/`Technician` role.
 
 `PortalAccess` requires no manual assignment; `assign-service-roles.ps1` (run once during
-[Step 4](setup-instructions.md#step-4-run-the-post-deployment-scripts)) grants it to the Portal
-backend's managed identity.
+[Phase 3, Step 1](setup-instructions.md#step-1-run-the-post-deployment-scripts)) grants it to the
+Portal backend's managed identity.
 
 ---
 

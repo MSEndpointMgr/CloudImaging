@@ -118,23 +118,12 @@ public sealed partial class CreateSessionFunction
         // Issue device-session token if not NotAuthorized
         // (The actual token service is in DeviceGatewayApi — ImagingCoreApi returns the raw session,
         //  and DeviceGatewayApi issues the bearer token before returning to the device)
-        var finalSession = new DeviceSession
+        var finalSession = session with
         {
-            SessionId = session.SessionId,
             State = targetState,
-            DeviceSerialNumber = session.DeviceSerialNumber,
-            DeviceManufacturer = session.DeviceManufacturer,
-            DeviceModel = session.DeviceModel,
-            HardwareMetadata = session.HardwareMetadata,
-            LocationId = session.LocationId,
-            LocationName = session.LocationName,
             PreFlightAuthorizationResult = preFlightResult,
-            Passcode = session.Passcode,
-            PasscodeExpiresAt = session.PasscodeExpiresAt,
             PasscodeConsumed = false,
             OverallProgressPercent = 0,
-            CreatedAt = session.CreatedAt,
-            LastHeartbeatAt = session.LastHeartbeatAt,
             PartitioningSchemeSnapshotJson = partitioningSchemeSnapshotJson,
         };
 

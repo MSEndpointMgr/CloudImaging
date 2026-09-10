@@ -76,13 +76,13 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
             <label className="block text-sm font-medium mb-1">Version</label>
             <Input value={version} aria-invalid={duplicateVersion} onChange={e => setVersion(e.target.value)} />
             {duplicateVersion && (
-              <p className="text-xs text-destructive mt-1">Version "{version.trim()}" already exists.</p>
+              <p className="text-sm text-destructive mt-1">Version "{version.trim()}" already exists.</p>
             )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Description</label>
             <textarea value={description} onChange={e => setDesc(e.target.value)} rows={3}
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background" />
+              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50" />
           </div>
         </div>
 

@@ -18,13 +18,6 @@
         on disk and never uploads or transmits its contents (see Services.LogUploadService for the
         separate, best-effort failure-path upload).
     -->
-    <!--
-        Outer accent-colored Border: WinPE has no DWM composition, so this window has no native
-        drop shadow, and it shares MainWindow's exact ApplicationBackgroundBrush, so without an
-        explicit outline it's visually indistinguishable from MainWindow behind it when centered
-        over it. CornerRadius matches WindowCornerPreference="Round" above.
-    -->
-    <Border BorderBrush="{DynamicResource SystemAccentColorBrush}" BorderThickness="2" CornerRadius="8">
     <Grid Background="{DynamicResource ApplicationBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -84,21 +77,35 @@
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1" CornerRadius="4">
             <!--
-                VerticalScrollBarVisibility is deliberately "Visible" rather than "Auto": on WinPE
-                (no DWM composition / software rendering) the WPF-UI themed scrollbar's hover
-                fade-in visual state has been observed to never trigger, leaving an Auto scrollbar
-                completely invisible even though the content genuinely overflows and the track is
-                functional, so forcing it always-visible guarantees a technician can see and use it.
+                The WPF UI TextBox control template's own PART_ContentHost ScrollViewer never
+                surfaces a horizontal scrollbar thumb (only vertical), no matter what
+                HorizontalScrollBarVisibility is set to on the TextBox itself, so long unwrapped
+                log lines were readable only via keyboard — handing horizontal scrolling to an
+                explicit outer ScrollViewer instead (Disabled on the TextBox so the two don't
+                fight over the same axis) gets a real, visible horizontal scrollbar (mirrors
+                Media Builder's GenerateBootImageView log viewer, which hit the same limitation).
+                Vertical scrolling is still owned by the TextBox itself (Visible), which — unlike
+                horizontal — does render correctly.
+
+                Focusable="False" so this wrapper never keeps the default WPF focus-visual
+                rectangle drawn around itself once the inner TextBox is clicked/selected.
+
+                Horizontal Padding lives here rather than on the TextBox: this ScrollViewer (not
+                the TextBox) now owns horizontal scrolling, and it's the ScrollViewer's own
+                Padding that correctly extends into its scrollable extent on both sides.
             -->
-            <TextBox x:Name="LogTextBox"
-                     IsReadOnly="True"
-                     TextWrapping="NoWrap"
-                     FontFamily="Consolas" FontSize="12"
-                     VerticalScrollBarVisibility="Visible"
-                     HorizontalScrollBarVisibility="Auto"
-                     Background="Transparent" BorderThickness="0"
-                     Padding="10" />
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                          Focusable="False" Padding="10,0">
+                <TextBox x:Name="LogTextBox"
+                         IsReadOnly="True"
+                         TextWrapping="NoWrap"
+                         FontFamily="Consolas" FontSize="12"
+                         VerticalScrollBarVisibility="Visible"
+                         HorizontalScrollBarVisibility="Disabled"
+                         Background="Transparent" BorderThickness="0"
+                         Padding="0,10"
+                         AcceptsReturn="True" />
+            </ScrollViewer>
         </Border>
     </Grid>
-    </Border>
 </ui:FluentWindow>

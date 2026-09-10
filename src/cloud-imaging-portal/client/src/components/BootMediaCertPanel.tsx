@@ -3,6 +3,7 @@ import { ShieldCheck, KeyRound, RefreshCw } from 'lucide-react';
 import { apiFetch } from '../lib/apiClient.ts';
 import { Button } from './ui/button.tsx';
 import { Badge } from './ui/badge.tsx';
+import { CopyableId } from './ui/copyable-id.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from './ConfirmImpactDialog.tsx';
 
@@ -113,7 +114,11 @@ export function BootMediaCertPanel({ certMeta, onCertChanged }: BootMediaCertPan
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-md border border-border bg-muted/30 p-4 text-xs sm:grid-cols-4">
           <div className="col-span-2 space-y-0.5 sm:col-span-4">
             <dt className="text-muted-foreground">Thumbprint</dt>
-            <dd className="break-all font-mono">{certMeta.thumbprintDisplay ?? '-'}</dd>
+            <dd className="font-mono">
+              {certMeta.thumbprintDisplay
+                ? <CopyableId value={certMeta.thumbprintDisplay} label="certificate thumbprint" wrap />
+                : '-'}
+            </dd>
           </div>
           <div className="space-y-0.5">
             <dt className="text-muted-foreground">Issued</dt>
@@ -207,8 +212,8 @@ function ActionRow({
           {icon}
         </div>
         <div className="space-y-0.5">
-          <p className="text-xs font-medium">{title}</p>
-          <p className="text-xs text-muted-foreground">{description}</p>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
       <div className="shrink-0 sm:pl-3">{action}</div>

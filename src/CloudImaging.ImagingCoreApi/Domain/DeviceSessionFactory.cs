@@ -30,6 +30,7 @@ public static class DeviceSessionFactory
             DeviceSerialNumber = registration.SerialNumber,
             DeviceManufacturer = registration.Manufacturer,
             DeviceModel = registration.Model,
+            MacAddress = registration.MacAddress,
             HardwareMetadata = registration.Hardware,
             LocationId = registration.LocationId,
             LocationName = registration.LocationName,

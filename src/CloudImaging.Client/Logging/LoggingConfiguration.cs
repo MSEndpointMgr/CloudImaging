@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
@@ -61,6 +62,13 @@ internal static class LoggingConfiguration
                 retainedFileCountLimit: 5,
                 formatProvider: CultureInfo.InvariantCulture,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+                // UTF-8 *with* a byte-order mark. Log messages contain non-ASCII characters
+                // (arrows, ellipses, em dashes), and Serilog's default is UTF-8 without a BOM —
+                // so Notepad and other viewers on a machine whose ANSI code page is Windows-1252
+                // silently decode the file as legacy ANSI and render "→" as "â†'". The BOM makes
+                // the encoding unambiguous for anything that opens the downloaded file locally,
+                // where HTTP Content-Type is no longer available to disambiguate it.
+                encoding: new UTF8Encoding(encoderShouldEmitUTF8Identifier: true),
                 // Allows LogUploadService to open the same file for read (FileShare.ReadWrite)
                 // while Serilog still holds it open for writing, so a failure mid-session can be
                 // uploaded without closing/reopening the application's own logger.

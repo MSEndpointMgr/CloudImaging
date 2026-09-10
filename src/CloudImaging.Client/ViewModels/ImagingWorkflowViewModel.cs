@@ -232,8 +232,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8–55%
+                        _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
+                    onBytesProgress: _progress.SetTransferProgress,
                     ct: ct);
             }
             catch (Exception ex)
@@ -260,6 +262,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.OverallPercent = 55 + (int)(pct * 0.25); // 55–80%
+                        _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
                     ct: ct);
@@ -279,9 +282,17 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.UpdateStep(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress);
             await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress, ct: ct);
 
+            var driveLetterService = new Services.OfflineDriveLetterService(pipelineLoggerFactory.CreateLogger<Services.OfflineDriveLetterService>());
             var bootConfigService = new Services.BootConfigurationService(pipelineLoggerFactory.CreateLogger<Services.BootConfigurationService>());
             try
             {
+                // The Windows partition is mounted under whichever letter WinPE had spare (often
+                // something like H:), and a custom-captured image can carry the letter mappings of
+                // the machine it came from. Re-point the applied image's own mount-manager state at
+                // C: before writing boot files, so the device boots as C: — see
+                // OfflineDriveLetterService for why this is not automatic.
+                await driveLetterService.EnsureWindowsVolumeBootsAsCAsync(diskFormat.WindowsVolume, ct);
+
                 await bootConfigService.ConfigureAsync(diskFormat.WindowsVolume, diskFormat.EfiSystemVolume, ct);
             }
             catch (Exception ex)
@@ -347,8 +358,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85–95%
+                        _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
+                    onBytesProgress: _progress.SetTransferProgress,
                     ct: ct);
             }
             catch (Exception ex)
@@ -358,6 +371,9 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             }
 
             _progress.StatusMessage = "Applying recovery image…";
+            // Second phase of the same step: DISM reports nothing here, so empty the bar rather
+            // than leaving it full from the download that just finished.
+            _progress.ResetStepProgress();
             try
             {
                 await recoveryService.ApplyAsync(

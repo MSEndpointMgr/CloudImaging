@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [x] No [NEEDS CLARIFICATION] markers remain — resolved: SessionBroker (public) / SessionHandler (private)
+- [x] No [NEEDS CLARIFICATION] markers remain. Resolved: SessionBroker (public) / SessionHandler (private)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)

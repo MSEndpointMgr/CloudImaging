@@ -146,7 +146,12 @@ public sealed partial class SessionLogFunctions
             blobName,
             BlobSasPermissions.Read,
             TimeSpan.FromMinutes(15),
-            context.CancellationToken);
+            // The Portal opens this URL directly in a browser tab. Client logs are UTF-8, so the
+            // charset is pinned here rather than left to the browser's locale default — which
+            // renders "→" as "â†'". Applied at download time so logs uploaded before the client
+            // started sending a charset are readable too.
+            responseContentType: "text/plain; charset=utf-8",
+            cancellationToken: context.CancellationToken);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");

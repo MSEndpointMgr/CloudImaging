@@ -6,15 +6,18 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Badge } from '../components/ui/badge';
 import { EmptyState } from '../components/ui/empty-state';
+import { TableSkeletonRows } from '../components/ui/skeleton';
+import { CopyableId } from '../components/ui/copyable-id.tsx';
+import { RelativeTime } from '../components/ui/relative-time.tsx';
+import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { UploadProgressBar } from '../components/UploadProgressBar.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
-import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
-import { formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import {
@@ -80,7 +83,14 @@ export default function BootImagesPage(): React.ReactElement {
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this boot image?')) return;
     const res = await apiFetch(`/api/boot-images/${id}`, { method: 'DELETE', credentials: 'include' });
-    if (res.ok || res.status === 204) void loadImages();
+    if (res.ok || res.status === 204) { void loadImages(); return; }
+    // Anything else must be reported. Silently ignoring it (as this did) made a rejected delete
+    // — most commonly the 409 for the currently published entry — look like the button was dead.
+    notify({
+      status: 'error',
+      title: 'Failed to delete boot image.',
+      description: await extractErrorDetail(res, `The server responded with status ${String(res.status)}.`),
+    });
   };
 
   const used      = images.length;
@@ -116,7 +126,7 @@ export default function BootImagesPage(): React.ReactElement {
             </div>
           </div>
           <div className="flex-1">
-            <div className="mb-1.5 flex items-center justify-between text-xs">
+            <div className="mb-2 flex items-center justify-between text-xs">
               <span className={atCapacity ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
                 {atCapacity
                   ? 'At capacity. The oldest entry is replaced on the next upload'
@@ -148,14 +158,20 @@ export default function BootImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow className="hover:bg-transparent"><TableCell colSpan={isAdministrator ? 6 : 5} className="py-10 text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              <TableSkeletonRows columns={isAdministrator ? 6 : 5} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={isAdministrator ? 6 : 5} className="p-0">
                   <EmptyState
                     icon={HardDrive}
                     title="No boot images"
-                    description="Publish a boot image from the Media Builder app to get started."
+                    description="Upload a boot image here, or publish one directly from the Media Builder app."
+                    action={isAdministrator ? (
+                      <Button onClick={() => setUploadOpen(true)}>
+                        <Upload className="h-4 w-4" />
+                        Upload boot image
+                      </Button>
+                    ) : undefined}
                   />
                 </TableCell>
               </TableRow>
@@ -163,8 +179,15 @@ export default function BootImagesPage(): React.ReactElement {
               <TableRow key={img.bootImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{img.sha256Hash.slice(0, 12)}…</TableCell>
-                <TableCell className="text-xs text-muted-foreground">{formatDateTime(img.createdAt)}</TableCell>
+                <TableCell>
+                  <CopyableId
+                    value={img.sha256Hash}
+                    display={`${img.sha256Hash.slice(0, 12)}\u2026`}
+                    label="SHA-256 digest"
+                    className="font-mono text-xs text-muted-foreground"
+                  />
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground"><RelativeTime value={img.createdAt} /></TableCell>
                 <TableCell>
                   {img.isLatestPublished
                     ? <Badge variant="info" dot>Latest</Badge>
@@ -172,15 +195,23 @@ export default function BootImagesPage(): React.ReactElement {
                 </TableCell>
                 {isAdministrator && (
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Delete"
-                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                      onClick={() => void handleDelete(img.bootImageId)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {/*
+                      The currently published entry cannot be deleted — Imaging Core rejects it
+                      with 409 until a replacement is published — so the action is disabled here
+                      rather than offering a click that can only fail (mirrors Recovery Images).
+                    */}
+                    <Tooltip content={img.isLatestPublished ? 'Publish a replacement before deleting' : 'Delete'}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Delete boot image"
+                        disabled={img.isLatestPublished}
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => void handleDelete(img.bootImageId)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </Tooltip>
                   </TableCell>
                 )}
               </TableRow>
@@ -280,7 +311,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
         <CardContent className="space-y-4 py-6">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Upload boot image</h2>
-            <Button variant="ghost" size="icon" onClick={onClose} disabled={busy} title="Close">
+            <Button variant="ghost" size="icon" onClick={onClose} disabled={busy} aria-label="Close">
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -291,22 +322,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
             </p>
           )}
 
-          <div className="space-y-1.5">
-            <Label htmlFor="bootImageVersion">Version</Label>
-            <Input
-              id="bootImageVersion"
-              placeholder="e.g. 2026.07.1"
-              value={version}
-              disabled={busy}
-              aria-invalid={duplicateVersion}
-              onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
-            />
-            {duplicateVersion && (
-              <p className="text-xs text-destructive">Version "{trimmedVersion}" already exists.</p>
-            )}
-          </div>
-
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <Label htmlFor="bootImageFile">Boot media (.wim)</Label>
             <input
               ref={fileInputRef}
@@ -348,6 +364,21 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
                 {file ? `${file.name} · ${fmtSize(file.size)}` : 'No file selected'}
               </span>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="bootImageVersion">Version</Label>
+            <Input
+              id="bootImageVersion"
+              placeholder="e.g. 2026.07.1"
+              value={version}
+              disabled={busy}
+              aria-invalid={duplicateVersion}
+              onChange={e => { setVersion(e.target.value); setVersionAutoFilled(false); }}
+            />
+            {duplicateVersion && (
+              <p className="text-sm text-destructive">Version "{trimmedVersion}" already exists.</p>
+            )}
           </div>
 
           {busy && <UploadProgressBar percent={stagePercent} label={stageLabel} />}

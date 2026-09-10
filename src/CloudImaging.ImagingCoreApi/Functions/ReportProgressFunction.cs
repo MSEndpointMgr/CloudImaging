@@ -15,7 +15,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 ///
 /// Request body:
 /// {
-///   "stepName": "FormatDisk|DownloadImage|ApplyImage",
+///   "stepName": "FormatDisk|DownloadImage|ApplyImage|ConfigureBoot|ApplyRecoveryImage",
 ///   "status": "Pending|InProgress|Completed|Failed",
 ///   "stepProgressPercent": 0-100,   // optional; relevant for InProgress
 ///   "errorDetail": "..."            // optional; populated when status=Failed
@@ -93,37 +93,28 @@ public sealed partial class ReportProgressFunction
         // Reload all steps to recalculate overall progress
         var allSteps = await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken);
         var overallPercent = OverallProgressCalculator.Calculate(allSteps);
-        var activeStep = OverallProgressCalculator.ActiveStepName(allSteps);
+        var activeStep = OverallProgressCalculator.CurrentOrLastStepName(allSteps);
 
         // Determine new session state
         bool anyFailed = allSteps.Any(s => s.Status == ImagingStepStatus.Failed);
-        bool allCompleted = allSteps.Count == 3 && allSteps.All(s => s.Status == ImagingStepStatus.Completed);
+        bool allCompleted = allSteps.Count == OverallProgressCalculator.PipelineStepCount
+                            && allSteps.All(s => s.Status == ImagingStepStatus.Completed);
+
+        // A step that has started but not yet reported any sub-progress still means the device is
+        // imaging (the first FormatDisk report is InProgress at 0%, which leaves overallPercent at
+        // 0), so don't gate the transition on the percentage alone.
+        bool anyStarted = allSteps.Any(s => s.Status is ImagingStepStatus.InProgress or ImagingStepStatus.Completed);
 
         var newState = anyFailed ? SessionState.SessionFailed
                      : allCompleted ? SessionState.SessionCompleted
-                     : overallPercent > 0 ? SessionState.SessionInProgress
+                     : anyStarted ? SessionState.SessionInProgress
                      : session.State;
 
-        var updated = new DeviceSession
+        var updated = session with
         {
-            SessionId = session.SessionId,
             State = newState,
-            DeviceSerialNumber = session.DeviceSerialNumber,
-            DeviceManufacturer = session.DeviceManufacturer,
-            DeviceModel = session.DeviceModel,
-            HardwareMetadata = session.HardwareMetadata,
-            PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-            Passcode = session.Passcode,
-            PasscodeExpiresAt = session.PasscodeExpiresAt,
-            PasscodeConsumed = session.PasscodeConsumed,
-            DeviceSessionToken = session.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
-            AssignedOsImageId = session.AssignedOsImageId,
-            SasTokenUrl = session.SasTokenUrl,
-            SasTokenUrlExpiresAt = session.SasTokenUrlExpiresAt,
             OverallProgressPercent = overallPercent,
             CurrentStep = activeStep,
-            CreatedAt = session.CreatedAt,
             LastHeartbeatAt = DateTimeOffset.UtcNow,
             TerminalAt = anyFailed || allCompleted ? DateTimeOffset.UtcNow : null,
         };

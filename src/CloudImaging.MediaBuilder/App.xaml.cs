@@ -264,21 +264,61 @@ public partial class App : System.Windows.Application
 
     // ── Configuration ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Machine-wide configuration key written by the Media Builder MSI from its
+    /// ENTRAIDCLIENTID / ENTRAIDTENANTID / OPERATORAPICLIENTID / OPERATORAPIBASEURL properties, so
+    /// a managed deployment (Intune, ConfigMgr) can configure the app at install time without
+    /// repackaging a tenant-specific appsettings.json into the payload. Also settable by Group
+    /// Policy preferences or a remediation script after the fact.
+    /// </summary>
+    private const string MachineConfigKeyPath = @"SOFTWARE\MSEndpointMgr\CloudImaging\MediaBuilder";
+
+    private static readonly MediaBuilderConfig EmptyConfig =
+        new(string.Empty, string.Empty, string.Empty, string.Empty);
+
     private static MediaBuilderConfig LoadConfiguration()
     {
-        // The committed appsettings.json ships with empty placeholders so no environment
-        // specific values leak into a public release. Developers put real dev values in
-        // appsettings.Local.json, which is git-ignored and overlaid here at runtime.
+        // Precedence, lowest to highest:
+        //   1. appsettings.json      — committed with empty placeholders so no environment
+        //                              specific values leak into a public release.
+        //   2. HKLM machine config   — what the MSI writes at install time (per-machine, applies
+        //                              to every technician who signs in on the workstation).
+        //   3. appsettings.Local.json — git-ignored developer overlay; wins so a developer can
+        //                              still point a locally built copy at a dev tenant even on a
+        //                              workstation that has the managed MSI installed.
         var config = ReadConfigFile("appsettings.json");
+        config = Overlay(config, ReadMachineConfig());
         config = Overlay(config, ReadConfigFile("appsettings.Local.json"));
         return config;
+    }
+
+    private static MediaBuilderConfig ReadMachineConfig()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(MachineConfigKeyPath);
+            if (key is null)
+                return EmptyConfig;
+
+            return new MediaBuilderConfig(
+                key.GetValue("ClientId") as string ?? string.Empty,
+                key.GetValue("TenantId") as string ?? string.Empty,
+                key.GetValue("OperatorApiScope") as string ?? string.Empty,
+                key.GetValue("OperatorApiBaseUrl") as string ?? string.Empty);
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)
+        {
+            // Same "treat as unconfigured" contract as a missing appsettings.json: the sign-in
+            // view already surfaces "Entra ID sign-in is not configured" when values are empty.
+            return EmptyConfig;
+        }
     }
 
     private static MediaBuilderConfig ReadConfigFile(string fileName)
     {
         var settingsPath = Path.Combine(AppContext.BaseDirectory, fileName);
         if (!File.Exists(settingsPath))
-            return new MediaBuilderConfig(string.Empty, string.Empty, string.Empty, string.Empty);
+            return EmptyConfig;
 
         try
         {
@@ -304,7 +344,7 @@ public partial class App : System.Windows.Application
         }
         catch
         {
-            return new MediaBuilderConfig(string.Empty, string.Empty, string.Empty, string.Empty);
+            return EmptyConfig;
         }
     }
 

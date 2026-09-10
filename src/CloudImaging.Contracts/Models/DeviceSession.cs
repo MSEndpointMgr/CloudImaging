@@ -6,7 +6,14 @@ namespace CloudImaging.Contracts.Models;
 /// Represents a single device imaging session (FR-021, Key Entities).
 /// This is the canonical DTO; persistence models in ImagingCoreApi extend it.
 /// </summary>
-public sealed class DeviceSession
+/// <remarks>
+/// A <c>record</c> specifically so state transitions can be written as <c>session with { ... }</c>.
+/// This used to be a class, which forced every transition to re-list all ~25 properties by hand;
+/// each omission silently dropped data with no compiler error, and several had accumulated
+/// (location, hardware metadata and the partitioning snapshot were all being lost on transition).
+/// Do not convert it back.
+/// </remarks>
+public sealed record DeviceSession
 {
     public required Guid SessionId { get; init; }
     public required SessionState State { get; init; }
@@ -15,6 +22,15 @@ public sealed class DeviceSession
     public required string DeviceSerialNumber { get; init; }
     public required string DeviceManufacturer { get; init; }
     public required string DeviceModel { get; init; }
+
+    /// <summary>
+    /// MAC address of the first non-loopback adapter that was up at registration — informational,
+    /// used by operators to correlate a device with network/DHCP records. Carried from
+    /// <see cref="DeviceRegistrationPayload.MacAddress"/>; the full per-adapter list lives in
+    /// <see cref="HardwareMetadata"/>.
+    /// </summary>
+    public string? MacAddress { get; init; }
+
     public DeviceHardwareMetadata? HardwareMetadata { get; init; }
 
     /// <summary>

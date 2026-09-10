@@ -45,7 +45,13 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
+        <!--
+            Titled rather than blank: with ExtendsContentIntoTitleBar the bar occupies a full row
+            above every hosted page regardless, so leaving it empty just reads as dead space at the
+            top of dense pages (ProgressView especially). Matches the Media Builder's title bar.
+        -->
         <ui:TitleBar Grid.Row="0"
+                     Title="Cloud Imaging"
                      ShowMaximize="False" />
 
         <Grid Grid.Row="1">

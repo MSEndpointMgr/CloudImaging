@@ -128,11 +128,25 @@ public sealed partial class RecoveryImageService
     {
         LogStartingReagentc(_logger, arguments);
 
+        // Resolved to a fully-qualified path (rather than a bare "reagentc.exe" relying on
+        // PATH/CreateProcess's implicit System32 search) so that, if a boot image was built
+        // before BootImageGenerationService started injecting reagentc.exe into WinPE, the
+        // resulting error clearly names the missing file instead of a generic Win32Exception
+        // "The system cannot find the file specified" with no indication of what/where.
+        var reagentcPath = Path.Combine(Environment.SystemDirectory, "reagentc.exe");
+        if (!File.Exists(reagentcPath))
+        {
+            LogReagentcNotFound(_logger, reagentcPath);
+            throw new InvalidOperationException(
+                $"\"{reagentcPath}\" was not found. This WinPE boot image was built before reagentc.exe " +
+                "injection was added to boot image generation — rebuild the boot media to pick up the fix.");
+        }
+
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = "reagentc.exe",
+                FileName = reagentcPath,
                 Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
@@ -220,6 +234,9 @@ public sealed partial class RecoveryImageService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting reagentc.exe {Arguments}")]
     private static partial void LogStartingReagentc(ILogger logger, string arguments);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "reagentc.exe not found at {ReagentcPath}.")]
+    private static partial void LogReagentcNotFound(ILogger logger, string reagentcPath);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "reagentc.exe {Arguments} exited with code {ExitCode}. Output: {Output}")]
     private static partial void LogReagentcFailed(ILogger logger, string arguments, int exitCode, string output);

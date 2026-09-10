@@ -1,0 +1,13 @@
+<Project>
+
+  <!--
+    Deliberately empty, and deliberately NOT importing the repository root Directory.Build.props.
+
+    MSBuild walks up the directory tree until it finds a Directory.Build.props, so this file
+    terminates the search and isolates the WiX project from the solution-wide C# settings in
+    /Directory.Build.props (TargetFramework=net10.0, Nullable, ImplicitUsings, LangVersion,
+    EnableNETAnalyzers). None of those apply to a .wixproj, and TargetFramework in particular
+    confuses the WiX SDK's restore.
+  -->
+
+</Project>

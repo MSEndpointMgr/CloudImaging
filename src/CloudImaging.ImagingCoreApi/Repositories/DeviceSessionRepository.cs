@@ -1,5 +1,6 @@
 using Azure;
 using Azure.Data.Tables;
+using System.Text.Json;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 
@@ -15,6 +16,16 @@ public sealed class DeviceSessionRepository
     private const string TableName = "DeviceSessions";
     private const string ActivePartition = "active";
     private const string TerminalPartition = "terminal";
+
+    /// <summary>
+    /// Table Storage entities are flat, so the hardware inventory is round-tripped through a single
+    /// JSON column (same approach as PartitioningSchemeSnapshotJson). Camel-cased so the stored
+    /// blob matches the shape the APIs serialize elsewhere.
+    /// </summary>
+    private static readonly JsonSerializerOptions HardwareJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     private readonly TableClient _table;
 
@@ -194,13 +205,18 @@ public sealed class DeviceSessionRepository
     }
 
     // ── Entity mapping ────────────────────────────────────────────────────────
+    // internal (not private) so DeviceSessionEntityMappingTests can assert the round-trip.
+    // Every persisted field must survive ToEntity -> FromEntity; hardware metadata was silently
+    // dropped here for the lifetime of the feature because nothing covered this mapping.
 
-    private static TableEntity ToEntity(DeviceSession s, string partition) => new(partition, s.SessionId.ToString())
+    internal static TableEntity ToEntity(DeviceSession s, string partition) => new(partition, s.SessionId.ToString())
     {
         ["State"] = s.State.ToString(),
         ["DeviceSerialNumber"] = s.DeviceSerialNumber,
         ["DeviceManufacturer"] = s.DeviceManufacturer,
         ["DeviceModel"] = s.DeviceModel,
+        ["MacAddress"] = s.MacAddress,
+        ["HardwareMetadataJson"] = SerializeHardware(s.HardwareMetadata),
         ["LocationId"] = s.LocationId?.ToString(),
         ["LocationName"] = s.LocationName,
         ["PreFlightAuthorizationResult"] = s.PreFlightAuthorizationResult.ToString(),
@@ -221,13 +237,15 @@ public sealed class DeviceSessionRepository
         ["PurgeAt"] = s.PurgeAt,
     };
 
-    private static DeviceSession FromEntity(TableEntity e) => new()
+    internal static DeviceSession FromEntity(TableEntity e) => new()
     {
         SessionId = Guid.Parse(e.RowKey),
         State = Enum.Parse<SessionState>(e.GetString("State") ?? nameof(SessionState.SessionInit)),
         DeviceSerialNumber = e.GetString("DeviceSerialNumber") ?? string.Empty,
         DeviceManufacturer = e.GetString("DeviceManufacturer") ?? string.Empty,
         DeviceModel = e.GetString("DeviceModel") ?? string.Empty,
+        MacAddress = e.GetString("MacAddress"),
+        HardwareMetadata = DeserializeHardware(e.GetString("HardwareMetadataJson")),
         LocationId = e.GetString("LocationId") is string lid ? Guid.Parse(lid) : null,
         LocationName = e.GetString("LocationName"),
         PreFlightAuthorizationResult = Enum.Parse<PreFlightAuthorizationResult>(e.GetString("PreFlightAuthorizationResult") ?? nameof(PreFlightAuthorizationResult.Skipped)),
@@ -247,4 +265,25 @@ public sealed class DeviceSessionRepository
         TerminalAt = e.GetDateTimeOffset("TerminalAt"),
         PurgeAt = e.GetDateTimeOffset("PurgeAt"),
     };
+
+    private static string? SerializeHardware(DeviceHardwareMetadata? hardware) =>
+        hardware is null ? null : JsonSerializer.Serialize(hardware, HardwareJsonOptions);
+
+    /// <summary>
+    /// Never throws: sessions written before this column existed have no value, and a malformed
+    /// blob must not make an otherwise-healthy session unreadable. Hardware metadata is
+    /// informational (FR-001a), so degrading to null is the correct failure mode.
+    /// </summary>
+    private static DeviceHardwareMetadata? DeserializeHardware(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<DeviceHardwareMetadata>(json, HardwareJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 }

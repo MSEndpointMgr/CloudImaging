@@ -4,6 +4,14 @@
 
 @layer base {
   :root {
+    /* Tells the browser which palette to draw UA chrome with. Without it the engine assumes
+       light for everything it renders itself: scrollbars, the date-input calendar popup and its
+       spinners, the file-picker button, focus rings on unstyled controls. The dark theme
+       otherwise leaked white scrollbars and white calendar popups over dark surfaces. CSS cannot
+       style those internals, so this declaration is the only lever. (Option lists are no longer
+       among them; `ui/select.tsx` renders its own.) */
+    color-scheme: light;
+
     /* shadcn/ui neutral design tokens (HSL), light theme */
     --foreground: 222.2 84% 4.9%;
 
@@ -18,7 +26,11 @@
     --secondary-foreground: 222.2 47.4% 11.2%;
 
     --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Darkened from shadcn's stock 46.9% (slate-500). At 46.9% this cleared 4.5:1 on white but
+       fell to ~4.1:1 once placed on the tinted `bg-primary/10` panels and selection bars it is
+       actually used on. 42% holds >=4.8:1 on every surface in the light theme while staying
+       visibly secondary against the near-black foreground. */
+    --muted-foreground: 215.4 16.3% 42%;
 
     /* Table column-header surface, darker than the card for clear contrast in light mode */
     --table-header: 214.3 31.8% 85%;
@@ -53,6 +65,8 @@
   }
 
   .dark {
+    color-scheme: dark;
+
     --foreground: 210 40% 98%;
 
     --card-foreground: 210 40% 98%;
@@ -100,10 +114,11 @@
     @apply bg-background text-foreground select-none cursor-default;
     font-feature-settings: 'rlig' 1, 'calt' 1;
   }
-  /* Nothing on the page is meant to be selected/copied by default (no clipboard-copy
-     feature exists anywhere), so a stray click/drag should never produce a text
-     selection highlight or a blinking text-entry caret. Real form controls are the
-     one exception — they need normal selection + caret behavior to be usable. */
+  /* Chrome (nav, labels, buttons, column headers) is not meant to be selected, so a stray
+     click/drag there should never produce a selection highlight or a blinking caret. Content
+     is the exception and opts back in: form controls below, table data cells, and the
+     CopyableId primitive used for serials, digests, and certificate thumbprints - operators
+     transcribe those values against physical hardware and paste them into support tickets. */
   input, textarea, [contenteditable='true'] {
     @apply select-text cursor-text;
   }

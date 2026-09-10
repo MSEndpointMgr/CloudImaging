@@ -43,8 +43,8 @@ export function ConfirmImpactDialog({
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
             <AlertTriangle className="h-5 w-5" aria-hidden="true" />
           </div>
-          <div className="min-w-0 space-y-1.5">
-            <h2 id={titleId} className="text-sm font-semibold break-words">
+          <div className="min-w-0 space-y-2">
+            <h2 id={titleId} className="text-base font-semibold break-words">
               {copy.confirmTitle}
             </h2>
             {/* Impact copy interpolates operator-supplied names, so an unbroken token long enough

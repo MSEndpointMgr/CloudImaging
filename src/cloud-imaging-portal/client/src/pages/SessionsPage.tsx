@@ -3,16 +3,21 @@ export default function SessionsPage(): React.ReactElement {
   return <SessionsPageImpl />;
 }
 
-import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
+import { Select } from '../components/ui/select.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { CopyableId } from '../components/ui/copyable-id.tsx';
+import { RelativeTime } from '../components/ui/relative-time.tsx';
+import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
+import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { cn } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
@@ -38,6 +43,14 @@ interface Session {
   overallProgressPercent: number;
   currentStep: string | null;
   createdAt: string;
+  // Already present on the Operator API's session summary; the portal simply was not reading
+  // them. Optional so a cached/older response cannot blank the table.
+  preFlightAuthorizationResult?: string | null;
+  assignedOsImageId?: string | null;
+  lastHeartbeatAt?: string | null;
+  terminalAt?: string | null;
+  macAddress?: string | null;
+  hardware?: SessionHardware | null;
 }
 
 interface SessionLogEntry {
@@ -88,26 +101,17 @@ function stateBadgeVariant(state: string): BadgeProps['variant'] {
   }
 }
 
-function formatRegistered(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
-}
-
 /**
- * Label for the OS image picker. A native <select> popup sizes itself to its longest option and
- * ignores the control's width, so an image whose catalog name is the raw uploaded file name (the
- * default) could otherwise open a dropdown running off the side of the page. The picker sits early
- * in its row (see the Coupled Devices toolbar) precisely so there's ample room for the popup to
- * expand into, so this only needs to catch pathological outliers rather than routinely truncate.
- * The operator-authored version leads and is never truncated, since that is what identifies the
- * image and it is unique across the catalog.
+ * Label for the OS image picker. Only the operator-authored version is shown: that is the name the
+ * technician recognises the image by and it is unique across the catalog, so appending the uploaded
+ * file name (typically a long vendor ESD/WIM file name) added nothing but noise. The truncation
+ * guard stays as a backstop for a pathologically long version string; `Select` sizes its list to
+ * the control and ellipsizes anything longer, with the full text on the row's tooltip.
  */
 const MAX_IMAGE_OPTION_CHARS = 100;
 
 function imageOptionLabel(image: OsImage): string {
-  const name = image.name.replace(/\.(wim|esd|iso)$/i, '').trim();
-  const label = name && name !== image.version ? `${image.version} (${name})` : image.version;
+  const label = image.version.trim();
   return label.length > MAX_IMAGE_OPTION_CHARS
     ? `${label.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
     : label;
@@ -173,7 +177,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
       />
       {error && (
         <span title={error} className="absolute right-1.5 flex text-destructive">
-          <CircleAlert className="h-3.5 w-3.5" aria-hidden="true" />
+          <CircleAlert className="h-4 w-4" aria-hidden="true" />
           <span id={errorId} className="sr-only">{error}</span>
         </span>
       )}
@@ -197,6 +201,11 @@ function SessionsPageImpl(): React.ReactElement {
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const [startingImages, setStartingImages]   = useState(false);
   const [pendingBulkAssign, setPendingBulkAssign] = useState(false);
+  // Rows the operator has expanded for detail, keyed by session id. Kept as a set rather than a
+  // single id so several devices can be compared side by side, and held here rather than inside a
+  // row component so a poll that re-renders the table cannot silently collapse them.
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const detailsId = useId();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Consecutive failed /api/sessions polls, used to back off the poll interval (see
   // scheduleNextPoll); reset to 0 the moment a poll succeeds again.
@@ -206,6 +215,15 @@ function SessionsPageImpl(): React.ReactElement {
   // active OS image has been uploaded — surfaced via a persistent banner rather than a toast
   // so technicians can't miss it while coupling devices ahead of an image being ready.
   const hasOsImages = images.length > 0;
+
+  const isExpanded = useCallback((sessionId: string) => expandedIds.has(sessionId), [expandedIds]);
+  const toggleExpanded = useCallback((sessionId: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (!next.delete(sessionId)) next.add(sessionId);
+      return next;
+    });
+  }, []);
 
   const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
@@ -468,7 +486,7 @@ function SessionsPageImpl(): React.ReactElement {
                 key={tab.key}
                 onClick={() => setView(tab.key)}
                 className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   isActive
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground',
@@ -477,7 +495,7 @@ function SessionsPageImpl(): React.ReactElement {
                 {tab.label}
                 <span
                   className={cn(
-                    'inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold',
+                    'inline-flex min-w-5 items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold',
                     isActive ? 'bg-primary text-primary-foreground' : 'bg-background/70 text-muted-foreground',
                   )}
                 >
@@ -489,12 +507,12 @@ function SessionsPageImpl(): React.ReactElement {
         </div>
         <div className="flex items-center gap-3">
           {preferredLocationId && (
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input
                 type="checkbox"
                 checked={showAllLocations}
                 onChange={e => setShowAllLocations(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-input"
+                className="h-4 w-4 rounded border-input align-middle accent-primary"
               />
               Show all locations
               {!showAllLocations && preferredLocationName && (
@@ -518,8 +536,11 @@ function SessionsPageImpl(): React.ReactElement {
 
       {view === 'pending' ? (
         <div className="space-y-5">
+          {/* text-sm, not text-xs: 12px is reserved for badges/metadata, and this is blocking
+              page guidance. It also makes the icon's mt-0.5 correct — that offset centres a 16px
+              icon in text-sm's 20px line box, so against a 16px text-xs line box it read low. */}
           {imagesLoaded && !hasOsImages && (
-            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <p>
                 No OS images have been uploaded yet. Devices can still be coupled, but imaging cannot start until
@@ -530,13 +551,16 @@ function SessionsPageImpl(): React.ReactElement {
           <div className="rounded-md border border-border overflow-hidden">
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <h3 className="text-sm font-semibold">Available Devices</h3>
-              <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-xs font-semibold text-muted-foreground">
+              <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
                 {available.length}
               </span>
             </div>
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
+                  {/* The remaining widths already summed to 96%, leaving exactly this much for the
+                      toggle without redistributing the existing columns. */}
+                  <TableHead className="w-[4%]"><span className="sr-only">Expand device details</span></TableHead>
                   <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[18%]" />
                   <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[24%]" />
                   <SortableHead label="Location" sortKey="location" sort={availableSort} onSort={toggleAvailableSort} className="w-[16%]" />
@@ -549,6 +573,7 @@ function SessionsPageImpl(): React.ReactElement {
                 {loading && sessions.length === 0 ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <TableRow key={`av-skeleton-${i}`} className="hover:bg-transparent">
+                      <TableCell><Skeleton className="h-4 w-4" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -559,7 +584,7 @@ function SessionsPageImpl(): React.ReactElement {
                   ))
                 ) : available.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6} className="p-0">
+                    <TableCell colSpan={7} className="p-0">
                       <EmptyState
                         icon={Smartphone}
                         title="No devices waiting to be coupled"
@@ -568,16 +593,41 @@ function SessionsPageImpl(): React.ReactElement {
                     </TableCell>
                   </TableRow>
                 ) : available.map(s => (
-                  <TableRow key={s.sessionId}>
-                    <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
-                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
-                    <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
-                    <TableCell>
-                      <PasscodeCouplingCell onCoupled={handleRefresh} />
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
-                  </TableRow>
+                  <Fragment key={s.sessionId}>
+                    <TableRow>
+                      <TableCell>
+                        <Tooltip content={isExpanded(s.sessionId) ? 'Hide details' : 'Show details'}>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(s.sessionId)}
+                            aria-expanded={isExpanded(s.sessionId)}
+                            aria-controls={`${detailsId}-${s.sessionId}`}
+                            aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} details for ${s.deviceSerialNumber}`}
+                            className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                          >
+                            {isExpanded(s.sessionId) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          </button>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                      </TableCell>
+                      <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                      <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                      <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
+                      <TableCell>
+                        <PasscodeCouplingCell onCoupled={handleRefresh} />
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
+                    </TableRow>
+                    {isExpanded(s.sessionId) && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={7} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                          <SessionDetailsPanel session={s} />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
                 ))}
               </TableBody>
             </Table>
@@ -587,25 +637,24 @@ function SessionsPageImpl(): React.ReactElement {
             <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
               <div className="flex shrink-0 items-center gap-2">
                 <h3 className="text-sm font-semibold">Coupled Devices</h3>
-                <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-semibold text-primary">
+                <span className="inline-flex min-w-5 select-none cursor-default items-center justify-center rounded-full bg-primary/15 px-2 py-0.5 text-xs font-semibold text-primary">
                   {coupled.length}
                 </span>
               </div>
               {/* Sized to its own content (bounded by min/max) rather than stretching to fill the
-                  row — a fixed max-width also keeps very long catalog names (see
-                  imageOptionLabel) from blowing up the control; truncate ellipsizes those. */}
-              <select
+                  row. The max-width also keeps very long catalog names (see imageOptionLabel) from
+                  blowing up the control; truncate ellipsizes those. */}
+              <Select
+                size="sm"
+                wrapperClassName="w-auto min-w-[10rem] max-w-xs"
+                aria-label="OS image to assign"
                 value={selectedImageId ?? ''}
-                onChange={e => setSelectedImageId(e.target.value || null)}
+                onValueChange={v => setSelectedImageId(v || null)}
+                options={images.map(img => ({ value: img.imageId, label: imageOptionLabel(img) }))}
+                placeholder={hasOsImages ? 'Select OS image\u2026' : 'No OS images uploaded'}
                 disabled={coupled.length === 0 || images.length === 0}
                 title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
-                className="h-8 w-auto min-w-[10rem] max-w-xs truncate rounded-md border border-input bg-background px-2 text-sm shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">{hasOsImages ? 'Select OS image…' : 'No OS images uploaded'}</option>
-                {images.map(img => (
-                  <option key={img.imageId} value={img.imageId}>{imageOptionLabel(img)}</option>
-                ))}
-              </select>
+              />
               <Button
                 size="sm"
                 className="ml-auto shrink-0"
@@ -642,21 +691,25 @@ function SessionsPageImpl(): React.ReactElement {
                   </TableRow>
                 ) : coupled.map(s => (
                   <TableRow key={s.sessionId}>
-                    <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
-                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
                     <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Remove this coupled device (e.g. if the device or VM was rebooted/aborted)"
-                        disabled={removingSessionId === s.sessionId}
-                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => void handleRemoveCoupledSession(s.sessionId)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                    </TableCell>
+                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
+                    <TableCell>
+                      <Tooltip content="Remove this coupled device (e.g. if the device or VM was rebooted/aborted)">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Remove coupled device ${s.deviceSerialNumber}`}
+                          disabled={removingSessionId === s.sessionId}
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => void handleRemoveCoupledSession(s.sessionId)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -703,9 +756,11 @@ function SessionsPageImpl(): React.ReactElement {
                 </TableRow>
               ) : monitor.map(s => (
                 <TableRow key={s.sessionId}>
-                  <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
+                  <TableCell>
+                    <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                  </TableCell>
                   <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                  <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                   <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                   <TableCell>
                     {s.overallProgressPercent > 0 ? (
@@ -717,7 +772,7 @@ function SessionsPageImpl(): React.ReactElement {
                       </div>
                     ) : <span className="text-muted-foreground">-</span>}
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
+                  <TableCell className="text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -766,12 +821,14 @@ function SessionsPageImpl(): React.ReactElement {
                 const hasLog = !logsUnknown && logs.length > 0;
                 return (
                   <TableRow key={s.sessionId}>
-                    <TableCell className="font-mono text-xs">{s.deviceSerialNumber}</TableCell>
+                    <TableCell>
+                      <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                    </TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatRegistered(s.createdAt)}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
                     <TableCell>
                       <Button
                         variant="outline"

@@ -80,22 +80,10 @@ public sealed partial class CoupleSessionFunction
         }
 
         // Transition session: SessionAllowed → SessionAssigned, mark passcode consumed
-        var coupled = new DeviceSession
+        var coupled = session with
         {
-            SessionId = session.SessionId,
             State = SessionState.SessionAssigned,
-            DeviceSerialNumber = session.DeviceSerialNumber,
-            DeviceManufacturer = session.DeviceManufacturer,
-            DeviceModel = session.DeviceModel,
-            HardwareMetadata = session.HardwareMetadata,
-            PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-            Passcode = session.Passcode,
-            PasscodeExpiresAt = session.PasscodeExpiresAt,
             PasscodeConsumed = true,             // Invalidate passcode on success
-            DeviceSessionToken = session.DeviceSessionToken,
-            DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
-            OverallProgressPercent = session.OverallProgressPercent,
-            CreatedAt = session.CreatedAt,
             LastHeartbeatAt = DateTimeOffset.UtcNow,
         };
 

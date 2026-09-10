@@ -8,12 +8,14 @@
         (Format, Download, Apply, Configure Boot, Apply Recovery) with a small dot + label +
         caption per step (mirrors CloudImaging.MediaBuilder's GenerateBootImageView step list).
         The right "hero" panel shows a continuously-spinning (indeterminate) progress ring next
-        to the current step's title/subtitle — the exact percentage is shown as text over the
-        ring and in the overall progress bar below, so the ring itself only needs to communicate
-        "still working", not the value — a short live-activity ticker underneath (the same
-        StatusMessage strings ImagingWorkflowViewModel already sets — no fabricated byte/speed
-        telemetry, since the pipeline doesn't expose any), and an overall progress bar. Sized to
-        fit the fixed 800x600 WinPE window with no page-level scrolling (FR-002b).
+        to the current step's title/subtitle — the overall session percentage is shown as text
+        over the ring, so the ring itself only needs to communicate "still working", not the
+        value — a short live-activity ticker underneath (the same StatusMessage strings
+        ImagingWorkflowViewModel already sets), and a progress bar scoped to the step that is
+        currently running (download / apply / recovery), with the real downloaded-vs-total byte
+        counts under it while a transfer is in flight. No fabricated speed or time-remaining
+        telemetry, since the pipeline doesn't expose any. Sized to fit the fixed 800x600 WinPE
+        window with no page-level scrolling (FR-002b).
     -->
     <Grid>
         <Grid.ColumnDefinitions>
@@ -23,7 +25,7 @@
 
         <!-- Step sidebar -->
         <Border Grid.Column="0"
-                Padding="24,24,18,24"
+                Padding="24,14,18,24"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="0,0,1,0">
             <Grid>
@@ -114,7 +116,7 @@
         </Border>
 
         <!-- Hero panel -->
-        <Grid Grid.Column="1" Margin="32,24,32,24">
+        <Grid Grid.Column="1" Margin="32,14,32,24">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -167,9 +169,18 @@
                          HorizontalScrollBarVisibility="Auto" />
             </Border>
 
-            <!-- Overall progress -->
+            <!--
+                Step progress: how far through the operation running right now, not the session
+                as a whole (that number sits over the ring). Steps that can't report progress
+                leave this empty rather than showing an invented value.
+            -->
             <StackPanel Grid.Row="2" Margin="0,0,0,0">
-                <ProgressBar Value="{Binding OverallPercent}" Minimum="0" Maximum="100" Height="6" />
+                <ProgressBar Value="{Binding StepPercent}" Minimum="0" Maximum="100" Height="6" />
+                <TextBlock Text="{Binding TransferDetail, Mode=OneWay}"
+                           Visibility="{Binding HasTransferDetail, Converter={StaticResource BoolToVisibility}}"
+                           Margin="0,6,0,0"
+                           FontSize="11.5"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             </StackPanel>
 
             <!-- Error section — accent-strip design (icon + title, selectable message, no boxed InfoBar) -->

@@ -228,16 +228,23 @@ Otherwise, older media continues to work, and you can roll new media out at your
 The Media Builder is a desktop application on technician workstations. It has no automatic
 update mechanism, by design.
 
-1. Download the new **Media Builder** release (tag `mse-ci-mediabuilder-v#.#.#`).
-2. Substitute your existing `appsettings.json` into the extracted folder, beside
-   `CloudImaging.MediaBuilder.exe`. **Do not skip this.** A fresh download has no tenant
-   configuration, and the application will start but show *"Entra ID sign-in is not configured"*.
-3. Repackage and redistribute it through your existing application deployment tooling, following
-   the packaging guidance in
-   [setup-instructions.md](setup-instructions.md#packaging-as-a-win32-app-eg-intune).
+1. Download `CloudImaging.MediaBuilder.msi` from the new **Media Builder** release
+   (tag `mse-ci-mediabuilder-v#.#.#`).
+2. Rewrap it and publish it as an app update through your existing deployment tooling, following
+   [setup-instructions.md](setup-instructions.md#deploying-the-media-builder-with-intune).
+   Update the detection rule's MSI product version to the new version, otherwise Intune considers
+   the app already installed and never deploys it.
 
-The values in `appsettings.json` only need to change if the client IDs or the Operator API
-address changed, which normally happens only if you redeployed to a new resource group.
+The MSI is a major upgrade: it replaces the previous version in place and **carries the existing
+tenant configuration forward**, so the install command does not have to repeat the
+`ENTRAIDCLIENTID` / `ENTRAIDTENANTID` / `OPERATORAPICLIENTID` / `OPERATORAPIBASEURL` properties.
+Pass them only if a value actually changed, which normally happens only if you redeployed to a new
+resource group.
+
+> **Upgrading a manual/xcopy install instead?** A fresh extract of
+> `CloudImaging.MediaBuilder.zip` has no tenant configuration, so copy your existing
+> `appsettings.json` in beside `CloudImaging.MediaBuilder.exe`. Otherwise the application starts
+> but shows *"Entra ID sign-in is not configured"*.
 
 ---
 

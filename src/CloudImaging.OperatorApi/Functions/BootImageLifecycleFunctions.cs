@@ -58,7 +58,11 @@ public sealed partial class BootImageLifecycleFunctions
 
         var coreResponse = await _coreClient.DeleteBootImageAsync(bootImageId, context.CancellationToken);
         LogDeleteProxied(_logger, bootImageId, (int)coreResponse.StatusCode);
-        return req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
+        // Forward the body, not just the status code. ImagingCore answers 409 with a plain-text
+        // explanation ("Cannot delete the currently published boot image. Publish a replacement
+        // first.") and returning the bare status dropped it, so the portal had nothing to show
+        // and the click looked like it did nothing at all.
+        return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
     // ── Helper ────────────────────────────────────────────────────────────────

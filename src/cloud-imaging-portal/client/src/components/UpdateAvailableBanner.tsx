@@ -66,7 +66,7 @@ export function UpdateAvailableBanner(): React.ReactElement | null {
             href={releaseUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+            className="mt-2 inline-flex items-center gap-2 text-xs text-primary hover:underline"
           >
             View the release notes
             <ExternalLink className="h-3 w-3" aria-hidden="true" />

@@ -116,9 +116,9 @@ sequenceDiagram
 
 | Operation | Guard | Condition |
 |-----------|-------|-----------|
-| Create | – | Always allowed |
+| Create | n/a | Always allowed |
 | Read/List | Published | Only published images visible |
-| Update | – | Metadata only, blob immutable |
+| Update | n/a | Metadata only, blob immutable |
 | Delete | In-use check | Blocked if active sessions reference image |
 
 ## Authorization

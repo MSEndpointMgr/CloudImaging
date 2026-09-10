@@ -68,7 +68,10 @@ public sealed partial class LogUploadService
                 logFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
             using var content = new StreamContent(fileStream);
-            content.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+            // Charset must be stated: the blob keeps this content type, and the Portal's
+            // "Download logs" opens the blob URL directly, so a bare "text/plain" leaves the
+            // browser to guess an encoding and render UTF-8 log text as mojibake.
+            content.Headers.ContentType = new MediaTypeHeaderValue("text/plain") { CharSet = "utf-8" };
 
             using var request = new HttpRequestMessage(HttpMethod.Put, uploadUrlResponse.UploadUrl)
             {

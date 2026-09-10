@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,13 @@ public sealed partial class ImageDownloadService
 {
     private const int BufferSize = 81_920; // 80 KB
     private const int MaxAttempts = 3;
+
+    /// <summary>
+    /// Minimum gap between <c>onBytesProgress</c> callbacks. The read loop completes a buffer
+    /// every few milliseconds, so reporting each one would queue tens of thousands of UI updates
+    /// for a multi-GB image; a quarter of a second still reads as a live counter.
+    /// </summary>
+    private static readonly TimeSpan BytesProgressInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly HttpClient _httpClient;
     private readonly ImageCacheService? _cache;
@@ -37,12 +45,16 @@ public sealed partial class ImageDownloadService
     /// </summary>
     /// <param name="imageId">Catalog image ID used as the cache key.</param>
     /// <param name="expectedHash">Expected SHA-256 hex hash for integrity verification.</param>
+    /// <param name="onBytesProgress">Optional live byte counter, called as
+    /// (transferredBytes, totalBytes). <c>totalBytes</c> is -1 when the response carried no
+    /// Content-Length. Throttled to <see cref="BytesProgressInterval"/>.</param>
     public async Task<string> EnsureLocalWimAsync(
         string imageId,
         string expectedHash,
         string sasUrl,
         string destinationPath,
         Action<int>? onProgress,
+        Action<long, long>? onBytesProgress = null,
         CancellationToken ct = default)
     {
         WinPeEnvironmentGuard.EnsureRunningInWinPe("Downloading the operating system image");
@@ -54,12 +66,23 @@ public sealed partial class ImageDownloadService
             if (cached is not null)
             {
                 onProgress?.Invoke(100);
+                // A cache hit transfers nothing, but reporting the file's size keeps the counter
+                // consistent with the 100% it just jumped to instead of leaving it blank.
+                if (onBytesProgress is not null)
+                {
+                    try
+                    {
+                        var cachedSize = new FileInfo(cached).Length;
+                        onBytesProgress(cachedSize, cachedSize);
+                    }
+                    catch (IOException) { /* size is cosmetic — never fail a cache hit over it */ }
+                }
                 return cached;
             }
         }
 
         // 2. Download from SAS URL
-        await DownloadAsync(sasUrl, destinationPath, onProgress, ct);
+        await DownloadAsync(sasUrl, destinationPath, onProgress, onBytesProgress, ct);
 
         // 3. Write to cache if available (T056c: only write if hash verified in DownloadAsync caller)
         if (_cache is not null)
@@ -82,6 +105,7 @@ public sealed partial class ImageDownloadService
         string sasUrl,
         string destinationPath,
         Action<int>? onProgress,
+        Action<long, long>? onBytesProgress = null,
         CancellationToken ct = default)
     {
         // Same bounded-retry-with-backoff convention as the sibling
@@ -97,7 +121,7 @@ public sealed partial class ImageDownloadService
             ct.ThrowIfCancellationRequested();
             try
             {
-                await DownloadOnceAsync(sasUrl, destinationPath, onProgress, ct);
+                await DownloadOnceAsync(sasUrl, destinationPath, onProgress, onBytesProgress, ct);
                 return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -122,6 +146,7 @@ public sealed partial class ImageDownloadService
         string sasUrl,
         string destinationPath,
         Action<int>? onProgress,
+        Action<long, long>? onBytesProgress,
         CancellationToken ct)
     {
         LogStarting(_logger, sasUrl[..Math.Min(60, sasUrl.Length)]);
@@ -132,6 +157,11 @@ public sealed partial class ImageDownloadService
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1;
         long downloaded = 0;
+
+        // A retried attempt restarts the transfer from zero, so reset the counter immediately
+        // rather than leaving the previous attempt's total on screen while the GET is re-issued.
+        onBytesProgress?.Invoke(0, totalBytes);
+        var sinceLastReport = Stopwatch.StartNew();
 
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         await using var file   = File.OpenWrite(destinationPath);
@@ -148,7 +178,17 @@ public sealed partial class ImageDownloadService
                 var percent = (int)((double)downloaded / totalBytes * 100);
                 onProgress?.Invoke(percent);
             }
+
+            if (onBytesProgress is not null && sinceLastReport.Elapsed >= BytesProgressInterval)
+            {
+                onBytesProgress(downloaded, totalBytes);
+                sinceLastReport.Restart();
+            }
         }
+
+        // Final report regardless of the throttle, so the counter lands on the true total
+        // instead of stopping up to a quarter second short of it.
+        onBytesProgress?.Invoke(downloaded, totalBytes > 0 ? totalBytes : downloaded);
 
         LogCompleted(_logger, downloaded);
     }

@@ -305,7 +305,7 @@ export default function DashboardPage(): React.ReactElement {
                     )}
                     {showPill && (
                       <Badge variant={badgeVariant} title={`vs. previous ${TREND_DAYS} days`}>
-                        <TrendIcon size={11} />
+                        <TrendIcon size={12} />
                         {`${Math.abs(changePct ?? 0)}%`}
                       </Badge>
                     )}
@@ -346,7 +346,7 @@ export default function DashboardPage(): React.ReactElement {
       {/* Welcome / intro */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <LayoutDashboard size={22} className="text-primary" />
+          <LayoutDashboard size={24} className="text-primary" />
           <h2 className="text-lg font-semibold">Welcome to {appName}</h2>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
@@ -362,7 +362,7 @@ export default function DashboardPage(): React.ReactElement {
           <Link key={card.to} to={card.to} className="group">
             <Card className="h-full transition-colors hover:border-primary/50 hover:bg-accent/40">
               <CardContent className="flex h-full flex-col p-5">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
                     {card.icon}
                   </span>
@@ -370,7 +370,7 @@ export default function DashboardPage(): React.ReactElement {
                 </div>
                 <p className="mt-3 flex-1 text-sm text-muted-foreground">{card.description}</p>
                 <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100">
-                  Open <ArrowRight size={13} />
+                  Open <ArrowRight size={16} />
                 </span>
               </CardContent>
             </Card>

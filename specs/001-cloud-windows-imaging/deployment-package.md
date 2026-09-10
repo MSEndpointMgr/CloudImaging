@@ -1,4 +1,4 @@
-# Cloud Imaging — Deployment Package
+# Cloud Imaging: Deployment Package
 
 **Version**: See release tag  
 **Spec reference**: FR-041, FR-044a, T107
@@ -17,13 +17,13 @@
 | `CloudImaging.Client.zip` | WinPE-runnable WPF executable (net10.0-windows, win-x64 self-contained) |
 | `CloudImaging.MediaBuilder.zip` | Technician workstation WPF app (net10.0-windows, win-x64 self-contained) |
 | `deploy/` | Bicep modules, parameter templates, and management scripts |
-| `deploy/bicep/main.bicep` | Root Bicep template — passes to Template Spec wizard |
+| `deploy/bicep/main.bicep` | Root Bicep template, passes to Template Spec wizard |
 | `deploy/uiFormDefinition.json` | Azure Template Spec portal wizard UI definition |
 | `deploy/parameters/dev.parameters.json` | Dev-environment parameter template |
 | `deploy/parameters/test.parameters.json` | Test-environment parameter template |
 | `deploy/parameters/prod.parameters.json` | Production parameter template |
 | `deploy/scripts/publish-template-spec.ps1` | Publishes Bicep + uiFormDefinition as Azure Template Spec |
-| `deploy/scripts/update.ps1` | Community upgrade script — zip-deploys all components |
+| `deploy/scripts/update.ps1` | Community upgrade script, zip-deploys all components |
 | `deploy/scripts/assign-service-roles.ps1` | Assigns Entra app roles post-deployment |
 | `deploy/scripts/grant-graph-permissions.ps1` | Grants Microsoft Graph permissions to ImagingCore MSI |
 | `SHA256SUMS` | SHA-256 checksums for all ZIP artifacts |

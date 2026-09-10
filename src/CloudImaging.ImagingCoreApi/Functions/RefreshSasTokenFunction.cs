@@ -83,26 +83,10 @@ public sealed partial class RefreshSasTokenFunction
 
             sasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry;
 
-            var updated = new CloudImaging.Contracts.Models.DeviceSession
+            var updated = session with
             {
-                SessionId = session.SessionId,
-                State = session.State,
-                DeviceSerialNumber = session.DeviceSerialNumber,
-                DeviceManufacturer = session.DeviceManufacturer,
-                DeviceModel = session.DeviceModel,
-                HardwareMetadata = session.HardwareMetadata,
-                PreFlightAuthorizationResult = session.PreFlightAuthorizationResult,
-                Passcode = session.Passcode,
-                PasscodeExpiresAt = session.PasscodeExpiresAt,
-                PasscodeConsumed = session.PasscodeConsumed,
-                DeviceSessionToken = session.DeviceSessionToken,
-                DeviceSessionTokenExpiresAt = session.DeviceSessionTokenExpiresAt,
-                AssignedOsImageId = session.AssignedOsImageId,
                 SasTokenUrl = sasUrl,
                 SasTokenUrlExpiresAt = sasTokenUrlExpiresAt,
-                OverallProgressPercent = session.OverallProgressPercent,
-                CurrentStep = session.CurrentStep,
-                CreatedAt = session.CreatedAt,
                 LastHeartbeatAt = DateTimeOffset.UtcNow,
             };
 

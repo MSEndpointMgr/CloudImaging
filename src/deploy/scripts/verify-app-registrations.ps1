@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    Verify the three Entra ID app registrations from Step 1 are configured
-    correctly before continuing to Phase 2 (deploying the Azure resources).
+    Verify the three Entra ID app registrations from Phase 1, Step 1 are
+    configured correctly before continuing to Phase 2 (deploying the Azure
+    resources).
 
 .DESCRIPTION
     Read-only sanity check for the manual app registration steps in
