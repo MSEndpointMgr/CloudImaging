@@ -24,7 +24,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "hash-wasm": "^4.12.0",
-    "lucide-react": "^0.447.0",
+    "lucide-react": "^1.42.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.18.3",
