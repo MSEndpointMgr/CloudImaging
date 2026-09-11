@@ -20,10 +20,10 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
     }
 
     [Fact]
-    public void ActiveImagingHeartbeatTimeout_Is4Hours()
+    public void ActiveImagingHeartbeatTimeout_Is2Hours()
     {
         DeviceSessionLifecycleService.ActiveImagingHeartbeatTimeout.TotalHours
-            .Should().Be(4, "sessions actively imaging fail after 4 hours without heartbeat (FR-021)");
+            .Should().Be(2, "sessions actively imaging fail after 2 hours without heartbeat (FR-021)");
     }
 
     [Theory]
@@ -137,6 +137,18 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
 
         (lastHeartbeat < cutoff).Should().BeFalse(
             "a session still imaging must survive well past the pre-imaging inactivity window");
+    }
+
+    [Theory]
+    [InlineData(-119, false)]
+    [InlineData(-121, true)]
+    public void ActivelyImagingSession_UsesTwoHourHeartbeatBoundary(int heartbeatAgeMinutes, bool expectFailed)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var cutoff = now - DeviceSessionLifecycleService.ActiveImagingHeartbeatTimeout;
+        var lastHeartbeat = now.AddMinutes(heartbeatAgeMinutes);
+
+        (lastHeartbeat < cutoff).Should().Be(expectFailed);
     }
 
     // ── Terminal purge eligibility ────────────────────────────────────────────

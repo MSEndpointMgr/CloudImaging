@@ -28,6 +28,20 @@ public sealed class RecoveryImageServiceTests
     }
 
     [Fact]
+    public void BuildSetReimageArguments_UsesSupportedOfflineTargetSyntax()
+    {
+        var method = typeof(RecoveryImageService).GetMethod(
+            "BuildSetReimageArguments",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+
+        method.Should().NotBeNull();
+        var arguments = method!.Invoke(null, [@"G:\Recovery\WindowsRE", "F:"]);
+
+        arguments.Should().Be(@"/setreimage /path ""G:\Recovery\WindowsRE"" /target ""F:\Windows""");
+        arguments.Should().NotBe(@"/enable /target ""F:\Windows""");
+    }
+
+    [Fact]
     public async Task ApplyFromEmbeddedImageAsync_ReturnsFalse_WhenNoEmbeddedWinreWimExists()
     {
         var service = new RecoveryImageService(NullLogger<RecoveryImageService>.Instance);

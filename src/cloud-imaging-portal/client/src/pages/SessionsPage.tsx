@@ -19,8 +19,9 @@ import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
+import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
-import { cn } from '../lib/utils.ts';
+import { cn, formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
 import { useUserPreferences } from '../context/userPreferencesContext.tsx';
@@ -107,16 +108,14 @@ function stateBadgeVariant(state: string): BadgeProps['variant'] {
 }
 
 /**
- * Label for the OS image picker. Only the operator-authored version is shown: that is the name the
- * technician recognises the image by and it is unique across the catalog, so appending the uploaded
- * file name (typically a long vendor ESD/WIM file name) added nothing but noise. The truncation
- * guard stays as a backstop for a pathologically long version string; `Select` sizes its list to
- * the control and ellipsizes anything longer, with the full text on the row's tooltip.
+ * Label for the OS image picker. Combines the catalog name and optional version so technicians can
+ * distinguish related images. The truncation guard stays as a backstop for pathologically long
+ * metadata; `Select` sizes its list to the control and ellipsizes anything longer.
  */
 const MAX_IMAGE_OPTION_CHARS = 100;
 
 function imageOptionLabel(image: OsImage): string {
-  const label = image.version.trim();
+  const label = formatOsImageInventoryName(image.name, image.version);
   return label.length > MAX_IMAGE_OPTION_CHARS
     ? `${label.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
     : label;
@@ -232,7 +231,7 @@ function SessionsPageImpl(): React.ReactElement {
 
   const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
-  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'state' | 'progress' | 'step'>({ key: 'state', dir: 'asc' });
+  const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'registered' | 'state' | 'progress' | 'step'>({ key: 'registered', dir: 'desc' });
   const [successSort, toggleSuccessSort]     = useSort<'serial' | 'device' | 'location' | 'finished'>({ key: 'finished', dir: 'desc' });
   const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>({ key: 'registered', dir: 'asc' });
 
@@ -347,12 +346,13 @@ function SessionsPageImpl(): React.ReactElement {
     locationFiltered.filter(s => MONITOR_STATES.has(s.state)),
     monitorSort,
     {
-      serial:   (s: Session) => s.deviceSerialNumber,
-      device:   (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
-      location: (s: Session) => s.locationName ?? '',
-      state:    (s: Session) => stateLabel(s.state),
-      progress: (s: Session) => s.overallProgressPercent,
-      step:     (s: Session) => s.currentStep ?? '',
+      serial:     (s: Session) => s.deviceSerialNumber,
+      device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location:   (s: Session) => s.locationName ?? '',
+      registered: (s: Session) => new Date(s.createdAt).getTime(),
+      state:      (s: Session) => stateLabel(s.state),
+      progress:   (s: Session) => s.overallProgressPercent,
+      step:       (s: Session) => s.currentStep ?? '',
     },
   ), [locationFiltered, monitorSort]);
   const success = useMemo(() => sortRows(
@@ -746,17 +746,18 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All seven widths are percentages that sum to exactly 100% — table-fixed sizes
+                {/* All eight widths are percentages that sum to exactly 100% — table-fixed sizes
                     columns as (percent + fixed px) of the table's own width, so mixing in a
                     fixed px column (State was a flat 140px) made the row wider than its
                     container on anything above ~1750px and forced a horizontal scrollbar. */}
-                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
-                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
-                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
-                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[10%]" />
-                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
-                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
+                <TableHead className="w-[4%]"><span className="sr-only">Details</span></TableHead>
+                <SortableHead label="Serial / Session" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[17%]" />
+                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[10%]" />
+                <SortableHead label="Registered" sortKey="registered" sort={monitorSort} onSort={toggleMonitorSort} className="w-[15%]" />
+                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[9%]" />
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[15%]" />
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -767,6 +768,7 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
@@ -774,7 +776,7 @@ function SessionsPageImpl(): React.ReactElement {
                 ))
               ) : monitor.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0">
+                  <TableCell colSpan={8} className="p-0">
                     <EmptyState
                       icon={Activity}
                       title="No imaging activity yet"
@@ -800,10 +802,21 @@ function SessionsPageImpl(): React.ReactElement {
                     </Tooltip>
                   </TableCell>
                   <TableCell>
-                    <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                    <div className="space-y-1">
+                      <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                      <CopyableId
+                        value={s.sessionId}
+                        display={s.sessionId.slice(0, 8)}
+                        label="session ID"
+                        className="font-mono text-xs text-muted-foreground"
+                      />
+                    </div>
                   </TableCell>
                   <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
                   <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <time dateTime={s.createdAt}>{formatDateTime(s.createdAt)}</time>
+                  </TableCell>
                   <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -817,7 +830,7 @@ function SessionsPageImpl(): React.ReactElement {
                 </TableRow>
                 {isExpanded(s.sessionId) && (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                    <TableCell colSpan={8} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
                       <SessionProgressDetails
                         overallPercent={s.overallProgressPercent}
                         currentStep={s.currentStep}
@@ -987,7 +1000,9 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                     <TableCell className="text-muted-foreground">{progressStepLabel(s.currentStep)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <time dateTime={s.createdAt}>{formatDateTime(s.createdAt)}</time>
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="outline"

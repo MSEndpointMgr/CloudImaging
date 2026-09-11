@@ -103,7 +103,7 @@ Private source-of-truth API for lifecycle orchestration, SAS token URL issuance,
 ### Session Timeout Semantics (FR-021 detailed)
 
 - **Pre-imaging states** (SessionInit, SessionAllowed, SessionAssigned): Expire after 30 minutes idle (no GET poll from Device Gateway). Idle timer resets on each successful poll.
-- **Active imaging states** (SessionStarted, SessionInProgress): Auto-fail after 4 hours without poll heartbeat. Heartbeat = successful GET /status every 30s; two consecutive missed intervals trigger failure.
+- **Active imaging states** (SessionStarted, SessionInProgress): Auto-fail after 2 hours without poll heartbeat. Heartbeat = successful GET /status every 30s.
 - **One-time passcode**: Stored as SHA256 hash; invalidated on successful couple or on passcode TTL expiry (configurable deployment parameter, default: 30 minutes after SessionInit creation), whichever occurs first. The passcode TTL is independent of the session inactivity timeout (FR-021).
 - **Terminal states** (SessionCompleted, SessionFailed): Persisted 24 hours, then auto-purged.
 

@@ -176,7 +176,7 @@ Expected result:
 
 1. Let pre-imaging session idle > 30 minutes.
 2. Verify session expires.
-3. Let in-progress session miss heartbeat > 4 hours.
+3. Let in-progress session miss heartbeat > 2 hours.
 4. Verify transition to failed state.
 5. Verify terminal sessions purge after 24 hours.
 

@@ -55,7 +55,7 @@ public sealed partial class BootImageUploadFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var version = TextNormalization.NormalizeLookalikes(versionProp.GetString()) ?? string.Empty;
+        var version = versionProp.GetString() ?? string.Empty;
         var sha256Hash = hashProp.GetString() ?? string.Empty;
         var fileName = fileNameProp.GetString() ?? string.Empty;
         var extension = Path.GetExtension(fileName);
@@ -116,7 +116,7 @@ public sealed partial class BootImageUploadFunctions
 
         var blobName = blobNameProp.GetString()!;
         var sha256Hash = hashProp.GetString()!;
-        var version = TextNormalization.NormalizeLookalikes(versionProp.GetString())!;
+        var version = versionProp.GetString()!;
         var sizeBytes = sizeProp.GetInt64();
         var extension = Path.GetExtension(blobName);
 
