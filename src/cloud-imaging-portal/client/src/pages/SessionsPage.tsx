@@ -20,7 +20,7 @@ import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/Confi
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
 import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
-import { cn } from '../lib/utils.ts';
+import { cn, formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
 import { useUserPreferences } from '../context/userPreferencesContext.tsx';
@@ -987,7 +987,9 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                     <TableCell className="text-muted-foreground">{progressStepLabel(s.currentStep)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <time dateTime={s.createdAt}>{formatDateTime(s.createdAt)}</time>
+                    </TableCell>
                     <TableCell>
                       <Button
                         variant="outline"
