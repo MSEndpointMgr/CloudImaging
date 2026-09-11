@@ -60,6 +60,8 @@ export interface SelectProps extends VariantProps<typeof selectTriggerVariants> 
   'aria-label'?: string;
   /** Applied to the trigger button. */
   className?: string;
+  /** Size the closed trigger to the widest option, including before a value is selected. */
+  sizeToOptions?: boolean;
   /**
    * Applied to the positioning wrapper instead of the trigger. The wrapper is what participates
    * in the parent's flex/grid layout, so width constraints belong there.
@@ -111,6 +113,7 @@ export function Select({
   title,
   'aria-label': ariaLabel,
   className,
+  sizeToOptions = false,
   wrapperClassName,
   size,
 }: SelectProps): React.ReactElement {
@@ -284,7 +287,33 @@ export function Select({
   };
 
   return (
-    <div className={cn('relative', wrapperClassName)}>
+    <div
+      className={cn(
+        'relative',
+        sizeToOptions && 'inline-grid grid-cols-[minmax(0,1fr)]',
+        wrapperClassName,
+      )}
+    >
+      {sizeToOptions && (
+        <div
+          aria-hidden="true"
+          data-select-width-sizer=""
+          className={cn(
+            selectTriggerVariants({ size }),
+            'invisible pointer-events-none col-start-1 row-start-1 h-0 w-max border-0 shadow-none',
+          )}
+        >
+          <span>
+            <span className="block whitespace-nowrap">{placeholder}</span>
+            {items.map(option => (
+              <span key={option.value || '__empty__'} className="block whitespace-nowrap">
+                {option.label}
+              </span>
+            ))}
+          </span>
+          <span className="h-4 w-4 shrink-0" />
+        </div>
+      )}
       <button
         ref={triggerRef}
         id={triggerId}
@@ -299,7 +328,11 @@ export function Select({
         title={title}
         onClick={() => (open ? closeList() : openList(initialIndex()))}
         onKeyDown={handleKeyDown}
-        className={cn(selectTriggerVariants({ size }), className)}
+        className={cn(
+          selectTriggerVariants({ size }),
+          sizeToOptions && 'col-start-1 row-start-1',
+          className,
+        )}
       >
         <span className={cn('truncate', selectedLabel === undefined && 'text-muted-foreground')}>
           {selectedLabel ?? placeholder}
