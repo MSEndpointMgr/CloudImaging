@@ -11,7 +11,8 @@ namespace CloudImaging.Client.Services;
 ///
 /// Unlike <see cref="ImageApplyService"/> (which uses DISM to apply the full OS image), the
 /// recovery image is simply copied into place and registered with the Windows Recovery
-/// Environment agent (<c>reagentc.exe</c>) — WinRE images are not applied via DISM.
+/// Environment agent (<c>reagentc.exe</c>) — WinRE images are not applied via DISM. Windows
+/// enables the registered image during the applied OS image's first <c>specialize</c> pass.
 ///
 /// <see cref="ApplyAsync"/> applies a Recovery Image downloaded from the Portal catalog (the
 /// preferred path — this is how admins deploy a custom WinRE with injected drivers or tools).
@@ -28,7 +29,7 @@ public sealed partial class RecoveryImageService
     /// <summary>
     /// Verifies the SHA-256 hash of the downloaded WinRE image, copies it to both the
     /// conventional location under the Windows volume (<c>Windows\System32\Recovery\Winre.wim</c>)
-    /// and the dedicated Recovery partition, then registers and enables it via
+    /// and the dedicated Recovery partition, then registers it with the offline Windows image via
     /// <c>reagentc.exe</c>. Finally removes the Recovery partition's temporary drive letter
     /// (assigned by <see cref="DiskFormatService"/> only so this step could write to it) —
     /// best-effort, since a leftover letter is cosmetic and must never fail the pipeline.
@@ -102,8 +103,8 @@ public sealed partial class RecoveryImageService
     /// <summary>
     /// Shared tail of both <see cref="ApplyAsync"/> and <see cref="ApplyFromEmbeddedImageAsync"/>:
     /// copies the WinRE image already staged at <c>{windowsVolume}\Windows\System32\Recovery\Winre.wim</c>
-    /// onto the dedicated Recovery partition, registers and enables it via <c>reagentc.exe</c>, then
-    /// best-effort removes the Recovery partition's temporary drive letter.
+    /// onto the dedicated Recovery partition, registers it against the offline Windows image via
+    /// <c>reagentc.exe</c>, then best-effort removes the Recovery partition's temporary drive letter.
     /// </summary>
     private async Task FinalizeApplyAsync(string windowsVolume, string recoveryVolume, CancellationToken ct)
     {
@@ -114,12 +115,15 @@ public sealed partial class RecoveryImageService
 
         await RunReagentcAsync(
             windowsVolume,
-            $"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"",
+            BuildSetReimageArguments(partitionRecoveryDir, windowsVolume),
             ct);
 
-        // Do not run `/enable /target`: /enable has no /target form. Windows enables the
-        // registered recovery environment automatically during the specialize configuration
-        // pass, as documented by Microsoft for offline Windows RE deployment.
+        // Microsoft documents this exact sequence for deploying WinRE to an offline image:
+        // copy Winre.wim, run /setreimage with /target, then hide the recovery partition.
+        // Do not add `/enable /target`: /enable has no /target form. On first boot Windows runs
+        // /enable automatically during specialize. The separate WinPE form is `/enable /osguid
+        // {bcd-guid}` after bcdboot, but forcing that here duplicates the documented specialize
+        // behavior and requires fragile parsing of localized bcdedit output.
 
         await RemoveRecoveryDriveLetterAsync(recoveryVolume, ct);
 
@@ -132,6 +136,9 @@ public sealed partial class RecoveryImageService
 
     private static string GetOfflineReagentcPath(string windowsVolume) =>
         Path.Combine($"{windowsVolume}\\", "Windows", "System32", "reagentc.exe");
+
+    private static string BuildSetReimageArguments(string partitionRecoveryDir, string windowsVolume) =>
+        $"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"";
 
     private async Task RunReagentcAsync(string windowsVolume, string arguments, CancellationToken ct)
     {
