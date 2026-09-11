@@ -304,6 +304,7 @@ export function Select({
           )}
         >
           <span>
+            <span className="block whitespace-nowrap">{placeholder}</span>
             {items.map(option => (
               <span key={option.value || '__empty__'} className="block whitespace-nowrap">
                 {option.label}
