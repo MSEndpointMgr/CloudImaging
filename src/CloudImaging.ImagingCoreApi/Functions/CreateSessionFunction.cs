@@ -114,6 +114,9 @@ public sealed partial class CreateSessionFunction
         // creation time — later admin edits to the global scheme do not affect this session).
         var partitioningScheme = await _partitioningSchemeRepo.GetAsync(context.CancellationToken);
         var partitioningSchemeSnapshotJson = JsonSerializer.Serialize(partitioningScheme, SchemeJsonOptions);
+        DateTimeOffset? terminalAt = targetState == SessionState.SessionNotAuthorized
+            ? DateTimeOffset.UtcNow
+            : null;
 
         // Issue device-session token if not NotAuthorized
         // (The actual token service is in DeviceGatewayApi — ImagingCoreApi returns the raw session,
@@ -125,6 +128,8 @@ public sealed partial class CreateSessionFunction
             PasscodeConsumed = false,
             OverallProgressPercent = 0,
             PartitioningSchemeSnapshotJson = partitioningSchemeSnapshotJson,
+            TerminalAt = terminalAt,
+            PurgeAt = terminalAt + DeviceSessionLifecycleService.TerminalPurgeTtl,
         };
 
         await _sessionRepo.CreateAsync(finalSession, context.CancellationToken);
@@ -145,7 +150,7 @@ public sealed partial class CreateSessionFunction
                 PreFlightAuthorizationResult = finalSession.PreFlightAuthorizationResult,
                 AssignedOsImageId = finalSession.AssignedOsImageId,
                 CreatedAt = finalSession.CreatedAt,
-                TerminalAt = DateTimeOffset.UtcNow,
+                TerminalAt = finalSession.TerminalAt ?? DateTimeOffset.UtcNow,
             };
             await _historyRepo.CreateAsync(history, portalConfig.SessionHistoryRetentionDays, context.CancellationToken);
         }

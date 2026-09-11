@@ -25,8 +25,10 @@ phase names both ("Phase 3, Step 2").
 | Azure subscription | Contributor + User Access Administrator on target resource group |
 | Azure CLI | [Install guide](https://learn.microsoft.com/azure/cli/install) |
 | Az PowerShell | `Install-Module Az` |
+| Microsoft Graph PowerShell | `Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications -Scope CurrentUser` |
 | Azure SWA CLI | `npm install -g @azure/static-web-apps-cli`; used by `update.ps1` to publish the portal frontend when upgrading |
-| Entra ID permissions | Create/update App Registrations |
+| Entra ID permissions | Create/update App Registrations; Privileged Role Administrator or Global Administrator for the post-deployment Microsoft Graph permission grant |
+| Microsoft Intune | An active Intune license is required when device pre-flight authorization is enabled |
 | Windows ADK + WinPE add-on | On every technician workstation that runs Media Builder: see [Installing the Windows ADK](#installing-the-windows-adk-on-technician-workstations) |
 
 > **Why both Contributor *and* User Access Administrator?** The Bicep package creates Azure role
@@ -240,16 +242,29 @@ sign-in fails with **AADSTS50011 (redirect URI mismatch)** until this is done.
 ### Step 1: Run the Post-Deployment Scripts
 
 ```powershell
-$rg = "corp-prod-rg"   # your resource group
+$rg          = "corp-prod-rg" # your resource group
+$prefix      = "corp"         # Resource Prefix from the deployment wizard
+$environment = "prod"         # dev or prod
 
 # 1. Grant Microsoft Graph permission to the ImagingCore managed identity
-.\scripts\grant-graph-permissions.ps1 -ResourceGroupName $rg
+.\scripts\grant-graph-permissions.ps1 `
+   -ResourceGroupName $rg `
+   -ResourcePrefix $prefix `
+   -Environment $environment
 
 # 2. Assign the Operator API service-level role to the Portal backend's managed identity
 .\scripts\assign-service-roles.ps1 `
   -ResourceGroupName $rg `
-  -OperatorApiClientId "<operatorApiClientId>"
+   -OperatorApiClientId "<operatorApiClientId>" `
+   -ResourcePrefix $prefix `
+   -Environment $environment
 ```
+
+Both scripts authenticate interactively when needed and are safe to rerun. The Graph permission
+script requests the delegated `AppRoleAssignment.ReadWrite.All` and `Application.Read.All` scopes,
+then verifies that the Imaging Core managed identity has the Microsoft Graph application permission
+`DeviceManagementServiceConfig.Read.All`. Microsoft Entra role and permission changes can take time
+to propagate; wait several minutes before testing pre-flight authorization.
 
 `assign-service-roles.ps1` only handles `CloudImaging.PortalAccess` (assigned to the Portal
 backend's managed identity, which can't be done from the Azure Portal UI). The **user-level**
@@ -308,12 +323,18 @@ without them; the rest are optional and can be revisited any time from **Configu
    logo and colors, shown in both the portal and the boot media UI.
 4. **Add locations** *(optional)*. Navigate to **Locations** to define site labels technicians
    can tag onto boot media and filter devices by; see [roles-and-access.md](roles-and-access.md).
-5. **Review Security / Preflight / Miscellaneous settings** *(optional)*. Still under
-   **Configuration**: certificate/token validity periods and clock skew tolerance
-   (**Security**), whether devices require pre-flight authorization before imaging
-   (**Preflight**), and session history retention (**Miscellaneous**). Sensible defaults are
-   pre-filled, so these only need attention if your organization has specific requirements.
-6. **Turn on version checking** *(optional)*. **Configuration** → **Miscellaneous** → **Version**
+5. **Configure device pre-flight authorization** *(optional, off by default)*. Before enabling it,
+   confirm the Microsoft Graph permission script above ended with `[OK]`. Add at least one test
+   device to Windows Autopilot, or add its exact manufacturer, model, and serial-number tuple under
+   **Intune → Devices → Enrollment → Corporate device identifiers**. Under **Configuration** →
+   **Preflight**, enable the requirement, then boot that device and verify its session reaches
+   `SessionAllowed`. Also test an unknown device and verify that it reaches
+   `SessionNotAuthorized`. Disable the setting again if either result is unexpected; when disabled,
+   registration skips Microsoft Graph and proceeds.
+6. **Review Security and Miscellaneous settings** *(optional)*. Still under **Configuration**:
+   certificate/token validity periods and clock skew tolerance (**Security**) and session history
+   retention (**Miscellaneous**) have working defaults and only need attention for organization-specific requirements.
+7. **Turn on version checking** *(optional)*. **Configuration** → **Miscellaneous** → **Version**
    shows the release this deployment is running. Enabling **Check GitHub for new releases** lets
    the portal backend periodically read the latest published release number from github.com and
    notify administrators when an upgrade is available. It is **off by default**: it is the only

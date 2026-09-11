@@ -28,6 +28,25 @@
 
 ---
 
+### Symptom: Device shows Not Authorized after registration
+
+**Cause**: Device pre-flight authorization is enabled and Imaging Core did not find the device in
+Windows Autopilot or Intune Corporate Identifiers through Microsoft Graph.
+
+**Resolution**:
+1. Confirm whether **Configuration → Device pre-flight authorization** is enabled.
+2. Confirm the serial number shown by the Client matches the device record in Autopilot or
+   Corporate Identifiers.
+3. Confirm the Imaging Core managed identity has the required Microsoft Graph application
+   permission by rerunning `grant-graph-permissions.ps1` from the deployment package.
+4. Review Imaging Core Application Insights traces for the session ID to distinguish a genuine
+   no-match result from a Microsoft Graph request failure.
+
+`SessionNotAuthorized` is terminal. After correcting the device record or permission, restart the
+Client to register a new session; the denied session cannot be resumed.
+
+---
+
 ### Symptom: Client receives HTTP 401 after coupling
 
 **Cause**: Device-session token expired or mTLS certificate mismatch.
@@ -52,22 +71,49 @@ minutes of expiring. If 403s persist:
 
 ---
 
-### Symptom: Progress reporting stops mid-download
+### Symptom: Progress reporting stops during imaging
 
 **Cause**: Network interruption or inactivity timeout.
 
 **Resolution**:
-1. Verify network connectivity on the device.
-2. Restart the device to create a new session.
+1. Record the session ID and the last visible stage: Prepare disk, Download image, Apply Windows
+   image, Configure boot, or Configure recovery.
+2. Verify network connectivity from the device to the Device Gateway API.
+3. Correlate the session ID in Device Gateway and Imaging Core Application Insights traces. A
+   successful Client request should reach both APIs and return HTTP 204.
+4. Review the Client log for the last `Progress reported` entry and any following HTTP error.
+5. If the session has become terminal, restart the Client to create a new session; terminal
+   sessions cannot be resumed.
 
 Sessions are expired by a timer that runs every 5 minutes, using two different thresholds: a
-session that is **actively imaging** (formatting, downloading, or applying) is given **2 hours**
+session that is **actively imaging** is given **2 hours**
 since its last heartbeat, while a session sitting idle at any other stage is given **30 minutes**.
 A long-running download is therefore not at risk of being expired at 30 minutes.
 
 ---
 
-### Symptom: Device has no wired network / needs Wi-Fi to reach the Device Gateway
+### Symptom: Session remains stale in Portal
+
+**Cause**: The Client stopped sending status polls and progress reports, or the Imaging Core
+lifecycle timer is not running successfully.
+
+**Resolution**:
+1. Check the session's state and `LastHeartbeatAt` value in the `DeviceSessions` table.
+2. Apply the expected threshold: `SessionInit`, `SessionAllowed`, and `SessionAssigned` use 30
+   minutes; `SessionStarted` and `SessionInProgress` use 2 hours.
+3. Allow for the lifecycle timer's five-minute schedule after the threshold has elapsed.
+4. If the session still does not transition, inspect Imaging Core Application Insights for the
+   `SessionLifecycleTimer` execution and storage-access failures.
+5. Verify the Imaging Core Function App has `AzureWebJobsStorage__credential=managedidentity` and
+   `AzureWebJobsStorage__clientId` set to its user-assigned managed identity client ID, then verify
+   that identity has the required host-storage role assignments.
+
+Never-coupled sessions become `SessionExpired`. Coupled sessions become `SessionFailed`, preserving
+the interruption as a diagnosable outcome. See [Session lifecycle](session-lifecycle.md#heartbeats-and-timeouts).
+
+---
+
+### Symptom: Device has no wired network or needs Wi-Fi to reach the Device Gateway
 
 **Resolution**: On the Operation Selection screen, click **Connect to Wi-Fi** (always available,
 no opt-in required) to scan and connect to an Open or WPA2/WPA3-Personal network via `netsh wlan`.
@@ -137,14 +183,14 @@ Validity (days)** deployment parameter (default 365).
 
 ## 3. Performance Issues
 
-### Symptom: Session creation takes > 5 s
+### Symptom: Session creation takes more than 5 seconds
 
 **Resolution**:
 1. Check Device Gateway API Function App plan: must be Premium EP1 or higher for VNet integration.
 2. Check Private Link connectivity between Device Gateway and Imaging Core.
 3. Review Application Insights for dependency failures.
 
-### Symptom: Bulk assignment times out for 20+ sessions
+### Symptom: Bulk assignment times out for 20 or more sessions
 
 **Resolution**:
 1. `BulkAssignmentService` processes sessions sequentially; large batches take proportionally longer.

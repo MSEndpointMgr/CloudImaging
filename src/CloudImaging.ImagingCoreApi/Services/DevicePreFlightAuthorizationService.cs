@@ -20,15 +20,18 @@ namespace CloudImaging.ImagingCoreApi.Services;
 public sealed partial class DevicePreFlightAuthorizationService
 {
     private readonly GraphServiceClient _graphClient;
+    private readonly CorporateIdentifierGraphClient _corporateIdentifierClient;
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<DevicePreFlightAuthorizationService> _logger;
 
     public DevicePreFlightAuthorizationService(
         GraphServiceClient graphClient,
+        CorporateIdentifierGraphClient corporateIdentifierClient,
         PortalConfigurationRepository configRepo,
         ILogger<DevicePreFlightAuthorizationService> logger)
     {
         _graphClient = graphClient;
+        _corporateIdentifierClient = corporateIdentifierClient;
         _configRepo = configRepo;
         _logger = logger;
     }
@@ -84,11 +87,12 @@ public sealed partial class DevicePreFlightAuthorizationService
                 .WindowsAutopilotDeviceIdentities
                 .GetAsync(req =>
                 {
-                    req.QueryParameters.Filter = $"contains(serialNumber,'{EscapeFilter(serialNumber)}')";
+                    req.QueryParameters.Filter = BuildAutopilotSerialFilter(serialNumber);
                     req.QueryParameters.Top = 1;
                 }, ct);
 
-            return result?.Value?.Count > 0;
+            return result?.Value?.Any(device =>
+                string.Equals(device.SerialNumber, serialNumber, StringComparison.OrdinalIgnoreCase)) == true;
         }
         catch (Exception ex)
         {
@@ -102,17 +106,7 @@ public sealed partial class DevicePreFlightAuthorizationService
     {
         try
         {
-            // Intune importedWindowsAutopilotDeviceIdentities is the Graph v1.0 path for
-            // pre-enrolled corporate identifiers (importedDeviceIdentities beta path maps here).
-            var result = await _graphClient.DeviceManagement
-                .ImportedWindowsAutopilotDeviceIdentities
-                .GetAsync(req =>
-                {
-                    req.QueryParameters.Filter = $"contains(serialNumber,'{EscapeFilter(serialNumber)}')";
-                    req.QueryParameters.Top = 1;
-                }, ct);
-
-            return result?.Value?.Count > 0;
+            return await _corporateIdentifierClient.ExistsAsync(manufacturer, model, serialNumber, ct);
         }
         catch (Exception ex)
         {
@@ -121,8 +115,8 @@ public sealed partial class DevicePreFlightAuthorizationService
         }
     }
 
-    /// <summary>Minimal OData filter escaping — replaces single quotes to prevent injection.</summary>
-    private static string EscapeFilter(string value) => value.Replace("'", "''");
+    internal static string BuildAutopilotSerialFilter(string serialNumber) =>
+        $"serialNumber eq '{serialNumber.Trim().Replace("'", "''", StringComparison.Ordinal)}'";
 
     // ── Structured logging ────────────────────────────────────────────────────
 
