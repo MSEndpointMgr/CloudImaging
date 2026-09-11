@@ -660,20 +660,17 @@ function SessionsPageImpl(): React.ReactElement {
                   {coupled.length}
                 </span>
               </div>
-              {/* Sized to its own content (bounded by min/max) rather than stretching to fill the
-                  row. The max-width also keeps very long catalog names (see imageOptionLabel) from
-                  blowing up the control; truncate ellipsizes those. Deliberately set on `className`
-                  (the trigger button) rather than `wrapperClassName` (the positioning div): the
-                  trigger's own base style is `w-full`, so a width constraint on the wrapper instead
-                  just gets ignored for shrink-to-fit purposes (a percentage-width child does not
-                  contribute to its parent's content-based sizing), and the wrapper collapsed to
-                  its min-width regardless of how long the selected label was. */}
+              {/* Grow with the selected label instead of pinning the picker to a short fixed width.
+                  The wrapper shrink-wraps the trigger while remaining bounded by the available row;
+                  the trigger then caps exceptionally long labels at 36rem. Select's portalled list
+                  copies this computed trigger width, so both surfaces expose the same amount of text. */}
               <Select
                 size="sm"
-                className="w-auto min-w-[10rem] max-w-xs"
+                wrapperClassName="w-fit min-w-0 max-w-full"
+                className="w-auto min-w-[10rem] max-w-xl"
                 aria-label="OS image to assign"
                 value={selectedImageId ?? ''}
-                onValueChange={v => setSelectedImageId(v || null)}
+                onValueChange={(value: string) => setSelectedImageId(value || null)}
                 options={images.map(img => ({ value: img.imageId, label: imageOptionLabel(img) }))}
                 placeholder={hasOsImages ? 'Select OS image\u2026' : 'No OS images uploaded'}
                 disabled={coupled.length === 0 || images.length === 0}

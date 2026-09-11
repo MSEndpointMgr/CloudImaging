@@ -202,7 +202,7 @@ export default function OsImagesPage(): React.ReactElement {
                     />
                   </TableCell>
                 )}
-                <TableCell className="max-w-0 truncate font-medium" title={img.name}>{img.name}</TableCell>
+                <TableCell className="max-w-0 truncate" title={img.name}>{img.name}</TableCell>
                 <TableCell className="truncate">{img.version}</TableCell>
                 <TableCell className="truncate">{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="truncate">
