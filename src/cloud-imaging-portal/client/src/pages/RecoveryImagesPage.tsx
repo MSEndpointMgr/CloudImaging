@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, Upload, X, ShieldCheck } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -321,7 +322,9 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
     : '';
   const stagePercent = stage === 'publishing' ? uploadJobProgressPercent(publishJob) : percent;
 
-  return (
+  // Portalled to document.body so the dimming overlay always covers the full viewport (including
+  // the app header) regardless of any stacking context introduced by this page's own layout.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 py-6">
@@ -418,6 +421,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
           </div>
         </CardContent>
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }

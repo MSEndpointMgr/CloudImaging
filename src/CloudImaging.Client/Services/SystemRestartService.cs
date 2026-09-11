@@ -4,9 +4,8 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.Client.Services;
 
 /// <summary>
-/// Restarts the device via the built-in Windows <c>shutdown</c> command (present in both a
-/// full Windows install and WinPE), invoked by <see cref="ViewModels.ResultsViewModel"/> once
-/// its post-success countdown reaches zero.
+/// Restarts the device via the Windows PE utility, invoked by
+/// <see cref="ViewModels.ResultsViewModel"/> once its post-success countdown reaches zero.
 /// </summary>
 public sealed partial class SystemRestartService
 {
@@ -15,7 +14,7 @@ public sealed partial class SystemRestartService
     public SystemRestartService(ILogger<SystemRestartService> logger) => _logger = logger;
 
     /// <summary>
-    /// Restarts the machine immediately via <c>shutdown /r /t 0</c>.
+    /// Restarts the Windows PE session via <c>wpeutil Reboot</c>.
     ///
     /// SAFETY: In DEV_SIMULATION (Debug) builds this only logs the intent instead of actually
     /// restarting. The dev simulation navigator reaches this exact same code path on a
@@ -31,13 +30,7 @@ public sealed partial class SystemRestartService
         LogRestarting(_logger);
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "shutdown.exe",
-                Arguments = "/r /t 0 /c \"Cloud Imaging: restarting after successful imaging\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
+            Process.Start(CreateRestartProcessStartInfo());
         }
         catch (Exception ex)
         {
@@ -46,12 +39,20 @@ public sealed partial class SystemRestartService
 #endif
     }
 
+    internal static ProcessStartInfo CreateRestartProcessStartInfo() => new()
+    {
+        FileName = "wpeutil.exe",
+        Arguments = "Reboot",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+    };
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Imaging succeeded — restarting the system now.")]
     private static partial void LogRestarting(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "DEV SIMULATION: system restart suppressed (would run shutdown /r /t 0).")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "DEV SIMULATION: system restart suppressed (would run wpeutil Reboot).")]
     private static partial void LogRestartSuppressed(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to invoke shutdown /r.")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to invoke wpeutil Reboot.")]
     private static partial void LogRestartFailed(ILogger logger, Exception ex);
 }

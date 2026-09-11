@@ -33,7 +33,11 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="Connect to Wi-Fi" ShowMaximize="False" />
+        <ui:TitleBar Grid.Row="0"
+                     Title="Connect to Wi-Fi"
+                     ShowMaximize="False"
+                     Background="{DynamicResource ApplicationBackgroundBrush}"
+                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
         <!-- Network chooser -->
         <Grid Grid.Row="1" Margin="16,8,16,8">

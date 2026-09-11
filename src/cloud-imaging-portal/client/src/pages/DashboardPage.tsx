@@ -177,7 +177,7 @@ const NAV_CARDS: NavCard[] = [
   {
     to: '/reports',
     title: 'Reports',
-    description: 'Session outcomes, failure details, and image inventory across the fleet.',
+    description: 'Device outcomes, location statistics, failure details, and image inventory across the fleet.',
     icon: <BarChart3 size={18} />,
     access: 'reports',
   },

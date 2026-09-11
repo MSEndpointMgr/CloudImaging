@@ -23,15 +23,18 @@ public sealed partial class SessionQueryFunctions
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly DeviceSessionRepository _sessionRepo;
+    private readonly ImagingStepRepository _stepRepo;
     private readonly OsImageRepository _osImageRepo;
     private readonly ILogger<SessionQueryFunctions> _logger;
 
     public SessionQueryFunctions(
         DeviceSessionRepository sessionRepo,
+        ImagingStepRepository stepRepo,
         OsImageRepository osImageRepo,
         ILogger<SessionQueryFunctions> logger)
     {
         _sessionRepo = sessionRepo;
+        _stepRepo = stepRepo;
         _osImageRepo = osImageRepo;
         _logger = logger;
     }
@@ -45,7 +48,7 @@ public sealed partial class SessionQueryFunctions
     {
         var filter = System.Web.HttpUtility.ParseQueryString(req.Url.Query).Get("filter");
 
-        var summaries = new List<SessionSummary>();
+        var sessions = new List<DeviceSession>();
         await foreach (var session in _sessionRepo.QueryAllAsync(context.CancellationToken))
         {
             if (filter is not null &&
@@ -53,10 +56,13 @@ public sealed partial class SessionQueryFunctions
             {
                 continue;
             }
-            summaries.Add(ToSummary(session));
+            sessions.Add(session);
         }
 
-        LogSessionsListed(_logger, summaries.Count);
+        var summaries = await Task.WhenAll(sessions.Select(session =>
+            ToSummaryAsync(session, context.CancellationToken)));
+
+        LogSessionsListed(_logger, summaries.Length);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
@@ -84,7 +90,8 @@ public sealed partial class SessionQueryFunctions
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(ToSummary(session), JsonOptions), context.CancellationToken);
+        var summary = await ToSummaryAsync(session, context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(summary, JsonOptions), context.CancellationToken);
         return response;
     }
 
@@ -149,23 +156,28 @@ public sealed partial class SessionQueryFunctions
 
     // ── Projection ────────────────────────────────────────────────────────────
 
-    private static SessionSummary ToSummary(DeviceSession s) => new(
-        s.SessionId,
-        s.State.ToString(),
-        s.DeviceSerialNumber,
-        s.DeviceManufacturer,
-        s.DeviceModel,
-        s.MacAddress,
-        ToHardwareSummary(s.HardwareMetadata),
-        s.LocationId,
-        s.LocationName,
-        s.PreFlightAuthorizationResult.ToString(),
-        s.AssignedOsImageId,
-        s.OverallProgressPercent,
-        s.CurrentStep,
-        s.CreatedAt,
-        s.LastHeartbeatAt,
-        s.TerminalAt);
+    private async Task<SessionSummary> ToSummaryAsync(DeviceSession s, CancellationToken ct)
+    {
+        var steps = await _stepRepo.GetBySessionAsync(s.SessionId, ct);
+        return new SessionSummary(
+            s.SessionId,
+            s.State.ToString(),
+            s.DeviceSerialNumber,
+            s.DeviceManufacturer,
+            s.DeviceModel,
+            s.MacAddress,
+            ToHardwareSummary(s.HardwareMetadata),
+            s.LocationId,
+            s.LocationName,
+            s.PreFlightAuthorizationResult.ToString(),
+            s.AssignedOsImageId,
+            s.OverallProgressPercent,
+            s.CurrentStep,
+            steps.Select(ToStepSummary).ToArray(),
+            s.CreatedAt,
+            s.LastHeartbeatAt,
+            s.TerminalAt);
+    }
 
     /// <summary>
     /// Deliberately re-declared rather than returning <see cref="DeviceHardwareMetadata"/> directly:
@@ -179,6 +191,14 @@ public sealed partial class SessionQueryFunctions
             h.BiosVersion,
             h.NicIdentifiers,
             h.StorageLayout);
+
+    private static StepSummary ToStepSummary(ImagingStep step) => new(
+        step.StepName.ToString(),
+        step.Status.ToString(),
+        step.StepProgressPercent,
+        step.StartedAt,
+        step.CompletedAt,
+        step.ErrorDetail);
 
     /// <summary>Secret-free portal projection of a device session.</summary>
     private sealed record SessionSummary(
@@ -195,9 +215,18 @@ public sealed partial class SessionQueryFunctions
         Guid? AssignedOsImageId,
         int OverallProgressPercent,
         string? CurrentStep,
+        IReadOnlyList<StepSummary> Steps,
         DateTimeOffset CreatedAt,
         DateTimeOffset? LastHeartbeatAt,
         DateTimeOffset? TerminalAt);
+
+    private sealed record StepSummary(
+        string StepName,
+        string Status,
+        int? StepProgressPercent,
+        DateTimeOffset? StartedAt,
+        DateTimeOffset? CompletedAt,
+        string? ErrorDetail);
 
     /// <summary>
     /// Hardware inventory collected silently at session init (FR-001a). Informational only — every

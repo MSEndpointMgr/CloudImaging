@@ -178,6 +178,8 @@ public sealed partial class DeviceSessionLifecycleService
             DeviceSerialNumber = s.DeviceSerialNumber,
             DeviceManufacturer = s.DeviceManufacturer,
             DeviceModel = s.DeviceModel,
+            LocationId = s.LocationId,
+            LocationName = s.LocationName,
             PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
             AssignedOsImageId = s.AssignedOsImageId,
             ErrorDetail = s.State == SessionState.SessionFailed

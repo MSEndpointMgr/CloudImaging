@@ -86,7 +86,8 @@ src/cloud-imaging-portal/server/deploy-pkg/
 # -------
 .vscode/settings.json
 .vscode/launch.json
-# tasks.json is committed (FR-046 VS Code deployment tasks)
+.vscode/tasks.json
+*.code-workspace
 
 # Compiled Vite/TS output (not source files)
 src/cloud-imaging-portal/client/src/**/*.js

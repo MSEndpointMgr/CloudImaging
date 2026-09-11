@@ -1,7 +1,5 @@
-using System;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media.Imaging;
 using CloudImaging.Client.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -38,30 +36,14 @@ public partial class OperationSelectionView : Page
     /// </summary>
     private void LoadBrandingLogo()
     {
-        var logoPath = new BrandingLogoService(NullLogger<BrandingLogoService>.Instance).GetLogoPath();
-        if (logoPath is null)
+        var logo = new BrandingLogoService(NullLogger<BrandingLogoService>.Instance).LoadLogo();
+        if (logo is null)
         {
             BrandingLogoFallback.Visibility = Visibility.Visible;
             return;
         }
 
-        try
-        {
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad; // load fully so the file handle is released
-            bitmap.UriSource = new Uri(logoPath, UriKind.Absolute);
-            bitmap.EndInit();
-            bitmap.Freeze();
-
-            BrandingLogo.Source = bitmap;
-            BrandingLogo.Visibility = Visibility.Visible;
-        }
-        catch
-        {
-            // A corrupt or unreadable logo must never block operation selection —
-            // fall back to the default vector logo instead.
-            BrandingLogoFallback.Visibility = Visibility.Visible;
-        }
+        BrandingLogo.Source = logo;
+        BrandingLogo.Visibility = Visibility.Visible;
     }
 }

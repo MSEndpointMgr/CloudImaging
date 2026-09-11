@@ -62,6 +62,8 @@ public sealed class SessionHistoryRepositoryTests
         DeviceSerialNumber = "SN-123",
         DeviceManufacturer = "Contoso",
         DeviceModel = "Widget 3000",
+        LocationId = Guid.NewGuid(),
+        LocationName = "Copenhagen HQ",
         PreFlightAuthorizationResult = PreFlightAuthorizationResult.MatchedAutopilotV1,
         AssignedOsImageId = Guid.NewGuid(),
         FailedStepName = failedStepName,
@@ -93,6 +95,8 @@ public sealed class SessionHistoryRepositoryTests
         captured.RowKey.Should().Be(record.SessionId.ToString());
         captured["FinalState"].Should().Be(record.FinalState.ToString());
         captured["DeviceSerialNumber"].Should().Be(record.DeviceSerialNumber);
+        captured["LocationId"].Should().Be(record.LocationId?.ToString());
+        captured["LocationName"].Should().Be(record.LocationName);
         var purgeAt = (DateTimeOffset)captured["PurgeAt"];
         purgeAt.Should().BeCloseTo(record.TerminalAt.AddDays(retentionDays), TimeSpan.FromSeconds(1));
     }
@@ -108,6 +112,8 @@ public sealed class SessionHistoryRepositoryTests
             ["DeviceSerialNumber"] = record.DeviceSerialNumber,
             ["DeviceManufacturer"] = record.DeviceManufacturer,
             ["DeviceModel"] = record.DeviceModel,
+            ["LocationId"] = record.LocationId?.ToString(),
+            ["LocationName"] = record.LocationName,
             ["PreFlightAuthorizationResult"] = record.PreFlightAuthorizationResult.ToString(),
             ["AssignedOsImageId"] = record.AssignedOsImageId?.ToString(),
             ["FailedStepName"] = record.FailedStepName?.ToString(),
@@ -126,6 +132,8 @@ public sealed class SessionHistoryRepositoryTests
         var mapped = results[0];
         mapped.SessionId.Should().Be(record.SessionId);
         mapped.FinalState.Should().Be(SessionState.SessionFailed);
+        mapped.LocationId.Should().Be(record.LocationId);
+        mapped.LocationName.Should().Be(record.LocationName);
         mapped.FailedStepName.Should().Be(ImagingStepName.ApplyImage);
         mapped.ErrorDetail.Should().Be("disk write failed");
     }

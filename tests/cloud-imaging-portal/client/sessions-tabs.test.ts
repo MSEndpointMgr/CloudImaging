@@ -1,15 +1,20 @@
 import { describe, it, expect } from 'vitest';
 
-// Mirrors the state partitioning in src/pages/SessionsPage.tsx. Failed sessions live in their own
-// tab so an operator scanning Monitor sees only devices that are actually imaging or done.
+// Mirrors the state partitioning in src/pages/SessionsPage.tsx.
 const AVAILABLE_STATES = ['SessionInit', 'SessionAllowed'];
 const COUPLED_STATES = ['SessionAssigned'];
-const MONITOR_STATES = ['SessionStarted', 'SessionInProgress', 'SessionCompleted'];
+const MONITOR_STATES = ['SessionStarted', 'SessionInProgress'];
+const SUCCESS_STATES = ['SessionCompleted'];
 const FAILED_STATES = ['SessionFailed', 'SessionNotAuthorized'];
 
 describe('Devices page tab partitioning', () => {
-  it('keeps Monitor to sessions that were coupled and then had imaging started', () => {
-    expect(MONITOR_STATES).toEqual(['SessionStarted', 'SessionInProgress', 'SessionCompleted']);
+  it('keeps Monitor to sessions with active imaging work', () => {
+    expect(MONITOR_STATES).toEqual(['SessionStarted', 'SessionInProgress']);
+  });
+
+  it('routes completed sessions to Success instead of Monitor', () => {
+    expect(SUCCESS_STATES).toEqual(['SessionCompleted']);
+    expect(MONITOR_STATES).not.toContain('SessionCompleted');
   });
 
   it('routes every failure state to the Failed tab, not Monitor', () => {
@@ -19,12 +24,12 @@ describe('Devices page tab partitioning', () => {
   });
 
   it('never places a session in two tabs at once', () => {
-    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...FAILED_STATES];
+    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...SUCCESS_STATES, ...FAILED_STATES];
     expect(new Set(all).size).toBe(all.length);
   });
 
   it('excludes SessionExpired everywhere: a benign timeout is not a failure', () => {
-    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...FAILED_STATES];
+    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...SUCCESS_STATES, ...FAILED_STATES];
     expect(all).not.toContain('SessionExpired');
   });
 });

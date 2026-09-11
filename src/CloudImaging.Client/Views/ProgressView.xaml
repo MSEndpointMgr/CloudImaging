@@ -153,20 +153,21 @@
                     <SolidColorBrush x:Key="TextControlFocusedBorderBrush" Color="Transparent" />
                     <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
                 </Border.Resources>
-                <TextBox x:Name="ActivityLogTextBox"
-                         Text="{Binding LogText, Mode=OneWay}"
-                         IsReadOnly="True"
-                         IsReadOnlyCaretVisible="True"
-                         Background="Transparent"
-                         BorderThickness="0"
-                         Padding="12,10"
-                         FontFamily="Cascadia Mono, Consolas, monospace"
-                         FontSize="11.5"
-                         Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                         TextWrapping="NoWrap"
-                         AcceptsReturn="True"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Auto" />
+                <!-- One viewer owns both axes. Nesting this around a scrolling TextBox produced
+                     two independent extents: the outer bar reached its maximum while the
+                     TextBox's PART_ContentHost still clipped the end of the line. -->
+                <ScrollViewer x:Name="ActivityLogScrollViewer"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto"
+                              ScrollChanged="ActivityLogScrollViewer_ScrollChanged"
+                              Focusable="False">
+                    <TextBlock Text="{Binding LogText, Mode=OneWay}"
+                               Padding="12,10"
+                               FontFamily="Cascadia Mono, Consolas, monospace"
+                               FontSize="11.5"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="NoWrap" />
+                </ScrollViewer>
             </Border>
 
             <!--

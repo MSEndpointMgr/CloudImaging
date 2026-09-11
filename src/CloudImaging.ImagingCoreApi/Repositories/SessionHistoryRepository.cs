@@ -87,6 +87,8 @@ public sealed class SessionHistoryRepository
             ["DeviceSerialNumber"] = r.DeviceSerialNumber,
             ["DeviceManufacturer"] = r.DeviceManufacturer,
             ["DeviceModel"] = r.DeviceModel,
+            ["LocationId"] = r.LocationId?.ToString(),
+            ["LocationName"] = r.LocationName,
             ["PreFlightAuthorizationResult"] = r.PreFlightAuthorizationResult.ToString(),
             ["AssignedOsImageId"] = r.AssignedOsImageId?.ToString(),
             ["FailedStepName"] = r.FailedStepName?.ToString(),
@@ -103,6 +105,8 @@ public sealed class SessionHistoryRepository
         DeviceSerialNumber = e.GetString("DeviceSerialNumber") ?? string.Empty,
         DeviceManufacturer = e.GetString("DeviceManufacturer") ?? string.Empty,
         DeviceModel = e.GetString("DeviceModel") ?? string.Empty,
+        LocationId = e.GetString("LocationId") is string locationId ? Guid.Parse(locationId) : null,
+        LocationName = e.GetString("LocationName"),
         PreFlightAuthorizationResult = Enum.Parse<PreFlightAuthorizationResult>(
             e.GetString("PreFlightAuthorizationResult") ?? nameof(PreFlightAuthorizationResult.Skipped)),
         AssignedOsImageId = e.GetString("AssignedOsImageId") is string sid ? Guid.Parse(sid) : null,

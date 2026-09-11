@@ -309,7 +309,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
             {numField('bootImageSasExpiryMinutes', 15, 1440, 'Boot image download link expiry (minutes)',
               'How long a generated download link for a boot image stays valid before it must be regenerated.', DEFAULT_CONFIG.bootImageSasExpiryMinutes)}
             {numField('sessionHistoryRetentionDays', 1, 3650, 'Session history retention (days)',
-              'How long completed session outcomes are kept for reporting before being purged.', DEFAULT_CONFIG.sessionHistoryRetentionDays)}
+              'How long completed device outcomes are kept for reporting before being purged.', DEFAULT_CONFIG.sessionHistoryRetentionDays)}
           </CardContent>
         </Card>
         </div>

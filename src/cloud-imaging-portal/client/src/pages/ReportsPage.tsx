@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { PieChart, HardDrive, AlertOctagon, ArrowRight, BarChart3 } from 'lucide-react';
+import { PieChart, HardDrive, AlertOctagon, ArrowRight, BarChart3, MapPin } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card.tsx';
 
 interface ReportCard {
@@ -11,10 +11,16 @@ interface ReportCard {
 
 const REPORT_CARDS: ReportCard[] = [
   {
-    to: '/reports/session-outcomes',
-    title: 'Session Outcomes',
+    to: '/reports/device-outcomes',
+    title: 'Device Outcomes',
     description: 'Breakdown of completed, failed, expired, and not-authorized imaging sessions over a date range.',
     icon: <PieChart size={18} />,
+  },
+  {
+    to: '/reports/location-statistics',
+    title: 'Location Statistics',
+    description: 'Outcome counts, success rate, duration statistics, and device details for a selected location.',
+    icon: <MapPin size={18} />,
   },
   {
     to: '/reports/image-inventory',

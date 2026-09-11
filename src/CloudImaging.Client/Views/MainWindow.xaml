@@ -51,8 +51,21 @@
             top of dense pages (ProgressView especially). Matches the Media Builder's title bar.
         -->
         <ui:TitleBar Grid.Row="0"
-                     Title="Cloud Imaging"
-                     ShowMaximize="False" />
+                     ShowMaximize="False"
+                     Background="{DynamicResource ApplicationBackgroundBrush}"
+                     Foreground="{DynamicResource TextFillColorPrimaryBrush}">
+            <ui:TitleBar.Header>
+                <StackPanel Orientation="Horizontal">
+                    <Image x:Name="TitleBrandingLogo"
+                           Width="18" Height="18"
+                           Margin="0,0,8,0"
+                           VerticalAlignment="Center"
+                           Stretch="Uniform"
+                           Visibility="Collapsed" />
+                    <TextBlock Text="Cloud Imaging" VerticalAlignment="Center" />
+                </StackPanel>
+            </ui:TitleBar.Header>
+        </ui:TitleBar>
 
         <Grid Grid.Row="1">
             <Frame x:Name="NavigationFrame"

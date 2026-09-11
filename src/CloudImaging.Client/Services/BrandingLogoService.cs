@@ -1,5 +1,6 @@
 using System.IO;
 using System.Reflection;
+using System.Windows.Media.Imaging;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
@@ -36,6 +37,32 @@ public sealed partial class BrandingLogoService
 
         LogLogoFallback(_logger, logoPath);
         return null;
+    }
+
+    /// <summary>
+    /// Loads the configured logo fully into memory so the embedded file is not held open.
+    /// Returns <c>null</c> when no custom logo exists or the file is unreadable/corrupt.
+    /// </summary>
+    public BitmapImage? LoadLogo()
+    {
+        var logoPath = GetLogoPath();
+        if (logoPath is null)
+            return null;
+
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(logoPath, UriKind.Absolute);
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Custom branding logo found: {Path}")]

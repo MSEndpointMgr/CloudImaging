@@ -14,7 +14,7 @@ namespace CloudImaging.ImagingCoreApi.Tests.Unit;
 /// <c>finalState</c> against names such as "SessionCompleted". <see cref="JsonSerializerDefaults.Web"/>
 /// does not add a string enum converter, so without <c>[JsonConverter(typeof(JsonStringEnumConverter))]</c>
 /// on the enums themselves this endpoint emitted ordinals instead, which threw in the portal's
-/// Session Outcomes report and silently zeroed the Dashboard's completed-session count.
+/// Device Outcomes report and silently zeroed the Dashboard's completed-session count.
 /// </summary>
 public sealed class SessionHistoryRecordSerializationTests
 {

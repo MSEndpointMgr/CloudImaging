@@ -633,14 +633,6 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Adding WinPE .NET Framework support", 37);
                 await InjectNetFxOptionalComponentAsync(adkPath, mountDir, ct);
 
-                // Unlike WMI/NetFx above, there is no WinPE optional component that provides
-                // reagentc.exe. Without it, RecoveryImageService's "ApplyRecoveryImage" pipeline
-                // step fails at runtime trying to launch it (Win32Exception: "The system cannot
-                // find the file specified"), even though the WinRE image itself was already
-                // staged onto the Recovery partition successfully.
-                ReportProgress("Adding WinPE Recovery Environment agent", 38);
-                InjectReagentcSupport(mountDir);
-
                 ReportProgress("Injecting Cloud Imaging Client", 50);
                 var clientDestDir = Path.Combine(mountDir, "CloudImaging");
                 Directory.CreateDirectory(clientDestDir);
@@ -1004,55 +996,6 @@ public sealed partial class BootImageGenerationService
 
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
-    }
-
-    /// <summary>
-    /// Copies <c>reagentc.exe</c> (and its en-US resource DLL, if present) from this build
-    /// machine's own <c>%windir%\System32</c> into the mounted WIM.
-    ///
-    /// Microsoft's REAgentC docs only mention Winrecfg.exe (a WinPE add-on tool) as a
-    /// *replacement* for reagentc.exe on the long-obsolete WinPE 2.x-4.x — implying modern
-    /// WinPE is expected to run reagentc.exe directly — but copype.cmd's base WinPE image does
-    /// not actually include it, and there is no dedicated WinPE-*.cab optional component for it
-    /// (unlike WinPE-WMI/WinPE-NetFx above). reagentc.exe is a stable, backward/forward-
-    /// compatible offline-imaging tool (like bcdboot.exe/diskpart.exe, which copype.cmd's base
-    /// image DOES already include) — copying it from whatever Windows version this app happens
-    /// to be running on is the same approach long-documented in the OSD/ConfigMgr community for
-    /// this exact gap, and is safe because it is only ever invoked (by
-    /// <see cref="Client.Services.RecoveryImageService"/>) with <c>/target</c> against an
-    /// offline image, never against the build machine's own online installation.
-    /// </summary>
-    private void InjectReagentcSupport(string mountDir)
-    {
-        var systemDir = Environment.SystemDirectory; // e.g. C:\Windows\System32 on the build machine
-        var sourceExe = Path.Combine(systemDir, "reagentc.exe");
-        if (!File.Exists(sourceExe))
-        {
-            RaiseLog($"FAILED: \"{sourceExe}\" was not found on this build machine.");
-            throw new InvalidOperationException(
-                $"Could not find \"{sourceExe}\" to inject into the WinPE image. reagentc.exe is required for " +
-                "the Client's \"ApplyRecoveryImage\" pipeline step to run offline against the target disk. " +
-                "This should be present on any Windows build machine — verify the OS installation is not " +
-                "corrupted.");
-        }
-
-        var destDir = Path.Combine(mountDir, "Windows", "System32");
-        Directory.CreateDirectory(destDir);
-        File.Copy(sourceExe, Path.Combine(destDir, "reagentc.exe"), overwrite: true);
-
-        // Best-effort: the localized resource-only MUI is not required for reagentc.exe to run
-        // (it falls back to embedded/neutral resources without it), only for its own displayed
-        // help/error text to be localized, so a missing en-US install on the build machine must
-        // not fail the whole boot image build.
-        var sourceMui = Path.Combine(systemDir, "en-US", "reagentc.exe.mui");
-        if (File.Exists(sourceMui))
-        {
-            var destMuiDir = Path.Combine(destDir, "en-US");
-            Directory.CreateDirectory(destMuiDir);
-            File.Copy(sourceMui, Path.Combine(destMuiDir, "reagentc.exe.mui"), overwrite: true);
-        }
-
-        LogReagentcInjected(_logger, sourceExe);
     }
 
     /// <summary>
@@ -1499,9 +1442,6 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
     private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "reagentc.exe injected into WinPE image from {SourcePath}.")]
-    private static partial void LogReagentcInjected(ILogger logger, string sourcePath);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image manifest embedded (imageVersion={ImageVersion}, driversInjected={DriversInjected}).")]
     private static partial void LogManifestEmbedded(ILogger logger, string imageVersion, int driversInjected);
