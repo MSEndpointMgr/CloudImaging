@@ -660,14 +660,12 @@ function SessionsPageImpl(): React.ReactElement {
                   {coupled.length}
                 </span>
               </div>
-              {/* Grow with the selected label instead of pinning the picker to a short fixed width.
-                  The wrapper shrink-wraps the trigger while remaining bounded by the available row;
-                  the trigger then caps exceptionally long labels at 36rem. Select's portalled list
-                  copies this computed trigger width, so both surfaces expose the same amount of text. */}
+              {/* Reserve width from the image options even while the placeholder is shown. The cap
+                  keeps exceptionally long catalog labels within the available toolbar width. */}
               <Select
                 size="sm"
-                wrapperClassName="w-fit min-w-0 max-w-full"
-                className="w-auto min-w-[10rem] max-w-xl"
+                sizeToOptions
+                wrapperClassName="min-w-[10rem] max-w-full sm:max-w-xl"
                 aria-label="OS image to assign"
                 value={selectedImageId ?? ''}
                 onValueChange={(value: string) => setSelectedImageId(value || null)}
@@ -907,7 +905,9 @@ function SessionsPageImpl(): React.ReactElement {
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {s.terminalAt ? <RelativeTime value={s.terminalAt} /> : '\u2014'}
+                      {s.terminalAt ? (
+                        <time dateTime={s.terminalAt}>{formatDateTime(s.terminalAt)}</time>
+                      ) : '\u2014'}
                     </TableCell>
                   </TableRow>
                   {isExpanded(s.sessionId) && (
