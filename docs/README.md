@@ -1,4 +1,4 @@
-# Cloud Imaging documentation
+# Cloud Imaging
 
 Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 
@@ -10,8 +10,11 @@ Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 
 | Guide | Use it to |
 |---|---|
+| [Architecture overview](architecture-overview.md) | Understand the components, request paths, security boundaries, and end-to-end imaging flow |
+| [Session lifecycle](session-lifecycle.md) | Follow a device from registration through coupling, assignment, five imaging stages, and terminal cleanup |
 | [Setup instructions](setup-instructions.md) | **Start here for a new deployment.** Prerequisites, Entra ID app registrations, deploying the Azure resources, and post-deployment/initial portal configuration, step by step |
 | [Upgrade instructions](upgrade-instructions.md) | Move an existing deployment to a newer release: the three release streams, running `update.ps1`, applying infrastructure changes, rebuilding boot media, and rolling back |
+| [Troubleshooting index](troubleshooting-index.md) | Start from a visible symptom and jump to the relevant operational checks |
 | [Operations runbook](operations-runbook.md) | Run it day to day: monitoring, certificate rotation, upgrades, troubleshooting |
 | [Roles and access](roles-and-access.md) | The full Entra ID app role and service role model |
 
@@ -21,7 +24,7 @@ Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 - **Cloud Imaging Portal** — the web portal a technician uses to couple devices, assign OS images, monitor progress, and manage the OS image, recovery image, boot image and branding catalogs.
 - **Cloud Imaging Media Builder** — the Windows desktop application that generates the WinPE boot image and prepares bootable USB media.
 
-They talk to three Azure Functions APIs (Device Gateway, Operator, Imaging Core) deployed into your own tenant. See the [architecture overview](https://github.com/MSEndpointMgr/CloudImaging#architecture) in the repository README for the full component and resource diagram.
+They talk to three Azure Functions APIs (Device Gateway, Operator, Imaging Core) deployed into your own tenant. See the [architecture overview](architecture-overview.md) for the component diagram, request paths, and security boundaries.
 
 ## Elsewhere
 

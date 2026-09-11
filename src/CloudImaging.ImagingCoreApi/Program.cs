@@ -51,13 +51,23 @@ var host = new HostBuilder()
 
         // Device pre-flight authorization (FR-026) — Microsoft Graph via managed identity
         // Scopes are read-only at startup — use a static field to avoid CA1861
+        services.AddSingleton<Azure.Core.TokenCredential>(sp =>
+        {
+            var managedIdentityClientId = ctx.Configuration["AZURE_CLIENT_ID"];
+            return string.IsNullOrWhiteSpace(managedIdentityClientId)
+                ? new Azure.Identity.DefaultAzureCredential()
+                : new Azure.Identity.ManagedIdentityCredential(
+                    Azure.Identity.ManagedIdentityId.FromUserAssignedClientId(managedIdentityClientId));
+        });
         services.AddSingleton(sp =>
         {
-            var credential = new Azure.Identity.ManagedIdentityCredential();
+            var credential = sp.GetRequiredService<Azure.Core.TokenCredential>();
             return new Microsoft.Graph.GraphServiceClient(
                 credential,
                 graphScopes);
         });
+        services.AddHttpClient<CorporateIdentifierGraphClient>(client =>
+            client.BaseAddress = new Uri("https://graph.microsoft.com/"));
         services.AddSingleton<DevicePreFlightAuthorizationService>();
         services.AddSingleton<BulkAssignmentService>();
         services.AddSingleton<ImageDeletionGuardService>();

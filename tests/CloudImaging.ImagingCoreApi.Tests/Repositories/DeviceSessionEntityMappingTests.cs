@@ -118,6 +118,23 @@ public sealed class DeviceSessionEntityMappingTests
         restored.HardwareMetadata.Should().BeNull();
         restored.DeviceSerialNumber.Should().Be("JHK4L92");
     }
+
+    [Theory]
+    [InlineData(SessionState.SessionInit, "active")]
+    [InlineData(SessionState.SessionAllowed, "active")]
+    [InlineData(SessionState.SessionAssigned, "active")]
+    [InlineData(SessionState.SessionStarted, "active")]
+    [InlineData(SessionState.SessionInProgress, "active")]
+    [InlineData(SessionState.SessionCompleted, "terminal")]
+    [InlineData(SessionState.SessionFailed, "terminal")]
+    [InlineData(SessionState.SessionNotAuthorized, "terminal")]
+    [InlineData(SessionState.SessionExpired, "terminal")]
+    public void PartitionForState_SeparatesActiveAndTerminalSessions(
+        SessionState state,
+        string expectedPartition)
+    {
+        DeviceSessionRepository.PartitionForState(state).Should().Be(expectedPartition);
+    }
 }
 
 /// <summary>
