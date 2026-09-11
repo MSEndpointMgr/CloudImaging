@@ -58,7 +58,7 @@
                 <StackPanel Orientation="Horizontal">
                     <Image x:Name="TitleBrandingLogo"
                            Width="18" Height="18"
-                           Margin="0,0,8,0"
+                                    Margin="16,0,8,0"
                            VerticalAlignment="Center"
                            Stretch="Uniform"
                            Visibility="Collapsed" />

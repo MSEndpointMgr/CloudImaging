@@ -19,6 +19,7 @@ import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
+import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
 import { cn, formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
@@ -107,16 +108,14 @@ function stateBadgeVariant(state: string): BadgeProps['variant'] {
 }
 
 /**
- * Label for the OS image picker. Only the operator-authored version is shown: that is the name the
- * technician recognises the image by and it is unique across the catalog, so appending the uploaded
- * file name (typically a long vendor ESD/WIM file name) added nothing but noise. The truncation
- * guard stays as a backstop for a pathologically long version string; `Select` sizes its list to
- * the control and ellipsizes anything longer, with the full text on the row's tooltip.
+ * Label for the OS image picker. Combines the catalog name and optional version so technicians can
+ * distinguish related images. The truncation guard stays as a backstop for pathologically long
+ * metadata; `Select` sizes its list to the control and ellipsizes anything longer.
  */
 const MAX_IMAGE_OPTION_CHARS = 100;
 
 function imageOptionLabel(image: OsImage): string {
-  const label = image.version.trim();
+  const label = formatOsImageInventoryName(image.name, image.version);
   return label.length > MAX_IMAGE_OPTION_CHARS
     ? `${label.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
     : label;

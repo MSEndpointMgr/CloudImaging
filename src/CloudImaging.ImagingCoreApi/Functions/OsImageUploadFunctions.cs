@@ -84,8 +84,8 @@ public sealed partial class OsImageUploadFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var name = TextNormalization.NormalizeLookalikes(nameProp.GetString()) ?? string.Empty;
-        var version = TextNormalization.NormalizeLookalikes(versionProp.GetString()) ?? string.Empty;
+        var name = nameProp.GetString() ?? string.Empty;
+        var version = versionProp.GetString() ?? string.Empty;
         var sha256Hash = hashProp.GetString() ?? string.Empty;
         var extension = Path.GetExtension(name);
 
@@ -151,8 +151,8 @@ public sealed partial class OsImageUploadFunctions
         var blobName = blobNameProp.GetString()!;
         var blockIds = blockIdsProp.EnumerateArray().Select(e => e.GetString()!).ToList();
         var sha256Hash = hashProp.GetString()!;
-        var name = TextNormalization.NormalizeLookalikes(nameProp.GetString())!;
-        var version = TextNormalization.NormalizeLookalikes(versionProp.GetString())!;
+        var name = nameProp.GetString()!;
+        var version = versionProp.GetString()!;
         var sizeBytes = sizeProp.GetInt64();
 
         // Reject before committing any blocks so the caller isn't left holding an orphaned blob.

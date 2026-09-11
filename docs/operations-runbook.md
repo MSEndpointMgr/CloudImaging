@@ -61,7 +61,7 @@ minutes of expiring. If 403s persist:
 2. Restart the device to create a new session.
 
 Sessions are expired by a timer that runs every 5 minutes, using two different thresholds: a
-session that is **actively imaging** (formatting, downloading, or applying) is given **4 hours**
+session that is **actively imaging** (formatting, downloading, or applying) is given **2 hours**
 since its last heartbeat, while a session sitting idle at any other stage is given **30 minutes**.
 A long-running download is therefore not at risk of being expired at 30 minutes.
 

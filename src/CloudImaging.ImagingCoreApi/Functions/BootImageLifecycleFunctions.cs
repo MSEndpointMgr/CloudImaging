@@ -59,7 +59,7 @@ public sealed partial class BootImageLifecycleFunctions
             ? new BootImage
             {
                 BootImageId = Guid.NewGuid(),
-                Version = TextNormalization.NormalizeLookalikes(payload.Version) ?? payload.Version,
+                Version = payload.Version,
                 CreatedAt = payload.CreatedAt == default ? DateTimeOffset.UtcNow : payload.CreatedAt,
                 SizeBytes = payload.SizeBytes,
                 StoragePath = payload.StoragePath,
