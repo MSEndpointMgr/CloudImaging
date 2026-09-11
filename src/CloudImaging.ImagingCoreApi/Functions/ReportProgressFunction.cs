@@ -26,6 +26,8 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 /// </summary>
 public sealed partial class ReportProgressFunction
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ImagingStepRepository _stepRepo;
     private readonly SessionHistoryRepository _historyRepo;
@@ -60,8 +62,7 @@ public sealed partial class ReportProgressFunction
         ProgressPayload? payload;
         try
         {
-            payload = await JsonSerializer.DeserializeAsync<ProgressPayload>(
-                req.Body, cancellationToken: context.CancellationToken);
+            payload = await DeserializePayloadAsync(req.Body, context.CancellationToken);
         }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
@@ -160,10 +161,15 @@ public sealed partial class ReportProgressFunction
         return response;
     }
 
-    private sealed class ProgressPayload
+    internal static ValueTask<ProgressPayload?> DeserializePayloadAsync(
+        Stream body,
+        CancellationToken cancellationToken = default) =>
+        JsonSerializer.DeserializeAsync<ProgressPayload>(body, JsonOptions, cancellationToken);
+
+    internal sealed class ProgressPayload
     {
-        public ImagingStepName StepName { get; init; }
-        public ImagingStepStatus Status { get; init; }
+        public required ImagingStepName StepName { get; init; }
+        public required ImagingStepStatus Status { get; init; }
         public int? StepProgressPercent { get; init; }
         public string? ErrorDetail { get; init; }
     }
