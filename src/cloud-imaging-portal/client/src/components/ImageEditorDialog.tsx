@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { apiFetch } from '../lib/apiClient.ts';
 import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import { Button } from './ui/button.tsx';
@@ -62,7 +63,9 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
     finally { setSaving(false); }
   };
 
-  return (
+  // Portalled to document.body so the dimming overlay always covers the full viewport (including
+  // the app header) regardless of any stacking context introduced by this dialog's call site.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-background rounded-lg shadow-xl p-6 w-full max-w-md">
         <h2 className="text-lg font-semibold mb-4">Edit Image</h2>
@@ -97,6 +100,7 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

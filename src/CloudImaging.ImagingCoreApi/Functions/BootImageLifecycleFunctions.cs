@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -58,7 +59,7 @@ public sealed partial class BootImageLifecycleFunctions
             ? new BootImage
             {
                 BootImageId = Guid.NewGuid(),
-                Version = payload.Version,
+                Version = TextNormalization.NormalizeLookalikes(payload.Version) ?? payload.Version,
                 CreatedAt = payload.CreatedAt == default ? DateTimeOffset.UtcNow : payload.CreatedAt,
                 SizeBytes = payload.SizeBytes,
                 StoragePath = payload.StoragePath,

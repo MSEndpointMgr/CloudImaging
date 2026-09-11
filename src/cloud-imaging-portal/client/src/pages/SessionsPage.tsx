@@ -18,6 +18,8 @@ import { RelativeTime } from '../components/ui/relative-time.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
+import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
+import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
 import { cn } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
@@ -42,6 +44,7 @@ interface Session {
   locationName: string | null;
   overallProgressPercent: number;
   currentStep: string | null;
+  steps?: ImagingStepDetails[];
   createdAt: string;
   // Already present on the Operator API's session summary; the portal simply was not reading
   // them. Optional so a cached/older response cannot blank the table.
@@ -69,19 +72,21 @@ interface OsImage {
 // tab rather than sitting alongside healthy sessions in Monitor.
 const FAILED_STATES = new Set(['SessionFailed', 'SessionNotAuthorized']);
 
-type DeviceView = 'pending' | 'monitor' | 'failed';
+type DeviceView = 'pending' | 'monitor' | 'success' | 'failed';
 
 // Available: newly-registered sessions awaiting a technician to enter the device's passcode.
 const AVAILABLE_STATES = new Set(['SessionInit', 'SessionAllowed']);
 // Coupled: passcode has been matched — eligible for OS image selection.
 const COUPLED_STATES = new Set(['SessionAssigned']);
-// Monitor: devices that were coupled and then had imaging started, through to completion.
-const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress', 'SessionCompleted']);
+// Monitor: devices with active imaging work. Completed devices move to Success.
+const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress']);
+const SUCCESS_STATES = new Set(['SessionCompleted']);
 
 function deriveCounts(sessions: Session[]) {
   return {
     pending: sessions.filter(s => AVAILABLE_STATES.has(s.state) || COUPLED_STATES.has(s.state)).length,
     monitor: sessions.filter(s => MONITOR_STATES.has(s.state)).length,
+    success: sessions.filter(s => SUCCESS_STATES.has(s.state)).length,
     failed:  sessions.filter(s => FAILED_STATES.has(s.state)).length,
   };
 }
@@ -228,6 +233,7 @@ function SessionsPageImpl(): React.ReactElement {
   const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'state' | 'progress' | 'step'>({ key: 'state', dir: 'asc' });
+  const [successSort, toggleSuccessSort]     = useSort<'serial' | 'device' | 'location' | 'finished'>({ key: 'finished', dir: 'desc' });
   const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>({ key: 'registered', dir: 'asc' });
 
   // Uploaded diagnostic logs per failed session, looked up once the Failed tab is opened. A
@@ -349,6 +355,16 @@ function SessionsPageImpl(): React.ReactElement {
       step:     (s: Session) => s.currentStep ?? '',
     },
   ), [locationFiltered, monitorSort]);
+  const success = useMemo(() => sortRows(
+    locationFiltered.filter(s => SUCCESS_STATES.has(s.state)),
+    successSort,
+    {
+      serial:   (s: Session) => s.deviceSerialNumber,
+      device:   (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location: (s: Session) => s.locationName ?? '',
+      finished: (s: Session) => s.terminalAt ? new Date(s.terminalAt).getTime() : 0,
+    },
+  ), [locationFiltered, successSort]);
   const failed = useMemo(() => sortRows(
     locationFiltered.filter(s => FAILED_STATES.has(s.state)),
     failedSort,
@@ -478,6 +494,7 @@ function SessionsPageImpl(): React.ReactElement {
           {([
             { key: 'pending', label: 'Pending', count: counts.pending },
             { key: 'monitor', label: 'Monitor', count: counts.monitor },
+            { key: 'success', label: 'Success', count: counts.success },
             { key: 'failed',  label: 'Failed',  count: counts.failed },
           ] as const).map((tab) => {
             const isActive = tab.key === view;
@@ -530,8 +547,10 @@ function SessionsPageImpl(): React.ReactElement {
         {view === 'pending'
           ? 'Enter a device\u2019s passcode to couple it, then assign an OS image to start imaging.'
           : view === 'monitor'
-            ? 'Deployment progress and status for devices that have started imaging, updated in real time.'
-            : 'Devices whose imaging failed or that were never authorized. Download the diagnostic log where the Client managed to upload one.'}
+            ? 'Deployment progress and status for devices currently imaging, updated in real time.'
+            : view === 'success'
+              ? 'Devices that completed imaging successfully.'
+              : 'Devices whose imaging failed or that were never authorized. Download the diagnostic log where the Client managed to upload one.'}
       </p>
 
       {view === 'pending' ? (
@@ -643,10 +662,15 @@ function SessionsPageImpl(): React.ReactElement {
               </div>
               {/* Sized to its own content (bounded by min/max) rather than stretching to fill the
                   row. The max-width also keeps very long catalog names (see imageOptionLabel) from
-                  blowing up the control; truncate ellipsizes those. */}
+                  blowing up the control; truncate ellipsizes those. Deliberately set on `className`
+                  (the trigger button) rather than `wrapperClassName` (the positioning div): the
+                  trigger's own base style is `w-full`, so a width constraint on the wrapper instead
+                  just gets ignored for shrink-to-fit purposes (a percentage-width child does not
+                  contribute to its parent's content-based sizing), and the wrapper collapsed to
+                  its min-width regardless of how long the selected label was. */}
               <Select
                 size="sm"
-                wrapperClassName="w-auto min-w-[10rem] max-w-xs"
+                className="w-auto min-w-[10rem] max-w-xs"
                 aria-label="OS image to assign"
                 value={selectedImageId ?? ''}
                 onValueChange={v => setSelectedImageId(v || null)}
@@ -722,15 +746,16 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All six widths are percentages that sum to exactly 100% — table-fixed sizes
+                {/* All seven widths are percentages that sum to exactly 100% — table-fixed sizes
                     columns as (percent + fixed px) of the table's own width, so mixing in a
                     fixed px column (State was a flat 140px) made the row wider than its
                     container on anything above ~1750px and forced a horizontal scrollbar. */}
-                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[22%]" />
-                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
+                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
+                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[13%]" />
                 <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[10%]" />
-                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[19%]" />
                 <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[20%]" />
               </TableRow>
             </TableHeader>
@@ -738,6 +763,7 @@ function SessionsPageImpl(): React.ReactElement {
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={`mon-skeleton-${i}`} className="hover:bg-transparent">
+                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -748,7 +774,7 @@ function SessionsPageImpl(): React.ReactElement {
                 ))
               ) : monitor.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="p-0">
+                  <TableCell colSpan={7} className="p-0">
                     <EmptyState
                       icon={Activity}
                       title="No imaging activity yet"
@@ -757,7 +783,22 @@ function SessionsPageImpl(): React.ReactElement {
                   </TableCell>
                 </TableRow>
               ) : monitor.map(s => (
-                <TableRow key={s.sessionId}>
+                <Fragment key={s.sessionId}>
+                <TableRow>
+                  <TableCell>
+                    <Tooltip content={isExpanded(s.sessionId) ? 'Hide progress details' : 'Show progress details'}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => toggleExpanded(s.sessionId)}
+                        aria-expanded={isExpanded(s.sessionId)}
+                        aria-controls={`${detailsId}-${s.sessionId}`}
+                        aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
+                      >
+                        {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
+                      </Button>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell>
                     <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                   </TableCell>
@@ -765,17 +806,112 @@ function SessionsPageImpl(): React.ReactElement {
                   <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                   <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                   <TableCell>
-                    {s.overallProgressPercent > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${s.overallProgressPercent}%` }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{s.overallProgressPercent}%</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{progressStepLabel(s.currentStep)}</TableCell>
+                </TableRow>
+                {isExpanded(s.sessionId) && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                      <SessionProgressDetails
+                        overallPercent={s.overallProgressPercent}
+                        currentStep={s.currentStep}
+                        steps={s.steps}
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : view === 'success' ? (
+        <div className="rounded-md border border-border overflow-hidden">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={successSort} onSort={toggleSuccessSort} className="w-[15%]" />
+                <SortableHead label="Device" sortKey="device" sort={successSort} onSort={toggleSuccessSort} className="w-[25%]" />
+                <SortableHead label="Location" sortKey="location" sort={successSort} onSort={toggleSuccessSort} className="w-[15%]" />
+                <TableHead className="w-[20%]">Progress</TableHead>
+                <SortableHead label="Finished" sortKey="finished" sort={successSort} onSort={toggleSuccessSort} className="w-[20%]" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && sessions.length === 0 ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={`success-skeleton-${i}`} className="hover:bg-transparent">
+                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  </TableRow>
+                ))
+              ) : success.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6} className="p-0">
+                    <EmptyState
+                      icon={CheckCircle2}
+                      title="No successful deployments yet"
+                      description="Devices appear here after every imaging stage completes."
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : success.map(s => (
+                <Fragment key={s.sessionId}>
+                  <TableRow>
+                    <TableCell>
+                      <Tooltip content={isExpanded(s.sessionId) ? 'Hide progress details' : 'Show progress details'}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleExpanded(s.sessionId)}
+                          aria-expanded={isExpanded(s.sessionId)}
+                          aria-controls={`${detailsId}-${s.sessionId}`}
+                          aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
+                        >
+                          {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
+                        </Button>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                    </TableCell>
+                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    <TableCell>
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${s.overallProgressPercent}%` }} />
+                          <div className="h-full w-full rounded-full bg-emerald-500" />
                         </div>
-                        <span className="text-xs text-muted-foreground">{s.overallProgressPercent}%</span>
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">100%</span>
                       </div>
-                    ) : <span className="text-muted-foreground">-</span>}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
-                </TableRow>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {s.terminalAt ? <RelativeTime value={s.terminalAt} /> : '\u2014'}
+                    </TableCell>
+                  </TableRow>
+                  {isExpanded(s.sessionId) && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={6} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                        <SessionProgressDetails
+                          overallPercent={s.overallProgressPercent}
+                          currentStep={s.currentStep}
+                          steps={s.steps}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
               ))}
             </TableBody>
           </Table>
@@ -785,15 +921,16 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All seven widths are percentages that sum to exactly 100% — see the Monitor
+                {/* All eight widths are percentages that sum to exactly 100% — see the Monitor
                     table's comment above for why fixed-px columns (State/Actions were
                     140px/150px) can't be mixed in here without pushing the row past the
                     container width. */}
-                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="w-[13%]" />
-                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="w-[19%]" />
-                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="w-[12%]" />
+                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="w-[12%]" />
+                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="w-[17%]" />
+                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="w-[11%]" />
                 <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="w-[10%]" />
-                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="w-[15%]" />
+                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="w-[14%]" />
                 <SortableHead label="Registered" sortKey="registered" sort={failedSort} onSort={toggleFailedSort} className="w-[11%]" />
                 <TableHead className="w-[20%]">Actions</TableHead>
               </TableRow>
@@ -802,6 +939,7 @@ function SessionsPageImpl(): React.ReactElement {
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={`fail-skeleton-${i}`} className="hover:bg-transparent">
+                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -813,7 +951,7 @@ function SessionsPageImpl(): React.ReactElement {
                 ))
               ) : failed.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={7} className="p-0">
+                  <TableCell colSpan={8} className="p-0">
                     <EmptyState
                       icon={CheckCircle2}
                       title="No failed devices"
@@ -826,14 +964,29 @@ function SessionsPageImpl(): React.ReactElement {
                 const logsUnknown = logs === undefined;
                 const hasLog = !logsUnknown && logs.length > 0;
                 return (
-                  <TableRow key={s.sessionId}>
+                  <Fragment key={s.sessionId}>
+                  <TableRow>
+                    <TableCell>
+                      <Tooltip content={isExpanded(s.sessionId) ? 'Hide progress details' : 'Show progress details'}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleExpanded(s.sessionId)}
+                          aria-expanded={isExpanded(s.sessionId)}
+                          aria-controls={`${detailsId}-${s.sessionId}`}
+                          aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
+                        >
+                          {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
+                        </Button>
+                      </Tooltip>
+                    </TableCell>
                     <TableCell>
                       <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                     </TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
                     <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
-                    <TableCell className="text-muted-foreground">{s.currentStep ?? '-'}</TableCell>
+                    <TableCell className="text-muted-foreground">{progressStepLabel(s.currentStep)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
                     <TableCell>
                       <Button
@@ -851,6 +1004,18 @@ function SessionsPageImpl(): React.ReactElement {
                       </Button>
                     </TableCell>
                   </TableRow>
+                  {isExpanded(s.sessionId) && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={8} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                        <SessionProgressDetails
+                          overallPercent={s.overallProgressPercent}
+                          currentStep={s.currentStep}
+                          steps={s.steps}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  </Fragment>
                 );
               })}
             </TableBody>

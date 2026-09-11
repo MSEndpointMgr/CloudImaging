@@ -65,7 +65,7 @@ public sealed partial class RecoveryImageUploadFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var version = versionProp.GetString() ?? string.Empty;
+        var version = TextNormalization.NormalizeLookalikes(versionProp.GetString()) ?? string.Empty;
         var sha256Hash = hashProp.GetString() ?? string.Empty;
         var fileName = fileNameProp.GetString() ?? string.Empty;
         var extension = Path.GetExtension(fileName);
@@ -128,9 +128,9 @@ public sealed partial class RecoveryImageUploadFunctions
 
         var blobName = blobNameProp.GetString()!;
         var sha256Hash = hashProp.GetString()!;
-        var version = versionProp.GetString()!;
+        var version = TextNormalization.NormalizeLookalikes(versionProp.GetString())!;
         var sizeBytes = sizeProp.GetInt64();
-        var description = body.RootElement.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
+        var description = body.RootElement.TryGetProperty("description", out var descProp) ? TextNormalization.NormalizeLookalikes(descProp.GetString()) : null;
         var extension = Path.GetExtension(blobName);
 
         // The client uploaded the whole file in a single PUT (see StartUpload), so there is no

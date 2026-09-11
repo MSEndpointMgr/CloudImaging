@@ -14,6 +14,20 @@ namespace CloudImaging.Client.Tests;
 public sealed class RecoveryImageServiceTests
 {
     [Fact]
+    public void GetOfflineReagentcPath_UsesAppliedWindowsImage()
+    {
+        var method = typeof(RecoveryImageService).GetMethod(
+            "GetOfflineReagentcPath",
+            System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+
+        method.Should().NotBeNull();
+        var path = method!.Invoke(null, ["F:"]);
+
+        path.Should().Be(@"F:\Windows\System32\reagentc.exe");
+        path.Should().NotBe(Path.Combine(Environment.SystemDirectory, "reagentc.exe"));
+    }
+
+    [Fact]
     public async Task ApplyFromEmbeddedImageAsync_ReturnsFalse_WhenNoEmbeddedWinreWimExists()
     {
         var service = new RecoveryImageService(NullLogger<RecoveryImageService>.Instance);

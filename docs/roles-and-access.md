@@ -61,7 +61,7 @@ Portal backend's managed identity.
 |---|---|---|---|---|
 | Sign in | Allowed, but "Access denied" screen | ✅ | ✅ | ✅ |
 | **Dashboard**: Completed Sessions summary | ❌ | ✅ (only stat shown) | ✅ (full) | ✅ (full) |
-| **Reports**: session outcomes, image inventory, failure detail | ❌ | ✅ | ❌ | ✅ |
+| **Reports**: device outcomes, location statistics, image inventory, failure detail | ❌ | ✅ | ❌ | ✅ |
 | **Sessions**: view, couple, single-assign, bulk-assign | ❌ | ❌ | ✅ | ✅ |
 | **OS Images** catalog: view | ❌ | ❌ | ✅ (read-only) | ✅ |
 | **OS Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |

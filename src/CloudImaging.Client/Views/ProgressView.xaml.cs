@@ -11,7 +11,12 @@ public partial class ProgressView : Page
     public ProgressView()
     {
         InitializeComponent();
-        ActivityLogTextBox.TextChanged += (_, _) => ActivityLogTextBox.ScrollToEnd();
+    }
+
+    private void ActivityLogScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.ExtentHeightChange != 0)
+            ActivityLogScrollViewer.ScrollToBottom();
     }
 
     /// <summary>Opens the read-only local log viewer (FR-066) — see <see cref="LogViewerWindow"/>.</summary>

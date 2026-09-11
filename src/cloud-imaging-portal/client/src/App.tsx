@@ -21,7 +21,8 @@ const RecoveryImagesPage = lazyWithReload(() => import('./pages/RecoveryImagesPa
 const BrandingPage    = lazyWithReload(() => import('./pages/BrandingPage.tsx'));
 const DeploymentConfigPage = lazyWithReload(() => import('./pages/DeploymentConfigPage.tsx'));
 const ReportsPage = lazyWithReload(() => import('./pages/ReportsPage.tsx'));
-const ReportSessionOutcomesPage = lazyWithReload(() => import('./pages/ReportSessionOutcomesPage.tsx'));
+const ReportDeviceOutcomesPage = lazyWithReload(() => import('./pages/ReportSessionOutcomesPage.tsx'));
+const ReportLocationStatisticsPage = lazyWithReload(() => import('./pages/ReportLocationStatisticsPage.tsx'));
 const ReportImageInventoryPage = lazyWithReload(() => import('./pages/ReportImageInventoryPage.tsx'));
 const ReportFailureDetailPage = lazyWithReload(() => import('./pages/ReportFailureDetailPage.tsx'));
 const LocationsPage = lazyWithReload(() => import('./pages/LocationsPage.tsx'));
@@ -71,7 +72,9 @@ export default function App(): React.ReactElement {
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
                         <Route path="locations"                   element={<RequireAdmin><LocationsPage /></RequireAdmin>} />
                         <Route path="reports"                     element={<RequireReportsAccess><ReportsPage /></RequireReportsAccess>} />
-                        <Route path="reports/session-outcomes"    element={<RequireReportsAccess><ReportSessionOutcomesPage /></RequireReportsAccess>} />
+                        <Route path="reports/device-outcomes"     element={<RequireReportsAccess><ReportDeviceOutcomesPage /></RequireReportsAccess>} />
+                        <Route path="reports/location-statistics" element={<RequireReportsAccess><ReportLocationStatisticsPage /></RequireReportsAccess>} />
+                        <Route path="reports/session-outcomes"    element={<Navigate to="/reports/device-outcomes" replace />} />
                         <Route path="reports/image-inventory"     element={<RequireReportsAccess><ReportImageInventoryPage /></RequireReportsAccess>} />
                         <Route path="reports/failures"            element={<RequireReportsAccess><ReportFailureDetailPage /></RequireReportsAccess>} />
                         <Route path="*"                element={<Navigate to="/" replace />} />

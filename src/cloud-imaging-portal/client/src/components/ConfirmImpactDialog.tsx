@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { AlertTriangle } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 
@@ -31,7 +32,9 @@ export function ConfirmImpactDialog({
   /** Override the heading's element id if multiple dialogs could render in the same tree. */
   titleId?: string;
 }): React.ReactElement {
-  return (
+  // Portalled to document.body so the dimming overlay always covers the full viewport (including
+  // the app header) regardless of any stacking context introduced by this dialog's call site.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       role="dialog"
@@ -70,6 +73,7 @@ export function ConfirmImpactDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -76,22 +76,33 @@ public sealed partial class ReportProgressFunction
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
 
-        // Persist the step record
+        var allSteps = (await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken)).ToList();
+        var existingStep = allSteps.FirstOrDefault(existing => existing.StepName == payload.StepName);
+        var now = DateTimeOffset.UtcNow;
+
+        // Preserve the initial start timestamp when a later completion/failure report replaces
+        // the same Table Storage row. Without this, completed steps lose their elapsed-time data.
         var step = new ImagingStep
         {
             StepName = payload.StepName,
             Status = payload.Status,
             StepProgressPercent = payload.StepProgressPercent,
             ErrorDetail = payload.ErrorDetail,
-            StartedAt = payload.Status == ImagingStepStatus.InProgress ? DateTimeOffset.UtcNow : null,
+            StartedAt = existingStep?.StartedAt
+                        ?? (payload.Status == ImagingStepStatus.InProgress ? now : null),
             CompletedAt = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed
-                                  ? DateTimeOffset.UtcNow : null,
+                                  ? now : null,
         };
 
         await _stepRepo.UpsertAsync(sessionGuid, step, context.CancellationToken);
 
-        // Reload all steps to recalculate overall progress
-        var allSteps = await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken);
+        if (existingStep is not null)
+        {
+            allSteps.Remove(existingStep);
+        }
+        allSteps.Add(step);
+
+        // Recalculate session summary from the updated step collection.
         var overallPercent = OverallProgressCalculator.Calculate(allSteps);
         var activeStep = OverallProgressCalculator.CurrentOrLastStepName(allSteps);
 
@@ -133,6 +144,8 @@ public sealed partial class ReportProgressFunction
                 DeviceSerialNumber = updated.DeviceSerialNumber,
                 DeviceManufacturer = updated.DeviceManufacturer,
                 DeviceModel = updated.DeviceModel,
+                LocationId = updated.LocationId,
+                LocationName = updated.LocationName,
                 PreFlightAuthorizationResult = updated.PreFlightAuthorizationResult,
                 AssignedOsImageId = updated.AssignedOsImageId,
                 FailedStepName = failedStep?.StepName,

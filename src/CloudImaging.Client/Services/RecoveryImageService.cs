@@ -112,8 +112,14 @@ public sealed partial class RecoveryImageService
         Directory.CreateDirectory(partitionRecoveryDir);
         File.Copy(windowsRecoveryWimPath, Path.Combine(partitionRecoveryDir, "Winre.wim"), overwrite: true);
 
-        await RunReagentcAsync($"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"", ct);
-        await RunReagentcAsync($"/enable /target \"{windowsVolume}\\Windows\"", ct);
+        await RunReagentcAsync(
+            windowsVolume,
+            $"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"",
+            ct);
+
+        // Do not run `/enable /target`: /enable has no /target form. Windows enables the
+        // registered recovery environment automatically during the specialize configuration
+        // pass, as documented by Microsoft for offline Windows RE deployment.
 
         await RemoveRecoveryDriveLetterAsync(recoveryVolume, ct);
 
@@ -124,22 +130,24 @@ public sealed partial class RecoveryImageService
     private static string GetWindowsRecoveryWimPath(string windowsVolume) =>
         Path.Combine($"{windowsVolume}\\", "Windows", "System32", "Recovery", "Winre.wim");
 
-    private async Task RunReagentcAsync(string arguments, CancellationToken ct)
+    private static string GetOfflineReagentcPath(string windowsVolume) =>
+        Path.Combine($"{windowsVolume}\\", "Windows", "System32", "reagentc.exe");
+
+    private async Task RunReagentcAsync(string windowsVolume, string arguments, CancellationToken ct)
     {
         LogStartingReagentc(_logger, arguments);
 
-        // Resolved to a fully-qualified path (rather than a bare "reagentc.exe" relying on
-        // PATH/CreateProcess's implicit System32 search) so that, if a boot image was built
-        // before BootImageGenerationService started injecting reagentc.exe into WinPE, the
-        // resulting error clearly names the missing file instead of a generic Win32Exception
-        // "The system cannot find the file specified" with no indication of what/where.
-        var reagentcPath = Path.Combine(Environment.SystemDirectory, "reagentc.exe");
+        // Use the copy belonging to the applied Windows image. It and its adjacent ReAgent.dll
+        // and wimgapi.dll are version-matched; transplanting these binaries from the Media
+        // Builder workstation into WinPE caused STATUS_DLL_NOT_FOUND at runtime.
+        var reagentcPath = GetOfflineReagentcPath(windowsVolume);
+        var targetSystemDir = Path.GetDirectoryName(reagentcPath)!;
         if (!File.Exists(reagentcPath))
         {
             LogReagentcNotFound(_logger, reagentcPath);
             throw new InvalidOperationException(
-                $"\"{reagentcPath}\" was not found. This WinPE boot image was built before reagentc.exe " +
-                "injection was added to boot image generation — rebuild the boot media to pick up the fix.");
+                $"\"{reagentcPath}\" was not found in the applied Windows image. The OS image is " +
+                "incomplete or its Windows directory is not mounted at the expected volume.");
         }
 
         using var process = new Process
@@ -148,6 +156,7 @@ public sealed partial class RecoveryImageService
             {
                 FileName = reagentcPath,
                 Arguments = arguments,
+                WorkingDirectory = targetSystemDir,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

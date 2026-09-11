@@ -146,15 +146,8 @@ jobs:
 
             Deploy it with the MSI: it installs per-machine and takes the tenant configuration as
             install properties, so there is no need to repackage the payload per tenant. See
-            `docs/setup-instructions.md` → "Deploying the Media Builder with Intune".
-
-            ```
-            msiexec /i CloudImaging.MediaBuilder.msi /qn /norestart ^
-              ENTRAIDCLIENTID=<media builder app registration id> ^
-              ENTRAIDTENANTID=<tenant id> ^
-              OPERATORAPICLIENTID=<operator api app registration id> ^
-              OPERATORAPIBASEURL=https://<operator api function app>.azurewebsites.net
-            ```
+            `docs/setup-instructions.md` → "Deploying the Media Builder with Intune" for the full
+            deployment guide, including MSI properties.
 
             ### Release artifacts
             | File | Description |

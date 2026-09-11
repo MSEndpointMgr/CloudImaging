@@ -64,11 +64,11 @@ function formatDuration(fromIso: string, toIso: string): string {
 }
 
 /**
- * Session Outcomes report (Reports feature): breakdown of terminal session outcomes over a
+ * Device Outcomes report (Reports feature): breakdown of terminal device outcomes over a
  * configurable date range, backed by the durable SessionHistory audit table (not the live,
  * purge-limited "DeviceSessions" table).
  */
-export default function ReportSessionOutcomesPage(): React.ReactElement {
+export default function ReportDeviceOutcomesPage(): React.ReactElement {
   const today = useMemo(() => new Date(), []);
   const defaultFrom = useMemo(() => new Date(today.getTime() - DEFAULT_WINDOW_DAYS * 86_400_000), [today]);
   const [from, setFrom] = useState(isoDateInputValue(defaultFrom));
@@ -120,7 +120,7 @@ export default function ReportSessionOutcomesPage(): React.ReactElement {
       { header: 'Terminal At', accessor: r => r.terminalAt },
       { header: 'Duration', accessor: r => formatDuration(r.createdAt, r.terminalAt) },
     ]);
-    downloadBlob(`session-outcomes-${from}-to-${to}.csv`, csv);
+    downloadBlob(`device-outcomes-${from}-to-${to}.csv`, csv);
   };
 
   return (

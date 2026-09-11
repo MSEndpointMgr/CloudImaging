@@ -108,7 +108,7 @@
 
 ## Decision 9: GitHub Actions with OIDC Workload Identity Federation for internal dev deployments
 
-**Decision**: Use GitHub Actions workflows with OIDC-based Azure Workload Identity Federation for all core developer deployments to the shared Azure dev environment. Two workflows are provided: `deploy-dev.yml` (full-stack IaC + all component deployment, manual trigger for initial setup or complete refresh) and `deploy-components.yml` (per-component redeployment via `workflow_dispatch` with a component name input for iterative development). Both are stored in `.github/workflows/` but are explicitly excluded from community release bundles. VS Code tasks (`.vscode/tasks.json`) invoke `deploy-components.yml` via `gh workflow run` to provide an in-editor deployment trigger.
+**Decision**: Use GitHub Actions workflows with OIDC-based Azure Workload Identity Federation for all core developer deployments to the shared Azure dev environment. Two workflows are provided: `deploy-dev.yml` (full-stack IaC + all component deployment, manual trigger for initial setup or complete refresh) and `deploy-components.yml` (per-component redeployment via `workflow_dispatch` with a component name input for iterative development). Both are stored in `.github/workflows/` but are explicitly excluded from community release bundles. Developers may invoke these workflows from ignored local VS Code tasks, which are never tracked by Git.
 
 **Rationale**:
 - OIDC Workload Identity Federation eliminates long-lived Azure credentials from GitHub repository secrets; access tokens are short-lived, scoped to the workflow run, and auto-rotated by the Azure/GitHub trust relationship.

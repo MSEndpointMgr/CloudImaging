@@ -113,8 +113,8 @@ public sealed partial class ImageCatalogFunctions
         var newImage = new OsImage
         {
             ImageId = image.ImageId == Guid.Empty ? Guid.NewGuid() : image.ImageId,
-            Name = image.Name,
-            Version = image.Version,
+            Name = TextNormalization.NormalizeLookalikes(image.Name) ?? image.Name,
+            Version = TextNormalization.NormalizeLookalikes(image.Version) ?? image.Version,
             Description = image.Description,
             SizeBytes = image.SizeBytes,
             StoragePath = image.StoragePath,
@@ -154,8 +154,8 @@ public sealed partial class ImageCatalogFunctions
         var updated = new OsImage
         {
             ImageId = existing.ImageId,
-            Name = body.RootElement.TryGetProperty("name", out var n) ? n.GetString()! : existing.Name,
-            Version = body.RootElement.TryGetProperty("version", out var v) ? v.GetString()! : existing.Version,
+            Name = body.RootElement.TryGetProperty("name", out var n) ? TextNormalization.NormalizeLookalikes(n.GetString())! : existing.Name,
+            Version = body.RootElement.TryGetProperty("version", out var v) ? TextNormalization.NormalizeLookalikes(v.GetString())! : existing.Version,
             Description = body.RootElement.TryGetProperty("description", out var d) ? d.GetString() : existing.Description,
             SizeBytes = existing.SizeBytes,
             StoragePath = existing.StoragePath,

@@ -20,7 +20,8 @@ describe('Portal frontend: route section titles', () => {
   });
 
   it('lets nested routes inherit their parent section', () => {
-    expect(resolveSectionTitle('/reports/session-outcomes')).toBe('Reports');
+    expect(resolveSectionTitle('/reports/device-outcomes')).toBe('Device Outcomes');
+    expect(resolveSectionTitle('/reports/location-statistics')).toBe('Location Statistics');
     expect(resolveSectionTitle('/reports/failures/abc-123')).toBe('Reports');
   });
 

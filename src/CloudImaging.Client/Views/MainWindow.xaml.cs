@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using CloudImaging.Client.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
@@ -10,6 +12,7 @@ public partial class MainWindow : FluentWindow
     public MainWindow()
     {
         InitializeComponent();
+        LoadTitleBrandingLogo();
 
         // FluentWindow's own OnSourceInitialized unconditionally forces WindowStyle back to
         // SingleBorderWindow and only hides the resulting native chrome via a WindowChrome hack
@@ -29,6 +32,16 @@ public partial class MainWindow : FluentWindow
         // observe), so it always forces Dark — matching the XAML default in App.xaml — rather
         // than querying/watching the system theme. Applied once the window handle exists.
         Loaded += (_, _) => SafeApply(ApplicationTheme.Dark);
+    }
+
+    private void LoadTitleBrandingLogo()
+    {
+        var logo = new BrandingLogoService(NullLogger<BrandingLogoService>.Instance).LoadLogo();
+        if (logo is null)
+            return;
+
+        TitleBrandingLogo.Source = logo;
+        TitleBrandingLogo.Visibility = Visibility.Visible;
     }
 
     private static void SafeApply(ApplicationTheme theme)

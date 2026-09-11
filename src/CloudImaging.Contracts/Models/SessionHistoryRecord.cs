@@ -22,6 +22,10 @@ public sealed class SessionHistoryRecord
     public required string DeviceManufacturer { get; init; }
     public required string DeviceModel { get; init; }
 
+    /// <summary>Location snapshot retained even if the catalog entry is later renamed or deleted.</summary>
+    public Guid? LocationId { get; init; }
+    public string? LocationName { get; init; }
+
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 
     public Guid? AssignedOsImageId { get; init; }

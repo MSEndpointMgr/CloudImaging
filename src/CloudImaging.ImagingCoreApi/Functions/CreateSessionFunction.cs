@@ -140,6 +140,8 @@ public sealed partial class CreateSessionFunction
                 DeviceSerialNumber = finalSession.DeviceSerialNumber,
                 DeviceManufacturer = finalSession.DeviceManufacturer,
                 DeviceModel = finalSession.DeviceModel,
+                LocationId = finalSession.LocationId,
+                LocationName = finalSession.LocationName,
                 PreFlightAuthorizationResult = finalSession.PreFlightAuthorizationResult,
                 AssignedOsImageId = finalSession.AssignedOsImageId,
                 CreatedAt = finalSession.CreatedAt,
