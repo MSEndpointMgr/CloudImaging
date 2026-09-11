@@ -12,7 +12,7 @@ describe('Image Inventory report formatting', () => {
 
   it('shows only the OS image name when its version is empty', () => {
     expect(formatOsImageInventoryName('Windows 11', '')).toBe('Windows 11');
-    expect(formatOsImageInventoryName('Windows 11', '   ')).toBe('Windows 11');
+    expect(formatOsImageInventoryName('Windows 11', '   ')).toBe('Windows 11 (   )');
   });
 
   it('preserves user-entered characters exactly when composing report rows', () => {

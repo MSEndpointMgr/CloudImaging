@@ -1,6 +1,5 @@
 export function formatOsImageInventoryName(name: string, version: string): string {
-  const trimmedVersion = version.trim();
-  return trimmedVersion ? `${name} (${trimmedVersion})` : name;
+  return version ? `${name} (${version})` : name;
 }
 
 export function formatImageVersion(version: string): string {
