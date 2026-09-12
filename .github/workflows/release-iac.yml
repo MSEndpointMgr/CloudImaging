@@ -224,25 +224,45 @@ jobs:
       # update.ps1's -Version latest resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the client/mediabuilder
       # streams interleave with this one.
-      - name: Move 'mse-ci-iac-latest' alias to this release
+      #
+      # The alias tag is moved with git rather than created on the fly by the Releases API.
+      # GITHUB_TOKEN happily publishes a release for a tag that already exists (the step above
+      # does exactly that), but asking the API to mint the missing alias tag as part of creating
+      # the release fails with "HTTP 403: Resource not accessible by integration". Pushing the
+      # tag over git uses the credentials actions/checkout persisted, which is the same path this
+      # job already uses to create a missing version tag.
+      - name: Move the 'mse-ci-iac-latest' tag to this release's commit
         if: ${{ steps.tag.outputs.stable == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The alias does not exist before the first stable release, and 'gh release delete' exits
-          # non-zero when it is missing, which would fail the job *after* the real release had
-          # already published. Treat "nothing to move" as success.
+          # Drop the previous alias release first so the new one carries only this version's
+          # bundle -- the bundle's file name contains the version, so a stale asset would linger
+          # next to the current one and update.ps1 could download the older of the two. The tag
+          # itself is deliberately kept (no --cleanup-tag): it is force-moved below instead.
+          # The release does not exist before the first stable release and 'gh release delete'
+          # exits non-zero when it is missing, which would fail the job *after* the real release
+          # had already published, so treat "nothing to move" as success.
           $ErrorActionPreference = 'Continue'
-          gh release delete mse-ci-iac-latest --yes --cleanup-tag 2>&1 | Write-Host
+          gh release delete mse-ci-iac-latest --yes 2>&1 | Write-Host
           $ErrorActionPreference = 'Stop'
-          # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: update.ps1 reads
-          # the real version out of this alias release's name (its own tag_name is literally
-          # 'mse-ci-iac-latest'), and its pattern looks for the prefixed form. A bare 'v1.2.3' here
-          # left the upgrade reporting its target as "mse-ci-iac-latest".
-          gh release create mse-ci-iac-latest `
-            "release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip" `
-            "release-bundle/SHA256SUMS" `
-            --target "${{ steps.tag.outputs.sha }}" `
-            --title "Cloud Imaging (latest: ${{ steps.tag.outputs.tag }})" `
-            --notes "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes." `
-            --latest=false
+          git tag -f mse-ci-iac-latest "${{ steps.tag.outputs.sha }}"
+          git push -f origin refs/tags/mse-ci-iac-latest
+
+      # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: update.ps1 reads
+      # the real version out of this alias release's name (its own tag_name is literally
+      # 'mse-ci-iac-latest'), and its pattern looks for the prefixed form. A bare 'v1.2.3' here
+      # left the upgrade reporting its target as "mse-ci-iac-latest".
+      - name: Publish the 'mse-ci-iac-latest' alias release
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: mse-ci-iac-latest
+          name:     "Cloud Imaging (latest: ${{ steps.tag.outputs.tag }})"
+          body:     "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes."
+          files: |
+            release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip
+            release-bundle/SHA256SUMS
+          make_latest: false
+          draft: false
+          prerelease: false

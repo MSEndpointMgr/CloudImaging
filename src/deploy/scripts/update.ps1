@@ -82,7 +82,12 @@ if ($ArchivePath -eq '') {
     $resolvedVersion = if ($release.name -match '(mse-ci-v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?)') { $Matches[1] } else { $release.tag_name }
     Write-Host "Target release: $resolvedVersion ($($release.html_url))"
 
-    $asset = $release.assets | Where-Object { $_.name -like 'cloud-imaging-*.zip' } | Select-Object -First 1
+    $candidates = @($release.assets | Where-Object { $_.name -like 'cloud-imaging-*.zip' })
+    # The alias release is rebuilt from scratch on every stable release, but if an older bundle
+    # ever lingers next to the current one, taking the first match could silently deploy the
+    # previous version. Prefer the asset whose name carries the version resolved above.
+    $asset = $candidates | Where-Object { $_.name -eq "cloud-imaging-$resolvedVersion.zip" } | Select-Object -First 1
+    if ($null -eq $asset) { $asset = $candidates | Select-Object -First 1 }
     if ($null -eq $asset) { throw "No ZIP archive found in release $resolvedVersion." }
 
     $ArchivePath = Join-Path $env:TEMP $asset.name
