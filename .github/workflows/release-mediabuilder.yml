@@ -111,6 +111,14 @@ jobs:
       - name: Restore CloudImaging.MediaBuilder (win-x64)
         run: dotnet restore src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj -r win-x64
 
+      # Release gate: halt before Media Builder is built, packaged into the MSI or
+      # published if one of its dependencies has a known High/Critical advisory. Runs
+      # after restore because `dotnet list package` needs the resolved assets file.
+      - name: Fail the release on vulnerable dependencies
+        run: |
+          ./.github/scripts/Assert-NoVulnerableDependencies.ps1 -MinimumSeverity High `
+            -Project 'src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj'
+
       - name: Build CloudImaging.MediaBuilder (WPF, self-contained win-x64)
         run: |
           dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj `

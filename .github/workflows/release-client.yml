@@ -107,6 +107,14 @@ jobs:
       - name: Restore CloudImaging.Client (win-x64)
         run: dotnet restore src/CloudImaging.Client/CloudImaging.Client.csproj -r win-x64
 
+      # Release gate: halt before the client is built or published if one of its
+      # dependencies has a known High/Critical advisory. Runs after restore because
+      # `dotnet list package` needs the resolved assets file.
+      - name: Fail the release on vulnerable dependencies
+        run: |
+          ./.github/scripts/Assert-NoVulnerableDependencies.ps1 -MinimumSeverity High `
+            -Project 'src/CloudImaging.Client/CloudImaging.Client.csproj'
+
       - name: Build CloudImaging.Client (WPF, self-contained win-x64)
         run: |
           dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `

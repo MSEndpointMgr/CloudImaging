@@ -105,6 +105,27 @@ Automated checks run the same build/test/lint steps per component on every
 pull request, scoped to what changed. Fix failures caused by your change
 rather than suppressing them.
 
+### Dependency advisories
+
+Every release workflow halts before it builds or publishes anything if a
+dependency that ships in that release has a known High or Critical advisory.
+Run the same gate locally:
+
+```powershell
+# Backend and portal (release-iac.yml)
+./.github/scripts/Assert-NoVulnerableDependencies.ps1 -MinimumSeverity High `
+  -Project 'src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj',
+           'src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj',
+           'src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj' `
+  -NpmDirectory 'src/cloud-imaging-portal/server',
+                'src/cloud-imaging-portal/client'
+```
+
+NuGet packages are pinned centrally in `Directory.Packages.props`. Transitive
+pinning is enabled there, so a vulnerable transitive dependency is fixed by
+adding a `PackageVersion` entry for it under the security overrides at the end
+of that file, not by adding a direct `PackageReference`.
+
 Use disposable VMs, test disks, and a non-production Azure tenant for manual
 imaging and deployment testing; imaging workflows format disks and Media
 Builder workflows erase USB drives.
