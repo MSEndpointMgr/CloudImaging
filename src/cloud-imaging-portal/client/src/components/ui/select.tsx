@@ -387,18 +387,14 @@ export function Select({
                   onMouseEnter={() => !option.disabled && setActiveIndex(index)}
                   onClick={() => commit(index)}
                   className={cn(
-                    'flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                    'relative flex cursor-pointer select-none items-center rounded-md px-2 py-1.5 text-sm',
                     index === activeIndex && !option.disabled && 'bg-accent text-accent-foreground',
                     isSelected && 'font-medium',
                     option.disabled && 'cursor-not-allowed opacity-50',
                     option.value === '' && 'text-muted-foreground',
                   )}
                 >
-                  <Check
-                    aria-hidden="true"
-                    className={cn('h-4 w-4 shrink-0 text-primary', !isSelected && 'invisible')}
-                  />
-                  <span className="min-w-0 flex-1">
+                  <span className={cn('min-w-0 flex-1', isSelected && 'pr-6')}>
                     <span className="block truncate">{option.label}</span>
                     {option.description && (
                       <span className="block truncate text-xs text-muted-foreground">
@@ -406,6 +402,13 @@ export function Select({
                       </span>
                     )}
                   </span>
+                  {isSelected && (
+                    <Check
+                      aria-hidden="true"
+                      data-select-check=""
+                      className="absolute right-2 h-4 w-4 text-primary"
+                    />
+                  )}
                 </li>
               );
             })}

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Select } from '../../../src/cloud-imaging-portal/client/src/components/ui/select.tsx';
 
 const options = [
@@ -88,5 +88,23 @@ describe('Portal frontend: select primitive', () => {
 
     expect(trigger.textContent).toContain('Windows 11');
     expect(sizer?.textContent).toContain(options[1].label);
+  });
+
+  it('does not reserve a leading check-icon column for unselected options', () => {
+    render(
+      <Select
+        value="short"
+        onValueChange={() => undefined}
+        options={options}
+        aria-label="OS image to assign"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'OS image to assign' }));
+
+    const renderedOptions = screen.getAllByRole('option');
+    expect(renderedOptions[0].querySelector('[data-select-check]')).not.toBeNull();
+    expect(renderedOptions[1].querySelector('[data-select-check]')).toBeNull();
+    expect(renderedOptions[1].className).not.toContain('gap-2');
   });
 });
