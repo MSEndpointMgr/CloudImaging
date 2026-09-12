@@ -115,6 +115,19 @@ jobs:
       - name: Restore .NET solution
         run: dotnet restore CloudImaging.sln
 
+      # Release gate: halt before anything is built or published if a dependency that
+      # ships in this release has a known High/Critical advisory. Runs after restore
+      # because `dotnet list package` needs the resolved assets file. Test projects are
+      # excluded deliberately -- they are not part of any artifact.
+      - name: Fail the release on vulnerable dependencies
+        run: |
+          ./.github/scripts/Assert-NoVulnerableDependencies.ps1 -MinimumSeverity High `
+            -Project 'src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj',
+                     'src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj',
+                     'src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj' `
+            -NpmDirectory 'src/cloud-imaging-portal/server',
+                          'src/cloud-imaging-portal/client'
+
       - name: Initialize release artifact directory
         run: New-Item release-artifacts -ItemType Directory -Force | Out-Null
 

@@ -9,11 +9,18 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!--
-      Audit only direct dependencies — transitive dependency vulnerabilities
-      are surfaced as advisory information but do not break the build.
-      We override specific vulnerable transitive packages explicitly below.
+      Transitive pinning lets a PackageVersion entry below raise a transitive
+      dependency to a patched version without adding a direct PackageReference
+      to every project. Used for the security overrides at the end of this file.
     -->
-    <NuGetAuditMode>direct</NuGetAuditMode>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!--
+      Audit direct AND transitive dependencies so `dotnet restore` surfaces
+      NU1901/NU1902/NU1903/NU1904 for anything vulnerable that ships with us.
+      These stay warnings (see WarningsNotAsErrors in Directory.Build.props); the
+      release workflows fail hard on High/Critical before anything is published.
+    -->
+    <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,7 +36,7 @@
     <PackageVersion Include="Azure.Data.Tables"                   Version="12.9.0" />
     <PackageVersion Include="Azure.Storage.Blobs"                 Version="12.22.2" />
     <PackageVersion Include="Azure.Security.KeyVault.Secrets"     Version="4.7.0" />
-    <PackageVersion Include="Azure.Identity"                      Version="1.13.1" />
+    <PackageVersion Include="Azure.Identity"                      Version="1.21.0" />
 
     <!-- Microsoft Identity / Graph -->
     <PackageVersion Include="Microsoft.Identity.Web"              Version="4.13.1" />
@@ -62,6 +69,26 @@
     <PackageVersion Include="Moq"                                 Version="4.20.70" />
     <PackageVersion Include="FluentAssertions"                    Version="6.12.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"              Version="17.11.1" />
+  </ItemGroup>
+
+  <!-- =========================================================
+       Security overrides for transitive dependencies.
+       These packages are not referenced directly; they arrive via
+       Microsoft.AspNetCore.OpenApi, Microsoft.Identity.Web and
+       Microsoft.Graph. Transitive pinning (enabled above) raises them
+       to the first patched version for the advisories listed.
+       Remove an entry once the owning package pulls in a fixed version
+       on its own, verified with:
+         dotnet list CloudImaging.sln package (vulnerable, include transitive)
+       ========================================================= -->
+  <ItemGroup>
+    <!-- GHSA-v5pm-xwqc-g5wc (High) — via Microsoft.AspNetCore.OpenApi -->
+    <PackageVersion Include="Microsoft.OpenApi"                   Version="2.7.5" />
+    <!-- GHSA-cvvh-rhrc-wg4q, GHSA-g8r8-53c2-pm3f, GHSA-23rf-6693-g89p,
+         GHSA-8q5v-6pqq-x66h, GHSA-mmjf-rqrv-855v (High) — via Microsoft.Identity.Web -->
+    <PackageVersion Include="System.Security.Cryptography.Xml"    Version="10.0.10" />
+    <!-- GHSA-7j59-v9qr-6fq9 (High) — via Microsoft.Graph -->
+    <PackageVersion Include="Microsoft.Kiota.Abstractions"        Version="1.22.0" />
   </ItemGroup>
 
 </Project>

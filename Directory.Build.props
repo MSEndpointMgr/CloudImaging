@@ -8,6 +8,14 @@
   <PropertyGroup>
     <!-- Zero-warning, zero-diagnostic build policy (Constitution Principle I) -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      NuGet audit findings (NU1901-NU1904) stay warnings. An advisory published
+      upstream is not a defect in the code being built, and promoting it to an error
+      would break every local build and PR check the moment it drops, including the
+      branch that fixes it. Releases are gated separately and fail hard on
+      High/Critical: .github/scripts/Assert-NoVulnerableDependencies.ps1
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
