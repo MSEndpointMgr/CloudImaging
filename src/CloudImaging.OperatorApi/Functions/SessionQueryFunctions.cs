@@ -22,6 +22,7 @@ public sealed partial class SessionQueryFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<SessionQueryFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="SessionQueryFunctions"/> class.</summary>
     public SessionQueryFunctions(
         ImagingCoreClient coreClient,
         ILogger<SessionQueryFunctions> logger)
@@ -30,6 +31,7 @@ public sealed partial class SessionQueryFunctions
         _logger = logger;
     }
 
+    /// <summary>Lists device sessions for the portal devices view.</summary>
     [Function("GetSessions")]
     public async Task<HttpResponseData> GetSessions(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions")] HttpRequestData req,
@@ -41,6 +43,7 @@ public sealed partial class SessionQueryFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Gets a single device session summary.</summary>
     [Function("GetSession")]
     public async Task<HttpResponseData> GetSession(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions/{sessionId}")] HttpRequestData req,
@@ -57,6 +60,7 @@ public sealed partial class SessionQueryFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Lists uploaded diagnostic logs for a session.</summary>
     [Function("GetSessionLogs")]
     public async Task<HttpResponseData> GetSessionLogs(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions/{sessionId}/logs")] HttpRequestData req,
@@ -72,6 +76,7 @@ public sealed partial class SessionQueryFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Issues a short-lived download URL for a session log file.</summary>
     [Function("GetSessionLogDownloadUrl")]
     public async Task<HttpResponseData> GetSessionLogDownloadUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions/{sessionId}/logs/{fileName}/download-url")] HttpRequestData req,
@@ -88,6 +93,7 @@ public sealed partial class SessionQueryFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Lists durable terminal-outcome session records for the Reports section.</summary>
     [Function("GetSessionHistory")]
     public async Task<HttpResponseData> GetSessionHistory(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "session-history")] HttpRequestData req,

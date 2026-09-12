@@ -53,7 +53,7 @@ var host = new HostBuilder()
         // Scopes are read-only at startup — use a static field to avoid CA1861
         services.AddSingleton(sp =>
         {
-            var credential = new Azure.Identity.ManagedIdentityCredential();
+            var credential = new Azure.Identity.ManagedIdentityCredential(Azure.Identity.ManagedIdentityId.SystemAssigned);
             return new Microsoft.Graph.GraphServiceClient(
                 credential,
                 graphScopes);

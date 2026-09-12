@@ -14,11 +14,15 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// </summary>
 public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 {
+    /// <summary>Maximum number of calls allowed per sliding window per device-session token.</summary>
     public const int MaxCallsPerWindow = 10;
+
+    /// <summary>Length of the sliding window for rate limiting.</summary>
     public static readonly TimeSpan WindowDuration = TimeSpan.FromSeconds(30);
 
     private static readonly ConcurrentDictionary<string, WindowCounter> _counters = new();
 
+    /// <summary>Function names exempt from rate limiting.</summary>
     public static readonly IReadOnlyCollection<string> ExemptFunctionNames =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
 
@@ -27,8 +31,10 @@ public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 
     private readonly ILogger<RateLimitingMiddleware> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="RateLimitingMiddleware"/> class.</summary>
     public RateLimitingMiddleware(ILogger<RateLimitingMiddleware> logger) => _logger = logger;
 
+    /// <summary>Enforces the per-session rate limit for the current request.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         if (ExemptFunctions.Contains(context.FunctionDefinition.Name))

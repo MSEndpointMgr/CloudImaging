@@ -29,6 +29,9 @@ public sealed partial class LogUploadService
     private readonly DeviceGatewayApiClient _gatewayClient;
     private readonly ILogger<LogUploadService> _logger;
 
+    /// <summary>
+    /// Creates a new <see cref="LogUploadService"/>.
+    /// </summary>
     public LogUploadService(
         HttpClient httpClient,
         DeviceGatewayApiClient gatewayClient,

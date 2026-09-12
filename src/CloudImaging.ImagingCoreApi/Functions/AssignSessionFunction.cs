@@ -36,6 +36,7 @@ public sealed partial class AssignSessionFunction
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<AssignSessionFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="AssignSessionFunction"/>.</summary>
     public AssignSessionFunction(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
@@ -50,6 +51,7 @@ public sealed partial class AssignSessionFunction
         _logger = logger;
     }
 
+    /// <summary>Assigns an OS image to a coupled session and issues an initial SAS token URL.</summary>
     [Function(nameof(AssignSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/assign")] HttpRequestData req,

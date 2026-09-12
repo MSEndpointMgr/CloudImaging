@@ -14,6 +14,7 @@ public sealed partial class BrandingLogoService
     private const string LogoRelativePath = "branding\\logo.png";
     private readonly ILogger<BrandingLogoService> _logger;
 
+    /// <summary>Creates a new <see cref="BrandingLogoService"/>.</summary>
     public BrandingLogoService(ILogger<BrandingLogoService> logger) => _logger = logger;
 
     /// <summary>

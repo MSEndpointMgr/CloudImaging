@@ -30,6 +30,7 @@ public sealed partial class CoupleSessionFunction
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ILogger<CoupleSessionFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="CoupleSessionFunction"/>.</summary>
     public CoupleSessionFunction(
         DeviceSessionRepository sessionRepo,
         ILogger<CoupleSessionFunction> logger)
@@ -38,6 +39,7 @@ public sealed partial class CoupleSessionFunction
         _logger = logger;
     }
 
+    /// <summary>Couples a session by verifying a one-time passcode.</summary>
     [Function(nameof(CoupleSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/couple")] HttpRequestData req,

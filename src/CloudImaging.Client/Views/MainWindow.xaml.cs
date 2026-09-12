@@ -7,6 +7,7 @@ namespace CloudImaging.Client.Views;
 
 public partial class MainWindow : FluentWindow
 {
+    /// <summary>Creates the main client window, strips native chrome for WinPE, and forces Dark theme.</summary>
     public MainWindow()
     {
         InitializeComponent();
@@ -43,6 +44,8 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    /// <summary>Navigates the main window's navigation frame to the given <paramref name="page"/>,
+    /// hiding the global View Log button while <see cref="ProgressView"/> is active.</summary>
     public void NavigateTo(Page page)
     {
         NavigationFrame.Navigate(page);

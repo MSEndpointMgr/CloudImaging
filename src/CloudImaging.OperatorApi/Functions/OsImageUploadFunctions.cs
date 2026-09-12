@@ -18,12 +18,14 @@ public sealed partial class OsImageUploadFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<OsImageUploadFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="OsImageUploadFunctions"/> class.</summary>
     public OsImageUploadFunctions(ImagingCoreClient coreClient, ILogger<OsImageUploadFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>Starts a staged OS image upload.</summary>
     [Function("StartOsImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "images/upload/start")] HttpRequestData req,
@@ -35,6 +37,7 @@ public sealed partial class OsImageUploadFunctions
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 
+    /// <summary>Commits, validates and publishes a staged OS image upload.</summary>
     [Function("PublishOsImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "images/upload/{uploadId}/publish")] HttpRequestData req,
@@ -47,6 +50,7 @@ public sealed partial class OsImageUploadFunctions
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 
+    /// <summary>Deletes an uncommitted staged OS image blob.</summary>
     [Function("AbandonOsImageUpload")]
     public async Task<HttpResponseData> AbandonUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "images/upload/{uploadId}/abandon")] HttpRequestData req,

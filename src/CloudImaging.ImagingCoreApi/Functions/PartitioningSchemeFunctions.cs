@@ -19,6 +19,7 @@ public sealed partial class PartitioningSchemeFunctions
     private readonly PartitioningSchemeRepository _repo;
     private readonly ILogger<PartitioningSchemeFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="PartitioningSchemeFunctions"/>.</summary>
     public PartitioningSchemeFunctions(
         PartitioningSchemeRepository repo,
         ILogger<PartitioningSchemeFunctions> logger)

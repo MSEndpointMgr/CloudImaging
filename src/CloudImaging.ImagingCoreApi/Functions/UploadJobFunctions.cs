@@ -40,6 +40,7 @@ public sealed partial class UploadJobFunctions
     private readonly UploadPublishService _publishService;
     private readonly ILogger<UploadJobFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="UploadJobFunctions"/>.</summary>
     public UploadJobFunctions(
         UploadJobRepository jobRepo,
         UploadPublishService publishService,
@@ -52,6 +53,7 @@ public sealed partial class UploadJobFunctions
 
     // ── GET /api/internal/upload-jobs/{uploadId} ──────────────────────────────
 
+    /// <summary>Gets the status of an upload job by id.</summary>
     [Function("GetUploadJob")]
     public async Task<HttpResponseData> GetUploadJob(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/upload-jobs/{uploadId}")] HttpRequestData req,
@@ -117,6 +119,7 @@ public sealed partial class UploadJobFunctions
 
     // ── Timer: sweep old terminal jobs ────────────────────────────────────────
 
+    /// <summary>Sweeps expired terminal upload jobs from the table on a daily schedule.</summary>
     [Function("PurgeExpiredUploadJobs")]
     public async Task PurgeExpiredUploadJobs(
         [TimerTrigger("0 0 3 * * *")] TimerInfo timer,

@@ -187,6 +187,6 @@ public sealed class OverallProgressIntegrationTests
             })
             .ToList();
 
-        OverallProgressCalculator.Calculate(steps).Should().BeLessOrEqualTo(100);
+        OverallProgressCalculator.Calculate(steps).Should().BeLessThanOrEqualTo(100);
     }
 }

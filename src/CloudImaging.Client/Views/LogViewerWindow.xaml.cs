@@ -32,6 +32,7 @@ public partial class LogViewerWindow : FluentWindow
     private string? _loadedPath;
     private long _readPosition;
 
+    /// <summary>Creates the log viewer window and starts live-tailing the current log file.</summary>
     public LogViewerWindow()
     {
         InitializeComponent();

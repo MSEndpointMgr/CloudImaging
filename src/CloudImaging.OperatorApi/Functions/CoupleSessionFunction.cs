@@ -17,6 +17,7 @@ public sealed partial class CoupleSessionFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<CoupleSessionFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="CoupleSessionFunction"/> class.</summary>
     public CoupleSessionFunction(
         ImagingCoreClient coreClient,
         ILogger<CoupleSessionFunction> logger)
@@ -25,6 +26,7 @@ public sealed partial class CoupleSessionFunction
         _logger = logger;
     }
 
+    /// <summary>Couples a device session by passcode.</summary>
     [Function(nameof(CoupleSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sessions/couple")] HttpRequestData req,

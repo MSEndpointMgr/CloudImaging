@@ -23,6 +23,7 @@ public sealed partial class DevicePreFlightAuthorizationService
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<DevicePreFlightAuthorizationService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="DevicePreFlightAuthorizationService"/> class.</summary>
     public DevicePreFlightAuthorizationService(
         GraphServiceClient graphClient,
         PortalConfigurationRepository configRepo,

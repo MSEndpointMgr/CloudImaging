@@ -8,9 +8,13 @@ namespace CloudImaging.Client.ViewModels;
 /// <summary>Visual state of a single node in <see cref="ProgressViewModel.Steps"/>.</summary>
 public enum ProgressStepState
 {
+    /// <summary>The step has not started yet.</summary>
     Pending,
+    /// <summary>The step is currently running.</summary>
     Active,
+    /// <summary>The step completed successfully.</summary>
     Done,
+    /// <summary>The step failed.</summary>
     Failed
 }
 
@@ -32,21 +36,27 @@ public sealed class ProgressStepItem : INotifyPropertyChanged
         Label = label;
     }
 
+    /// <summary>The pipeline step this entry represents.</summary>
     public ImagingStepName Step { get; }
+
+    /// <summary>Fixed sidebar label for the step.</summary>
     public string Label { get; }
 
+    /// <summary>The step's current visual state.</summary>
     public ProgressStepState State
     {
         get => _state;
         internal set { _state = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Optional short caption such as "In progress…" or "Completed in 12s".</summary>
     public string? Caption
     {
         get => _caption;
         internal set { _caption = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Raised when a bound property value changes.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -81,6 +91,9 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     private string? _supportReferenceCode;
     private string _logText = string.Empty;
 
+    /// <summary>
+    /// Creates a new <see cref="ProgressViewModel"/> with the standard five imaging steps.
+    /// </summary>
     public ProgressViewModel()
     {
         Steps = new ObservableCollection<ProgressStepItem>
@@ -96,6 +109,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     /// <summary>The 5-node step pipeline shown in ProgressView's sidebar.</summary>
     public ObservableCollection<ProgressStepItem> Steps { get; }
 
+    /// <summary>Overall pipeline progress as a percentage (0-100), shown over the ring.</summary>
     public int OverallPercent
     {
         get => _overallPercent;
@@ -153,8 +167,10 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>True while a transfer byte counter is being displayed.</summary>
     public bool HasTransferDetail => !string.IsNullOrEmpty(TransferDetail);
 
+    /// <summary>Message describing the current phase of imaging.</summary>
     public string StatusMessage
     {
         get => _statusMessage;
@@ -166,8 +182,13 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Message describing a terminal failure, when any.</summary>
     public string? ErrorMessage  { get => _errorMessage;   set { _errorMessage   = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); } }
+
+    /// <summary>Support reference code associated with a terminal failure, when any.</summary>
     public string? SupportReferenceCode { get => _supportReferenceCode; set { _supportReferenceCode = value; OnPropertyChanged(); } }
+
+    /// <summary>True when <see cref="ErrorMessage"/> describes a failure.</summary>
     public bool HasError => ErrorMessage is not null;
 
     /// <summary>The last few <see cref="StatusMessage"/> updates, each timestamped, newline-joined
@@ -304,6 +325,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         LogText = string.Join('\n', _activityLines);
     }
 
+    /// <summary>Raised when a bound property value changes.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

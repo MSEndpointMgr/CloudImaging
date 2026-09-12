@@ -22,6 +22,7 @@ public sealed partial class SessionStartupCoordinator
 
     private readonly ILogger<SessionStartupCoordinator> _logger;
 
+    /// <summary>Creates a new <see cref="SessionStartupCoordinator"/>.</summary>
     public SessionStartupCoordinator(ILogger<SessionStartupCoordinator> logger)
         => _logger = logger;
 

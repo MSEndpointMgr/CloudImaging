@@ -11,8 +11,10 @@ public sealed partial class ProblemDetailsMiddleware : IFunctionsWorkerMiddlewar
 {
     private readonly ILogger<ProblemDetailsMiddleware> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="ProblemDetailsMiddleware"/> class.</summary>
     public ProblemDetailsMiddleware(ILogger<ProblemDetailsMiddleware> logger) => _logger = logger;
 
+    /// <summary>Converts unhandled exceptions into RFC 7807 ProblemDetails responses.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         try

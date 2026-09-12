@@ -31,6 +31,7 @@ public sealed partial class DeviceSessionNonceStore
     private readonly NonceRegistrar _register;
     private readonly ILogger<DeviceSessionNonceStore> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="DeviceSessionNonceStore"/> class.</summary>
     public DeviceSessionNonceStore(NonceRegistrar register, ILogger<DeviceSessionNonceStore> logger)
     {
         _register = register;

@@ -85,6 +85,7 @@ public sealed partial class BootImageGenerationService
     private readonly Func<bool> _isElevated;
     private readonly Func<string, string, System.Diagnostics.Process> _startElevatedProcess;
 
+    /// <summary>Raised with a message and 0-100 percent as boot image generation progresses.</summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
     /// <summary>
@@ -103,6 +104,7 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public event EventHandler<string>? LogHeartbeat;
 
+    /// <param name="logger">Logger used for generation progress and diagnostics.</param>
     /// <param name="operatorApiClient">
     /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the active
     /// boot media certificate PFX from the Operator API before generation starts, and
@@ -141,7 +143,17 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public void SetOperatorApiAccessToken(string token) => _operatorApiClient?.SetAccessToken(token);
 
-    public sealed record GenerationResult(string WimPath, string Sha256Hash);
+    /// <summary>
+    /// The result of a successful boot image generation.
+    /// </summary>
+    public sealed record GenerationResult(string WimPath, string Sha256Hash)
+    {
+        /// <summary>Full path to the generated WIM file.</summary>
+        public string WimPath { get; init; } = WimPath;
+
+        /// <summary>The SHA-256 hash of the generated WIM file.</summary>
+        public string Sha256Hash { get; init; } = Sha256Hash;
+    }
 
     private sealed record ElevatedGenerationParams(
         string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess);
@@ -1019,7 +1031,7 @@ public sealed partial class BootImageGenerationService
     /// image DOES already include) — copying it from whatever Windows version this app happens
     /// to be running on is the same approach long-documented in the OSD/ConfigMgr community for
     /// this exact gap, and is safe because it is only ever invoked (by
-    /// <see cref="Client.Services.RecoveryImageService"/>) with <c>/target</c> against an
+    /// <c>Client.Services.RecoveryImageService</c>) with <c>/target</c> against an
     /// offline image, never against the build machine's own online installation.
     /// </summary>
     private void InjectReagentcSupport(string mountDir)

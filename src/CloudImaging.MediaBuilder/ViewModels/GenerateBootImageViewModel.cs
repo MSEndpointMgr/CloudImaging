@@ -53,6 +53,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private string? _outputWimPath;
     private string? _errorMessage;
 
+    /// <summary>
+    /// Creates the view model for the boot image generation workflow.
+    /// </summary>
     public GenerateBootImageViewModel(
         BootImageGenerationService genService,
         EntraAuthenticationService authService,
@@ -106,24 +109,28 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         OpenOutputFolderCommand = new RelayCommand(_ => OpenOutputFolder(), _ => HasOutputWimPath);
     }
 
+    /// <summary>True when the Cloud Imaging Client binaries are downloaded from the latest GitHub release.</summary>
     public bool UseGitHubSource
     {
         get => _useGitHubSource;
         set { _useGitHubSource = value; UseLocalSource = !value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
     }
 
+    /// <summary>True when the Cloud Imaging Client binaries are taken from a local folder instead of GitHub.</summary>
     public bool UseLocalSource
     {
         get => !_useGitHubSource;
         set { _useGitHubSource = !value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
     }
 
+    /// <summary>Path to the local folder containing pre-staged Cloud Imaging Client binaries (used when <see cref="UseLocalSource"/> is selected).</summary>
     public string LocalSourcePath
     {
         get => _localSourcePath;
         set { _localSourcePath = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
     }
 
+    /// <summary>Folder the generated boot image WIM is written to.</summary>
     public string OutputFolderPath
     {
         get => _outputFolderPath;
@@ -153,6 +160,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         set { _enableCommandPromptAccess = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True while the boot image generation workflow is running.</summary>
     public bool IsGenerating
     {
         get => _isGenerating;
@@ -181,6 +189,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         private set { _isCancelling = value; OnPropertyChanged(); CommandManager.InvalidateRequerySuggested(); }
     }
 
+    /// <summary>True once generation has finished successfully.</summary>
     public bool IsComplete
     {
         get => _isComplete;
@@ -209,6 +218,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         }
     }
 
+    /// <summary>Overall progress percentage (0–100) of the generation workflow.</summary>
     public int ProgressPercent
     {
         get => _progressPercent;
@@ -218,6 +228,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>Numeric percentage as display text (e.g. "42%") — the progress bar itself only shows the fill visually.</summary>
     public string ProgressPercentText => $"{ProgressPercent}%";
 
+    /// <summary>Human-readable message describing the current generation step.</summary>
     public string ProgressMessage
     {
         get => _progressMessage;
@@ -231,6 +242,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         private set { _elapsedTimeText = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Path to the finished WIM, or null once generation completes.</summary>
     public string? OutputWimPath
     {
         get => _outputWimPath;
@@ -240,6 +252,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>Whether a finished WIM path is available to display/reveal (i.e. generation completed successfully).</summary>
     public bool HasOutputWimPath => OutputWimPath is not null;
 
+    /// <summary>Fatal error message, or null when generation did not fail.</summary>
     public string? ErrorMessage
     {
         get => _errorMessage;
@@ -262,6 +275,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// </summary>
     public bool CanRetry => HasError || WasCancelled;
 
+    /// <summary>Status text shown next to the GitHub release source.</summary>
     public string GitHubStatus { get; } = "Latest release will be resolved automatically";
 
     /// <summary>
@@ -300,6 +314,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// </summary>
     public bool ShowProgressView => IsGenerating || IsComplete || HasError || WasCancelled;
 
+    /// <summary>True when the latest generation attempt ended in an error.</summary>
     public bool HasError    => ErrorMessage is not null;
 
     /// <summary>
@@ -323,18 +338,34 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         WasCancelled  ? "The boot image generation was cancelled and temporary files were cleaned up." :
         "Mounting the WinPE image and injecting the Cloud Imaging Client. This can take a few minutes.";
 
+    /// <summary>True when the current configuration is valid and generation can start.</summary>
     public bool CanGenerate => !IsGenerating
         && !string.IsNullOrWhiteSpace(OutputFolderPath)
         && (!UseLocalSource || Directory.Exists(LocalSourcePath))
         && (string.IsNullOrWhiteSpace(DriverRootPath) || Directory.Exists(DriverRootPath));
 
+    /// <summary>Command that starts boot image generation.</summary>
     public ICommand GenerateCommand     { get; }
+
+    /// <summary>Command that cancels a running generation.</summary>
     public ICommand CancelCommand       { get; }
+
+    /// <summary>Command that opens a folder picker for the local Client binaries path.</summary>
     public ICommand BrowseCommand       { get; }
+
+    /// <summary>Command that opens a folder picker for the output folder.</summary>
     public ICommand BrowseOutputCommand { get; }
+
+    /// <summary>Command that opens a folder picker for the optional driver root folder.</summary>
     public ICommand BrowseDriverRootCommand { get; }
+
+    /// <summary>Command that navigates back to the previous screen.</summary>
     public ICommand BackCommand         { get; }
+
+    /// <summary>Command that resets the view to its configuration state for a new generation.</summary>
     public ICommand NewGenerationCommand { get; }
+
+    /// <summary>Command that reveals the finished WIM in File Explorer.</summary>
     public ICommand OpenOutputFolderCommand { get; }
 
     /// <summary>
@@ -641,6 +672,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         return Path.Combine(basePath, "Cloud Imaging Media Builder", "Boot Images");
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -656,8 +688,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 /// <summary>Lifecycle state of a single <see cref="GenerationStep"/>.</summary>
 public enum GenerationStepState
 {
+    /// <summary>Step has not started yet.</summary>
     Pending,
+
+    /// <summary>Step is currently executing.</summary>
     Active,
+
+    /// <summary>Step finished successfully.</summary>
     Done,
 
     /// <summary>Step was bypassed because its optional input was not provided (e.g. no drivers to inject).</summary>
@@ -673,9 +710,13 @@ public sealed class GenerationStep(string label, int startPercent) : INotifyProp
 {
     private GenerationStepState _state = GenerationStepState.Pending;
 
+    /// <summary>Step label shown in the progress view.</summary>
     public string Label { get; } = label;
+
+    /// <summary>Overall-progress percentage at which the step becomes active.</summary>
     public int StartPercent { get; } = startPercent;
 
+    /// <summary>Current lifecycle state of the step.</summary>
     public GenerationStepState State
     {
         get => _state;
@@ -705,6 +746,7 @@ public sealed class GenerationStep(string label, int startPercent) : INotifyProp
         _                           => "\u25CB", // ○
     };
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

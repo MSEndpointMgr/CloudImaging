@@ -94,7 +94,7 @@
     {
       "label": "Build: .NET Solution (Release)",
       "type": "shell",
-      "command": "dotnet build CloudImaging.sln --configuration Release",
+      "command": "dotnet build CloudImaging.slnx --configuration Release",
       "problemMatcher": ["$msCompile"],
       "group": { "kind": "build", "isDefault": true },
       "detail": "Build all .NET projects in Release configuration with TreatWarningsAsErrors.",
@@ -217,7 +217,7 @@
     {
       "label": "Test: .NET Solution",
       "type": "shell",
-      "command": "dotnet test CloudImaging.sln --configuration Release",
+      "command": "dotnet test CloudImaging.slnx --configuration Release",
       "problemMatcher": ["$msCompile"],
       "group": { "kind": "test", "isDefault": true },
       "detail": "Run all .NET unit and integration tests.",

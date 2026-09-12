@@ -23,6 +23,7 @@ public sealed partial class RecoveryImageService
 {
     private readonly ILogger<RecoveryImageService> _logger;
 
+    /// <summary>Creates a new <see cref="RecoveryImageService"/>.</summary>
     public RecoveryImageService(ILogger<RecoveryImageService> logger) => _logger = logger;
 
     /// <summary>
@@ -37,6 +38,7 @@ public sealed partial class RecoveryImageService
     /// <param name="expectedHash">Expected SHA-256 hash (hex string, case-insensitive).</param>
     /// <param name="windowsVolume">Drive letter of the applied Windows volume (e.g. "C:").</param>
     /// <param name="recoveryVolume">Drive letter of the Recovery partition (e.g. "D:").</param>
+    /// <param name="ct">Cancellation token.</param>
     /// <exception cref="InvalidDataException">SHA-256 mismatch.</exception>
     /// <exception cref="InvalidOperationException"><c>reagentc.exe</c> returned a non-zero exit code.</exception>
     public async Task ApplyAsync(
@@ -78,6 +80,7 @@ public sealed partial class RecoveryImageService
     /// </summary>
     /// <param name="windowsVolume">Drive letter of the applied Windows volume (e.g. "C:").</param>
     /// <param name="recoveryVolume">Drive letter of the Recovery partition (e.g. "D:").</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<bool> ApplyFromEmbeddedImageAsync(
         string windowsVolume,
         string recoveryVolume,

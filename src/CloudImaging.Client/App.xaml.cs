@@ -14,6 +14,7 @@ public partial class App : Application
 {
     private Serilog.Core.Logger? _logger;
 
+    /// <summary>Handles application startup: configures logging, mTLS, and shows the main window.</summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         // Surface any unhandled failure instead of the process dying silently
@@ -107,6 +108,7 @@ public partial class App : Application
             System.Windows.MessageBoxImage.Error);
     }
 
+    /// <summary>Handles application shutdown and disposes the logger.</summary>
     protected override void OnExit(ExitEventArgs e)
     {
         _logger?.Dispose();

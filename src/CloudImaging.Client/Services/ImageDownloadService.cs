@@ -27,6 +27,10 @@ public sealed partial class ImageDownloadService
     private readonly ImageCacheService? _cache;
     private readonly ILogger<ImageDownloadService> _logger;
 
+    /// <summary>
+    /// Creates a new <see cref="ImageDownloadService"/>. <paramref name="cache"/> is optional —
+    /// when supplied, downloads are cached and cache hits are preferred.
+    /// </summary>
     public ImageDownloadService(
         HttpClient httpClient,
         ILogger<ImageDownloadService> logger,
@@ -45,9 +49,13 @@ public sealed partial class ImageDownloadService
     /// </summary>
     /// <param name="imageId">Catalog image ID used as the cache key.</param>
     /// <param name="expectedHash">Expected SHA-256 hex hash for integrity verification.</param>
+    /// <param name="sasUrl">SAS-signed URL of the image blob.</param>
+    /// <param name="destinationPath">Local path to which the WIM should be written on a miss.</param>
+    /// <param name="onProgress">Optional 0-100 percent progress callback.</param>
     /// <param name="onBytesProgress">Optional live byte counter, called as
     /// (transferredBytes, totalBytes). <c>totalBytes</c> is -1 when the response carried no
     /// Content-Length. Throttled to <see cref="BytesProgressInterval"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<string> EnsureLocalWimAsync(
         string imageId,
         string expectedHash,
@@ -101,6 +109,17 @@ public sealed partial class ImageDownloadService
 
         return destinationPath;
     }
+    /// <summary>
+    /// Downloads the image blob from <paramref name="sasUrl"/> to <paramref name="destinationPath"/>
+    /// with bounded retries and backoff. Returns once the file is fully written.
+    /// </summary>
+    /// <param name="sasUrl">SAS-signed URL of the image blob.</param>
+    /// <param name="destinationPath">Local path to which the WIM should be written.</param>
+    /// <param name="onProgress">Optional 0-100 percent progress callback.</param>
+    /// <param name="onBytesProgress">Optional live byte counter, called as
+    /// (transferredBytes, totalBytes). <c>totalBytes</c> is -1 when the response carried no
+    /// Content-Length. Throttled to <see cref="BytesProgressInterval"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task DownloadAsync(
         string sasUrl,
         string destinationPath,

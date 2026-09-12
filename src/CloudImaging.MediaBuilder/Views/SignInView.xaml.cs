@@ -8,6 +8,7 @@ namespace CloudImaging.MediaBuilder.Views;
 /// </summary>
 public partial class SignInView : UserControl
 {
+    /// <summary>Initializes a new instance of <see cref="SignInView"/>.</summary>
     public SignInView()
     {
         InitializeComponent();

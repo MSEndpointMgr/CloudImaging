@@ -53,6 +53,10 @@ public sealed partial class UsbPreparationService
     /// </summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
+    /// <summary>Initializes a new instance of the <see cref="UsbPreparationService"/> class.</summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="provisioner">The USB partition provisioning service.</param>
+    /// <param name="deployer">The boot image deployment service.</param>
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
     /// <param name="startElevatedProcessOverride">Test seam. Defaults to a real "runas"-elevated <see cref="Process"/> launch.</param>
     public UsbPreparationService(
@@ -87,6 +91,9 @@ public sealed partial class UsbPreparationService
         Guid? SelectedLocationId = null,
         string? SelectedLocationName = null);
 
+    /// <summary>Result of a successful USB preparation operation.</summary>
+    /// <param name="BootDriveLetter">The drive letter assigned to the boot partition.</param>
+    /// <param name="CacheDriveLetter">The drive letter assigned to the cache partition, or null.</param>
     public sealed record PreparationResult(string BootDriveLetter, string? CacheDriveLetter);
 
     private sealed record ElevatedPreparationResult(bool Success, string? BootDriveLetter, string? CacheDriveLetter, string? Error);

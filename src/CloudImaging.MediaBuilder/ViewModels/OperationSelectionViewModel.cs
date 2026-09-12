@@ -18,6 +18,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private bool _showCertificateWarning;
     private bool _certificateConfigured;
 
+    /// <summary>
+    /// Creates the view model for the operation selection screen.
+    /// </summary>
     public OperationSelectionViewModel(
         Action<string> navigate,
         Func<bool>? isAdkInstalled = null,
@@ -37,6 +40,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         UpdateWarnings();
     }
 
+    /// <summary>Key of the currently selected operation (e.g. "GenerateBootImage" or "PrepareUSB").</summary>
     public string? SelectedOperation
     {
         get => _selectedOperation;
@@ -71,6 +75,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     // Generate Boot Image requires the ADK (FR-050a), the Administrator role (FR-050b), AND
     // a configured boot media certificate (T151, FR-050a); Prepare USB does not depend on any.
+    /// <summary>True when the selected operation can be continued (its prerequisites are met).</summary>
     public bool CanContinue =>
         _selectedOperation is not null
         && !(_selectedOperation == "GenerateBootImage" && !IsGenerateBootImageAvailable);
@@ -110,7 +115,10 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         : IsBlockedByMissingCertificate ? "Generate a boot media certificate in Portal Configuration before generating boot images."
         : null;
 
+    /// <summary>Command that selects an operation to continue.</summary>
     public ICommand SelectOperationCommand { get; }
+
+    /// <summary>Command that navigates to the currently selected operation.</summary>
     public ICommand ContinueCommand        { get; }
 
     /// <summary>Single-tap navigation used by the Home tiles: select, then continue immediately if allowed.</summary>
@@ -148,6 +156,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             _navigate(_selectedOperation!);
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

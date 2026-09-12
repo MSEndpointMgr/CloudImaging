@@ -10,6 +10,7 @@ namespace CloudImaging.MediaBuilder.Views;
 /// </summary>
 public partial class OperationSelectionView : UserControl
 {
+    /// <summary>Initializes a new instance of <see cref="OperationSelectionView"/>.</summary>
     public OperationSelectionView()
     {
         InitializeComponent();

@@ -28,12 +28,14 @@ public sealed partial class GetLatestRecoveryImageFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<GetLatestRecoveryImageFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="GetLatestRecoveryImageFunction"/> class.</summary>
     public GetLatestRecoveryImageFunction(ImagingCoreClient coreClient, ILogger<GetLatestRecoveryImageFunction> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>Handles the get-latest-recovery-image HTTP request.</summary>
     [Function("GetLatestRecoveryImage")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/recovery-image/latest")] HttpRequestData req,

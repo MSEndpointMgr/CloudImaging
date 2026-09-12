@@ -8,7 +8,7 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// with a token credential (managed identity / <c>DefaultAzureCredential</c>) rather than an
 /// account key (FR-025, security-hardening: no storage account keys anywhere in this solution).
 ///
-/// <see cref="BlobClient.CanGenerateSasUri"/> is <c>false</c> for a token-credential-backed client,
+/// <c>BlobClient.CanGenerateSasUri</c> is <c>false</c> for a token-credential-backed client,
 /// because the classic "shared key" SAS signing path requires the account key. The previous code at
 /// every SAS call site checked that flag and, when false, silently fell back to returning the BARE
 /// blob URL with no signature at all — which 403/409s the moment the caller tries to use it, because
@@ -17,7 +17,7 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// via a boot image upload failing with "Public access is not permitted on this storage account."
 ///
 /// The fix is a <b>User Delegation SAS</b>: request a short-lived delegation key from Azure AD via
-/// <see cref="BlobServiceClient.GetUserDelegationKeyAsync"/> (valid for the managed identity's own
+/// <c>BlobServiceClient.GetUserDelegationKeyAsync</c> (valid for the managed identity's own
 /// Azure AD token), then sign the SAS with that key instead of an account key. This requires the
 /// caller's identity to hold a role that includes the
 /// <c>Microsoft.Storage/storageAccounts/blobServices/generateUserDelegationKey/action</c> action —

@@ -21,6 +21,7 @@ public sealed partial class BootMediaCertificateFunctions
     private readonly KeyVaultCertificateService _kvService;
     private readonly ILogger<BootMediaCertificateFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootMediaCertificateFunctions"/>.</summary>
     public BootMediaCertificateFunctions(
         BootMediaCertificateRepository certRepo,
         KeyVaultCertificateService kvService,
@@ -33,6 +34,7 @@ public sealed partial class BootMediaCertificateFunctions
 
     // ── GET /api/internal/cert/active ────────────────────────────────────────
 
+    /// <summary>Returns metadata for the active boot media certificate.</summary>
     [Function("GetActiveCertMetadata")]
     public async Task<HttpResponseData> GetActiveCertMetadata(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/cert/active")] HttpRequestData req,
@@ -62,6 +64,7 @@ public sealed partial class BootMediaCertificateFunctions
 
     // ── GET /api/internal/cert/active/pfx ────────────────────────────────────
 
+    /// <summary>Returns the PFX bytes for the active boot media certificate.</summary>
     [Function("GetActiveCertPfx")]
     public async Task<HttpResponseData> GetActiveCertPfx(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/cert/active/pfx")] HttpRequestData req,

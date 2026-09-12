@@ -27,6 +27,7 @@ public sealed partial class RefreshSasTokenFunction
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<RefreshSasTokenFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="RefreshSasTokenFunction"/>.</summary>
     public RefreshSasTokenFunction(
         DeviceSessionRepository sessionRepo,
         PortalConfigurationRepository configRepo,
@@ -41,6 +42,7 @@ public sealed partial class RefreshSasTokenFunction
         _logger = logger;
     }
 
+    /// <summary>Re-issues the session SAS token URL before expiry so an in-progress download is not interrupted.</summary>
     [Function(nameof(RefreshSasTokenFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/sas/refresh")] HttpRequestData req,

@@ -20,6 +20,7 @@ public sealed partial class PortalConfigurationFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<PortalConfigurationFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="PortalConfigurationFunctions"/> class.</summary>
     public PortalConfigurationFunctions(
         ImagingCoreClient coreClient,
         ILogger<PortalConfigurationFunctions> logger)

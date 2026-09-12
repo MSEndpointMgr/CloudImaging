@@ -108,7 +108,7 @@ jobs:
       # ── .NET component builds ────────────────────────────────────────────────
 
       - name: Restore .NET solution
-        run: dotnet restore CloudImaging.sln
+        run: dotnet restore CloudImaging.slnx
 
       - name: Publish DeviceGatewayApi
         run: |

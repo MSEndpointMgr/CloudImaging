@@ -3,7 +3,7 @@ using System.Windows;
 namespace CloudImaging.Client.Views;
 
 /// <summary>
-/// Opens a <see cref="Window"/> modally (owned by, and centered over, <paramref name="owner"/>),
+/// Opens a <see cref="Window"/> modally (owned by, and centered over, <c>owner</c>),
 /// dimming <see cref="MainWindow"/> behind it for the duration.
 /// </summary>
 /// <remarks>

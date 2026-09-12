@@ -70,6 +70,7 @@ public sealed partial class DeviceSessionLifecycleService
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<DeviceSessionLifecycleService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="DeviceSessionLifecycleService"/> class.</summary>
     public DeviceSessionLifecycleService(
         DeviceSessionRepository sessionRepo,
         SessionHistoryRepository historyRepo,

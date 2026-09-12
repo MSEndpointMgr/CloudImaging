@@ -14,12 +14,15 @@ public sealed class ImagingStepRepository
     private const string TableName = "ImagingSteps";
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="ImagingStepRepository"/>.</summary>
     public ImagingStepRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Upserts an imaging step for a given session.</summary>
     public async Task UpsertAsync(Guid sessionId, ImagingStep step, CancellationToken ct = default)
     {
         var entity = new TableEntity(sessionId.ToString(), step.StepName.ToString())
@@ -33,6 +36,7 @@ public sealed class ImagingStepRepository
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
     }
 
+    /// <summary>Returns all imaging steps recorded for a session.</summary>
     public async Task<IReadOnlyList<ImagingStep>> GetBySessionAsync(Guid sessionId, CancellationToken ct = default)
     {
         var partitionKey = sessionId.ToString();

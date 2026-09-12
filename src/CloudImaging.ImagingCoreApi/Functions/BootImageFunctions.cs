@@ -25,6 +25,7 @@ public sealed partial class BootImageFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BootImageFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootImageFunctions"/>.</summary>
     public BootImageFunctions(
         BootImageRepository bootImageRepo,
         PortalConfigurationRepository configRepo,
@@ -39,6 +40,7 @@ public sealed partial class BootImageFunctions
 
     // ── GET /api/internal/boot-images ────────────────────────────────────────
 
+    /// <summary>Lists all active boot images.</summary>
     [Function("GetBootImages")]
     public async Task<HttpResponseData> GetBootImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/boot-images")] HttpRequestData req,
@@ -56,6 +58,7 @@ public sealed partial class BootImageFunctions
 
     // ── GET /api/internal/boot-images/{id} ───────────────────────────────────
 
+    /// <summary>Gets a single boot image by id.</summary>
     [Function("GetBootImageById")]
     public async Task<HttpResponseData> GetBootImageById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/boot-images/{id}")] HttpRequestData req,
@@ -81,6 +84,7 @@ public sealed partial class BootImageFunctions
 
     // ── POST /api/internal/boot-images/{id}/sas ──────────────────────────────
 
+    /// <summary>Issues a time-limited SAS download URL for a boot image.</summary>
     [Function("GetBootImageSasUrl")]
     public async Task<HttpResponseData> GetBootImageSasUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/{id}/sas")] HttpRequestData req,

@@ -30,6 +30,9 @@ public sealed partial class BootImageSelfUpdateService
     private readonly HttpClient _downloadHttp;
     private readonly ILogger<BootImageSelfUpdateService> _logger;
 
+    /// <summary>
+    /// Creates a new <see cref="BootImageSelfUpdateService"/>.
+    /// </summary>
     public BootImageSelfUpdateService(
         DeviceGatewayApiClient gateway,
         HttpClient downloadHttp,
@@ -40,6 +43,10 @@ public sealed partial class BootImageSelfUpdateService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Checks for a newer boot image and updates boot.wim on the boot media if one is found.
+    /// Never throws — all failures are logged and swallowed.
+    /// </summary>
     public async Task CheckAndUpdateAsync(CancellationToken ct = default)
     {
         try

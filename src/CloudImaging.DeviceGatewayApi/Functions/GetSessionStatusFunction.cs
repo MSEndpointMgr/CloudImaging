@@ -11,9 +11,9 @@ namespace CloudImaging.DeviceGatewayApi.Functions;
 /// GET /api/v1/sessions/{sessionId}/status — Polls session state for the Cloud Imaging Client (T043, FR-031).
 ///
 /// Response contract (plan.md constraint):
-///   - <c>currentStep</c> (string | null): active <see cref="ImagingStep"/> name, null until imaging begins.
+///   - <c>currentStep</c> (string | null): active <c>ImagingStep</c> name, null until imaging begins.
 ///   - <c>overallProgressPercent</c> (int): overall imaging completion 0–100.
-///   - <c>state</c>: current <see cref="SessionState"/> as a string.
+///   - <c>state</c>: current <c>SessionState</c> as a string.
 ///   - <c>sasTokenUrl</c>: SAS URL for the OS image blob (populated after assignment).
 ///
 /// Requires valid device-session Bearer token (DeviceSessionTokenValidationMiddleware).
@@ -26,6 +26,7 @@ public sealed partial class GetSessionStatusFunction
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Initializes a new instance of the <see cref="GetSessionStatusFunction"/> class.</summary>
     public GetSessionStatusFunction(
         ImagingCoreClient coreClient,
         ILogger<GetSessionStatusFunction> logger)
@@ -34,6 +35,7 @@ public sealed partial class GetSessionStatusFunction
         _logger = logger;
     }
 
+    /// <summary>Handles the get-session-status HTTP request.</summary>
     [Function("GetSessionStatus")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/sessions/{sessionId}/status")] HttpRequestData req,

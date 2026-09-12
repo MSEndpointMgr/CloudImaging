@@ -16,8 +16,10 @@ public sealed partial class BootImageDeploymentService
 
     private readonly ILogger<BootImageDeploymentService> _logger;
 
+    /// <summary>Raised with a message and 0-100 percent during deployment.</summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
+    /// <summary>Initializes a new instance of the <see cref="BootImageDeploymentService"/> class.</summary>
     public BootImageDeploymentService(ILogger<BootImageDeploymentService> logger) => _logger = logger;
 
     /// <summary>

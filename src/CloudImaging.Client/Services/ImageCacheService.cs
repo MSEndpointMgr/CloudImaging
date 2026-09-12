@@ -26,6 +26,9 @@ public sealed partial class ImageCacheService
     private readonly string _cacheRoot;
     private readonly ILogger<ImageCacheService> _logger;
 
+    /// <summary>
+    /// Creates a new <see cref="ImageCacheService"/> rooted at <paramref name="cacheRoot"/>.
+    /// </summary>
     public ImageCacheService(
         string cacheRoot,
         ILogger<ImageCacheService> logger)
@@ -36,6 +39,11 @@ public sealed partial class ImageCacheService
 
     // ── Cache entry metadata ──────────────────────────────────────────────────
 
+    /// <summary>Metadata describing a cached WIM file entry.</summary>
+    /// <param name="ImageId">The catalog image ID used as the cache key.</param>
+    /// <param name="Sha256Hash">SHA-256 hash of the cached WIM file.</param>
+    /// <param name="SizeBytes">Size of the cached WIM file in bytes.</param>
+    /// <param name="CachedAt">UTC timestamp of when the entry was last written or refreshed.</param>
     public sealed record CacheEntryMetadata(
         string ImageId,
         string Sha256Hash,
@@ -186,6 +194,7 @@ public sealed partial class ImageCacheService
         try { File.Delete(path); } catch { /* best-effort */ }
     }
 
+    /// <summary>Computes the lowercase hex SHA-256 hash of the file at <paramref name="filePath"/>.</summary>
     public static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
     {
         await using var stream = File.OpenRead(filePath);

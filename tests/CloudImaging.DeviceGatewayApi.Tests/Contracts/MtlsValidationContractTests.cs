@@ -84,7 +84,7 @@ public sealed class MtlsValidationContractTests : IDisposable
     {
         // This re-verifies the requirement from T163a in the contract context
         BootMediaCertificateThumbprintCache.CacheTtl.TotalSeconds
-            .Should().BeLessOrEqualTo(60,
+            .Should().BeLessThanOrEqualTo(60,
                 "FR-069: certificate revocation must take effect within 60 seconds");
     }
 

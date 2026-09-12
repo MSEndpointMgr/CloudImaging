@@ -22,6 +22,12 @@
     <!-- Deterministic builds -->
     <Deterministic>true</Deterministic>
     <EmbedAllSources>true</EmbedAllSources>
+
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Test assemblies are executable verification artifacts, not shipped API libraries. Their
+         public xUnit methods are discovered by reflection and do not form a consumer contract. -->
+    <GenerateDocumentationFile Condition="$(MSBuildProjectName.EndsWith('.Tests'))">false</GenerateDocumentationFile>
+
   </PropertyGroup>
 
   <!-- Package versions are centrally managed in Directory.Packages.props via CPM.

@@ -19,6 +19,7 @@ public sealed partial class BootImageLifecycleFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BootImageLifecycleFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="BootImageLifecycleFunctions"/> class.</summary>
     public BootImageLifecycleFunctions(
         ImagingCoreClient coreClient,
         ILogger<BootImageLifecycleFunctions> logger)
@@ -29,6 +30,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── POST /api/boot-images/publish ─────────────────────────────────────────
 
+    /// <summary>Publishes a boot image to the catalog.</summary>
     [Function("PublishBootImage")]
     public async Task<HttpResponseData> PublishBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/publish")] HttpRequestData req,
@@ -45,6 +47,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── DELETE /api/boot-images/{id} ─────────────────────────────────────────
 
+    /// <summary>Deletes a boot image from the catalog.</summary>
     [Function("DeleteBootImage")]
     public async Task<HttpResponseData> DeleteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "boot-images/{id}")] HttpRequestData req,

@@ -29,11 +29,13 @@ public sealed class DeviceSessionRepository
 
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="DeviceSessionRepository"/>.</summary>
     public DeviceSessionRepository(TableServiceClient tableServiceClient)
     {
         _table = tableServiceClient.GetTableClient(TableName);
     }
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 

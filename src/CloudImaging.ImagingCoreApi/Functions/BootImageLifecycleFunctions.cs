@@ -24,6 +24,7 @@ public sealed partial class BootImageLifecycleFunctions
     private readonly BootImageRepository _repo;
     private readonly ILogger<BootImageLifecycleFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootImageLifecycleFunctions"/>.</summary>
     public BootImageLifecycleFunctions(
         BootImageRepository repo,
         ILogger<BootImageLifecycleFunctions> logger)
@@ -34,6 +35,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── POST /api/internal/boot-images/publish ────────────────────────────────
 
+    /// <summary>Publishes a new boot image, enforcing the 5-entry limit.</summary>
     [Function("PublishBootImage")]
     public async Task<HttpResponseData> PublishBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/publish")] HttpRequestData req,
@@ -81,6 +83,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── DELETE /api/internal/boot-images/{id} ────────────────────────────────
 
+    /// <summary>Soft-deletes (deactivates) a boot image by id.</summary>
     [Function("DeleteBootImage")]
     public async Task<HttpResponseData> DeleteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/boot-images/{id}")] HttpRequestData req,

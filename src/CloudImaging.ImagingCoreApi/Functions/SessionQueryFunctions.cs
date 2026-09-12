@@ -26,6 +26,7 @@ public sealed partial class SessionQueryFunctions
     private readonly OsImageRepository _osImageRepo;
     private readonly ILogger<SessionQueryFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="SessionQueryFunctions"/>.</summary>
     public SessionQueryFunctions(
         DeviceSessionRepository sessionRepo,
         OsImageRepository osImageRepo,
@@ -38,6 +39,7 @@ public sealed partial class SessionQueryFunctions
 
     // ── GET /api/internal/sessions ───────────────────────────────────────────
 
+    /// <summary>Lists device session summaries, optionally filtered by state.</summary>
     [Function("GetSessions")]
     public async Task<HttpResponseData> GetSessions(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions")] HttpRequestData req,
@@ -66,6 +68,7 @@ public sealed partial class SessionQueryFunctions
 
     // ── GET /api/internal/sessions/{id} ──────────────────────────────────────
 
+    /// <summary>Gets a single session summary by id.</summary>
     [Function("GetSessionById")]
     public async Task<HttpResponseData> GetSessionById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{id}")] HttpRequestData req,
@@ -90,6 +93,7 @@ public sealed partial class SessionQueryFunctions
 
     // ── GET /api/internal/sessions/{sessionId}/status ────────────────────────
 
+    /// <summary>Device-facing status poll that also records a heartbeat and includes secrets.</summary>
     [Function("GetSessionStatus")]
     public async Task<HttpResponseData> GetSessionStatus(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/status")] HttpRequestData req,

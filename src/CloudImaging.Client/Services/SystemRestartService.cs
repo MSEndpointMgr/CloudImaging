@@ -12,6 +12,7 @@ public sealed partial class SystemRestartService
 {
     private readonly ILogger<SystemRestartService> _logger;
 
+    /// <summary>Creates a new <see cref="SystemRestartService"/>.</summary>
     public SystemRestartService(ILogger<SystemRestartService> logger) => _logger = logger;
 
     /// <summary>

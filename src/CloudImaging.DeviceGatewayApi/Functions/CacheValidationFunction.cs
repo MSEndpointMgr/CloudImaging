@@ -26,6 +26,7 @@ public sealed partial class CacheValidationFunction
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Initializes a new instance of the <see cref="CacheValidationFunction"/> class.</summary>
     public CacheValidationFunction(
         ImagingCoreClient coreClient,
         ILogger<CacheValidationFunction> logger)
@@ -34,6 +35,7 @@ public sealed partial class CacheValidationFunction
         _logger = logger;
     }
 
+    /// <summary>Handles the cache validation HTTP request.</summary>
     [Function("CacheValidation")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/cache/validate")] HttpRequestData req,

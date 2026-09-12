@@ -36,6 +36,7 @@ public sealed partial class RecoveryImageUploadFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<RecoveryImageUploadFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="RecoveryImageUploadFunctions"/>.</summary>
     public RecoveryImageUploadFunctions(
         RecoveryImageRepository recoveryImageRepo,
         UploadJobRepository jobRepo,
@@ -52,6 +53,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     // ── POST /api/internal/recovery-images/upload/start ──────────────────────
 
+    /// <summary>Starts a staged recovery image upload and returns a write SAS URL.</summary>
     [Function("StartRecoveryImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/recovery-images/upload/start")] HttpRequestData req,
@@ -111,6 +113,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     // ── POST /api/internal/recovery-images/upload/{uploadId}/publish ─────────
 
+    /// <summary>Validates the uploaded recovery image and queues it for publishing.</summary>
     [Function("PublishRecoveryImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/recovery-images/upload/{uploadId}/publish")] HttpRequestData req,
@@ -176,6 +179,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     // ── DELETE /api/internal/recovery-images/{id} ─────────────────────────────
 
+    /// <summary>Deletes a recovery image that is not the currently published one.</summary>
     [Function("DeleteRecoveryImage")]
     public async Task<HttpResponseData> DeleteRecoveryImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/recovery-images/{id}")] HttpRequestData req,

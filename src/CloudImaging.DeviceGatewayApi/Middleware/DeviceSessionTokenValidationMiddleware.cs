@@ -22,6 +22,7 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
     public static readonly IReadOnlySet<string> ExemptFunctionNames =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage" };
 
+    /// <summary>Validates the device-session bearer token for the current request.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var functionName = context.FunctionDefinition.Name;
