@@ -145,21 +145,36 @@ jobs:
       # GitHubReleasesClient.cs resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the iac/mediabuilder
       # streams interleave with this one.
-      - name: Move 'mse-ci-client-latest' alias to this release
+      #
+      # The alias tag is moved with git rather than created on the fly by the Releases API:
+      # GITHUB_TOKEN can publish a release for an existing tag, but minting the missing alias tag
+      # as part of creating the release fails with "HTTP 403: Resource not accessible by
+      # integration". See release-iac.yml, where the same step failed that way.
+      - name: Move the 'mse-ci-client-latest' tag to this release's commit
         if: ${{ steps.tag.outputs.stable == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The alias does not exist before the first stable release, and 'gh release delete' exits
-          # non-zero when it is missing, which would fail the job *after* the real release had
-          # already published. Treat "nothing to move" as success.
+          # The alias release does not exist before the first stable release, and 'gh release
+          # delete' exits non-zero when it is missing, which would fail the job *after* the real
+          # release had already published. Treat "nothing to move" as success. The tag is kept
+          # (no --cleanup-tag) and force-moved below instead.
           $ErrorActionPreference = 'Continue'
-          gh release delete mse-ci-client-latest --yes --cleanup-tag 2>&1 | Write-Host
+          gh release delete mse-ci-client-latest --yes 2>&1 | Write-Host
           $ErrorActionPreference = 'Stop'
-          gh release create mse-ci-client-latest `
-            "release-artifacts/CloudImaging.Client.zip" `
-            "release-artifacts/SHA256SUMS" `
-            --target "${{ steps.tag.outputs.sha }}" `
-            --title "Cloud Imaging Client (latest: ${{ steps.tag.outputs.version }})" `
-            --notes "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes." `
-            --latest=false
+          git tag -f mse-ci-client-latest "${{ steps.tag.outputs.sha }}"
+          git push -f origin refs/tags/mse-ci-client-latest
+
+      - name: Publish the 'mse-ci-client-latest' alias release
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: mse-ci-client-latest
+          name:     "Cloud Imaging Client (latest: ${{ steps.tag.outputs.tag }})"
+          body:     "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes."
+          files: |
+            release-artifacts/CloudImaging.Client.zip
+            release-artifacts/SHA256SUMS
+          make_latest: false
+          draft: false
+          prerelease: false
