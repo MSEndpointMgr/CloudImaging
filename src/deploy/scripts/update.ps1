@@ -34,7 +34,7 @@
     .\update.ps1 -ResourceGroupName rg-<prefix>-<env>-cloudimaging -Version 1.2.0
 
 .EXAMPLE
-    .\update.ps1 -ResourceGroupName rg-<prefix>-<env>-cloudimaging -ArchivePath C:\Downloads\cloud-imaging-1.2.0.zip
+    .\update.ps1 -ResourceGroupName rg-<prefix>-<env>-cloudimaging -ArchivePath C:\Downloads\cloud-imaging-mse-ci-v1.2.0.zip
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -78,7 +78,7 @@ if ($ArchivePath -eq '') {
     }
 
     # The 'mse-ci-iac-latest' alias release's own tag_name is literally "mse-ci-iac-latest"; its
-    # title embeds the real version instead (see release-iac.yml), e.g. "Cloud Imaging (latest — mse-ci-v1.2.3)".
+    # title embeds the real version instead (see release-iac.yml), e.g. "Cloud Imaging (latest: mse-ci-v1.2.3)".
     $resolvedVersion = if ($release.name -match '(mse-ci-v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.]+)?)') { $Matches[1] } else { $release.tag_name }
     Write-Host "Target release: $resolvedVersion ($($release.html_url))"
 

@@ -9,6 +9,9 @@ on:
   push:
     tags:
       - 'mse-ci-client-v[0-9]+.[0-9]+.[0-9]+'
+      # Pre-release tags (e.g. mse-ci-client-v1.2.0-beta.1); see release-iac.yml for why the
+      # stable pattern alone never matches them.
+      - 'mse-ci-client-v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
       tag_name:

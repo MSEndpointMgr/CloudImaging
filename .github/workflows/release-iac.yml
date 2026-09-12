@@ -9,6 +9,11 @@ on:
   push:
     tags:
       - 'mse-ci-v[0-9]+.[0-9]+.[0-9]+'
+      # Pre-release tags (e.g. mse-ci-v1.2.0-beta.1). GitHub's tag filter has to match the whole
+      # ref, so the stable pattern above never fires for a suffixed tag -- without this line the
+      # workflow's own pre-release support (prerelease: / stable: outputs) was unreachable from a
+      # tag push and only ever ran via workflow_dispatch.
+      - 'mse-ci-v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -110,6 +115,9 @@ jobs:
       - name: Restore .NET solution
         run: dotnet restore CloudImaging.sln
 
+      - name: Initialize release artifact directory
+        run: New-Item release-artifacts -ItemType Directory -Force | Out-Null
+
       - name: Publish DeviceGatewayApi
         run: |
           dotnet publish src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj `
@@ -155,7 +163,6 @@ jobs:
 
       - name: Package deploy artifacts
         run: |
-          New-Item release-artifacts -ItemType Directory -Force | Out-Null
           Copy-Item src/deploy -Recurse -Destination release-artifacts/deploy
           Compress-Archive release-artifacts/deploy/* release-artifacts/deploy.zip
 
@@ -228,10 +235,14 @@ jobs:
           $ErrorActionPreference = 'Continue'
           gh release delete mse-ci-iac-latest --yes --cleanup-tag 2>&1 | Write-Host
           $ErrorActionPreference = 'Stop'
+          # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: update.ps1 reads
+          # the real version out of this alias release's name (its own tag_name is literally
+          # 'mse-ci-iac-latest'), and its pattern looks for the prefixed form. A bare 'v1.2.3' here
+          # left the upgrade reporting its target as "mse-ci-iac-latest".
           gh release create mse-ci-iac-latest `
             "release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip" `
             "release-bundle/SHA256SUMS" `
             --target "${{ steps.tag.outputs.sha }}" `
-            --title "Cloud Imaging (latest: ${{ steps.tag.outputs.version }})" `
+            --title "Cloud Imaging (latest: ${{ steps.tag.outputs.tag }})" `
             --notes "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes." `
             --latest=false
