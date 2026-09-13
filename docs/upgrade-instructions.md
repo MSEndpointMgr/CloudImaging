@@ -213,7 +213,7 @@ Otherwise, older media continues to work, and you can roll new media out at your
 The Media Builder is a desktop application on technician workstations. It has no automatic
 update mechanism, by design.
 
-1. Download `CloudImaging.MediaBuilder.msi` from the new **Media Builder** release
+1. Download `cloud-imaging-mediabuilder-<version>.msi` from the new **Media Builder** release
    (tag `mse-ci-mediabuilder-v#.#.#`).
 2. Rewrap it and publish it as an app update through your existing deployment tooling, following
    [setup-instructions.md](setup-instructions.md#deploying-the-media-builder-with-intune).
@@ -227,7 +227,7 @@ Pass them only if a value actually changed, which normally happens only if you r
 resource group.
 
 > **Upgrading a manual/xcopy install instead?** A fresh extract of
-> `CloudImaging.MediaBuilder.zip` has no tenant configuration, so copy your existing
+> `cloud-imaging-mediabuilder-<version>.zip` has no tenant configuration, so copy your existing
 > `appsettings.json` in beside `CloudImaging.MediaBuilder.exe`. Otherwise the application starts
 > but shows *"Entra ID sign-in is not configured"*.
 

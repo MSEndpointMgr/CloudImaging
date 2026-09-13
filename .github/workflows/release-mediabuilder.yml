@@ -133,7 +133,7 @@ jobs:
           dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj `
             -c Release -r win-x64 --self-contained -o publish/MediaBuilder --no-restore
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
-          Compress-Archive publish/MediaBuilder/* release-artifacts/CloudImaging.MediaBuilder.zip
+          Compress-Archive publish/MediaBuilder/* "release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.zip"
 
       # Harvests the same publish/MediaBuilder payload that was just zipped, so the MSI and the zip
       # in a given release are always byte-identical in content.
@@ -141,7 +141,9 @@ jobs:
         run: |
           dotnet build src/CloudImaging.MediaBuilder.Installer/CloudImaging.MediaBuilder.Installer.wixproj `
             -c Release -p:MsiProductVersion=${{ steps.tag.outputs.msi_version }}
-          Copy-Item src/CloudImaging.MediaBuilder.Installer/bin/Release/CloudImaging.MediaBuilder.msi release-artifacts/
+          # Renamed on the way out. The MSI's ProductName and UpgradeCode are unchanged, so an
+          # in-place upgrade still recognises an existing install regardless of the file name.
+          Copy-Item src/CloudImaging.MediaBuilder.Installer/bin/Release/CloudImaging.MediaBuilder.msi "release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.msi"
 
       - name: Generate SHA-256 checksum manifest
         run: |
@@ -172,12 +174,12 @@ jobs:
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `CloudImaging.MediaBuilder.msi` | Per-machine installer (x64). Configured via MSI properties; upgrades in place and keeps existing configuration. |
-            | `CloudImaging.MediaBuilder.zip` | The same self-contained win-x64 payload (net10.0-windows), unpackaged, for xcopy deployment or custom packaging. |
+            | `cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.msi` | Per-machine installer (x64). Configured via MSI properties; upgrades in place and keeps existing configuration. |
+            | `cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.zip` | The same self-contained win-x64 payload (net10.0-windows), unpackaged, for xcopy deployment or custom packaging. |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
           files: |
-            release-artifacts/CloudImaging.MediaBuilder.msi
-            release-artifacts/CloudImaging.MediaBuilder.zip
+            release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.msi
+            release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.zip
             release-artifacts/SHA256SUMS
           draft: false
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}

@@ -14,8 +14,8 @@
 | `ImagingCoreApi.zip` | Azure Functions isolated-worker .NET 10 package |
 | `portal-backend.zip` | Node 22 / Express 5 App Service package, including production `node_modules` |
 | `portal-frontend.zip` | React 19 + Vite Static Web App output |
-| `CloudImaging.Client.zip` | WinPE-runnable WPF executable (net10.0-windows, win-x64 self-contained) |
-| `CloudImaging.MediaBuilder.zip` | Technician workstation WPF app (net10.0-windows, win-x64 self-contained) |
+| `cloud-imaging-client-v<version>.zip` | WinPE-runnable WPF executable (net10.0-windows, win-x64 self-contained) |
+| `cloud-imaging-mediabuilder-v<version>.zip` | Technician workstation WPF app (net10.0-windows, win-x64 self-contained) |
 | `install.ps1` | Installs the component packages into a newly provisioned environment |
 | `upgrade.ps1` | Upgrades an existing deployment to the release this bundle contains |
 | `post-install.ps1` | Grants the Microsoft Graph permission and Operator API role to the managed identities |

@@ -206,7 +206,9 @@ jobs:
 
       - name: Assemble backend/IaC release bundle
         run: |
-          $version = "${{ steps.tag.outputs.tag }}"
+          # The asset name is the tag minus the internal 'mse-ci-' prefix, so the product name does
+          # not stutter as 'cloud-imaging-mse-ci-v1.0.0'.
+          $version = "${{ steps.tag.outputs.version }}"
           $bundleName = "cloud-imaging-$version"
           $bundleDir  = "release-bundle/$bundleName"
           New-Item $bundleDir -ItemType Directory -Force | Out-Null
@@ -239,7 +241,7 @@ jobs:
 
       - name: Generate SHA-256 checksum manifest
         run: |
-          $version = "${{ steps.tag.outputs.tag }}"
+          $version = "${{ steps.tag.outputs.version }}"
           $zip     = "release-bundle/cloud-imaging-$version.zip"
           $hash    = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           "$hash  cloud-imaging-$version.zip" | Out-File "release-bundle/SHA256SUMS"
@@ -260,7 +262,7 @@ jobs:
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `cloud-imaging-*.zip` | Backend/IaC bundle (5 components + deploy scripts) |
+            | `cloud-imaging-${{ steps.tag.outputs.version }}.zip` | Backend/IaC bundle (5 components + deploy scripts) |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
 
             ### Deploying
@@ -268,7 +270,7 @@ jobs:
             deployment or `upgrade.ps1 -ResourceGroupName <your-rg>` for an existing one.
             Bicep templates, parameter files and the setup scripts are in the same folder.
           files: |
-            release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip
+            release-bundle/cloud-imaging-${{ steps.tag.outputs.version }}.zip
             release-bundle/SHA256SUMS
           draft: false
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}
@@ -289,18 +291,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Drop the previous alias release first so the new one carries only this version's
-          # bundle: the bundle's file name contains the version, so a stale asset would linger
-          # next to the current one and an operator could download the older of the two. The tag
-          # itself is deliberately kept (no --cleanup-tag): it is force-moved below instead.
-          # The release does not exist before the first stable release and 'gh release delete'
-          # exits non-zero when it is missing, which would fail the job *after* the real release
-          # had already published, so treat "nothing to move" as success.
+          # Drop the previous alias release first so its body and title describe this version.
+          # The tag itself is deliberately kept (no --cleanup-tag): it is force-moved below
+          # instead. The release does not exist before the first stable release and 'gh release
+          # delete' exits non-zero when it is missing, which would fail the job *after* the real
+          # release had already published, so treat "nothing to move" as success.
           $ErrorActionPreference = 'Continue'
           gh release delete mse-ci-iac-latest --yes 2>&1 | Write-Host
           $ErrorActionPreference = 'Stop'
           git tag -f mse-ci-iac-latest "${{ steps.tag.outputs.sha }}"
           git push -f origin refs/tags/mse-ci-iac-latest
+
+      # The alias is a moving pointer, so its asset carries no version: that keeps
+      # releases/download/mse-ci-iac-latest/cloud-imaging.zip a permanent link, and a versioned
+      # name on a moving target would leave a stale bundle sitting next to the current one.
+      # The version is in the release title and in version.txt inside the bundle.
+      - name: Stage the alias release artifacts
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        run: |
+          New-Item alias-bundle -ItemType Directory -Force | Out-Null
+          Copy-Item "release-bundle/cloud-imaging-${{ steps.tag.outputs.version }}.zip" alias-bundle/cloud-imaging.zip
+          $hash = (Get-FileHash alias-bundle/cloud-imaging.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  cloud-imaging.zip" | Out-File "alias-bundle/SHA256SUMS"
 
       # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: the portal reads
       # the real version out of this alias release's name (its own tag_name is literally
@@ -314,8 +326,8 @@ jobs:
           name:     "Cloud Imaging (latest: ${{ steps.tag.outputs.tag }})"
           body:     "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes."
           files: |
-            release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip
-            release-bundle/SHA256SUMS
+            alias-bundle/cloud-imaging.zip
+            alias-bundle/SHA256SUMS
           make_latest: false
           draft: false
           prerelease: false

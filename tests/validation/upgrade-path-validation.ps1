@@ -20,7 +20,7 @@
     Folder a newer release bundle was extracted into. upgrade.ps1 sits at its root.
 
 .EXAMPLE
-    .\upgrade-path-validation.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>" -BundlePath "C:\Downloads\cloud-imaging-mse-ci-v1.2.0"
+    .\upgrade-path-validation.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>" -BundlePath "C:\Downloads\cloud-imaging-v1.2.0"
 
 .NOTES
     FileName:    upgrade-path-validation.ps1
