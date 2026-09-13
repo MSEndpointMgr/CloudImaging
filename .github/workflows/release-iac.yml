@@ -225,7 +225,6 @@ jobs:
           # Internal tooling never ships to customers.
           $internalTools = @(
             "generate-types.ps1"
-            "simulate-device-session.ps1"
             "verify-release-secrets.ps1"
           )
           foreach ($tool in $internalTools) {
@@ -275,7 +274,7 @@ jobs:
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}
 
       # ── Move the 'mse-ci-iac-latest' alias (stable releases only) ─────────────
-      # update.ps1's -Version latest resolves this fixed tag instead of GitHub's
+      # The portal's release check resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the client/mediabuilder
       # streams interleave with this one.
       #
@@ -291,8 +290,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Drop the previous alias release first so the new one carries only this version's
-          # bundle -- the bundle's file name contains the version, so a stale asset would linger
-          # next to the current one and update.ps1 could download the older of the two. The tag
+          # bundle: the bundle's file name contains the version, so a stale asset would linger
+          # next to the current one and an operator could download the older of the two. The tag
           # itself is deliberately kept (no --cleanup-tag): it is force-moved below instead.
           # The release does not exist before the first stable release and 'gh release delete'
           # exits non-zero when it is missing, which would fail the job *after* the real release
@@ -303,10 +302,10 @@ jobs:
           git tag -f mse-ci-iac-latest "${{ steps.tag.outputs.sha }}"
           git push -f origin refs/tags/mse-ci-iac-latest
 
-      # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: update.ps1 reads
+      # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: the portal reads
       # the real version out of this alias release's name (its own tag_name is literally
       # 'mse-ci-iac-latest'), and its pattern looks for the prefixed form. A bare 'v1.2.3' here
-      # left the upgrade reporting its target as "mse-ci-iac-latest".
+      # left the portal reporting the available version as "mse-ci-iac-latest".
       - name: Publish the 'mse-ci-iac-latest' alias release
         if: ${{ steps.tag.outputs.stable == 'true' }}
         uses: softprops/action-gh-release@v3

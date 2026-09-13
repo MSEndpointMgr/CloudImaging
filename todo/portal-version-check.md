@@ -23,11 +23,11 @@ mixing three independently versioned streams.
 
 ## The prerequisite: recording the deployed version
 
-Nothing records what is currently deployed. `update.ps1` resolves a release version, uses it only
-as a blob filename label (`$packageLabel`), and discards it. No app setting, no tag, no stored row.
-So there is nothing to compare a "latest" value against.
+Nothing records what is currently deployed. The upgrade script uses the release version only as a
+blob filename label and discards it. No app setting, no tag, no stored row. So there is nothing to
+compare a "latest" value against.
 
-### Rejected: have `update.ps1` write an app setting
+### Rejected: have the upgrade script write an app setting
 
 This was the obvious first idea and it is wrong. The portal backend's app settings are declared as
 a Bicep array in
@@ -51,7 +51,7 @@ The deployed version then becomes **intrinsic to the deployed code**:
 - It cannot drift from what is actually running.
 - It survives Bicep redeploys, because it is not configuration.
 - It is correct even if someone deploys manually or out of band.
-- `update.ps1` needs **no changes at all**.
+- The upgrade script needs **no changes at all**.
 
 A local development build with no tag stamps something like `dev`, and the interface treats any
 unrecognised value as "unknown" rather than trying to compare it.
@@ -74,8 +74,8 @@ middleware. It calls:
 https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/mse-ci-iac-latest
 ```
 
-This is deliberately the **same alias `update.ps1` resolves**, so the portal can never advertise a
-version the upgrade script would not install. Using GitHub's repository-wide `releases/latest`
+This alias always points at the newest stable backend release, which is the bundle an operator
+would download to upgrade. Using GitHub's repository-wide `releases/latest`
 instead would resolve to whichever stream published most recently, which is the exact trap the
 alias exists to avoid.
 

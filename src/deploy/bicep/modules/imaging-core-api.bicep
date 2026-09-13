@@ -134,7 +134,7 @@ resource corePackageReadAccess 'Microsoft.Authorization/roleAssignments@2022-04-
 // Note: Microsoft Graph app role assignments require a separate approach:
 // The managed identity principalId must be granted this role via PowerShell/CLI post-deploy
 // because Bicep does not natively support Graph API role assignments.
-// The grant-graph-permissions.ps1 script handles this step.
+// The post-install.ps1 script handles this step.
 
 output internalBaseUrl string = 'https://${func.properties.defaultHostName}'
 output funcId string = func.id

@@ -19,7 +19,7 @@ app/identity, not a person).
 | `CloudImaging.Administrator` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Full access: catalog writes, branding, configuration, boot-media certificate, plus everything Technician can do |
 | `CloudImaging.Technician` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Day-to-day imaging operations: sessions, coupling, assignment, read-only catalogs |
 | `CloudImaging.Reader` | **Cloud Imaging Portal** registration only | Users / groups | Read-only visibility: Dashboard summary and Reports, nothing else. No Media Builder equivalent. |
-| `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `assign-service-roles.ps1`; nothing to do manually. |
+| `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `post-install.ps1`; nothing to do manually. |
 | `CloudImaging.MediaBuilderAccess` | **Cloud Imaging Operator API** registration | Users / groups | Lets a signed-in technician's Media Builder client actually call the Operator API. Required **in addition to** `CloudImaging.Administrator`/`Technician`; see [Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians). |
 
 > **Because the Portal and Media Builder are separate app registrations, `Administrator`/`Technician`
@@ -49,8 +49,8 @@ Entra ID → **Enterprise applications** → **Cloud Imaging Operator API** → 
 for why this is required in addition to the Media Builder registration's own
 `Administrator`/`Technician` role.
 
-`PortalAccess` requires no manual assignment; `assign-service-roles.ps1` (run once during
-[Phase 3, Step 1](setup-instructions.md#step-1-run-the-post-deployment-scripts)) grants it to the
+`PortalAccess` requires no manual assignment; `post-install.ps1` (run once during
+[Phase 3, Step 1](setup-instructions.md#step-1-complete-the-microsoft-entra-grants)) grants it to the
 Portal backend's managed identity.
 
 ---
