@@ -58,11 +58,11 @@
                   "type": "Microsoft.Common.TextBox",
                   "label": "Resource Prefix",
                   "placeholder": "mse",
-                  "toolTip": "Short alphanumeric identifier (max 4 characters). Used as the leading segment of all Azure resource names. Example: mse",
+                  "toolTip": "Short identifier used as the leading segment of all Azure resource names. Lowercase letters, digits and hyphens, up to 12 characters. Hyphens are removed from storage account names, which cannot contain them. Examples: mse, mse-az",
                   "constraints": {
                     "required": true,
-                    "regex": "^[a-z0-9]{1,4}$",
-                    "validationMessage": "Must be 1-4 lowercase alphanumeric characters."
+                    "regex": "^[a-z0-9]([a-z0-9-]{0,10}[a-z0-9])?$",
+                    "validationMessage": "Must be 1-12 lowercase letters, digits or hyphens, starting and ending with a letter or digit."
                   },
                   "visible": true
                 },
@@ -72,7 +72,7 @@
                   "visible": true,
                   "options": {
                     "style": "Info",
-                    "text": "[concat('All resources include a ci (Cloud Imaging) segment. Example names: ', steps('configuration').namingSection.resourcePrefix, '-', steps('basics').environment, '-ci-func-gateway  |  ', steps('configuration').namingSection.resourcePrefix, steps('basics').environment, 'cistcore')]"
+                    "text": "[concat('All resources include a ci (Cloud Imaging) segment. Example names: ', steps('configuration').namingSection.resourcePrefix, '-', steps('basics').environment, '-ci-func-gateway  |  ', replace(steps('configuration').namingSection.resourcePrefix, '-', ''), steps('basics').environment, 'cistcore')]"
                   }
                 }
               ]
@@ -153,15 +153,15 @@
                   "visible": true,
                   "options": {
                     "style": "Warning",
-                    "text": "All API Function Apps must remain on the Elastic Premium tier (EP1/EP2/EP3). EP1 is sufficient for most deployments. EP2 or EP3 is recommended for high-volume environments imaging 500+ devices per day. The Portal App Service can be P1v3 for standard use."
+                    "text": "All Function Apps must remain on the Elastic Premium tier (EP1/EP2/EP3). EP1 is sufficient for most deployments. EP2 or EP3 is recommended for high-volume environments imaging 500+ devices per day. The Portal App Service can be P1v3 for standard use."
                   }
                 },
                 {
                   "name": "functionAppSku",
                   "type": "Microsoft.Common.DropDown",
-                  "label": "API Function App SKU (applies to Device Gateway, Operator, and Imaging Core APIs)",
+                  "label": "Function App SKU (applies to Device Gateway, Operator and Imaging Core)",
                   "defaultValue": "EP1",
-                  "toolTip": "Elastic Premium SKU for all three API Function App plans. EP1 is the minimum required for mTLS, VNet integration, and pre-warmed instances. Scale up for higher throughput.",
+                  "toolTip": "Elastic Premium SKU for all three Function App plans. EP1 is the minimum required for mTLS, VNet integration, and pre-warmed instances. Scale up for higher throughput.",
                   "constraints": {
                     "required": true,
                     "allowedValues": [

@@ -4,6 +4,7 @@ Start with the symptom visible to the technician or administrator. The linked ru
 
 | Symptom | Start here |
 |---|---|
+| Deployment fails with "No available instances to satisfy this request" (`03029`) | [Deploy via Template Spec Wizard](setup-instructions.md#step-2-deploy-via-template-spec-wizard) |
 | Device displays a passcode, but Portal coupling returns 404 | [Device displays passcode but coupling fails with 404](operations-runbook.md#symptom-device-displays-passcode-but-coupling-fails-with-404) |
 | Portal coupling returns 409 | [Portal shows 409 when coupling](operations-runbook.md#symptom-portal-shows-409-when-coupling) |
 | Device immediately shows **Not Authorized** | [Device shows Not Authorized after registration](operations-runbook.md#symptom-device-shows-not-authorized-after-registration) |

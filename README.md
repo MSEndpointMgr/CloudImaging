@@ -283,19 +283,20 @@ portal Template Spec wizard.
 
 2. **Publish the Template Spec** (one-time per environment):
    ```powershell
-   .\src\deploy\scripts\publish-template-spec.ps1 `
-       -ResourceGroupName 'rg-contoso-dev-cloudimaging' `
-       -Location 'westeurope' `
-       -Version '1.0.0'
+   .\src\deploy\scripts\publish-template-spec.ps1 -ResourceGroupName 'rg-contoso-dev-cloudimaging' -Location 'westeurope' -Version '1.0.0'
    ```
 
 3. **Deploy from the Azure portal**: open the Template Spec resource and
    select **Deploy** to launch the full tabbed wizard; supply your Entra ID
    app registration IDs and environment parameters.
 
-4. **Upgrade later without redeploying infrastructure**: the included
-   `update.ps1` script pushes new component packages to existing Azure
-   resources via zip deploy, no re-provisioning required.
+4. **Deploy the application code**: the wizard provisions empty resources, so
+   run the included `update.ps1` against the new resource group to install the
+   component packages from the release bundle.
+
+5. **Upgrade later without redeploying infrastructure**: the same `update.ps1`
+   script pushes new component packages to existing Azure resources via zip
+   deploy, no re-provisioning required.
 
 ### Deployed resources
 

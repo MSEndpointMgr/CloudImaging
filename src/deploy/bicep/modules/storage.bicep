@@ -22,6 +22,10 @@ resource storageApp 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
+    // install.ps1 and upgrade.ps1 upload component packages with the account key, because a
+    // freshly granted data plane role can take minutes to propagate. Apps still read the
+    // package with their own managed identity.
+    allowSharedKeyAccess: true
   }
 }
 
@@ -34,6 +38,7 @@ resource storageCoreApi 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: true
   }
 }
 
