@@ -70,24 +70,19 @@ certificate rotation.
 
 | Requirement | Detail |
 |---|---|
-| Az PowerShell | `Install-Module Az` |
-| Azure CLI | [Install guide](https://learn.microsoft.com/azure/cli/install) |
+| Az PowerShell | `Install-Module Az.Accounts, Az.Resources, Az.Storage, Az.Websites -Scope CurrentUser` |
+| Node.js | `winget install OpenJS.NodeJS.LTS`, then open a new terminal. Needed only to install the tool below |
 | Azure Static Web Apps CLI | `npm install -g @azure/static-web-apps-cli`. Required: the portal frontend cannot be deployed without it |
-| Azure role | Owner, or Contributor plus User Access Administrator, on the deployment's resource group |
-| Signed in | Both `Connect-AzAccount` and `az login`, to the tenant and subscription holding the deployment |
+| Azure role | Contributor on the deployment's resource group |
+| Subscription ID | `upgrade.ps1` requires it, so an upgrade can never run against the wrong subscription |
 
-Both sign-ins are needed because the script uses Az PowerShell to inspect the resource group
-and the Azure CLI to perform the deployments.
+`upgrade.ps1` signs you in with `Connect-AzAccount` if no session exists, then selects the
+subscription you pass. Verify the Static Web Apps CLI first with `swa --version`.
 
-> **Why User Access Administrator?** Function App code is deployed with Run-From-Package: the
-> release archive is uploaded to a storage container and the app is pointed at it. That upload
-> authenticates with Entra ID and requires the **Storage Blob Data Contributor** role, which
-> resource-group Owner or Contributor alone does **not** include. `update.ps1` grants that role
-> to your signed-in identity automatically on first run, which is itself a role assignment.
->
-> If your account cannot assign roles, the script warns instead of failing. Ask an administrator
-> to grant **Storage Blob Data Contributor** on the two storage accounts whose names end in
-> `stapp` and `stcore`, then re-run.
+> **Contributor is enough.** Component packages are uploaded to the deployment's own storage
+> accounts using the account key, which is read through the control plane. Earlier releases
+> granted the signed-in identity a data plane role first and therefore needed User Access
+> Administrator; that step is gone.
 
 ---
 
@@ -178,10 +173,9 @@ to redeploy the Template Spec.
 
    ```powershell
    cd deploy
-   .\scripts\publish-template-spec.ps1 `
-     -ResourceGroupName "rg-cloudimaging-specs" `
-     -Location "eastus" `
-     -Version "1.2.0"
+   # Use the same region you published the Template Spec to originally, e.g.
+   # westeurope / northeurope / swedencentral in Europe, eastus / eastus2 / westus2 in the US
+   .\scripts\publish-template-spec.ps1 -ResourceGroupName "rg-cloudimaging-specs" -Location "<location>" -Version "1.2.0"
    ```
 
 3. Open the Template Spec in the Azure portal, click **Deploy**, and fill in the wizard with

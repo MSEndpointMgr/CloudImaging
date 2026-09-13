@@ -172,7 +172,20 @@ jobs:
             Out-File -Encoding utf8 src/version.ts
           Write-Host "Stamped portal backend version: ${{ steps.tag.outputs.tag }}"
           npm run build
-          Compress-Archive dist/* ../../../release-artifacts/portal-backend.zip
+
+          # Assemble a self-contained bundle: compiled dist + manifest + production
+          # node_modules. Zipping dist alone omits package.json/node_modules, so the Node worker
+          # cannot resolve its runtime deps and App Service fails to start 'node dist/index.js'
+          # with SCM_DO_BUILD_DURING_DEPLOYMENT pinned false. Mirrors the portal-backend job in
+          # ci.yml.
+          Remove-Item deploy-pkg -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item deploy-pkg/dist -ItemType Directory -Force | Out-Null
+          Copy-Item dist/* deploy-pkg/dist/ -Recurse
+          Copy-Item package.json, package-lock.json deploy-pkg/
+          Push-Location deploy-pkg
+          npm ci --omit=dev
+          Compress-Archive -Path * -DestinationPath "$env:GITHUB_WORKSPACE/release-artifacts/portal-backend.zip"
+          Pop-Location
 
       - name: Build portal client (SWA)
         working-directory: src/cloud-imaging-portal/client
@@ -183,10 +196,11 @@ jobs:
 
       # ── Deploy scripts + Bicep ────────────────────────────────────────────────
 
-      - name: Package deploy artifacts
+      - name: Compile the Bicep template
         run: |
-          Copy-Item src/deploy -Recurse -Destination release-artifacts/deploy
-          Compress-Archive release-artifacts/deploy/* release-artifacts/deploy.zip
+          # Ship the compiled ARM template so publish-template-spec.ps1 needs no Bicep CLI.
+          az bicep install
+          az bicep build --file src/deploy/bicep/main.bicep --outfile src/deploy/bicep/main.json
 
       # ── Assemble release bundle ───────────────────────────────────────────────
 
@@ -202,8 +216,25 @@ jobs:
           Copy-Item release-artifacts/ImagingCoreApi.zip       $bundleDir/
           Copy-Item release-artifacts/portal-backend.zip       $bundleDir/
           Copy-Item release-artifacts/portal-frontend.zip      $bundleDir/
-          Copy-Item release-artifacts/deploy.zip               $bundleDir/
-          Copy-Item src/deploy/scripts/update.ps1              $bundleDir/
+
+          # The deploy folder ships flat at the bundle root, so an administrator extracts once
+          # and runs everything from one place: install.ps1, post-install.ps1 and upgrade.ps1
+          # alongside scripts/, bicep/, parameters/ and uiFormDefinition.json.
+          Copy-Item src/deploy/* -Recurse -Destination $bundleDir/
+
+          # Internal tooling never ships to customers.
+          $internalTools = @(
+            "generate-types.ps1"
+            "simulate-device-session.ps1"
+            "verify-release-secrets.ps1"
+          )
+          foreach ($tool in $internalTools) {
+            Remove-Item "$bundleDir/scripts/$tool" -Force -ErrorAction SilentlyContinue
+          }
+
+          # Records which release this bundle is, so publish-template-spec.ps1 can version the
+          # Template Spec to match the packages beside it and the deploy scripts can report it.
+          "${{ steps.tag.outputs.version }}" | Out-File "$bundleDir/version.txt" -Encoding utf8 -NoNewline
 
           Compress-Archive release-bundle/$bundleName/* release-bundle/$bundleName.zip
 
@@ -233,9 +264,10 @@ jobs:
             | `cloud-imaging-*.zip` | Backend/IaC bundle (5 components + deploy scripts) |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
 
-            ### Upgrade instructions
-            Run `update.ps1 -ResourceGroupName <your-rg>` from the bundle root.
-            See `deploy/` for Bicep templates and parameter files.
+            ### Deploying
+            Extract the bundle, then run `install.ps1 -ResourceGroupName <your-rg>` for a new
+            deployment or `upgrade.ps1 -ResourceGroupName <your-rg>` for an existing one.
+            Bicep templates, parameter files and the setup scripts are in the same folder.
           files: |
             release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip
             release-bundle/SHA256SUMS
