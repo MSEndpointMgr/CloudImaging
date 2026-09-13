@@ -103,6 +103,15 @@ jobs:
           "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable)"
 
+      # `Check out the resolved tag` below replaces the working tree with the tag's code, and
+      # tags cut before this gate existed have no .github/scripts directory at all, so the gate
+      # script has to be copied out of the working tree first. The gate is release tooling, not
+      # shipped code: it should match the workflow file being run (which on a manual run comes
+      # from the dispatched branch, not the tag), so running the staged copy is also the correct
+      # behaviour for tags that do contain a version of the script.
+      - name: Stage the dependency gate script
+        run: Copy-Item .github/scripts/Assert-NoVulnerableDependencies.ps1 $env:RUNNER_TEMP
+
       # A manual run checks out a branch, so the working tree holds whatever that branch points at
       # rather than the tag being packaged. Without this the release would carry the tag's name and
       # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
@@ -121,7 +130,7 @@ jobs:
       # excluded deliberately -- they are not part of any artifact.
       - name: Fail the release on vulnerable dependencies
         run: |
-          ./.github/scripts/Assert-NoVulnerableDependencies.ps1 -MinimumSeverity High `
+          & "$env:RUNNER_TEMP/Assert-NoVulnerableDependencies.ps1" -MinimumSeverity High `
             -Project 'src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj',
                      'src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj',
                      'src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj' `
