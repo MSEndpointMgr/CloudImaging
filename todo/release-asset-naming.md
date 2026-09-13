@@ -39,7 +39,7 @@ root, so an asset URL is derivable from a tag without a lookup table:
 | Backend/IaC | `mse-ci-v1.0.0` | `cloud-imaging-v1.0.0.zip` |
 | Client | `mse-ci-client-v1.0.0` | `cloud-imaging-client-v1.0.0.zip` |
 | Media Builder | `mse-ci-mediabuilder-v1.0.0` | `cloud-imaging-mediabuilder-v1.0.0.msi`, `cloud-imaging-mediabuilder-v1.0.0.zip` |
-| All | — | `SHA256SUMS` (unchanged) |
+| All | n/a | `SHA256SUMS` (unchanged) |
 
 Pre-release tags fall out of the pattern unchanged: `cloud-imaging-v1.2.0-beta.1.zip`.
 
@@ -87,10 +87,10 @@ Safe sequence:
 
 ### Backend rename is safe
 
-[update.ps1](../src/deploy/scripts/update.ps1) selects `cloud-imaging-*.zip`, preferring an exact
-`cloud-imaging-<tag>.zip` match and falling back to the first wildcard hit. `cloud-imaging-v1.0.0.zip`
-still matches the wildcard, so customer copies of older `update.ps1` keep working. The exact-match
-branch should be updated to the new form so it stops relying on the fallback.
+Nothing automated downloads the backend bundle by name. Operators fetch it by hand from the
+releases page, and `upgrade.ps1` deploys the packages sitting beside it in the extracted folder
+rather than resolving a release. The portal's update check reads the alias release's *title* for
+a version string and never touches asset names.
 
 ### Media Builder MSI/ZIP rename is safe
 
@@ -99,16 +99,14 @@ Nothing automated consumes either file; they are downloaded by hand from the rel
 ## Explicitly out of scope
 
 **Do not rename the bundle's internal components** (`DeviceGatewayApi.zip`, `OperatorApi.zip`,
-`ImagingCoreApi.zip`, `portal-backend.zip`, `portal-frontend.zip`, `deploy.zip`). `update.ps1`
-reads them by exact name, customers routinely run an older copy of `update.ps1` against a newer
-bundle, and the names are never seen outside the archive. Renaming them breaks that combination
-and buys nothing.
+`ImagingCoreApi.zip`, `portal-backend.zip`, `portal-frontend.zip`). `install.ps1` and
+`upgrade.ps1` read them by exact name, the names are never seen outside the archive, and renaming
+them buys nothing.
 
 ## Work required
 
 - `release-iac.yml`: bundle name, and the fixed-name copy on the alias release.
 - `release-client.yml`: asset name, compatibility asset on the alias release.
 - `release-mediabuilder.yml`: MSI and ZIP names.
-- `update.ps1`: exact-match asset name.
 - `GitHubReleasesClient`: preferred name plus legacy fallback, and the tests covering it.
 - `docs/setup-instructions.md` and `docs/upgrade-instructions.md`: example filenames.

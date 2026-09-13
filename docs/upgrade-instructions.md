@@ -15,7 +15,7 @@ and each is upgraded differently:
 
 | Stream | Release tag | What it contains | How you upgrade it |
 |---|---|---|---|
-| Backend and infrastructure | `mse-ci-v#.#.#` | The three Function Apps, the portal (frontend and backend), Bicep templates, deploy scripts | [Part 1](#part-1-upgrade-the-azure-components) with `update.ps1` |
+| Backend and infrastructure | `mse-ci-v#.#.#` | The three Function Apps, the portal (frontend and backend), Bicep templates, deploy scripts | [Part 1](#part-1-upgrade-the-azure-components) with `upgrade.ps1` |
 | Cloud Imaging Client | `mse-ci-client-v#.#.#` | The application that runs on the device inside WinPE | [Part 3](#part-3-upgrade-the-cloud-imaging-client): regenerate boot images and rewrite USB media |
 | Media Builder | `mse-ci-mediabuilder-v#.#.#` | The technician workstation application | [Part 4](#part-4-upgrade-the-media-builder): repackage and redistribute |
 
@@ -30,22 +30,24 @@ the tag prefix rather than assuming the newest entry applies to you.
 > ever tracks the backend and infrastructure stream, and it never installs anything: upgrading
 > stays the deliberate, manual procedure below.
 
-### What `update.ps1` does and does not do
+### What `upgrade.ps1` does and does not do
 
 It is worth being precise about this, because the boundary catches people out.
 
 **It does:**
 
-- Download the release bundle, verify it against the release's published checksum, and extract it
 - Deploy new application code to the three Function Apps (Device Gateway, Operator, Imaging Core)
 - Deploy new application code to the portal backend App Service
 - Deploy the new portal frontend to the Static Web App
-- Repair two settings that a code-only upgrade would otherwise miss: the blob upload role
-  assignment on the package storage accounts, and the browser upload permission rules on the
-  boot image storage account
+- Re-apply the browser upload permission rules on the boot image storage account, which a
+  code-only upgrade would otherwise miss
 
 **It does not:**
 
+- **Download anything.** It deploys the component packages sitting next to it in the bundle you
+  extracted, so the bundle you download decides the version you get. There is no `-Version`
+  switch: to move to a different release, extract that release's bundle and run the copy of the
+  script inside it.
 - **Re-run the Bicep templates.** No Azure resource is created, resized, or reconfigured. If a
   release adds or changes infrastructure, you also need [Part 2](#part-2-apply-infrastructure-changes).
 - **Upgrade the Cloud Imaging Client or the Media Builder.** Those are separate streams and
@@ -94,20 +96,19 @@ Download **`cloud-imaging-<version>.zip`** from the backend and infrastructure r
 [Releases page](https://github.com/MSEndpointMgr/CloudImaging/releases). It is the bundle
 whose tag has no `-client-` or `-mediabuilder-` segment.
 
-Extract it. `update.ps1` sits at the root of the extracted folder, next to the component
+Extract it. `upgrade.ps1` sits at the root of the extracted folder, next to the component
 archives. Open PowerShell there.
 
-You can skip the manual download entirely and let the script fetch the release for you, as
-shown in the next step.
+Run the script from that folder. It deploys the packages it finds beside itself, so running a
+copy from somewhere else upgrades your deployment to whatever version that copy shipped with.
 
 ### Step 2: Do a dry run first
 
-`update.ps1` supports `-WhatIf`, which walks the whole process, resolves the release, verifies
-the archive, inspects your resource group, and reports every action it would take, without
-changing anything:
+`upgrade.ps1` supports `-WhatIf`, which inspects your resource group and reports every action it
+would take, without changing anything:
 
 ```powershell
-.\update.ps1 -ResourceGroupName "corp-prod-rg" -WhatIf
+.\upgrade.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>" -WhatIf
 ```
 
 Read the output before continuing. It confirms which Function Apps, App Service, and Static Web
@@ -117,34 +118,22 @@ sign-in.
 ### Step 3: Run the upgrade
 
 ```powershell
-# Upgrade to the newest stable backend release
-.\update.ps1 -ResourceGroupName "corp-prod-rg"
-
-# Or pin an exact version
-.\update.ps1 -ResourceGroupName "corp-prod-rg" -Version "1.2.0"
-
-# Or use an archive you already downloaded (no internet access needed for the download step)
-.\update.ps1 -ResourceGroupName "corp-prod-rg" -ArchivePath "C:\Downloads\cloud-imaging-mse-ci-v1.2.0.zip"
+.\upgrade.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>"
 ```
-
-`-Version latest` (the default) resolves a dedicated `mse-ci-iac-latest` alias release rather
-than whatever the repository published most recently, so it can never accidentally hand you a
-Client or Media Builder release.
 
 What you should see, in order:
 
-1. The resolved release version and a link to it
-2. `Integrity verified (SHA-256 matches the release manifest)`
-3. `All required component artifacts present.`
-4. The storage role and upload permission checks, each either granted or already in place
-5. One upload, settings change, and restart per Function App
-6. The portal backend deployment
-7. The Static Web App deployment
-8. `Cloud Imaging upgrade complete.`
+1. The release version this bundle contains
+2. The prerequisite checks, confirming the Static Web Apps CLI and every component package
+3. The resolved resource names for your deployment
+4. One upload, settings change, and restart per Function App
+5. The portal backend deployment
+6. The Static Web App deployment
+7. A summary table listing each component as upgraded, skipped, or failed
 
-If the archive fails its integrity check, the script deletes the download and stops. Do not work
-around this. Re-run it, and if it fails a second time, raise an issue rather than deploying the
-archive.
+Components are upgraded independently. If one fails the rest still proceed, so read the summary
+rather than assuming a single error aborted everything. A component whose package is missing
+from the bundle is reported as skipped, not failed.
 
 ### Step 4: Verify the upgrade
 
@@ -164,25 +153,27 @@ If something looks wrong, the [operations runbook](operations-runbook.md) covers
 
 ## Part 2: Apply Infrastructure Changes
 
-`update.ps1` never runs Bicep. When a release note says infrastructure changed, meaning a new
+`upgrade.ps1` never runs Bicep. When a release note says infrastructure changed, meaning a new
 Azure resource, a changed setting, a new role assignment, or a new network rule, you also need
 to redeploy the Template Spec.
 
-1. Extract `deploy.zip` from the release bundle. This produces the `deploy/` folder.
-2. Publish the new Template Spec version:
+1. Publish the new Template Spec version from the same extracted bundle. The `scripts/` and
+   `bicep/` folders sit at its root:
 
    ```powershell
-   cd deploy
    # Use the same region you published the Template Spec to originally, e.g.
    # westeurope / northeurope / swedencentral in Europe, eastus / eastus2 / westus2 in the US
-   .\scripts\publish-template-spec.ps1 -ResourceGroupName "rg-cloudimaging-specs" -Location "<location>" -Version "1.2.0"
+   .\scripts\publish-template-spec.ps1 -ResourceGroupName "rg-cloudimaging-specs" -Location "<location>"
    ```
 
-3. Open the Template Spec in the Azure portal, click **Deploy**, and fill in the wizard with
+   The version is read from the bundle's `version.txt`, so it always matches the release you
+   extracted. Pass `-Version` only if you need to override that.
+
+2. Open the Template Spec in the Azure portal, click **Deploy**, and fill in the wizard with
    **exactly the same values you used originally**, including the same resource prefix,
    environment, and the three application client IDs. Changing the prefix or environment
    produces a second parallel deployment rather than upgrading the existing one.
-4. Re-run `update.ps1` afterwards. A Bicep deployment can reset application settings that point
+3. Re-run `upgrade.ps1` afterwards. A Bicep deployment can reset application settings that point
    at the deployed code packages.
 
 Deploying the Template Spec over an existing deployment is safe and does not delete data. Storage
@@ -244,11 +235,15 @@ resource group.
 
 ## Rollback
 
-Re-run `update.ps1` pinned to the release you were previously on:
+Extract the bundle for the release you were previously on, and run the `upgrade.ps1` inside it:
 
 ```powershell
-.\update.ps1 -ResourceGroupName "corp-prod-rg" -Version "1.1.0"
+.\upgrade.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>"
 ```
+
+Keep the bundle for the release you are currently running, so a rollback never depends on the
+Releases page being reachable. If you did not, download it again from the
+[Releases page](https://github.com/MSEndpointMgr/CloudImaging/releases).
 
 This works because Function Apps are deployed by pointing at a package in storage rather than
 by overwriting files in place. Every package uploaded by every upgrade is retained in the
@@ -270,16 +265,14 @@ Two limits worth knowing:
 
 | Symptom | Cause and resolution |
 |---|---|
-| `Could not resolve the 'mse-ci-iac-latest' release` | No stable backend release has been published yet, or the machine cannot reach github.com. Pass `-Version` with an explicit version, or download the bundle manually and use `-ArchivePath`. |
-| `Integrity check FAILED` | The download is corrupt or has been tampered with. The script already deleted it. Re-run. If it recurs, report it rather than bypassing the check. |
+| A component package is missing | The bundle was extracted incompletely, or you are running the script from outside the extracted folder. The component packages must sit beside `upgrade.ps1`. |
 | `The Azure Static Web Apps CLI ('swa') is not installed` | Run `npm install -g @azure/static-web-apps-cli` and re-run. The backend components upgraded before this point are already done, and re-running is safe. |
-| `No Function Apps found in resource group` | Wrong resource group name, or the Azure CLI is signed in to a different subscription. Check with `az account show`. |
-| Warnings about `Storage Blob Data Contributor` | Your account cannot assign roles. Ask an administrator to grant that role on the `*stapp` and `*stcore` storage accounts, then re-run. |
+| `No Function Apps found in resource group` | Wrong resource group name, or the deployment lives in a different subscription than the one passed to `-SubscriptionId`. |
 | Portal loads the old interface after upgrading | Browser cache. Hard refresh with Ctrl+F5. |
 | Portal shows errors or empty lists right after upgrading | A Function App is still restarting. Wait a minute and refresh. If it persists, check Application Insights as described in the [operations runbook](operations-runbook.md). |
 | Devices fail to authenticate after upgrading | Almost always a certificate rotation rather than the upgrade. Confirm whether the boot media certificate was regenerated; if so, boot media must be rebuilt. |
 
-Re-running `update.ps1` is safe at any point. Every step is repeatable, and a partial upgrade is
+Re-running `upgrade.ps1` is safe at any point. Every step is repeatable, and a partial upgrade is
 resolved by simply running it again.
 
 ---

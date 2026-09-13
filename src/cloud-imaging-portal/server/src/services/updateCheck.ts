@@ -7,9 +7,9 @@ import { isUpdateAvailable } from './version.js';
  * Deliberately reads the `mse-ci-iac-latest` alias rather than GitHub's repository-wide
  * `releases/latest`. The repository publishes three independently versioned streams into one
  * flat release list, so `releases/latest` resolves to whichever stream published most recently
- * and could advertise a Cloud Imaging Client release as a portal upgrade. The alias is the same
- * one `update.ps1` resolves, so the portal can never offer a version the upgrade script would
- * not install.
+ * and could advertise a Cloud Imaging Client release as a portal upgrade. The alias always
+ * points at the newest stable backend release, which is the bundle an operator would download
+ * to upgrade.
  *
  * The call is made here, server-side, rather than from the browser: one cached result serves
  * every operator (keeping the deployment far below GitHub's 60-requests-per-hour unauthenticated
@@ -52,7 +52,7 @@ export function resetUpdateCheckCache(): void {
 
 /**
  * The alias release's own tag is literally `mse-ci-iac-latest`; the real version is embedded in
- * its title, e.g. "Cloud Imaging (latest — mse-ci-v1.2.3)". Mirrors how `update.ps1` resolves it.
+ * its title, e.g. "Cloud Imaging (latest: mse-ci-v1.2.3)".
  */
 function resolveVersionFromRelease(release: { name?: unknown; tag_name?: unknown }): string | null {
   const name = typeof release.name === 'string' ? release.name : '';
