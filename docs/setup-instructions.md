@@ -62,18 +62,22 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 
 1. In Entra ID → App Registrations → **New registration**
 2. Name: `Cloud Imaging Portal` (or your branding)
-3. Supported account types: **Single tenant**
-4. Once created, record the **Application (client) ID** shown on the **Overview** page → this
+3. If this page shows a **Redirect URI (optional)** section with a **Select a platform** dropdown,
+   leave both blank for now. You don't have a Static Web App hostname yet, so there's nothing
+   useful to enter; the platform and a placeholder URI are added under **Authentication** in
+   step 6 below instead. Do **not** pick *Public client/native (mobile & desktop)* here or later;
+   that reclassifies the app and breaks SPA sign-in with **AADSTS9002326**.
+4. Supported account types: **Single tenant**
+5. Once created, record the **Application (client) ID** shown on the **Overview** page → this
    is `portalClientId`. You'll need it in a couple of the steps below.
-5. Under **Authentication** → **Add a platform** → **Single-page application**: you don't have
-   a Static Web App hostname yet, it's only created by the deployment in
-   [Phase 2](#phase-2-deploy-the-azure-resources). Add a placeholder redirect URI for now (e.g.
-   `https://localhost`) and come back after [Phase 2, Step 2](#step-2-deploy-via-template-spec-wizard) to
-   replace it with the real hostname (e.g. `https://<swa-name>.azurestaticapps.net`) from the
-   deployment outputs. Do **not** add a *Mobile and desktop* platform to this registration; that
-   reclassifies the app and breaks SPA sign-in with **AADSTS9002326**.
-6. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No**. Setting it to **Yes** breaks the browser portal: the SPA's cross-origin token redemption is then rejected with **AADSTS9002326** (*cross-origin token redemption is permitted only for the 'Single-Page Application' client-type*).
-7. Under **Expose an API**:
+6. Under **Authentication** → **Add a platform** → **Single-page application**: add a placeholder
+   redirect URI for now (e.g. `https://localhost`) and come back after
+   [Phase 2, Step 2](#step-2-deploy-via-template-spec-wizard) to replace it with the real hostname
+   (e.g. `https://<swa-name>.azurestaticapps.net`) from the deployment outputs. Do **not** add a
+   *Mobile and desktop* platform to this registration; that reclassifies the app and breaks SPA
+   sign-in with **AADSTS9002326**.
+7. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No**. Setting it to **Yes** breaks the browser portal: the SPA's cross-origin token redemption is then rejected with **AADSTS9002326** (*cross-origin token redemption is permitted only for the 'Single-Page Application' client-type*).
+8. Under **Expose an API**:
    - Set the **Application ID URI** to `api://<portalClientId>` (accept the default; Entra
      pre-fills this with the `portalClientId` you already recorded above).
    - Click **Add a scope** and fill in the form:
@@ -103,10 +107,13 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 #### Registration 2: Cloud Imaging Operator API (service-to-service)
 
 1. New registration. Name: `Cloud Imaging Operator API`
-2. Supported account types: **Single tenant**
-3. Once created, record the **Application (client) ID** shown on the **Overview** page → this
+2. If this page shows a **Redirect URI (optional)** section with a **Select a platform** dropdown,
+   leave it blank. This registration is a pure API resource with no interactive sign-in of its
+   own (nobody signs into it directly), so it never needs a redirect URI or platform.
+3. Supported account types: **Single tenant**
+4. Once created, record the **Application (client) ID** shown on the **Overview** page → this
    is `operatorApiClientId`. You'll need it in the next step below.
-4. Under **Expose an API**:
+5. Under **Expose an API**:
    - Set the **Application ID URI** to `api://<operatorApiClientId>` (accept the default;
      Entra pre-fills this with the `operatorApiClientId` you already recorded above).
    - Click **Add a scope** and fill in the form:
@@ -125,10 +132,14 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 #### Registration 3: Cloud Imaging Media Builder (desktop public client)
 
 1. New registration. Name: `Cloud Imaging Media Builder`
-2. Supported account types: **Single tenant**
-3. Once created, record the **Application (client) ID** shown on the **Overview** page → this
+2. If this page shows a **Redirect URI (optional)** section with a **Select a platform** dropdown,
+   select **Public client/native (mobile & desktop)** and enter `http://localhost` as the URI. The
+   Media Builder signs in with the interactive loopback (authorization code + PKCE) flow. If this
+   page doesn't offer it, add the same platform and URI under **Authentication** → **Add a
+   platform** → **Mobile and desktop applications** after creating the registration instead.
+3. Supported account types: **Single tenant**
+4. Once created, record the **Application (client) ID** shown on the **Overview** page → this
    is `mediaBuilderClientId`.
-4. Under **Authentication** → **Add a platform** → **Mobile and desktop applications**, add the redirect URI `http://localhost`. The Media Builder signs in with the interactive loopback (authorization code + PKCE) flow.
 5. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No**; the loopback flow is already identified as a public client by its `http://localhost` redirect and does not need this flag.
 6. Under **App roles**, add the same two user roles:
    - `CloudImaging.Administrator` (value: `CloudImaging.Administrator`, allowed for: Users/Groups)
