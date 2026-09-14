@@ -182,3 +182,19 @@ only transports a resolved result.
 9. ~~Docs: note the setting in [setup-instructions.md](../docs/setup-instructions.md) under the
    optional configuration review, and reference it from
    [upgrade-instructions.md](../docs/upgrade-instructions.md).~~
+
+## 2026-09-14 addendum: environment type + manual check
+
+The panel's "Installed version" field showed the raw `DEPLOYED_VERSION` build stamp (`dev` in
+every environment that is continuously deployed from `main` rather than from a tagged release),
+which told an administrator nothing useful and looked like a bug rather than by-design behaviour.
+Replaced it with **Environment type** (`Development` or `Production`), resolved server-side from a
+new `DEPLOYMENT_ENVIRONMENT` app setting that `cloud-imaging-portal.bicep` now populates from the
+top-level `environment` deployment parameter (exact `prod` maps to Production, everything else,
+including unset, maps to Development). `GET /api/update-check` now returns `environmentLabel`
+alongside the existing fields.
+
+Also added a manual "Check now" button in the Version panel header, since the 6-hour server-side
+cache meant an administrator who just enabled the toggle had no way to get an immediate answer.
+`POST /api/update-check/refresh` (Administrator-only, same opt-in gate as the GET route) forces a
+fresh GitHub lookup bypassing the cache.
