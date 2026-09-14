@@ -26,6 +26,8 @@ const REQUEST_TIMEOUT_MS = 5000;
 /** Why a check produced no `latest` value. Every non-`ok` value renders as "unavailable", never as an error. */
 export type UpdateCheckStatus = 'ok' | 'disabled' | 'unreachable' | 'rate-limited' | 'unknown';
 
+export type EnvironmentLabel = 'Development' | 'Production';
+
 export interface UpdateCheckResult {
   current: string;
   latest: string | null;
@@ -33,6 +35,18 @@ export interface UpdateCheckResult {
   releaseUrl: string | null;
   checkedAt: string | null;
   status: UpdateCheckStatus;
+  environmentLabel: EnvironmentLabel;
+}
+
+/**
+ * Resolves the human-readable environment label from `DEPLOYMENT_ENVIRONMENT` (set by
+ * `cloud-imaging-portal.bicep` from the top-level `environment` deployment parameter).
+ * Only an exact `prod` is called Production; every other value (`dev`, `test`, a custom
+ * abbreviation, or unset for a local `npm run dev`) is Development, since none of those are
+ * meant to be treated as a live production deployment.
+ */
+function resolveEnvironmentLabel(): EnvironmentLabel {
+  return process.env.DEPLOYMENT_ENVIRONMENT === 'prod' ? 'Production' : 'Development';
 }
 
 interface CachedLookup {
@@ -101,15 +115,19 @@ async function lookupLatest(): Promise<CachedLookup> {
  * When `enabled` is false this returns immediately and issues no outbound request at all. That
  * enforcement lives here rather than in the interface, because the point of the setting is to
  * guarantee no traffic leaves the tenant.
+ *
+ * `force` bypasses the cache even if it hasn't expired yet, for the administrator's manual
+ * "Check now" action. It still only ever calls GitHub, never skips the `enabled` gate.
  */
-export async function getUpdateStatus(enabled: boolean): Promise<UpdateCheckResult> {
+export async function getUpdateStatus(enabled: boolean, force = false): Promise<UpdateCheckResult> {
   const current = DEPLOYED_VERSION;
+  const environmentLabel = resolveEnvironmentLabel();
 
   if (!enabled) {
-    return { current, latest: null, updateAvailable: false, releaseUrl: null, checkedAt: null, status: 'disabled' };
+    return { current, latest: null, updateAvailable: false, releaseUrl: null, checkedAt: null, status: 'disabled', environmentLabel };
   }
 
-  if (!cache || cache.expiresAt <= Date.now()) {
+  if (force || !cache || cache.expiresAt <= Date.now()) {
     const fresh = await lookupLatest();
     // A rate-limited refresh keeps serving the last known-good version, so the banner doesn't
     // flap off and back on. Report the real status though, and keep the ORIGINAL checkedAt:
@@ -127,5 +145,6 @@ export async function getUpdateStatus(enabled: boolean): Promise<UpdateCheckResu
     releaseUrl: cache.releaseUrl,
     checkedAt: cache.checkedAt,
     status: cache.status,
+    environmentLabel,
   };
 }

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "18425340783054101648"
+      "templateHash": "12913847827456503914"
     }
   },
   "parameters": {
@@ -2140,6 +2140,9 @@
           },
           "appServiceSku": {
             "value": "[parameters('appServiceSku')]"
+          },
+          "deploymentEnvironment": {
+            "value": "[parameters('environment')]"
           }
         },
         "template": {
@@ -2149,7 +2152,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "8055967345276805051"
+              "templateHash": "3146748286966120931"
             }
           },
           "parameters": {
@@ -2194,6 +2197,10 @@
                 "P2v3",
                 "P3v3"
               ]
+            },
+            "deploymentEnvironment": {
+              "type": "string",
+              "defaultValue": "dev"
             }
           },
           "resources": [
@@ -2264,6 +2271,10 @@
                     {
                       "name": "ENTRA_AUTHORITY",
                       "value": "[format('{0}{1}', environment().authentication.loginEndpoint, parameters('tenantId'))]"
+                    },
+                    {
+                      "name": "DEPLOYMENT_ENVIRONMENT",
+                      "value": "[parameters('deploymentEnvironment')]"
                     },
                     {
                       "name": "CORS_ALLOWED_ORIGINS",

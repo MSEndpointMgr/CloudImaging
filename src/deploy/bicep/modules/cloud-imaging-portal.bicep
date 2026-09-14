@@ -20,6 +20,11 @@ param tenantId string
 // Allowed: P1v3 (default), P2v3, P3v3 (PremiumV3 tier required for VNet integration).
 @allowed(['P1v3','P2v3','P3v3'])
 param appServiceSku string = 'P1v3'
+// Deployment environment label (dev/prod/custom abbreviation), surfaced read-only in the
+// portal's Configuration > Miscellaneous > Version panel so an administrator can tell which
+// environment they are looking at without relying on the browser URL. Named distinctly from
+// Bicep's built-in environment() function to avoid shadowing it (used below for ENTRA_AUTHORITY).
+param deploymentEnvironment string = 'dev'
 
 resource plan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: planName
@@ -69,6 +74,7 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'ENTRA_CLIENT_ID', value: sharedEntraClientId }
         { name: 'ENTRA_TENANT_ID', value: tenantId }
         { name: 'ENTRA_AUTHORITY', value: '${environment().authentication.loginEndpoint}${tenantId}' }
+        { name: 'DEPLOYMENT_ENVIRONMENT', value: deploymentEnvironment }
         // CORS configured to allow Static Web App origin
         { name: 'CORS_ALLOWED_ORIGINS', value: 'https://${stapp.properties.defaultHostname}' }
       ]

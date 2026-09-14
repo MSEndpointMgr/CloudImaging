@@ -64,6 +64,7 @@ describe('Portal backend: update check service', () => {
     resetUpdateCheckCache();
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
+    delete process.env.DEPLOYMENT_ENVIRONMENT;
   });
 
   afterEach(() => {
@@ -165,5 +166,30 @@ describe('Portal backend: update check service', () => {
   it('never throws, whatever the upstream does', async () => {
     fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => { throw new Error('malformed body'); } });
     await expect(getUpdateStatus(true)).resolves.toMatchObject({ status: 'unreachable' });
+  });
+
+  it('labels anything other than an exact "prod" DEPLOYMENT_ENVIRONMENT as Development', async () => {
+    for (const value of [undefined, 'dev', 'test', 'PROD', '']) {
+      if (value === undefined) delete process.env.DEPLOYMENT_ENVIRONMENT;
+      else process.env.DEPLOYMENT_ENVIRONMENT = value;
+      const result = await getUpdateStatus(false);
+      expect(result.environmentLabel).toBe('Development');
+    }
+  });
+
+  it('labels an exact "prod" DEPLOYMENT_ENVIRONMENT as Production', async () => {
+    process.env.DEPLOYMENT_ENVIRONMENT = 'prod';
+    const result = await getUpdateStatus(false);
+    expect(result.environmentLabel).toBe('Production');
+  });
+
+  it('force bypasses the cache even when it has not expired yet', async () => {
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({ name: 'mse-ci-v1.0.0' }) });
+    await getUpdateStatus(true);
+    await getUpdateStatus(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await getUpdateStatus(true, true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

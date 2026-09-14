@@ -284,6 +284,7 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
     sharedEntraClientId: portalClientId
     tenantId: tenantId
     appServiceSku: appServiceSku
+    deploymentEnvironment: environment
   }
 }
 
