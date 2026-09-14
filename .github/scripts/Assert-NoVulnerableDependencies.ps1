@@ -109,7 +109,10 @@ function ConvertFrom-CommandJson {
 foreach ($path in $Project) {
     Write-Host "Scanning NuGet dependencies: $path"
 
-    $output = & dotnet list $path package --vulnerable --include-transitive --format json 2>&1
+    # --no-restore: the implicit restore ignores the RID the caller restored with, rewriting
+    # project.assets.json without its runtime target and breaking the later --no-restore publish
+    # with NETSDK1047. The workflows always restore before calling this.
+    $output = & dotnet list $path package --vulnerable --include-transitive --format json --no-restore 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet list package failed for '$path' (exit $LASTEXITCODE):`n$($output -join [Environment]::NewLine)"
     }
