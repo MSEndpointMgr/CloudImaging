@@ -114,11 +114,6 @@ if ($authModule.Version.Major -ne $appsModule.Version.Major) {
 $ctx = Get-MgContext
 if (-not $ctx -or 'Application.Read.All' -notin $ctx.Scopes -or ($TenantId -and $ctx.TenantId -ne $TenantId)) {
     Write-Host "Connecting to Microsoft Graph (browser sign-in will open)..."
-    # Without this the SDK uses the WAM broker, which shows the built-in Windows account picker
-    # and silently reuses whatever account is signed in to the machine.
-    if (Get-Command Set-MgGraphOption -ErrorAction SilentlyContinue) {
-        Set-MgGraphOption -EnableLoginByWAM:$false
-    }
     if ($TenantId) {
         Connect-MgGraph -Scopes 'Application.Read.All' -TenantId $TenantId | Out-Null
     } else {
@@ -200,7 +195,7 @@ if ($mediaBuilderApp) {
             ForEach-Object { $_.ResourceAccess } |
             Where-Object { $_.Id -eq $operatorScope.Id }
         Test-Check "Requests the Operator API's 'user_impersonation' permission" ($null -ne $hasPermission) `
-            "Registration 3, step 7: API permissions -> Add a permission -> My APIs -> Cloud Imaging Operator API -> user_impersonation."
+            "Registration 3, step 7: API permissions -> Add a permission -> APIs my organization uses -> search for $($operatorApp.AppId) -> Delegated permissions -> user_impersonation."
     }
 }
 
