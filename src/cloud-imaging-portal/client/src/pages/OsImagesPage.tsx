@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Pencil, Plus, ImageOff } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
-import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
+import { useToast } from '../context/toastContext.tsx';
+import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
 import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
@@ -49,6 +50,7 @@ const MAX_OS_IMAGES = 500;
 /** OS Images management page (T087, FR-036, FR-037). */
 export default function OsImagesPage(): React.ReactElement {
   const { isAdministrator } = useAuth();
+  const { notify } = useToast();
   const [images, setImages]   = useState<OsImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -62,8 +64,21 @@ export default function OsImagesPage(): React.ReactElement {
     try {
       const res = await apiFetchWithRetry('/api/images', { credentials: 'include' });
       if (res.ok) setImages(await res.json() as OsImage[]);
-      else setImages([]);
-    } catch { setImages([]); }
+      else {
+        // Falling back to an empty list without saying anything (as this did) renders a failed
+        // catalog read as "no images uploaded yet", so a 403 from a half-finished deployment
+        // looked like an empty but healthy portal.
+        setImages([]);
+        notify({
+          status: 'error',
+          title: 'Failed to load OS images.',
+          description: await extractErrorDetail(res, `The server responded with status ${String(res.status)}.`),
+        });
+      }
+    } catch {
+      setImages([]);
+      notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' });
+    }
     finally { setLoading(false); }
   };
 

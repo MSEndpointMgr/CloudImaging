@@ -84,11 +84,97 @@ function pendingForever(): Promise<never> {
 }
 
 /**
+ * Ceiling on interactive sign-in redirects, and the window it applies over.
+ *
+ * Every redirect tears the app down and boots it again, so `redirectInFlight` above only
+ * de-duplicates *within* one page load and can never see a loop that spans loads. A condition
+ * that makes the session look unusable on every single load (the portal backend rejecting every
+ * token because its ENTRA_CLIENT_ID/ENTRA_TENANT_ID don't match the ones the SPA signed in with,
+ * for instance) therefore bounced the browser between the portal and Entra without limit, until
+ * Entra's own loop protection cut in and answered with "We couldn't sign you in. Please try
+ * again." on the account picker. The counter has to live in storage that survives the
+ * navigation for the app to notice that at all.
+ *
+ * Three is deliberately above the one redirect a genuinely expired session costs, so the normal
+ * recovery path is never interrupted.
+ */
+const REDIRECT_BUDGET_KEY = 'cloudimaging.auth.redirectAttempts';
+const REDIRECT_BUDGET_MAX = 3;
+const REDIRECT_BUDGET_WINDOW_MS = 120_000;
+
+let signInLoopDetected = false;
+const signInLoopListeners = new Set<() => void>();
+
+/** True once the redirect budget has been exhausted; sign-in will not be retried again. */
+export function isSignInLoopDetected(): boolean {
+  return signInLoopDetected;
+}
+
+/** Subscribes to loop detection. Shaped for `useSyncExternalStore`. */
+export function subscribeToSignInLoop(listener: () => void): () => void {
+  signInLoopListeners.add(listener);
+  return () => {
+    signInLoopListeners.delete(listener);
+  };
+}
+
+function reportSignInLoop(): void {
+  if (signInLoopDetected) return;
+  signInLoopDetected = true;
+  for (const listener of signInLoopListeners) listener();
+}
+
+/** Records a redirect attempt. Returns false once the budget for the window is spent. */
+function consumeRedirectBudget(): boolean {
+  const now = Date.now();
+  try {
+    const raw = sessionStorage.getItem(REDIRECT_BUDGET_KEY);
+    let first = now;
+    let count = 0;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { count?: unknown; first?: unknown };
+      if (
+        typeof parsed.first === 'number' &&
+        typeof parsed.count === 'number' &&
+        now - parsed.first < REDIRECT_BUDGET_WINDOW_MS
+      ) {
+        first = parsed.first;
+        count = parsed.count;
+      }
+    }
+    count += 1;
+    sessionStorage.setItem(REDIRECT_BUDGET_KEY, JSON.stringify({ count, first }));
+    return count <= REDIRECT_BUDGET_MAX;
+  } catch {
+    // Storage unavailable (private mode quota). Blocking sign-in over a missing counter would
+    // be a worse failure than the loop it guards against.
+    return true;
+  }
+}
+
+/** Restores the full redirect budget. Called once the server accepts a token. */
+export function clearRedirectBudget(): void {
+  try {
+    sessionStorage.removeItem(REDIRECT_BUDGET_KEY);
+  } catch {
+    // Nothing to clear if storage is unavailable.
+  }
+}
+
+/**
  * Starts (or joins) a single interactive sign-in redirect. Callers should `await` the
  * returned promise and treat it as "this request can never complete on this page load":
  * it only resolves once the browser has navigated away.
  */
 function triggerInteractiveRedirect(account: AccountInfo | null): Promise<never> {
+  if (!consumeRedirectBudget()) {
+    // Stop navigating and let the UI explain the failure. Callers still never settle, which is
+    // the same contract as a redirect, so nothing downstream renders a half-loaded page behind
+    // the notice.
+    reportSignInLoop();
+    return pendingForever();
+  }
+
   if (!redirectInFlight) {
     rememberReturnPath();
     redirectInFlight = getMsalInstance()
@@ -185,6 +271,10 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   if (response.status === 401) {
     return triggerInteractiveRedirect(resolveAccount());
   }
+
+  // Any other status means the server validated the token, so whatever redirect brought us
+  // here did its job. A 403 counts: the token was accepted, the caller just lacks the role.
+  clearRedirectBudget();
 
   return response;
 }

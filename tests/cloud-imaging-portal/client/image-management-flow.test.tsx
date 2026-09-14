@@ -10,9 +10,14 @@ vi.mock('../../../src/cloud-imaging-portal/client/src/context/authContext.tsx', 
   useAuth: () => ({ isAdministrator: false }),
 }));
 
+vi.mock('../../../src/cloud-imaging-portal/client/src/context/toastContext.tsx', () => ({
+  useToast: () => ({ notify: vi.fn() }),
+}));
+
 vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => ({
   apiFetch: vi.fn(),
   apiFetchWithRetry,
+  extractErrorDetail: vi.fn(async (_res: Response, fallback: string) => fallback),
 }));
 
 import OsImagesPage from '../../../src/cloud-imaging-portal/client/src/pages/OsImagesPage.tsx';
