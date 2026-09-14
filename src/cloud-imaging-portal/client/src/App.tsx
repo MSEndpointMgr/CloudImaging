@@ -7,6 +7,7 @@ import { ThemeProvider } from './context/themeContext.tsx';
 import { ToastProvider } from './context/toastContext.tsx';
 import { UserPreferencesProvider } from './context/userPreferencesContext.tsx';
 import { ProtectedRoute } from './components/ProtectedRoute.tsx';
+import { SignInLoopGate } from './components/SignInLoopScreen.tsx';
 import { LoadingScreen } from './components/LoadingScreen.tsx';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary.tsx';
 import { lazyWithReload } from './lib/lazyWithReload.ts';
@@ -58,6 +59,7 @@ export default function App(): React.ReactElement {
             <BrandingProvider>
               <UserPreferencesProvider>
               <ToastProvider>
+                <SignInLoopGate>
                 <ProtectedRoute>
                   <RouteErrorBoundary>
                   <Suspense fallback={<LoadingScreen />}>
@@ -83,6 +85,7 @@ export default function App(): React.ReactElement {
                   </Suspense>
                   </RouteErrorBoundary>
                 </ProtectedRoute>
+                </SignInLoopGate>
               </ToastProvider>
               </UserPreferencesProvider>
             </BrandingProvider>

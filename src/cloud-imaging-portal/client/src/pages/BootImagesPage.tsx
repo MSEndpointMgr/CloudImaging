@@ -74,7 +74,18 @@ export default function BootImagesPage(): React.ReactElement {
       const res = await apiFetchWithRetry('/api/boot-images', { credentials: 'include' });
       if (res.ok) {
         setImages(await res.json() as BootImage[]);
-      } else notify({ status: 'error', title: 'Failed to load boot images.' });
+      } else {
+        // An empty catalog is a 200 with [], so a failure here is always a real one. Relaying
+        // the server's reason matters most for the 403 a deployment gets when the portal
+        // backend's managed identity has no CloudImaging.PortalAccess role yet: without it the
+        // page is indistinguishable from one that simply has no boot images.
+        setImages([]);
+        notify({
+          status: 'error',
+          title: 'Failed to load boot images.',
+          description: await extractErrorDetail(res, `The server responded with status ${String(res.status)}.`),
+        });
+      }
     } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
   };

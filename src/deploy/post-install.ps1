@@ -51,8 +51,10 @@
     Version history:
     1.0.0 - (2026-09-13) Initial release, replacing grant-graph-permissions.ps1 and
                          assign-service-roles.ps1
+    1.1.0 - (2026-09-14) Restarts the portal backend after assigning the Operator API app role,
+                         so its cached token (issued without the role) is discarded
 #>
-#Requires -Modules Az.Accounts, Az.ManagedServiceIdentity, Az.Resources, Microsoft.Graph.Authentication, Microsoft.Graph.Applications
+#Requires -Modules Az.Accounts, Az.ManagedServiceIdentity, Az.Resources, Az.Websites, Microsoft.Graph.Authentication, Microsoft.Graph.Applications
 [CmdletBinding(SupportsShouldProcess)]
 param (
     [Parameter(Mandatory = $true, HelpMessage = "Resource group holding the Cloud Imaging resources.")]
@@ -273,6 +275,19 @@ Process {
                 }
 
                 Add-GrantResult -Grant $OperatorApiRole -Identity $PortalBackendIdentity.Name -Status "Granted"
+
+                # The portal backend caches its Operator API token in process until the token
+                # expires, and one issued before this assignment carries no roles claim. Without
+                # a restart every portal page keeps getting 403 from the Operator API for hours
+                # after the grant is actually in place.
+                $PortalWebApp = @(Get-AzWebApp -ResourceGroupName $ResourceGroupName | Where-Object { $PSItem.Name -like "*-app-portal" })
+                if ($PortalWebApp.Count -eq 1) {
+                    Write-Output "Restarting $($PortalWebApp[0].Name) to discard its cached Operator API token"
+                    Restart-AzWebApp -ResourceGroupName $ResourceGroupName -Name $PortalWebApp[0].Name | Out-Null
+                }
+                else {
+                    Write-Warning -Message "Could not identify the portal backend App Service in '$($ResourceGroupName)'. Restart it manually, otherwise the portal keeps using a token issued before this assignment."
+                }
             }
         }
         catch [System.Exception] {
