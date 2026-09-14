@@ -183,12 +183,28 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
      - Value: `CloudImaging.Technician`
      - Allowed member types: Users/Groups
      - Description: `Prepare USB storage devices with an already-published boot image. Cannot generate new boot images (Administrator-only).`
-7. **Grant access to the Operator API (required):** Under **API permissions** → **Add a
-   permission** → **My APIs** → select **Cloud Imaging Operator API** → **Delegated
-   permissions** → check `user_impersonation` → **Add permissions**. Then click **Grant admin
-   consent for &lt;your tenant&gt;**. The Media Builder requests the
-   `api://<operatorApiClientId>/.default` scope, which only succeeds once this permission is
-   consented; skipping it fails sign-in with **AADSTS650057**.
+7. **Grant access to the Operator API (required):**
+   - Go to **API permissions** → **Add a permission** → the **APIs my organization uses** tab.
+     Use this tab rather than **My APIs**, which only lists registrations you personally own and
+     will usually appear empty here.
+   - Paste the `operatorApiClientId` you recorded in Registration 2, step 4 into the filter box,
+     then select the app that appears. Searching by client ID rather than by name is deliberate:
+     your registration may carry an organizational prefix (for example
+     `CORP-PRD-Cloud Imaging Operator API`) that a name search for the plain name would miss.
+   - Select **Delegated permissions** → check `user_impersonation` → **Add permissions**.
+   - Back on the **API permissions** page, click **Grant admin consent for &lt;your tenant&gt;** and
+     confirm the row's **Status** turns into a green **Granted for &lt;your tenant&gt;**.
+   - The Media Builder requests the `api://<operatorApiClientId>/.default` scope, which only
+     succeeds once this permission is consented. Skipping it fails sign-in with
+     **AADSTS650057**.
+
+> **The Operator API doesn't appear in the list at all?** Then Registration 2, step 5 was skipped
+> or left incomplete. An app with no Application ID URI and no enabled scope exposes nothing, so
+> Entra hides it from every tab on this blade. Reopen the Operator API registration →
+> **Expose an API**, confirm the Application ID URI is `api://<operatorApiClientId>` and that
+> `user_impersonation` is listed with state **Enabled**, then return here. If you only just made
+> that change, refresh the browser tab: the picker reads a replicated copy and can lag a minute
+> behind.
 
 #### *(Optional)* Verify the three app registrations before continuing
 
@@ -223,7 +239,6 @@ Connect-AzAccount
 
 # Substitute your own values.
 $ResourceGroupName = "<your-resource-group>"
-
 $Location = "<location>"
 
 # Create the resource group that will hold the entire deployment.
@@ -232,7 +247,7 @@ $Location = "<location>"
 New-AzResourceGroup -Name $ResourceGroupName -Location $Location
 
 # Publish
-.\scripts\publish-template-spec.ps1 -ResourceGroupName $ResourceGroupName -SubscriptionId $SubscriptionId -Location $Location
+.\scripts\publish-template-spec.ps1 -ResourceGroupName $ResourceGroupName -Location $Location
 ```
 
 The Template Spec is versioned to match the release bundle automatically, so there is no version
@@ -253,25 +268,35 @@ Fill in the wizard. It has two tabs:
 
 **Basics**
 
-- **Subscription / Resource group / Region**: select the **same resource group you created in
-  Step 1**, so the deployment and the Template Spec live together. Pick the region closest to
-  your users. Your Entra tenant ID is taken from this subscription automatically, so there's
-  nothing to enter for it.
+- **Subscription / Resource group / Region**:
+  - Select the **same resource group you created in Step 1**, so the deployment and the Template
+    Spec live together.
+  - Pick the region closest to your users.
+  - Your Entra tenant ID is taken from this subscription automatically, so there's nothing to
+    enter for it.
 - **Deployment Environment**: `Production (prod)` (or `Development (dev)` for testing). This
   becomes the second segment of every resource name.
 
 **Configuration**
 
-- **Resource Prefix**: 1 to 12 lowercase letters, digits or hyphens, starting and ending with a
-  letter or digit (e.g. `corp` or `corp-eu`). The wizard shows a live preview of the resulting
-  resource names beneath the field. Hyphens are removed from storage account names, which cannot
-  contain them.
-- **Cloud Imaging Portal - Application (client) ID**: from Registration 1 (`portalClientId`)
-- **Operator API - Application (client) ID**: from Registration 2 (`operatorApiClientId`)
-- **Cloud Imaging Media Builder - Application (client) ID**: from Registration 3 (`mediaBuilderClientId`)
-- **Deployment Tier**: `Standard` enforces mTLS at the Function App layer and is the right
-  choice for most organizations. `Enterprise` additionally puts an Application Gateway WAF_v2
-  in front of the Device Gateway API.
+- **Resource Prefix**:
+  - 1 to 12 lowercase letters, digits or hyphens, starting and ending with a letter or digit
+    (e.g. `corp` or `corp-eu`).
+  - The wizard shows a live preview of the resulting resource names beneath the field.
+  - Hyphens are removed from storage account names, which cannot contain them.
+- **Cloud Imaging Portal - Application (client) ID**:
+  - From Registration 1 (`portalClientId`), the app users sign in to when they open the portal.
+- **Operator API - Application (client) ID**:
+  - From Registration 2 (`operatorApiClientId`), the API the portal and operator clients call on
+    the operator's behalf.
+- **Cloud Imaging Media Builder - Application (client) ID**:
+  - From Registration 3 (`mediaBuilderClientId`), the app the Media Builder desktop tool
+    authenticates as when it calls the Operator API on the signed-in technician's behalf.
+- **Deployment Tier**:
+  - `Standard` enforces mTLS at the Function App layer and is the right choice for most
+    organizations.
+  - `Enterprise` additionally puts an Application Gateway WAF_v2 in front of the Device Gateway
+    API.
 - **Compute**, **Security Settings**, and **Networking**: every field here is pre-filled with a
   working default. Only change them if you have specific sizing, certificate/token lifetime, or
   IP addressing requirements.
@@ -374,14 +399,6 @@ replicate permission changes; wait several minutes before testing pre-flight aut
 The **user-level** roles below, including `CloudImaging.MediaBuilderAccess`, still need to be
 assigned manually, per person.
 
-> **Already deployed with an older version of this script?** Earlier versions also granted
-> `CloudImaging.MediaBuilderAccess` directly to the Media Builder app registration itself
-> (visible as an **Application** permission on its **API permissions** page). That grant never
-> did anything (Media Builder only ever signs in as the technician, so Entra never reads it),
-> and it's safe to delete: open **Cloud Imaging Media Builder → API permissions**, find the
-> `CloudImaging.MediaBuilderAccess` row, and **Remove permission**. Leave `user_impersonation`
-> and `User.Read` on that same page alone.
-
 ---
 
 ### Step 2: Assign Access to Your Administrators and Technicians
@@ -411,39 +428,49 @@ screen (Portal) or has every workflow blocked (Media Builder).
 ### Step 3: Initial Portal Configuration
 
 Before handing the portal to your technicians, sign in as **CloudImaging.Administrator** and
-complete these one-time setup tasks. The first two are **required**; imaging cannot happen
-without them; the rest are optional and can be revisited any time from **Configuration**.
+complete these one-time setup tasks. The first two are **required**, because imaging cannot happen
+without them. The rest are optional and can be revisited any time from **Configuration**.
 
-1. **Generate the boot media certificate** (required). Navigate to **Configuration** →
-   **Certificates** tab → click **Generate Certificate** and wait for confirmation. This
-   certificate secures the mTLS handshake between booted devices and the Device Gateway API,
-   and is embedded into every boot image Media Builder generates. Without an active
-   certificate, **Generate Boot Image** (Phase 4) refuses to run.
-2. **Add at least one OS image to the catalog** (required). Navigate to **OS Images** →
-   **Upload** and provide the WIM/ESD file, a name, and a version. Devices have nothing to
-   image without at least one catalog entry.
-3. **Configure branding** *(optional)*. Navigate to **Branding** to set your organization's
-   logo and colors, shown in both the portal and the boot media UI.
-4. **Add locations** *(optional)*. Navigate to **Locations** to define site labels technicians
-   can tag onto boot media and filter devices by; see [roles-and-access.md](roles-and-access.md).
-5. **Configure device pre-flight authorization** *(optional, off by default)*. Before enabling it,
-   confirm the Microsoft Graph permission script above ended with `[OK]`. Add at least one test
-   device to Windows Autopilot, or add its exact manufacturer, model, and serial-number tuple under
-   **Intune → Devices → Enrollment → Corporate device identifiers**. Under **Configuration** →
-   **Preflight**, enable the requirement, then boot that device and verify its session reaches
-   `SessionAllowed`. Also test an unknown device and verify that it reaches
-   `SessionNotAuthorized`. Disable the setting again if either result is unexpected; when disabled,
-   registration skips Microsoft Graph and proceeds.
-6. **Review Security and Miscellaneous settings** *(optional)*. Still under **Configuration**:
-   certificate/token validity periods and clock skew tolerance (**Security**) and session history
-   retention (**Miscellaneous**) have working defaults and only need attention for organization-specific requirements.
-7. **Turn on version checking** *(optional)*. **Configuration** → **Miscellaneous** → **Version**
-   shows the release this deployment is running. Enabling **Check GitHub for new releases** lets
-   the portal backend periodically read the latest published release number from github.com and
-   notify administrators when an upgrade is available. It is **off by default**: it is the only
-   outbound call the portal makes outside your tenant, so leave it off if your network policy
-   prohibits that, or if the deployment has no outbound internet access. Nothing is ever
-   installed automatically; see [upgrade-instructions.md](upgrade-instructions.md).
+1. **Generate the boot media certificate** (required).
+   - Navigate to **Configuration** → **Certificates** tab → click **Generate Certificate** and
+     wait for confirmation.
+   - This certificate secures the mTLS handshake between booted devices and the Device Gateway
+     API, and is embedded into every boot image Media Builder generates.
+   - Without an active certificate, **Generate Boot Image** (Phase 4) refuses to run.
+2. **Add at least one OS image to the catalog** (required).
+   - Navigate to **OS Images** → **Upload** and provide the WIM/ESD file, a name, and a version.
+   - Devices have nothing to image without at least one catalog entry.
+3. **Configure branding** *(optional)*.
+   - Navigate to **Branding** to set your organization's logo and colors.
+   - Applies to both the portal and the boot media UI.
+4. **Add locations** *(optional)*.
+   - Navigate to **Locations** to define site labels technicians can tag onto boot media and
+     filter devices by.
+   - See [roles-and-access.md](roles-and-access.md) for how locations interact with access.
+5. **Configure device pre-flight authorization** *(optional, off by default)*.
+   - Before enabling it, confirm the Microsoft Graph permission script above ended with `[OK]`.
+   - Add at least one test device to Windows Autopilot, or add its exact manufacturer, model, and
+     serial-number tuple under **Intune → Devices → Enrollment → Corporate device identifiers**.
+   - Under **Configuration** → **Preflight**, enable the requirement, then boot that device and
+     verify its session reaches `SessionAllowed`.
+   - Test an unknown device too, and verify that it reaches `SessionNotAuthorized`.
+   - Disable the setting again if either result is unexpected. When disabled, registration skips
+     Microsoft Graph and proceeds.
+6. **Review Security and Miscellaneous settings** *(optional)*.
+   - **Configuration** → **Security**: certificate/token validity periods and clock skew tolerance.
+   - **Configuration** → **Miscellaneous**: session history retention.
+   - Both have working defaults and only need attention for organization-specific requirements.
+7. **Turn on version checking** *(optional)*.
+   - **Configuration** → **Miscellaneous** → **Version** shows the release this deployment is
+     running.
+   - Enabling **Check GitHub for new releases** lets the portal backend periodically read the
+     latest published release number from github.com and notify administrators when an upgrade is
+     available.
+   - It is **off by default**: it is the only outbound call the portal makes outside your tenant,
+     so leave it off if your network policy prohibits that, or if the deployment has no outbound
+     internet access.
+   - Nothing is ever installed automatically; see
+     [upgrade-instructions.md](upgrade-instructions.md).
 
 ---
 

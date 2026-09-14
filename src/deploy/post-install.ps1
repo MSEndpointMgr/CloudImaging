@@ -306,6 +306,5 @@ End {
     }
     else {
         Write-Output "Both grants are in place. Allow several minutes for Microsoft Entra to replicate them."
-        Write-Output "Next step: assign your administrators and technicians to the app roles."
     }
 }
