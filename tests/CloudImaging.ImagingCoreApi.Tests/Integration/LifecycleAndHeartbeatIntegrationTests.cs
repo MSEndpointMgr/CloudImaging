@@ -1,4 +1,6 @@
+using System.Reflection;
 using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Services;
 using FluentAssertions;
 using Xunit;
@@ -149,6 +151,97 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
         var lastHeartbeat = now.AddMinutes(heartbeatAgeMinutes);
 
         (lastHeartbeat < cutoff).Should().Be(expectFailed);
+    }
+
+    // ── Never-coupled expiry is passcode-window based, not heartbeat-based ────
+
+    private static bool InvokeIsPastExpiryWindow(DeviceSession session, DateTimeOffset now)
+    {
+        var method = typeof(DeviceSessionLifecycleService).GetMethod(
+            "IsPastExpiryWindow", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var args = new object?[] { session, now, null };
+        var result = (bool)method.Invoke(null, args)!;
+        return result;
+    }
+
+    private static DeviceSession NeverCoupledSession(
+        SessionState state, DateTimeOffset createdAt, DateTimeOffset? passcodeExpiresAt, DateTimeOffset? lastHeartbeatAt) =>
+        new()
+        {
+            SessionId = Guid.NewGuid(),
+            State = state,
+            DeviceSerialNumber = "TEST-SERIAL",
+            DeviceManufacturer = "Test",
+            DeviceModel = "Test",
+            CreatedAt = createdAt,
+            PasscodeExpiresAt = passcodeExpiresAt,
+            LastHeartbeatAt = lastHeartbeatAt,
+        };
+
+    [Fact]
+    public void NeverCoupledSession_WithExpiredPasscode_IsExpired_EvenIfHeartbeatIsFresh()
+    {
+        // The reported bug: the Client auto-polls GET /status every 30s while awaiting coupling,
+        // and that poll itself stamps LastHeartbeatAt — so a heartbeat-based check never fires for
+        // an idle device left running. The passcode's own TTL must be the deciding factor instead.
+        var now = DateTimeOffset.UtcNow;
+        var session = NeverCoupledSession(
+            SessionState.SessionAllowed,
+            createdAt: now.AddHours(-6),
+            passcodeExpiresAt: now.AddMinutes(-1),
+            lastHeartbeatAt: now.AddSeconds(-5));
+
+        InvokeIsPastExpiryWindow(session, now).Should().BeTrue(
+            "the passcode window elapsed, regardless of how recently the device polled status");
+    }
+
+    [Fact]
+    public void NeverCoupledSession_WithUnexpiredPasscode_IsNotExpired()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = NeverCoupledSession(
+            SessionState.SessionAllowed,
+            createdAt: now.AddMinutes(-5),
+            passcodeExpiresAt: now.AddMinutes(5),
+            lastHeartbeatAt: now);
+
+        InvokeIsPastExpiryWindow(session, now).Should().BeFalse();
+    }
+
+    [Fact]
+    public void NeverCoupledSession_WithNoPasscodeExpiry_FallsBackTo_CreatedAtPlusInactivityTimeout()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = NeverCoupledSession(
+            SessionState.SessionInit,
+            createdAt: now.AddMinutes(-31),
+            passcodeExpiresAt: null,
+            lastHeartbeatAt: now);
+
+        InvokeIsPastExpiryWindow(session, now).Should().BeTrue(
+            "with no passcode expiry recorded, CreatedAt + InactivityTimeout is the fallback window");
+    }
+
+    [Fact]
+    public void CoupledSession_StillUsesHeartbeatBasedLiveness()
+    {
+        // Unlike never-coupled states, an operator is already involved here — a stale
+        // LastHeartbeatAt is a genuine liveness signal and must still drive expiry.
+        var now = DateTimeOffset.UtcNow;
+        var session = new DeviceSession
+        {
+            SessionId = Guid.NewGuid(),
+            State = SessionState.SessionAssigned,
+            DeviceSerialNumber = "TEST-SERIAL",
+            DeviceManufacturer = "Test",
+            DeviceModel = "Test",
+            CreatedAt = now.AddHours(-1),
+            PasscodeExpiresAt = now.AddHours(-1), // long expired, irrelevant once coupled
+            LastHeartbeatAt = now.AddMinutes(-35),
+        };
+
+        InvokeIsPastExpiryWindow(session, now).Should().BeTrue(
+            "a coupled session with no heartbeat for 35 minutes has genuinely gone quiet");
     }
 
     // ── Terminal purge eligibility ────────────────────────────────────────────

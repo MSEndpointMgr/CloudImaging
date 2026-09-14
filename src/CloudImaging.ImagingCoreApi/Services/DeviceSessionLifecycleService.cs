@@ -9,13 +9,17 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// Maintains session health by expiring inactive sessions and purging terminal records (T112, FR-021).
 ///
 /// Lifecycle rules:
-///   • Inactivity timeout: sessions with no heartbeat within <see cref="InactivityTimeout"/> are
-///     expired. Sessions still in <see cref="SessionState.SessionInit"/>/<see cref="SessionState.SessionAllowed"/>
-///     (never coupled by an operator) transition to <see cref="SessionState.SessionExpired"/> — a
-///     benign timeout, not a failure. Sessions already coupled (<see cref="SessionState.SessionAssigned"/>/
-///     <see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>) transition
-///     to <see cref="SessionState.SessionFailed"/>, since an operator was already involved and the
-///     interruption has real diagnostic value.
+///   • Never-coupled sessions (<see cref="SessionState.SessionInit"/>/<see cref="SessionState.SessionAllowed"/>)
+///     expire once their one-time passcode's own window (<see cref="DeviceSession.PasscodeExpiresAt"/>)
+///     elapses, transitioning to <see cref="SessionState.SessionExpired"/> — a benign timeout, not a
+///     failure. This is deliberately NOT based on <see cref="DeviceSession.LastHeartbeatAt"/>: the
+///     Client automatically polls GET /status every 30s while waiting to be coupled, and that poll
+///     itself stamps the heartbeat, so an idle-but-running device would perpetually renew its own
+///     heartbeat and the passcode window would never actually expire.
+///   • Coupled sessions (<see cref="SessionState.SessionAssigned"/>/<see cref="SessionState.SessionStarted"/>/
+///     <see cref="SessionState.SessionInProgress"/>) instead use heartbeat-based liveness: no heartbeat
+///     within <see cref="InactivityTimeout"/> transitions to <see cref="SessionState.SessionFailed"/>,
+///     since an operator was already involved and the interruption has real diagnostic value.
 ///   • Sessions actively imaging (<see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>)
 ///     get the longer <see cref="ActiveImagingHeartbeatTimeout"/> instead — a full disk apply can
 ///     legitimately outlast the pre-imaging window, and a device mid-apply must survive a transient
@@ -99,23 +103,48 @@ public sealed partial class DeviceSessionLifecycleService
                 continue;
             }
 
-            var cutoff = now - TimeoutFor(session.State);
-            var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
-            if (lastHeartbeat < cutoff)
+            if (!IsPastExpiryWindow(session, now, out var referenceTimestamp))
             {
-                var terminalState = NeverCoupledStates.Contains(session.State)
-                    ? SessionState.SessionExpired
-                    : SessionState.SessionFailed;
-                var transitioned = BuildTransition(session, terminalState);
-                await _sessionRepo.UpdateAsync(transitioned, ct);
-                await WriteHistoryAsync(transitioned, ct);
-                LogSessionExpired(_logger, session.SessionId, lastHeartbeat, terminalState);
-                expired++;
+                continue;
             }
+
+            var terminalState = NeverCoupledStates.Contains(session.State)
+                ? SessionState.SessionExpired
+                : SessionState.SessionFailed;
+            var transitioned = BuildTransition(session, terminalState);
+            await _sessionRepo.UpdateAsync(transitioned, ct);
+            await WriteHistoryAsync(transitioned, ct);
+            LogSessionExpired(_logger, session.SessionId, referenceTimestamp, terminalState);
+            expired++;
         }
 
         LogExpiryRun(_logger, expired);
         return expired;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="session"/> has been idle longer than its state's allowed window.
+    /// <see cref="NeverCoupledStates"/> (Init/Allowed) are judged against the one-time passcode's
+    /// own <see cref="DeviceSession.PasscodeExpiresAt"/> rather than <see cref="DeviceSession.LastHeartbeatAt"/>:
+    /// the Client automatically polls GET /status every 30s while waiting to be coupled
+    /// (<c>SessionInitViewModel</c>), and that poll itself stamps the heartbeat
+    /// (<c>SessionQueryFunctions.GetSessionStatus</c>), so an idle-but-running device would
+    /// perpetually refresh its own heartbeat and never hit the inactivity cutoff. The passcode
+    /// window is not something the device's own polling can renew, so it is immune to that.
+    /// Coupled/imaging states have no such self-renewing signal and keep using heartbeat-based
+    /// liveness as before.
+    /// </summary>
+    private static bool IsPastExpiryWindow(DeviceSession session, DateTimeOffset now, out DateTimeOffset referenceTimestamp)
+    {
+        if (NeverCoupledStates.Contains(session.State))
+        {
+            referenceTimestamp = session.PasscodeExpiresAt ?? session.CreatedAt + InactivityTimeout;
+            return now > referenceTimestamp;
+        }
+
+        referenceTimestamp = session.LastHeartbeatAt ?? session.CreatedAt;
+        var cutoff = now - TimeoutFor(session.State);
+        return referenceTimestamp < cutoff;
     }
 
     /// <summary>How long a session in <paramref name="state"/> may go without a heartbeat.</summary>
