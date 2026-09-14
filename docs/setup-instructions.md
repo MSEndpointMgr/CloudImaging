@@ -50,9 +50,9 @@ Every script this guide tells you to run ships inside the deployment bundle:
 `install.ps1`, `post-install.ps1` and `upgrade.ps1` at the root. Get the bundle now so it's
 ready for every phase that follows:
 
-1. Download **`cloud-imaging-<version>.zip`** (e.g. `cloud-imaging-mse-ci-v1.0.0.zip`) from the
+1. Download **`cloud-imaging-<version>.zip`** (e.g. `cloud-imaging-v1.0.0.zip`) from the
    backend/infrastructure release on the [GitHub Releases](https://github.com/MSEndpointMgr/CloudImaging/releases)
-   page: the bundle without `-client-` or `-mediabuilder-` in its tag, since those ship
+   page: the bundle without `-client-` or `-mediabuilder-` in its name, since those ship
    separately. Optionally verify it against the accompanying `SHA256SUMS` file.
 2. Extract it. Everything sits in that one folder: the component packages, the three deployment
    scripts, `scripts\`, `bicep\`, `parameters\` and `uiFormDefinition.json`. Run every command in
@@ -473,13 +473,13 @@ Supply them either on the **MSI command line** (managed deployment, recommended)
 One property per value, in the same order, all on a single line (as Intune requires):
 
 ```
-msiexec /i CloudImaging.MediaBuilder.msi /qn /norestart ENTRAIDCLIENTID=<1. media builder client ID> ENTRAIDTENANTID=<2. tenant ID> OPERATORAPICLIENTID=<3. operator API client ID> OPERATORAPIBASEURL=<4. operator API URL>
+msiexec /i cloud-imaging-mediabuilder-<version>.msi /qn /norestart ENTRAIDCLIENTID=<1. media builder client ID> ENTRAIDTENANTID=<2. tenant ID> OPERATORAPICLIENTID=<3. operator API client ID> OPERATORAPIBASEURL=<4. operator API URL>
 ```
 
 Filled in:
 
 ```
-msiexec /i CloudImaging.MediaBuilder.msi /qn /norestart ENTRAIDCLIENTID=6f1c2a84-3d5b-4e17-9a2c-0b7e5d81f430 ENTRAIDTENANTID=b3e7d902-14af-4c68-85d1-7f2a6c093e55 OPERATORAPICLIENTID=d84a5f61-27c9-4b03-9e8f-1a6d3c70b214 OPERATORAPIBASEURL=https://ci-operator-api-prod.azurewebsites.net
+msiexec /i cloud-imaging-mediabuilder-v1.0.0.msi /qn /norestart ENTRAIDCLIENTID=6f1c2a84-3d5b-4e17-9a2c-0b7e5d81f430 ENTRAIDTENANTID=b3e7d902-14af-4c68-85d1-7f2a6c093e55 OPERATORAPICLIENTID=d84a5f61-27c9-4b03-9e8f-1a6d3c70b214 OPERATORAPIBASEURL=https://ci-operator-api-prod.azurewebsites.net
 ```
 
 Rules when assembling it:
@@ -515,7 +515,7 @@ script, so a client ID rotation or an Operator API URL change never requires rep
 
 #### Configuring a manual install
 
-For an xcopy install from `CloudImaging.MediaBuilder.zip` (no MSI), put the values in
+For an xcopy install from `cloud-imaging-mediabuilder-<version>.zip` (no MSI), put the values in
 `appsettings.json` beside `CloudImaging.MediaBuilder.exe` instead:
 
 ```json
@@ -594,14 +594,15 @@ with a link to the page above if not) before you can start a build.
 #### Deploying the Media Builder with Intune
 
 Every [GitHub Release](https://github.com/MSEndpointMgr/CloudImaging/releases) in the
-`mse-ci-mediabuilder-v#.#.#` stream ships **`CloudImaging.MediaBuilder.msi`**, plus
-`CloudImaging.MediaBuilder.zip` with identical content if you prefer your own packaging process.
+`mse-ci-mediabuilder-v#.#.#` stream ships **`cloud-imaging-mediabuilder-<version>.msi`**, plus
+`cloud-imaging-mediabuilder-<version>.zip` with identical content if you prefer your own packaging
+process.
 
 **1. Wrap the MSI** with the
 [Microsoft Win32 Content Prep Tool](https://github.com/Microsoft/Microsoft-Win32-Content-Prep-Tool):
 
 ```
-IntuneWinAppUtil.exe -c <folder containing the msi> -s CloudImaging.MediaBuilder.msi -o <output folder>
+IntuneWinAppUtil.exe -c <folder containing the msi> -s cloud-imaging-mediabuilder-<version>.msi -o <output folder>
 ```
 
 **2. Create the Win32 app** (**Apps → Windows → Add → Windows app (Win32)**):

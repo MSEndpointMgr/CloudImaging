@@ -104,8 +104,7 @@ several coupled sessions at a time.
 > deployed managed identities (Storage, Key Vault, package containers) as part of the deployment.
 > Built-in **Contributor** explicitly excludes `Microsoft.Authorization/*/Write`, so it can't
 > create those role assignments on its own, hence the extra role (or Owner, which already
-> includes it). `update.ps1` needs the same permission later to grant itself Storage Blob
-> Data Contributor for release uploads.
+> includes it). Installing and upgrading the application code afterwards needs only Contributor.
 
 See [docs/setup-instructions.md](docs/setup-instructions.md) for the full
 tenant setup walkthrough, from prerequisites through deploying the Azure
@@ -291,12 +290,16 @@ portal Template Spec wizard.
    app registration IDs and environment parameters.
 
 4. **Deploy the application code**: the wizard provisions empty resources, so
-   run the included `update.ps1` against the new resource group to install the
+   run the included `install.ps1` against the new resource group to install the
    component packages from the release bundle.
 
-5. **Upgrade later without redeploying infrastructure**: the same `update.ps1`
-   script pushes new component packages to existing Azure resources via zip
-   deploy, no re-provisioning required.
+5. **Complete the Entra grants**: run `post-install.ps1` to grant the Imaging
+   Core managed identity its Microsoft Graph permission and the portal backend
+   managed identity its Operator API role.
+
+6. **Upgrade later without redeploying infrastructure**: `upgrade.ps1` pushes
+   new component packages to existing Azure resources via zip deploy, no
+   re-provisioning required.
 
 ### Deployed resources
 
@@ -320,7 +323,7 @@ The Bicep package provisions the following Azure resources:
 | Guide | Use it to |
 |---|---|
 | [Setup instructions](docs/setup-instructions.md) | **Start here for a new deployment.** Prerequisites, Entra ID app registrations, deploying the Azure resources, and post-deployment/initial portal configuration, step by step |
-| [Upgrade instructions](docs/upgrade-instructions.md) | Moving an existing deployment to a newer release: the three release streams, running `update.ps1`, applying infrastructure changes, rebuilding boot media, and rolling back |
+| [Upgrade instructions](docs/upgrade-instructions.md) | Moving an existing deployment to a newer release: the three release streams, running `upgrade.ps1`, applying infrastructure changes, rebuilding boot media, and rolling back |
 | [Operations runbook](docs/operations-runbook.md) | Running it day to day: monitoring, certificate rotation, upgrades, troubleshooting |
 | [Roles and access](docs/roles-and-access.md) | The full Entra ID app role and service role model |
 
@@ -333,7 +336,7 @@ prefix and GitHub Release history:
 
 | Stream | Tag | Contents |
 |--------|-----|----------|
-| Backend/infrastructure | `mse-ci-v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep/deploy scripts, `update.ps1` |
+| Backend/infrastructure | `mse-ci-v#.#.#` | Three Function App packages, Portal frontend + backend, Bicep templates, `install.ps1`, `upgrade.ps1` |
 | Cloud Imaging Client | `mse-ci-client-v#.#.#` | The WinPE client binary embedded into boot images |
 | Media Builder | `mse-ci-mediabuilder-v#.#.#` | The technician-workstation Windows app |
 
@@ -341,8 +344,8 @@ Each stream is cut on its own cadence: a Client hotfix doesn't require a new bac
 release, and vice versa. Because GitHub's Releases page is a flat list (not grouped by
 stream), the backend/infrastructure and Client streams also maintain a moving "latest" alias release
 (`mse-ci-iac-latest`, `mse-ci-client-latest`) that always points at the newest *stable* release in that
-stream. `update.ps1 -Version latest` and Media Builder's "Automatic download" source
-option resolve these aliases directly instead of GitHub's repo-wide latest release, which
+stream. The portal's release check and Media Builder's "Automatic download" source option
+resolve these aliases directly instead of GitHub's repo-wide latest release, which
 would otherwise resolve to whichever stream published most recently. Media Builder has no
 alias, since nothing auto-downloads it.
 

@@ -38,7 +38,7 @@ Windows Autopilot or Intune Corporate Identifiers through Microsoft Graph.
 2. Confirm the serial number shown by the Client matches the device record in Autopilot or
    Corporate Identifiers.
 3. Confirm the Imaging Core managed identity has the required Microsoft Graph application
-   permission by rerunning `grant-graph-permissions.ps1` from the deployment package.
+   permission by rerunning `post-install.ps1` from the deployment package.
 4. Review Imaging Core Application Insights traces for the session ID to distinguish a genuine
    no-match result from a Microsoft Graph request failure.
 
@@ -253,7 +253,7 @@ zone-redundant (ZRS), so session and catalog state survives the loss of a region
 
 ### Recovery Time Objective (RTO)
 
-All components are stateless (state in Table Storage + Blob Storage + Key Vault). Re-deploy from latest release archive with `update.ps1`, about 15 minutes. See [upgrade-instructions.md](upgrade-instructions.md).
+All components are stateless (state in Table Storage + Blob Storage + Key Vault). Re-deploy from latest release bundle with `upgrade.ps1`, about 15 minutes. See [upgrade-instructions.md](upgrade-instructions.md).
 
 ### Key Vault Backup
 

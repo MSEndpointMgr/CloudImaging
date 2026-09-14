@@ -27,7 +27,7 @@ public sealed class GitHubReleasesClientTests
     {
         var requestedUrls = new List<string>();
         var zipBytes = CreateFakeClientZip();
-        var validSums = $"{Convert.ToHexStringLower(SHA256.HashData(zipBytes))}  CloudImaging.Client.zip\n";
+        var validSums = $"{Convert.ToHexStringLower(SHA256.HashData(zipBytes))}  cloud-imaging-client.zip\n";
 
         var handler = new FakeHttpMessageHandler(req =>
         {
@@ -43,7 +43,7 @@ public sealed class GitHubReleasesClientTests
                           "tag_name": "mse-ci-client-latest",
                           "name": "Cloud Imaging Client (latest — mse-ci-client-v1.2.3)",
                           "assets": [
-                            { "name": "CloudImaging.Client.zip", "browser_download_url": "https://example.com/download/CloudImaging.Client.zip" },
+                            { "name": "cloud-imaging-client.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client.zip" },
                             { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
                           ]
                         }
@@ -51,7 +51,7 @@ public sealed class GitHubReleasesClientTests
                 };
             }
 
-            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/CloudImaging.Client.zip")
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/cloud-imaging-client.zip")
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
             }
@@ -76,7 +76,7 @@ public sealed class GitHubReleasesClientTests
                 "the download must be verified against the release's published checksum before use");
             Directory.Exists(extractDir).Should().BeTrue();
             File.Exists(Path.Combine(extractDir, "CloudImaging.Client.exe")).Should().BeTrue(
-                "the downloaded CloudImaging.Client.zip asset must be extracted into the returned directory");
+                "the downloaded cloud-imaging-client.zip asset must be extracted into the returned directory");
         }
         finally
         {
@@ -88,7 +88,7 @@ public sealed class GitHubReleasesClientTests
     public async Task DownloadLatestClientAsync_ThrowsAndCleansUpTempDir_WhenChecksumDoesNotMatch()
     {
         var zipBytes = CreateFakeClientZip();
-        const string wrongSums = "0000000000000000000000000000000000000000000000000000000000000000  CloudImaging.Client.zip\n";
+        const string wrongSums = "0000000000000000000000000000000000000000000000000000000000000000  cloud-imaging-client.zip\n";
 
         var handler = new FakeHttpMessageHandler(req =>
         {
@@ -102,7 +102,7 @@ public sealed class GitHubReleasesClientTests
                           "tag_name": "mse-ci-client-latest",
                           "name": "Cloud Imaging Client (latest — mse-ci-client-v1.2.3)",
                           "assets": [
-                            { "name": "CloudImaging.Client.zip", "browser_download_url": "https://example.com/download/CloudImaging.Client.zip" },
+                            { "name": "cloud-imaging-client.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client.zip" },
                             { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
                           ]
                         }
@@ -110,7 +110,7 @@ public sealed class GitHubReleasesClientTests
                 };
             }
 
-            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/CloudImaging.Client.zip")
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/cloud-imaging-client.zip")
             {
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
             }

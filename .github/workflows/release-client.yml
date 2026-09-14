@@ -129,12 +129,13 @@ jobs:
           dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `
             -c Release -r win-x64 --self-contained -o publish/Client --no-restore
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
-          Compress-Archive publish/Client/* release-artifacts/CloudImaging.Client.zip
+          Compress-Archive publish/Client/* "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip"
 
       - name: Generate SHA-256 checksum manifest
         run: |
-          $hash = (Get-FileHash release-artifacts/CloudImaging.Client.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  CloudImaging.Client.zip" | Out-File "release-artifacts/SHA256SUMS"
+          $asset = "cloud-imaging-client-${{ steps.tag.outputs.version }}.zip"
+          $hash = (Get-FileHash "release-artifacts/$asset" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $asset" | Out-File "release-artifacts/SHA256SUMS"
           Write-Host "Client zip SHA-256: $hash"
 
       - name: Create GitHub Release
@@ -150,10 +151,10 @@ jobs:
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `CloudImaging.Client.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
+            | `cloud-imaging-client-${{ steps.tag.outputs.version }}.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
             | `SHA256SUMS` | SHA-256 checksum for integrity verification |
           files: |
-            release-artifacts/CloudImaging.Client.zip
+            release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip
             release-artifacts/SHA256SUMS
           draft: false
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}
@@ -182,6 +183,18 @@ jobs:
           git tag -f mse-ci-client-latest "${{ steps.tag.outputs.sha }}"
           git push -f origin refs/tags/mse-ci-client-latest
 
+      # The alias is a moving pointer, so its asset carries no version. GitHubReleasesClient.cs
+      # matches this exact name, which is why it never has to parse a version out of an asset
+      # name, and it keeps releases/download/mse-ci-client-latest/cloud-imaging-client.zip a
+      # permanent link. SHA256SUMS is regenerated because it lists the name it verifies.
+      - name: Stage the alias release artifacts
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        run: |
+          New-Item alias-artifacts -ItemType Directory -Force | Out-Null
+          Copy-Item "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip" alias-artifacts/cloud-imaging-client.zip
+          $hash = (Get-FileHash alias-artifacts/cloud-imaging-client.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  cloud-imaging-client.zip" | Out-File "alias-artifacts/SHA256SUMS"
+
       - name: Publish the 'mse-ci-client-latest' alias release
         if: ${{ steps.tag.outputs.stable == 'true' }}
         uses: softprops/action-gh-release@v3
@@ -190,8 +203,8 @@ jobs:
           name:     "Cloud Imaging Client (latest: ${{ steps.tag.outputs.tag }})"
           body:     "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes."
           files: |
-            release-artifacts/CloudImaging.Client.zip
-            release-artifacts/SHA256SUMS
+            alias-artifacts/cloud-imaging-client.zip
+            alias-artifacts/SHA256SUMS
           make_latest: false
           draft: false
           prerelease: false

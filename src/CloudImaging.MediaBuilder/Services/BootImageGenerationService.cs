@@ -1020,7 +1020,7 @@ public sealed partial class BootImageGenerationService
             throw new InvalidOperationException(
                 $"\"{clientBinariesPath}\" does not contain CloudImaging.Client.exe. Point the local client " +
                 "binaries source at a folder produced by \"dotnet publish -r win-x64 --self-contained\" (or a " +
-                "downloaded CloudImaging.Client.zip release), not a plain build output folder.");
+                "downloaded cloud-imaging-client release), not a plain build output folder.");
 
         if (!File.Exists(Path.Combine(clientBinariesPath, "hostfxr.dll")))
             throw new InvalidOperationException(

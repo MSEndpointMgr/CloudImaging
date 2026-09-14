@@ -39,8 +39,9 @@ runtime proof is the first implementation gate.
 Architecture is currently implicit throughout the product:
 
 - `BootImageGenerationService` and `IsoGenerationService` hardcode WinPE architecture `amd64`.
-- The Client release workflow publishes one self-contained `win-x64` ZIP named
-  `CloudImaging.Client.zip`.
+- The Client release workflow publishes one self-contained `win-x64` ZIP, named
+  `cloud-imaging-client-v<version>.zip` on the version release and `cloud-imaging-client.zip` on
+  the `mse-ci-client-latest` alias release.
 - `GitHubReleasesClient` always downloads that single asset.
 - Boot-image and recovery-image catalog records have no architecture field.
 - OS-image catalog records have no architecture field.
@@ -158,11 +159,11 @@ Estimated effort: **1 to 2 engineering days**, assuming ARM64 test hardware is a
 
 - Change `release-client.yml` to restore and publish a matrix for `win-x64` and `win-arm64`.
 - Publish these stable assets:
-  - `CloudImaging.Client-win-x64.zip`
-  - `CloudImaging.Client-win-arm64.zip`
+  - `cloud-imaging-client-v<version>-win-x64.zip`
+  - `cloud-imaging-client-v<version>-win-arm64.zip`
   - `SHA256SUMS`
-- Keep `CloudImaging.Client.zip` as an x64 compatibility asset for at least one release cycle so
-  already-released Media Builder versions continue to work.
+- Keep `cloud-imaging-client.zip` on the alias release as an x64 compatibility asset for at least
+  one release cycle so already-released Media Builder versions continue to work.
 - Put both architecture assets on the immutable version release and the
   `mse-ci-client-latest` alias release.
 - Extend CI to restore, publish, and smoke-check both RIDs on every Client change.
@@ -301,7 +302,7 @@ Existing deployments have no architecture values. Use an explicit, idempotent mi
 3. Upgrade script or lazy repository migration backfills existing boot, OS, and recovery image
    rows as `X64`.
 4. Existing sessions and history remain readable as x64.
-5. Existing `CloudImaging.Client.zip` remains available during the compatibility window.
+5. Existing `cloud-imaging-client.zip` remains available during the compatibility window.
 6. API additions are initially additive; do not rename or remove existing JSON properties.
 
 After at least one stable release, required-field validation can reject new writes that omit
@@ -405,7 +406,7 @@ but must not be presented as complete ARM64 imaging support.
 3. Should missing compatible recovery media block assignment, or allow imaging without recovery?
 4. Should boot and recovery catalog capacity be five entries per architecture or a larger shared
    limit? Recommendation: five per architecture.
-5. How long should the legacy `CloudImaging.Client.zip` x64 compatibility asset remain published?
+5. How long should the legacy `cloud-imaging-client.zip` x64 compatibility asset remain published?
    Recommendation: at least one stable Client release after dual-asset support ships.
 6. Should Portal trust operator-selected WIM architecture for the first release, or must an
    independent WIM metadata inspection service ship before ARM64 is enabled?
