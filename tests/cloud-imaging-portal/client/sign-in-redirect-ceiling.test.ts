@@ -23,6 +23,7 @@ const acquireTokenSilent = vi.fn(() => Promise.resolve({ accessToken: 'token' })
 
 vi.mock('../../../src/cloud-imaging-portal/client/src/lib/msal.ts', () => ({
   getApiScope: () => 'api://00000000-0000-0000-0000-000000000000/user_impersonation',
+  getSilentRedirectUri: () => 'http://localhost/blank.html',
   getMsalInstance: () => ({
     getActiveAccount: () => account,
     getAllAccounts: () => [account],
