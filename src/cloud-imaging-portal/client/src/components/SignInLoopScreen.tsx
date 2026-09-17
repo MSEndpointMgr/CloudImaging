@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { AlertTriangle, LogOut, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
 import { useBranding } from '../context/brandingContext.tsx';
-import { clearRedirectBudget, isSignInLoopDetected, subscribeToSignInLoop } from '../lib/apiClient.ts';
+import { clearRedirectBudget, getSilentFailureDiagnostic, isSignInLoopDetected, subscribeToSignInLoop } from '../lib/apiClient.ts';
 import { Button } from './ui/button.tsx';
 
 /**
@@ -33,6 +33,7 @@ export function SignInLoopScreen(): React.ReactElement {
 
   const appName = branding.applicationName ?? 'Cloud Imaging';
   const email = account?.username ?? '';
+  const diagnostic = getSilentFailureDiagnostic();
 
   const retry = (): void => {
     clearRedirectBudget();
@@ -56,9 +57,24 @@ export function SignInLoopScreen(): React.ReactElement {
               as <span className="font-medium text-foreground">{email}</span>
             </>
           ) : null}
-          , and the portal backend rejected the resulting session every time. Retrying on its own
-          will not resolve this, so sign-in has been stopped here.
+          , and each time it came back without a usable session. Retrying on its own will not
+          resolve this, so sign-in has been stopped here.
         </p>
+
+        <p className="mt-4 text-sm text-muted-foreground">
+          Signing out and back in clears the stored session and normally restores access.
+        </p>
+
+        {diagnostic ? (
+          <div className="mt-4 rounded-lg border border-border bg-muted/40 p-3">
+            <p className="text-xs font-medium text-foreground">Diagnostic</p>
+            <p className="mt-1 font-mono text-xs break-all text-muted-foreground">
+              {diagnostic.errorCode} &middot; {diagnostic.accountCount} cached account
+              {diagnostic.accountCount === 1 ? '' : 's'} &middot; {diagnostic.at}
+            </p>
+            <p className="mt-1 font-mono text-xs break-all text-muted-foreground">{diagnostic.message}</p>
+          </div>
+        ) : null}
 
         <p className="mt-4 text-sm font-medium text-foreground">What an administrator should check</p>
         <ul className="mt-2 space-y-2 text-sm text-muted-foreground">

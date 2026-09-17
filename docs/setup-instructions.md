@@ -22,7 +22,7 @@ phase names both ("Phase 3, Step 2").
 
 | Requirement | Details |
 |---|---|
-| Azure subscription | Contributor + User Access Administrator on target resource group |
+| Azure subscription | Contributor + User Access Administrator on target resource group, **plus** `Microsoft.AlertsManagement` registered on the subscription (see note below) |
 | Az PowerShell | `Install-Module Az.Accounts, Az.ManagedServiceIdentity, Az.Resources, Az.Storage, Az.Websites -Scope CurrentUser` |
 | Microsoft Graph PowerShell | `Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications -Scope CurrentUser` |
 | Node.js | `winget install OpenJS.NodeJS.LTS`, then open a new terminal. Needed only to install the tool below |
@@ -40,6 +40,26 @@ phase names both ("Phase 3, Step 2").
 > **Contributor** explicitly excludes `Microsoft.Authorization/*/Write`, so it can't create
 > those role assignments on its own; without the extra role (or **Owner**, which already
 > includes it), the deployment fails partway through with an authorization error.
+
+> **Resource provider registration.** Azure Resource Manager auto-registers a resource provider
+> the first time a resource of that type is deployed into a subscription, but only for a caller
+> that holds `<provider>/register/action` at the **subscription** scope; a role assigned only at
+> the resource group scope (as above) doesn't carry that permission, because a provider's
+> registration state belongs to the subscription, not the group. Every provider this template uses
+> except one (`Microsoft.Web`, `Microsoft.Storage`, `Microsoft.Network`, `Microsoft.KeyVault`,
+> `Microsoft.OperationalInsights`, `Microsoft.Insights`, `Microsoft.ManagedIdentity`,
+> `Microsoft.Authorization`) comes pre-registered on virtually every subscription. The exception is
+> `Microsoft.AlertsManagement` (used for Application Insights' "Failure Anomalies" alert), which is
+> missing on some newly-created and sponsorship subscriptions, and its registration failing part
+> way through the deployment aborts everything after it. Before Step 1, check it with an account
+> that has Owner or Contributor **on the subscription itself** and register it if needed:
+> ```powershell
+> Get-AzResourceProvider -ProviderNamespace Microsoft.AlertsManagement | Select-Object ProviderNamespace, RegistrationState
+> # If RegistrationState is anything other than "Registered":
+> Register-AzResourceProvider -ProviderNamespace Microsoft.AlertsManagement
+> ```
+> This is a one-time, subscription-wide setting; it carries over to future upgrades into the same
+> subscription.
 
 ---
 
@@ -183,28 +203,12 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
      - Value: `CloudImaging.Technician`
      - Allowed member types: Users/Groups
      - Description: `Prepare USB storage devices with an already-published boot image. Cannot generate new boot images (Administrator-only).`
-7. **Grant access to the Operator API (required):**
-   - Go to **API permissions** → **Add a permission** → the **APIs my organization uses** tab.
-     Use this tab rather than **My APIs**, which only lists registrations you personally own and
-     will usually appear empty here.
-   - Paste the `operatorApiClientId` you recorded in Registration 2, step 4 into the filter box,
-     then select the app that appears. Searching by client ID rather than by name is deliberate:
-     your registration may carry an organizational prefix (for example
-     `CORP-PRD-Cloud Imaging Operator API`) that a name search for the plain name would miss.
-   - Select **Delegated permissions** → check `user_impersonation` → **Add permissions**.
-   - Back on the **API permissions** page, click **Grant admin consent for &lt;your tenant&gt;** and
-     confirm the row's **Status** turns into a green **Granted for &lt;your tenant&gt;**.
-   - The Media Builder requests the `api://<operatorApiClientId>/.default` scope, which only
-     succeeds once this permission is consented. Skipping it fails sign-in with
-     **AADSTS650057**.
-
-> **The Operator API doesn't appear in the list at all?** Then Registration 2, step 5 was skipped
-> or left incomplete. An app with no Application ID URI and no enabled scope exposes nothing, so
-> Entra hides it from every tab on this blade. Reopen the Operator API registration →
-> **Expose an API**, confirm the Application ID URI is `api://<operatorApiClientId>` and that
-> `user_impersonation` is listed with state **Enabled**, then return here. If you only just made
-> that change, refresh the browser tab: the picker reads a replicated copy and can lag a minute
-> behind.
+7. **Grant access to the Operator API (required):** Under **API permissions** → **Add a
+   permission** → **My APIs** → select **Cloud Imaging Operator API** → **Delegated
+   permissions** → check `user_impersonation` → **Add permissions**. Then click **Grant admin
+   consent for &lt;your tenant&gt;**. The Media Builder requests the
+   `api://<operatorApiClientId>/.default` scope, which only succeeds once this permission is
+   consented; skipping it fails sign-in with **AADSTS650057**.
 
 #### *(Optional)* Verify the three app registrations before continuing
 
@@ -284,6 +288,12 @@ Fill in the wizard. It has two tabs:
     (e.g. `corp` or `corp-eu`).
   - The wizard shows a live preview of the resulting resource names beneath the field.
   - Hyphens are removed from storage account names, which cannot contain them.
+- **Static Web App Region**:
+  - Azure Static Web Apps is a non-regional, globally-distributed service available in only a
+    handful of regions (Central US, East US 2, West US 2, West Europe, East Asia), independent
+    of the region you picked in Basics for the rest of the solution.
+  - Pick whichever of these is closest to your users. Content is served globally regardless of
+    this choice.
 - **Cloud Imaging Portal - Application (client) ID**:
   - From Registration 1 (`portalClientId`), the app users sign in to when they open the portal.
 - **Operator API - Application (client) ID**:
@@ -397,7 +407,7 @@ Both are idempotent and verified, so the script is safe to rerun. Microsoft Entr
 replicate permission changes; wait several minutes before testing pre-flight authorization.
 
 The **user-level** roles below, including `CloudImaging.MediaBuilderAccess`, still need to be
-assigned manually, per person.
+assigned manually in Step 2.
 
 ---
 
@@ -405,20 +415,63 @@ assigned manually, per person.
 
 The app roles created in Phase 1, Step 1 are just definitions; nobody can sign in successfully until
 they're assigned to actual users or groups. For the full access model (what each role grants in the
-Portal vs. the Media Builder), see [roles-and-access.md](roles-and-access.md). To assign access:
+Portal vs. the Media Builder), see [roles-and-access.md](roles-and-access.md).
 
-1. **Portal users**: Entra ID → **Enterprise applications** → **Cloud Imaging Portal** →
-   **Users and groups** → **Add user/group** → assign `CloudImaging.Administrator` or
-   `CloudImaging.Technician` to each person (or group) who signs in to the browser portal.
-2. **Media Builder users**: repeat on the **Cloud Imaging Media Builder** enterprise application;
-   assignments are **not** shared between the two registrations, so a technician who uses both apps
-   needs a role on *each* one.
-3. **Media Builder API access**: Media Builder users need one more assignment, on a *different*
-   enterprise application. Go to **Enterprise applications** → **Cloud Imaging Operator API** →
-   **Users and groups** → **Add user/group**, and assign the same people (or group) to the
-   **CloudImaging.MediaBuilderAccess** role. The roles in point 2 control what the Media Builder
-   *shows* a technician; this one is what lets the app call the Operator API at all. Without it,
-   sign-in succeeds but every API call returns `403`.
+Cloud Imaging spans **three** enterprise applications, and a single person needs assignments on more
+than one of them. Assigning roles per user across three applications is where most access problems
+start, so create one group per persona first and assign the groups instead.
+
+#### 1. Create a group per persona
+
+Entra ID → **Groups** → **New group** (type: Security, membership: Assigned). Create two:
+
+- **Cloud Imaging Administrators**
+- **Cloud Imaging Technicians**
+
+Add a third, **Cloud Imaging Readers**, only if you want people who can view the Dashboard and
+Reports but change nothing. Readers exist in the Portal only.
+
+Put your people in the groups now. From here on, onboarding somebody is a single group membership
+change rather than five separate role assignments.
+
+#### 2. Assign the groups to every applicable enterprise application
+
+For each row below: Entra ID → **Enterprise applications** → select the application →
+**Users and groups** → **Add user/group** → pick the group → choose the role → **Assign**.
+
+| Enterprise application | Cloud Imaging Administrators | Cloud Imaging Technicians | Cloud Imaging Readers |
+|---|---|---|---|
+| **Cloud Imaging Portal** | `CloudImaging.Administrator` | `CloudImaging.Technician` | `CloudImaging.Reader` |
+| **Cloud Imaging Media Builder** | `CloudImaging.Administrator` | `CloudImaging.Technician` | not applicable |
+| **Cloud Imaging Operator API** | `CloudImaging.MediaBuilderAccess` | `CloudImaging.MediaBuilderAccess` | not applicable |
+
+That is **five** assignments in total, across three applications.
+
+Points worth understanding before you skip a row:
+
+- **Portal and Media Builder assignments are not shared.** They are separate app registrations, so
+  granting Administrator on the Portal grants nothing on the Media Builder. Skip the Media Builder
+  row and your administrators can sign in to it but reach no workflow.
+- **The Operator API row is a different kind of permission.** The Portal and Media Builder roles
+  decide what each app *shows* a person. `CloudImaging.MediaBuilderAccess` is what lets the Media
+  Builder *call the Operator API at all*. Skip this row and sign-in still succeeds, but every call
+  returns `403` and the Media Builder reports that access was denied.
+- **Readers and Portal-only technicians** need only the Portal row. The Media Builder and Operator
+  API rows apply to whoever builds boot media.
+- **Do not assign `CloudImaging.PortalAccess`** to anyone here. It belongs to the portal backend's
+  managed identity and is granted by `post-install.ps1` in Step 1.
+
+#### 3. Have each person sign out and back in
+
+App roles are stamped into the token at sign-in. Anyone already signed in keeps their old, roleless
+token until they sign out and back in, so a correct assignment can still look broken until they do.
+
+#### 4. Confirm the assignments took
+
+Entra ID → **Enterprise applications** → select each of the three applications → **Users and
+groups**, and check the group is listed with the expected role. The Operator API application should
+show your two persona groups with `CloudImaging.MediaBuilderAccess`, alongside the portal's managed
+identity with `CloudImaging.PortalAccess` that `post-install.ps1` created.
 
 A user with no role assigned on a registration can still sign in, but sees an "Access denied"
 screen (Portal) or has every workflow blocked (Media Builder).
@@ -428,8 +481,8 @@ screen (Portal) or has every workflow blocked (Media Builder).
 ### Step 3: Initial Portal Configuration
 
 Before handing the portal to your technicians, sign in as **CloudImaging.Administrator** and
-complete these one-time setup tasks. The first two are **required**, because imaging cannot happen
-without them. The rest are optional and can be revisited any time from **Configuration**.
+complete these one-time setup tasks. The first two are **required**; imaging cannot happen
+without them; the rest are optional and can be revisited any time from **Configuration**.
 
 1. **Generate the boot media certificate** (required).
    - Navigate to **Configuration** → **Certificates** tab → click **Generate Certificate** and

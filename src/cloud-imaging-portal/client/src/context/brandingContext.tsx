@@ -2,6 +2,9 @@ import { createContext, useContext, useCallback, useEffect, useState } from 'rea
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { useTheme } from './themeContext.tsx';
 
+/** Bundled fallback mark, matching the built-in BrandMark shown when no portal logo is set. */
+const DEFAULT_FAVICON_HREF = '/favicon.svg';
+
 interface BrandingConfig {
   primaryColor?: string;
   accentColor?: string;
@@ -94,8 +97,7 @@ export function BrandingProvider({ children }: { children: React.ReactNode }): R
   /**
    * Publishes the resolved logo and keeps the browser tab favicon in sync with it — the portal
    * logo is the only branding asset available for this, so it doubles as the favicon (falls back
-   * to the browser's default icon when no portal logo is configured, since there is no bundled
-   * default to fall back to).
+   * to the bundled default mark when no portal logo is configured).
    */
   const applyLogo = useCallback((dataUrl: string | null, applicationName?: string) => {
     setLogoUrl(dataUrl);
@@ -147,23 +149,28 @@ export function useBranding(): BrandingContextValue {
 }
 
 /**
- * Points the browser tab's favicon at the given portal logo object URL, reusing the same
- * <link rel="icon"> element across updates instead of appending a new one each time. When
- * `url` is null (no portal logo configured, or it failed to load), the injected link is
- * removed entirely so the browser falls back to its own default tab icon.
+ * Points the browser tab's favicon at the given portal logo, falling back to the built-in mark
+ * when no logo is configured.
+ *
+ * Clearing the href or removing the <link> does not revert anything: browsers keep the last
+ * icon they were given for the life of the document, so a tenant that removed its logo kept
+ * seeing it in the tab. Pointing the element back at the bundled default is what actually
+ * repaints it.
  */
 function applyFavicon(url: string | null): void {
-  const existing = document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  const link =
+    document.head.querySelector<HTMLLinkElement>('link[rel="icon"]') ?? document.createElement('link');
 
-  if (!url) {
-    existing?.remove();
-    return;
+  link.rel = 'icon';
+  if (url) {
+    link.href = url;
+    link.removeAttribute('type');
+  } else {
+    link.href = DEFAULT_FAVICON_HREF;
+    link.type = 'image/svg+xml';
   }
 
-  const link = existing ?? document.createElement('link');
-  link.rel = 'icon';
-  link.href = url;
-  if (!existing) {
+  if (!link.isConnected) {
     document.head.appendChild(link);
   }
 }

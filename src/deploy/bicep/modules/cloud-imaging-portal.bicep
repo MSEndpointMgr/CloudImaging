@@ -1,6 +1,9 @@
 // modules/cloud-imaging-portal.bicep — Portal backend (App Service) + frontend (Static Web Apps)
 
 param location string
+// Static Web Apps is a non-regional service available in only a handful of regions,
+// so it's parameterized separately from the rest of the solution's location.
+param staticWebAppLocation string
 param appServiceName string
 param planName string
 param stappName string
@@ -103,7 +106,7 @@ resource appServiceAuth 'Microsoft.Web/sites/config@2024-04-01' = {
 
 resource stapp 'Microsoft.Web/staticSites@2024-04-01' = {
   name: stappName
-  location: location
+  location: staticWebAppLocation
   sku: { name: 'Standard', tier: 'Standard' }
   properties: {
     repositoryUrl: ''

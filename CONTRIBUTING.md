@@ -132,9 +132,15 @@ Builder workflows erase USB drives.
 
 ## Open a pull request
 
-- Use a clear, descriptive title; Conventional Commit style
-  (`fix(device-gateway): ...`, `feat(portal): ...`) is preferred but not
-  required.
+- Use a clear, plain, user-facing title describing the visible outcome, not a
+  Conventional Commit-style prefix (write "Fixed the sign-in loop caused by
+  stale v1 tokens", not "fix(portal): sign-in loop, v1/v2 token validation").
+  Release notes are generated from PR titles, and the fix/feature/docs
+  category is already conveyed by the PR's label, so repeating it in the text
+  is redundant.
+- Apply a `bug`, `enhancement`, or `documentation` label as appropriate; this
+  is what buckets the change under the right heading in the generated release
+  notes.
 - Explain the reason for the change, what changed, and how you validated it.
 - Link related issues with `Closes #123` where applicable.
 - Include screenshots for visible Portal UI changes.

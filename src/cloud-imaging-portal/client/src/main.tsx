@@ -38,9 +38,13 @@ async function bootstrap(): Promise<void> {
     // restore that path below with replaceState instead.
     const redirectResult = await msalInstance.handleRedirectPromise({ navigateToLoginRequestUrl: false });
 
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts.length > 0) {
-      msalInstance.setActiveAccount(accounts[0]);
+    // The account this redirect just produced wins. Falling back to getAllAccounts()[0] picks an
+    // arbitrary entry, and when the cache holds a stale one the app makes that active, fails to
+    // acquire a token for it, redirects, and lands back here to repeat the same choice forever.
+    const activeAccount =
+      redirectResult?.account ?? msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+    if (activeAccount) {
+      msalInstance.setActiveAccount(activeAccount);
     }
 
     // Always clear the stored path, but only act on it when this load genuinely is the return

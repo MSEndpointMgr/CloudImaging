@@ -6,6 +6,7 @@
 
 * [Architecture overview](architecture-overview.md)
 * [Session lifecycle](session-lifecycle.md)
+* [Image upload pipeline](image-upload-pipeline.md)
 * [Concepts and glossary](concepts-and-glossary.md)
 
 ## Deploy

@@ -1,5 +1,5 @@
 import type { AccountInfo } from '@azure/msal-browser';
-import { getMsalInstance, getApiScope } from './msal.ts';
+import { getMsalInstance, getApiScope, getSilentRedirectUri } from './msal.ts';
 
 /**
  * A single shared in-flight interactive-redirect promise. `msalInstance.acquireTokenRedirect`
@@ -104,6 +104,52 @@ const REDIRECT_BUDGET_WINDOW_MS = 120_000;
 
 let signInLoopDetected = false;
 const signInLoopListeners = new Set<() => void>();
+
+/**
+ * Why the last silent token acquisition failed, persisted across the redirect it triggers.
+ *
+ * Both call sites used to swallow the MSAL error entirely, so a loop left no evidence anywhere:
+ * the redirect never reaches the backend, so there is nothing in server logs either, and the
+ * only visible symptom was the browser bouncing. Keeping the error code (never the token or
+ * claims) is what makes the difference between naming the cause and guessing at it.
+ */
+const SILENT_FAILURE_KEY = 'cloudimaging.auth.lastSilentFailure';
+
+export interface SilentFailureDiagnostic {
+  errorCode: string;
+  message: string;
+  accountCount: number;
+  activeAccountMatched: boolean;
+  at: string;
+}
+
+function recordSilentFailure(err: unknown): void {
+  const msalInstance = getMsalInstance();
+  const active = msalInstance.getActiveAccount();
+  const diagnostic: SilentFailureDiagnostic = {
+    errorCode: (err as { errorCode?: string }).errorCode ?? (err as Error)?.name ?? 'unknown',
+    message: (err as Error)?.message ?? String(err),
+    accountCount: msalInstance.getAllAccounts().length,
+    activeAccountMatched: active !== null,
+    at: new Date().toISOString(),
+  };
+  console.warn('Silent token acquisition failed', diagnostic);
+  try {
+    sessionStorage.setItem(SILENT_FAILURE_KEY, JSON.stringify(diagnostic));
+  } catch {
+    // Diagnostics are never worth breaking sign-in over.
+  }
+}
+
+/** Returns the last recorded silent-acquisition failure, for the sign-in loop screen. */
+export function getSilentFailureDiagnostic(): SilentFailureDiagnostic | null {
+  try {
+    const raw = sessionStorage.getItem(SILENT_FAILURE_KEY);
+    return raw ? (JSON.parse(raw) as SilentFailureDiagnostic) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** True once the redirect budget has been exhausted; sign-in will not be retried again. */
 export function isSignInLoopDetected(): boolean {
@@ -216,9 +262,14 @@ export async function ensureSessionFresh(): Promise<boolean> {
   const account = resolveAccount();
   if (!account) return false;
   try {
-    await getMsalInstance().acquireTokenSilent({ account, scopes: [getApiScope()] });
+    await getMsalInstance().acquireTokenSilent({
+      account,
+      scopes: [getApiScope()],
+      redirectUri: getSilentRedirectUri(),
+    });
     return true;
-  } catch {
+  } catch (err) {
+    recordSilentFailure(err);
     return triggerInteractiveRedirect(account);
   }
 }
@@ -234,9 +285,13 @@ async function acquireApiToken(): Promise<string | null> {
   if (!account) return null;
 
   try {
-    const result = await getMsalInstance().acquireTokenSilent({ account, scopes: [getApiScope()] });
+    const result = await getMsalInstance().acquireTokenSilent({
+      account,
+      scopes: [getApiScope()],
+      redirectUri: getSilentRedirectUri(),
+    });
     return result.accessToken;
-  } catch {
+  } catch (err) {
     // Silent acquisition failed. The common case is an expired session: the access
     // token and refresh token have both lapsed and MSAL's hidden-iframe renewal is
     // blocked by the browser's third-party-cookie restrictions (surfaces as
@@ -245,6 +300,7 @@ async function acquireApiToken(): Promise<string | null> {
     // interactive redirect. Awaiting it here means this call never falls through to
     // an unauthenticated fetch that would otherwise flash a confusing 401/403 error in
     // the instant before the browser navigates to sign-in.
+    recordSilentFailure(err);
     return triggerInteractiveRedirect(account);
   }
 }

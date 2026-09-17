@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cloud Imaging</title>
+  </head>
+  <!--
+    Redirect target for MSAL's hidden silent-renewal iframe. It must stay empty.
+
+    Pointing silent requests at the app root made Entra return the token response into the
+    iframe, which then loaded the whole SPA inside it, re-ran bootstrap, and issued its own
+    silent request. MSAL aborts that with block_iframe_reload, so every renewal failed once the
+    24-hour refresh token lapsed and the app redirected to sign-in forever.
+  -->
+  <body></body>
+</html>

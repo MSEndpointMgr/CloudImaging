@@ -27,17 +27,24 @@ export function createMsalInstance(): PublicClientApplication {
       cacheLocation: 'sessionStorage',
     },
     system: {
-      // Entra caps the refresh token it issues to a browser SPA at 24 hours, so a tab left
-      // open overnight always comes back with a dead token. MSAL's only silent fallback is a
-      // hidden prompt=none iframe against login.microsoftonline.com, which browsers that
-      // partition third-party storage will never let complete. MSAL's 10s default meant every
-      // caller that hit this path stalled for 10s before we could react; 3s is well clear of
-      // a genuine same-tenant silent renewal (typically well under a second) while making the
-      // hopeless case fail fast enough to redirect before the user notices.
-      iframeBridgeTimeout: 3000,
+      // Left at MSAL's default. The 3s override that used to live here was compensating for
+      // silent renewal never being able to succeed, which was a redirectUri bug rather than a
+      // timing one (see getSilentRedirectUri).
     },
   });
   return instance;
+}
+
+/**
+ * Redirect URI for silent (hidden iframe) token requests.
+ *
+ * Must be a page that renders nothing. Silent requests inherit the app-root redirectUri
+ * otherwise, so Entra returns the response into the iframe, the SPA boots inside it and fires
+ * its own silent request, and MSAL aborts the whole thing with block_iframe_reload. Register
+ * this URL as an additional SPA redirect URI on the portal app registration.
+ */
+export function getSilentRedirectUri(): string {
+  return `${window.location.origin}/blank.html`;
 }
 
 /** Returns the shared MSAL instance. Throws if {@link createMsalInstance} has not run. */
