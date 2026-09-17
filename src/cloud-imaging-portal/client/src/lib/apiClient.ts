@@ -124,17 +124,17 @@ export interface SilentFailureDiagnostic {
 }
 
 function recordSilentFailure(err: unknown): void {
-  const msalInstance = getMsalInstance();
-  const active = msalInstance.getActiveAccount();
-  const diagnostic: SilentFailureDiagnostic = {
-    errorCode: (err as { errorCode?: string }).errorCode ?? (err as Error)?.name ?? 'unknown',
-    message: (err as Error)?.message ?? String(err),
-    accountCount: msalInstance.getAllAccounts().length,
-    activeAccountMatched: active !== null,
-    at: new Date().toISOString(),
-  };
-  console.warn('Silent token acquisition failed', diagnostic);
+  // Runs inside the auth failure path, so it must never throw and change what the caller does.
   try {
+    const msalInstance = getMsalInstance();
+    const diagnostic: SilentFailureDiagnostic = {
+      errorCode: (err as { errorCode?: string }).errorCode ?? (err as Error)?.name ?? 'unknown',
+      message: (err as Error)?.message ?? String(err),
+      accountCount: msalInstance.getAllAccounts().length,
+      activeAccountMatched: msalInstance.getActiveAccount() !== null,
+      at: new Date().toISOString(),
+    };
+    console.warn('Silent token acquisition failed', diagnostic);
     sessionStorage.setItem(SILENT_FAILURE_KEY, JSON.stringify(diagnostic));
   } catch {
     // Diagnostics are never worth breaking sign-in over.
