@@ -177,7 +177,7 @@ export default function BootImagesPage(): React.ReactElement {
                   <EmptyState
                     icon={HardDrive}
                     title="No boot images"
-                    description="Upload a boot image here, or publish one directly from the Media Builder app."
+                    description="Generate a boot image in the Media Builder app, then upload the WIM file here to publish it."
                     action={isAdministrator ? (
                       <Button onClick={() => setUploadOpen(true)}>
                         <Upload className="h-4 w-4" />

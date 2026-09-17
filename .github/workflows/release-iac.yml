@@ -264,11 +264,6 @@ jobs:
             |------|-------------|
             | `cloud-imaging-${{ steps.tag.outputs.version }}.zip` | Backend/IaC bundle (5 components + deploy scripts) |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
-
-            ### Deploying
-            Extract the bundle, then run `install.ps1 -ResourceGroupName <your-rg>` for a new
-            deployment or `upgrade.ps1 -ResourceGroupName <your-rg>` for an existing one.
-            Bicep templates, parameter files and the setup scripts are in the same folder.
           files: |
             release-bundle/cloud-imaging-${{ steps.tag.outputs.version }}.zip
             release-bundle/SHA256SUMS

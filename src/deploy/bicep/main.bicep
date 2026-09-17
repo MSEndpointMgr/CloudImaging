@@ -64,6 +64,10 @@ param gatewaySubnetPrefix string = '10.0.4.0/24'
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
+@description('Azure region for the Static Web App (Portal frontend). Static Web Apps is a non-regional/globally-distributed service available in only a handful of regions, independent of where the rest of the solution is deployed.')
+@allowed(['centralus', 'eastus2', 'westus2', 'westeurope', 'eastasia'])
+param staticWebAppLocation string = 'eastus2'
+
 @description('Elastic Premium SKU for all Function App plans. EP1 is required as the minimum for mTLS, VNet integration, and pre-warmed instances.')
 @allowed(['EP1','EP2','EP3'])
 param functionAppSku string = 'EP1'
@@ -273,6 +277,7 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
   name: 'cloud-imaging-portal'
   params: {
     location: location
+    staticWebAppLocation: staticWebAppLocation
     appServiceName: names.appPortalBackend
     planName: names.planPortalBackend
     stappName: names.stappPortalFrontend

@@ -1,4 +1,5 @@
 using CloudImaging.Client.Services;
+using CloudImaging.Contracts.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.IO;
@@ -15,12 +16,15 @@ namespace CloudImaging.Client.Tests;
 ///
 /// <see cref="BootImageSelfUpdateService.CheckAndUpdateAsync"/>'s first step locates the
 /// BOOT-labelled USB volume via WMI, which has no seam for faking in a unit test and never
-/// resolves to anything on a dev/CI machine (no such volume exists) — so its full happy path
-/// (version-mismatch triggers download+verify+overwrite) is exercised at the manual/validation
-/// level (see specs/001-cloud-windows-imaging/validation-usb-autostart-matrix.md), not here. These tests instead cover the
-/// two things that ARE safely verifiable in-process: (1) the "never throws" contract that makes
-/// it safe to fire-and-forget at Client startup, and (2) the download/hash helper methods in
-/// isolation via reflection, since they contain the actual download-then-verify logic.
+/// resolves to anything on a dev/CI machine (no such volume exists). Its full happy path
+/// (version-mismatch triggers download+verify+overwrite) therefore has no automated coverage,
+/// and no documented manual validation procedure either —
+/// specs/001-cloud-windows-imaging/validation-usb-autostart-matrix.md only checks that the
+/// manifest exists after USB preparation, not that self-update ever runs correctly. These tests
+/// instead cover what IS safely verifiable in-process: (1) the "never throws" contract that
+/// makes it safe to fire-and-forget at Client startup, and (2) the download/hash/manifest-merge/
+/// architecture-comparison helper methods in isolation via reflection, since they contain the
+/// actual decision and I/O logic.
 /// </summary>
 public sealed class BootImageSelfUpdateServiceTests
 {
@@ -94,5 +98,59 @@ public sealed class BootImageSelfUpdateServiceTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
             Task.FromResult(respond(request));
+    }
+
+    [Fact]
+    public void BuildUpdatedManifest_PreservesEveryFieldExceptBootImageVersion()
+    {
+        // Regression guard: an earlier version of this method rebuilt the manifest field-by-field
+        // and silently dropped LocationId/LocationName, wiping the technician-selected location
+        // label off the USB stick the first time self-update ever ran on it.
+        var current = new UsbPreparationManifest
+        {
+            ManifestVersion = "1.0",
+            PreparedAt = DateTimeOffset.Parse("2026-01-01T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
+            ToolVersion = "1.2.3",
+            BootImageVersion = "2026.01.01",
+            SelectedDiskId = "disk-1",
+            LocationId = Guid.NewGuid(),
+            LocationName = "Seattle HQ",
+            Architecture = "x64",
+            PartitionSchema = new Dictionary<string, object> { ["bootDriveLetter"] = "X:" },
+            ValidationResults = new Dictionary<string, object> { ["busType"] = "USB" },
+            AutoStartConfigured = true,
+        };
+
+        var method = typeof(BootImageSelfUpdateService).GetMethod(
+            "BuildUpdatedManifest", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var updated = (UsbPreparationManifest)method.Invoke(null, [current, "2026.02.01"])!;
+
+        updated.BootImageVersion.Should().Be("2026.02.01", "only the boot image version changes");
+        updated.ManifestVersion.Should().Be(current.ManifestVersion);
+        updated.PreparedAt.Should().Be(current.PreparedAt);
+        updated.ToolVersion.Should().Be(current.ToolVersion);
+        updated.SelectedDiskId.Should().Be(current.SelectedDiskId);
+        updated.LocationId.Should().Be(current.LocationId, "the technician-selected location must survive a self-update");
+        updated.LocationName.Should().Be(current.LocationName);
+        updated.Architecture.Should().Be(current.Architecture);
+        updated.PartitionSchema.Should().BeEquivalentTo(current.PartitionSchema);
+        updated.ValidationResults.Should().BeEquivalentTo(current.ValidationResults);
+        updated.AutoStartConfigured.Should().Be(current.AutoStartConfigured);
+    }
+
+    [Theory]
+    [InlineData("x64", "x64", true)]
+    [InlineData("arm64", "arm64", true)]
+    [InlineData("x64", "arm64", false)]
+    [InlineData(null, "x64", true)]
+    [InlineData(null, null, true)]
+    [InlineData(null, "arm64", false)]
+    public void ArchitecturesMatch_TreatsNullAsX64_AndComparesCaseInsensitively(string? current, string? latest, bool expected)
+    {
+        var method = typeof(BootImageSelfUpdateService).GetMethod(
+            "ArchitecturesMatch", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var result = (bool)method.Invoke(null, [current, latest])!;
+
+        result.Should().Be(expected);
     }
 }

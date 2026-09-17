@@ -17,7 +17,6 @@
                   "microsoft.network/virtualnetworks",
                   "microsoft.web/serverfarms",
                   "microsoft.web/sites",
-                  "microsoft.web/staticsites",
                   "microsoft.insights/components",
                   "microsoft.operationalinsights/workspaces",
                   "microsoft.keyvault/vaults",
@@ -48,6 +47,31 @@
           "name": "configuration",
           "label": "Configuration",
           "elements": [
+            {
+              "name": "staticWebAppSection",
+              "type": "Microsoft.Common.Section",
+              "label": "Portal Frontend Region",
+              "elements": [
+                {
+                  "name": "staticWebAppLocation",
+                  "type": "Microsoft.Common.DropDown",
+                  "label": "Static Web App Region",
+                  "defaultValue": "East US 2",
+                  "toolTip": "Azure Static Web Apps is a globally-distributed, non-regional service available in only these regions, independent of the region chosen above for the rest of the solution.",
+                  "constraints": {
+                    "required": true,
+                    "allowedValues": [
+                      { "label": "Central US",  "value": "centralus" },
+                      { "label": "East US 2",   "value": "eastus2" },
+                      { "label": "West US 2",   "value": "westus2" },
+                      { "label": "West Europe", "value": "westeurope" },
+                      { "label": "East Asia",   "value": "eastasia" }
+                    ]
+                  },
+                  "visible": true
+                }
+              ]
+            },
             {
               "name": "namingSection",
               "type": "Microsoft.Common.Section",
@@ -329,7 +353,8 @@
         "privateEndpointSubnetPrefix": "[steps('configuration').networkSection.privateEndpointSubnetPrefix]",
         "operatorSubnetPrefix": "[steps('configuration').networkSection.operatorSubnetPrefix]",
         "gatewaySubnetPrefix": "[steps('configuration').networkSection.gatewaySubnetPrefix]",
-        "location": "[steps('basics').resourceScope.location.name]"
+        "location": "[steps('basics').resourceScope.location.name]",
+        "staticWebAppLocation": "[steps('configuration').staticWebAppSection.staticWebAppLocation]"
       }
     }
   }

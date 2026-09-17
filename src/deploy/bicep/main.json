@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "12913847827456503914"
+      "templateHash": "5676885086676333451"
     }
   },
   "parameters": {
@@ -132,6 +132,20 @@
       "defaultValue": "[resourceGroup().location]",
       "metadata": {
         "description": "Azure region for all resources."
+      }
+    },
+    "staticWebAppLocation": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "allowedValues": [
+        "centralus",
+        "eastus2",
+        "westus2",
+        "westeurope",
+        "eastasia"
+      ],
+      "metadata": {
+        "description": "Azure region for the Static Web App (Portal frontend). Static Web Apps is a non-regional/globally-distributed service available in only a handful of regions, independent of where the rest of the solution is deployed."
       }
     },
     "functionAppSku": {
@@ -621,7 +635,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "16683174391838759768"
+              "templateHash": "2922245252610294499"
             }
           },
           "parameters": {
@@ -719,6 +733,17 @@
               "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
               "apiVersion": "2023-05-01",
               "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'boot-images')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'recovery-images')]",
               "properties": {
                 "publicAccess": "None"
               },
@@ -2108,6 +2133,9 @@
           "location": {
             "value": "[parameters('location')]"
           },
+          "staticWebAppLocation": {
+            "value": "[parameters('staticWebAppLocation')]"
+          },
           "appServiceName": {
             "value": "[variables('names').appPortalBackend]"
           },
@@ -2152,11 +2180,14 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "3146748286966120931"
+              "templateHash": "8871062599962740504"
             }
           },
           "parameters": {
             "location": {
+              "type": "string"
+            },
+            "staticWebAppLocation": {
               "type": "string"
             },
             "appServiceName": {
@@ -2309,7 +2340,7 @@
               "type": "Microsoft.Web/staticSites",
               "apiVersion": "2024-04-01",
               "name": "[parameters('stappName')]",
-              "location": "[parameters('location')]",
+              "location": "[parameters('staticWebAppLocation')]",
               "sku": {
                 "name": "Standard",
                 "tier": "Standard"

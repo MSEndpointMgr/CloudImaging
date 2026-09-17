@@ -29,6 +29,11 @@ app/identity, not a person).
 
 ### How to assign `Administrator` / `Technician` / `Reader` to a user or group
 
+Prefer assigning a **group per persona** rather than individual users. A single person needs
+assignments across up to three enterprise applications, and per-user assignment is where access
+problems start. [Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians)
+walks through the group-based approach and lists every application/role pair in one table.
+
 For **each** registration the person needs (Portal, Media Builder, or both; `Reader` only exists
 on the Portal registration):
 
@@ -98,10 +103,15 @@ prep screen) is available to any Technician or Administrator, while managing the
 
 ## 3. What each role can do in the Media Builder
 
-| Workflow | Technician | Administrator |
-|---|---|---|
-| **Prepare USB Storage Device** | ✅ | ✅ |
-| **Generate Boot Image** | ❌ (nav item disabled, with a "restricted by role" explanation) | ✅ |
+| Workflow | No role | Technician | Administrator |
+|---|---|---|---|
+| **Prepare USB Storage Device** | ❌ | ✅ | ✅ |
+| **Generate Boot Image** | ❌ | ❌ (nav item disabled, with a "restricted by role" explanation) | ✅ |
+
+A user with neither role can sign in but reaches no workflow at all: both the Home tiles and the
+navigation items are disabled, and the Media Builder explains that a role must be assigned. This
+matches what the Operator API would do anyway, since every workflow calls it and a user with no
+role assignment gets a `403`.
 
 Generate Boot Image is Administrator-only because it embeds the active mTLS boot-media
 certificate and branding into a new image, a higher-privilege operation than deploying an
@@ -115,7 +125,7 @@ always shows the specific reason that applies:
 2. **ADK gate**: the Windows ADK + WinPE add-on must be installed on the workstation (see
    [setup-instructions.md](setup-instructions.md#installing-the-windows-adk-on-technician-workstations)).
 
-`Prepare USB Storage Device` has neither gate beyond sign-in; any signed-in Technician or
+`Prepare USB Storage Device` has no ADK or certificate gate; any signed-in Technician or
 Administrator with `CloudImaging.MediaBuilderAccess` on the Operator API can use it, including
 reading the location catalog to optionally tag the USB with a site label.
 
