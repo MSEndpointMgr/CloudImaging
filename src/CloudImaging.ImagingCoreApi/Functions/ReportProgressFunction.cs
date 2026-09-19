@@ -34,6 +34,7 @@ public sealed partial class ReportProgressFunction
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<ReportProgressFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="ReportProgressFunction"/>.</summary>
     public ReportProgressFunction(
         DeviceSessionRepository sessionRepo,
         ImagingStepRepository stepRepo,
@@ -48,6 +49,7 @@ public sealed partial class ReportProgressFunction
         _logger = logger;
     }
 
+    /// <summary>Accepts a progress report from the Device Gateway API and updates the session state.</summary>
     [Function(nameof(ReportProgressFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/progress")] HttpRequestData req,

@@ -20,6 +20,7 @@ public sealed partial class PartitioningSchemeFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<PartitioningSchemeFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="PartitioningSchemeFunctions"/> class.</summary>
     public PartitioningSchemeFunctions(
         ImagingCoreClient coreClient,
         ILogger<PartitioningSchemeFunctions> logger)

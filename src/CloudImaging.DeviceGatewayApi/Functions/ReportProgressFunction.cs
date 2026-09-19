@@ -16,6 +16,7 @@ public sealed partial class ReportProgressFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<ReportProgressFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="ReportProgressFunction"/> class.</summary>
     public ReportProgressFunction(
         ImagingCoreClient coreClient,
         ILogger<ReportProgressFunction> logger)
@@ -24,6 +25,7 @@ public sealed partial class ReportProgressFunction
         _logger = logger;
     }
 
+    /// <summary>Handles the report-progress HTTP request.</summary>
     [Function("ReportProgress")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/progress")] HttpRequestData req,

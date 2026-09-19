@@ -47,6 +47,9 @@ public sealed partial class EntraAuthenticationService
         _lastResult?.ClaimsPrincipal?.Claims.Any(c =>
             c.Type == "roles" && string.Equals(c.Value, AdministratorRoleClaim, StringComparison.Ordinal)) ?? false;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EntraAuthenticationService"/> class.
+    /// </summary>
     public EntraAuthenticationService(
         string clientId,
         string tenantId,

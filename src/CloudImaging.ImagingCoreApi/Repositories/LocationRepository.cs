@@ -15,12 +15,15 @@ public sealed class LocationRepository
     private const string Partition = "location";
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="LocationRepository"/>.</summary>
     public LocationRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Creates a new location entry.</summary>
     public async Task<Location> CreateAsync(Location location, CancellationToken ct = default)
     {
         var newLocation = new Location
@@ -33,6 +36,7 @@ public sealed class LocationRepository
         return newLocation;
     }
 
+    /// <summary>Retrieves a location by ID, or <c>null</c> if not found.</summary>
     public async Task<Location?> GetByIdAsync(Guid locationId, CancellationToken ct = default)
     {
         try
@@ -43,12 +47,14 @@ public sealed class LocationRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Lists all locations.</summary>
     public IAsyncEnumerable<Location> ListAllAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition}");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
     }
 
+    /// <summary>Deletes a location by ID.</summary>
     public async Task DeleteAsync(Guid locationId, CancellationToken ct = default)
     {
         try

@@ -15,6 +15,7 @@ public sealed partial class RefreshSasTokenFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<RefreshSasTokenFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="RefreshSasTokenFunction"/> class.</summary>
     public RefreshSasTokenFunction(
         ImagingCoreClient coreClient,
         ILogger<RefreshSasTokenFunction> logger)
@@ -23,6 +24,7 @@ public sealed partial class RefreshSasTokenFunction
         _logger = logger;
     }
 
+    /// <summary>Handles the refresh-SAS-token HTTP request.</summary>
     [Function("RefreshSasToken")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/sas/refresh")] HttpRequestData req,

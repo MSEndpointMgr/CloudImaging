@@ -28,13 +28,24 @@ public sealed partial class IsoExtractionService
 
     private readonly ILogger<IsoExtractionService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="IsoExtractionService"/> class.</summary>
     public IsoExtractionService(ILogger<IsoExtractionService> logger) => _logger = logger;
 
+    /// <summary>
+    /// Result of extracting an install image from an ISO: whether one was found and, when it was,
+    /// the entry's path within the ISO and its extension; otherwise a human-readable failure reason.
+    /// </summary>
+    /// <param name="Found">Whether an install image was located and extracted.</param>
+    /// <param name="SourcePath">The entry's path within the ISO (e.g. <c>\sources\install.wim</c>), when found.</param>
+    /// <param name="Extension">Extension of the extracted entry (<c>.wim</c> or <c>.esd</c>), when found.</param>
+    /// <param name="FailureReason">Human-readable reason when extraction failed; otherwise <c>null</c>.</param>
     public sealed record ExtractionResult(bool Found, string? SourcePath, string? Extension, string? FailureReason)
     {
+        /// <summary>Builds a successful result for an entry extracted from <paramref name="sourcePath"/>.</summary>
         public static ExtractionResult Success(string sourcePath) =>
             new(true, sourcePath, Path.GetExtension(sourcePath), null);
 
+        /// <summary>Builds a failure result carrying <paramref name="reason"/>.</summary>
         public static ExtractionResult Failure(string reason) => new(false, null, null, reason);
     }
 

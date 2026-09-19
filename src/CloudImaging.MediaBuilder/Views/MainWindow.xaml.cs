@@ -5,6 +5,7 @@ namespace CloudImaging.MediaBuilder.Views;
 
 public partial class MainWindow : FluentWindow
 {
+    /// <summary>Initializes a new instance of <see cref="MainWindow"/>.</summary>
     public MainWindow()
     {
         InitializeComponent();

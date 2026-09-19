@@ -20,6 +20,7 @@ public sealed partial class BulkAssignmentService
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BulkAssignmentService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="BulkAssignmentService"/> class.</summary>
     public BulkAssignmentService(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
@@ -34,6 +35,14 @@ public sealed partial class BulkAssignmentService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Summary of a bulk assignment run: how many of the requested sessions were assigned the image
+    /// versus skipped, and the session IDs in each group.
+    /// </summary>
+    /// <param name="Assigned">Number of sessions successfully assigned.</param>
+    /// <param name="Skipped">Number of sessions skipped (not found, or in a non-assignable state).</param>
+    /// <param name="AssignedIds">Session IDs that were assigned the image.</param>
+    /// <param name="SkippedIds">Session IDs that were skipped.</param>
     public sealed record BulkAssignResult(
         int Assigned,
         int Skipped,

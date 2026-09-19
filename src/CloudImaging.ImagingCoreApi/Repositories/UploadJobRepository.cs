@@ -29,9 +29,11 @@ public sealed class UploadJobRepository
 
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="UploadJobRepository"/>.</summary>
     public UploadJobRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
@@ -54,6 +56,7 @@ public sealed class UploadJobRepository
         }
     }
 
+    /// <summary>Retrieves a job by upload ID, or <c>null</c> if not found.</summary>
     public async Task<UploadJob?> GetAsync(string uploadId, CancellationToken ct = default)
     {
         try
@@ -169,9 +172,11 @@ public sealed class UploadJobRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { /* purged or already terminal */ }
     }
 
+    /// <summary>Marks the job as completed with the resulting image ID.</summary>
     public async Task CompleteAsync(string uploadId, Guid resultImageId, CancellationToken ct = default) =>
         await SetTerminalAsync(uploadId, UploadJobStatus.Completed, resultImageId, null, ct);
 
+    /// <summary>Marks the job as failed with the given failure reason.</summary>
     public async Task FailAsync(string uploadId, string failureReason, CancellationToken ct = default) =>
         await SetTerminalAsync(uploadId, UploadJobStatus.Failed, null, failureReason, ct);
 
@@ -200,6 +205,7 @@ public sealed class UploadJobRepository
         await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Replace, ct);
     }
 
+    /// <summary>Deletes a job by upload ID.</summary>
     public async Task DeleteAsync(string uploadId, CancellationToken ct = default)
     {
         try

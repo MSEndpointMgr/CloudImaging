@@ -13,13 +13,28 @@ namespace CloudImaging.Contracts.Enums;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SessionState
 {
+    /// <summary>Session created on registration; awaiting operator passcode entry.</summary>
     SessionInit,
+
+    /// <summary>Device authorized by passcode; an OS image can be assigned.</summary>
     SessionAllowed,
+
+    /// <summary>An OS image has been assigned to the session.</summary>
     SessionAssigned,
+
+    /// <summary>Device started the imaging pipeline.</summary>
     SessionStarted,
+
+    /// <summary>Imaging pipeline is actively progressing.</summary>
     SessionInProgress,
+
+    /// <summary>Imaging completed successfully; this is a terminal state.</summary>
     SessionCompleted,
+
+    /// <summary>Imaging failed after coupling; this is a terminal state.</summary>
     SessionFailed,
+
+    /// <summary>Device was not authorized and the session was rejected.</summary>
     SessionNotAuthorized,
 
     /// <summary>

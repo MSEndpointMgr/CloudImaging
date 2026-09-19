@@ -10,7 +10,12 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class Location
 {
+    /// <summary>Unique identifier of the location.</summary>
     public required Guid LocationId { get; init; }
+
+    /// <summary>Display name of the location (e.g. "Seattle HQ").</summary>
     public required string Name { get; init; }
+
+    /// <summary>UTC timestamp when the location was created.</summary>
     public DateTimeOffset CreatedAt { get; init; }
 }

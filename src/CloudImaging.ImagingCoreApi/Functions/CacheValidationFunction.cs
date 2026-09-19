@@ -19,6 +19,7 @@ public sealed partial class CacheValidationFunction
     private readonly OsImageRepository _imageRepo;
     private readonly ILogger<CacheValidationFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="CacheValidationFunction"/>.</summary>
     public CacheValidationFunction(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
@@ -29,6 +30,7 @@ public sealed partial class CacheValidationFunction
         _logger = logger;
     }
 
+    /// <summary>Validates a client-provided SHA-256 hash against the session's assigned OS image.</summary>
     [Function(nameof(CacheValidationFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/cache/validate")] HttpRequestData req,

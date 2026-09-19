@@ -24,11 +24,13 @@ public sealed class SessionHistoryRepository
 
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="SessionHistoryRepository"/>.</summary>
     public SessionHistoryRepository(TableServiceClient tableServiceClient)
     {
         _table = tableServiceClient.GetTableClient(TableName);
     }
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 

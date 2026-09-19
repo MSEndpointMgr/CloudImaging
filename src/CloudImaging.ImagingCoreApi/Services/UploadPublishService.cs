@@ -56,6 +56,7 @@ public sealed partial class UploadPublishService
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<UploadPublishService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="UploadPublishService"/> class.</summary>
     public UploadPublishService(
         UploadJobRepository jobRepo,
         OsImageRepository osImageRepo,

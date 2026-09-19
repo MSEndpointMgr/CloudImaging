@@ -15,7 +15,7 @@ namespace CloudImaging.Client.Services;
 /// <see cref="Views.MainWindow"/> sets <c>Topmost="True"</c> (WinPE has no shell/taskbar, so the
 /// Client must always stay above everything else). Launching cmd.exe naively would therefore
 /// render BEHIND the always-on-top Client and be unusable, so callers must supply
-/// <paramref name="setMainWindowTopmost"/>-style callback (see <see cref="Launch"/>) which this
+/// a <c>setMainWindowTopmost</c>-style callback (see <see cref="Launch"/>) which this
 /// service uses to toggle Topmost off for the duration of the console session and restore it
 /// once cmd.exe exits.
 /// </summary>

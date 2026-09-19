@@ -42,6 +42,7 @@ public sealed class UploadJobProgressReporter : IProgress<double>
     private int _lastPercent = -1;
     private long _lastWriteTicks = DateTimeOffset.MinValue.UtcTicks;
 
+    /// <summary>Initializes a new instance of the <see cref="UploadJobProgressReporter"/> class.</summary>
     public UploadJobProgressReporter(
         UploadJobRepository repository,
         string uploadId,
@@ -76,6 +77,7 @@ public sealed class UploadJobProgressReporter : IProgress<double>
         }
     }
 
+    /// <summary>Reports stage completion, throttling storage writes to at most one per interval.</summary>
     /// <param name="fraction">Completion of the current stage, 0.0 to 1.0.</param>
     public void Report(double fraction)
     {

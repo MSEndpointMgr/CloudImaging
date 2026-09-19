@@ -49,6 +49,7 @@ public sealed class EntraTokenValidator
         MapInboundClaims = false,
     };
 
+    /// <summary>Initializes a new instance of the <see cref="EntraTokenValidator"/> class with the supplied options.</summary>
     public EntraTokenValidator(EntraValidationOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);

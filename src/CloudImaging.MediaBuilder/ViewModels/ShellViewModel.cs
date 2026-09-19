@@ -42,6 +42,9 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// </summary>
     private bool _certificateConfigured = true;
 
+    /// <summary>
+    /// Creates the view model for the shell, wiring up the section navigation commands.
+    /// </summary>
     public ShellViewModel(
         EntraAuthenticationService authService,
         OperatorApiClient operatorApiClient,
@@ -117,6 +120,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         private set { _currentContent = value; OnPropertyChanged(); }
     }
 
+    /// <summary>The section currently hosted in the shell's content area.</summary>
     public ShellSection CurrentSection
     {
         get => _currentSection;
@@ -131,8 +135,13 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>True when the Home section is currently active.</summary>
     public bool IsHomeActive       => CurrentSection == ShellSection.Home;
+
+    /// <summary>True when the Generate Boot Image section is currently active.</summary>
     public bool IsGenerateActive   => CurrentSection == ShellSection.Generate;
+
+    /// <summary>True when the Prepare USB Device section is currently active.</summary>
     public bool IsPrepareUsbActive => CurrentSection == ShellSection.PrepareUsb;
 
     /// <summary>
@@ -183,8 +192,13 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Command that navigates to the Home section.</summary>
     public ICommand GoHomeCommand       { get; }
+
+    /// <summary>Command that navigates to the Generate Boot Image section.</summary>
     public ICommand GoGenerateCommand   { get; }
+
+    /// <summary>Command that navigates to the Prepare USB Device section.</summary>
     public ICommand GoPrepareUsbCommand { get; }
 
     /// <summary>Navigates to Home. Public (not just via the command) so dev-mode tooling can jump here directly.</summary>
@@ -292,6 +306,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private void OnTrackedContentPropertyChanged(object? sender, PropertyChangedEventArgs e) =>
         CanNavigate = !(_isTrackedContentBusy?.Invoke() ?? false);
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -300,7 +315,12 @@ public sealed class ShellViewModel : INotifyPropertyChanged
 /// <summary>The section currently hosted in the shell's content area.</summary>
 public enum ShellSection
 {
+    /// <summary>The Home / operation selection section.</summary>
     Home,
+
+    /// <summary>The Generate Boot Image section.</summary>
     Generate,
+
+    /// <summary>The Prepare USB Device section.</summary>
     PrepareUsb,
 }

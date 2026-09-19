@@ -15,12 +15,22 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class BootImageManifest
 {
+    /// <summary>Schema version of this manifest file. Currently "1.0".</summary>
     public const string ManifestSchemaVersion = "1.0";
 
+    /// <summary>Version of the boot image build process.</summary>
     public required string ManifestVersion { get; init; }
+
+    /// <summary>Version of the generated boot image this manifest describes.</summary>
     public required string ImageVersion { get; init; }
+
+    /// <summary>UTC timestamp when this manifest was generated.</summary>
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Version of the Windows Preinstallation Environment (WinPE) used.</summary>
     public string? WinPeVersion { get; init; }
+
+    /// <summary>Version of the embedded Cloud Imaging Client, if injected.</summary>
     public string? ClientVersion { get; init; }
 
     /// <summary>SHA-256 hex hash per embedded component (e.g. "cloudImagingClient", "brandingLogo", "bootMediaCertificate").</summary>

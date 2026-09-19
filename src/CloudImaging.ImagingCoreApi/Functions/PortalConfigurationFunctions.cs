@@ -19,6 +19,7 @@ public sealed partial class PortalConfigurationFunctions
     private readonly PortalConfigurationRepository _repo;
     private readonly ILogger<PortalConfigurationFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="PortalConfigurationFunctions"/>.</summary>
     public PortalConfigurationFunctions(
         PortalConfigurationRepository repo,
         ILogger<PortalConfigurationFunctions> logger)

@@ -38,6 +38,7 @@ public sealed partial class DiskFormatService
 
     private readonly ILogger<DiskFormatService> _logger;
 
+    /// <summary>Creates a new <see cref="DiskFormatService"/>.</summary>
     public DiskFormatService(ILogger<DiskFormatService> logger) => _logger = logger;
 
     /// <summary>

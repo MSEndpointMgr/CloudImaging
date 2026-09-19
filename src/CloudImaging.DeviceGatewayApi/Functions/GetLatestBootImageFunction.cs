@@ -37,12 +37,14 @@ public sealed partial class GetLatestBootImageFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<GetLatestBootImageFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="GetLatestBootImageFunction"/> class.</summary>
     public GetLatestBootImageFunction(ImagingCoreClient coreClient, ILogger<GetLatestBootImageFunction> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>Handles the get-latest-boot-image HTTP request.</summary>
     [Function("GetLatestBootImage")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/boot-image/latest")] HttpRequestData req,

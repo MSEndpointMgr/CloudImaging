@@ -55,6 +55,7 @@ public sealed partial class OsImageUploadFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<OsImageUploadFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="OsImageUploadFunctions"/>.</summary>
     public OsImageUploadFunctions(
         OsImageRepository imageRepo,
         UploadJobRepository jobRepo,
@@ -71,6 +72,7 @@ public sealed partial class OsImageUploadFunctions
 
     // ── POST /api/internal/images/upload/start ────────────────────────────────
 
+    /// <summary>Starts a staged OS image upload and returns a write SAS URL.</summary>
     [Function("StartOsImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/images/upload/start")] HttpRequestData req,
@@ -131,6 +133,7 @@ public sealed partial class OsImageUploadFunctions
 
     // ── POST /api/internal/images/upload/{uploadId}/publish ───────────────────
 
+    /// <summary>Commits staged blocks, validates the OS image, and queues it for publishing.</summary>
     [Function("PublishOsImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/images/upload/{uploadId}/publish")] HttpRequestData req,

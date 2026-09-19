@@ -17,6 +17,7 @@ public sealed partial class CancelSessionFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<CancelSessionFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="CancelSessionFunction"/> class.</summary>
     public CancelSessionFunction(
         ImagingCoreClient coreClient,
         ILogger<CancelSessionFunction> logger)
@@ -25,6 +26,7 @@ public sealed partial class CancelSessionFunction
         _logger = logger;
     }
 
+    /// <summary>Cancels/removes a coupled session.</summary>
     [Function(nameof(CancelSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "sessions/{sessionId}")] HttpRequestData req,

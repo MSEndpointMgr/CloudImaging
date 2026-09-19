@@ -23,6 +23,7 @@ public sealed partial class LocationFunctions
     private readonly LocationRepository _repo;
     private readonly ILogger<LocationFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="LocationFunctions"/>.</summary>
     public LocationFunctions(LocationRepository repo, ILogger<LocationFunctions> logger)
     {
         _repo = repo;
@@ -31,6 +32,7 @@ public sealed partial class LocationFunctions
 
     // ── GET /api/internal/locations ────────────────────────────────────────────
 
+    /// <summary>Lists all locations, sorted by name.</summary>
     [Function("GetLocations")]
     public async Task<HttpResponseData> GetLocations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/locations")] HttpRequestData req,
@@ -51,6 +53,7 @@ public sealed partial class LocationFunctions
 
     // ── POST /api/internal/locations ───────────────────────────────────────────
 
+    /// <summary>Creates a new location.</summary>
     [Function("CreateLocation")]
     public async Task<HttpResponseData> CreateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/locations")] HttpRequestData req,
@@ -92,6 +95,7 @@ public sealed partial class LocationFunctions
 
     // ── DELETE /api/internal/locations/{id} ────────────────────────────────────
 
+    /// <summary>Deletes a location by id.</summary>
     [Function("DeleteLocation")]
     public async Task<HttpResponseData> DeleteLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/locations/{id}")] HttpRequestData req,

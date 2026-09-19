@@ -32,6 +32,9 @@ public sealed partial class ImageCacheMaintenanceService
     /// </summary>
     public bool CacheWriteEnabled { get; private set; } = true;
 
+    /// <summary>
+    /// Creates a new <see cref="ImageCacheMaintenanceService"/>.
+    /// </summary>
     public ImageCacheMaintenanceService(
         ImageCacheService cache,
         ILogger<ImageCacheMaintenanceService> logger)

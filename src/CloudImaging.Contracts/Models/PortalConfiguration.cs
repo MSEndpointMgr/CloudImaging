@@ -53,5 +53,6 @@ public sealed class PortalConfiguration
     /// </summary>
     public bool UpdateCheckEnabled { get; init; }
 
+    /// <summary>UTC timestamp of the last edit to the portal configuration.</summary>
     public DateTimeOffset LastModifiedAt { get; init; }
 }

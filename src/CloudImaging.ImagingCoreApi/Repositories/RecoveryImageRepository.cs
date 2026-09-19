@@ -16,12 +16,15 @@ public sealed class RecoveryImageRepository
     private const int MaxActiveEntries = 5;
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="RecoveryImageRepository"/>.</summary>
     public RecoveryImageRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Publishes a new recovery image, auto-demoting the oldest if at capacity.</summary>
     public async Task<RecoveryImage> PublishAsync(RecoveryImage image, CancellationToken ct = default)
     {
         var activeEntries = await ListActiveAsync(ct).ToListAsync(ct);
@@ -56,6 +59,7 @@ public sealed class RecoveryImageRepository
         return newImage;
     }
 
+    /// <summary>Retrieves a recovery image by ID, or <c>null</c> if not found.</summary>
     public async Task<RecoveryImage?> GetByIdAsync(Guid recoveryImageId, CancellationToken ct = default)
     {
         try
@@ -66,12 +70,14 @@ public sealed class RecoveryImageRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Lists all active recovery images.</summary>
     public IAsyncEnumerable<RecoveryImage> ListActiveAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition} and IsActive eq true");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
     }
 
+    /// <summary>Deletes a recovery image by ID.</summary>
     public async Task DeleteAsync(Guid recoveryImageId, CancellationToken ct = default) =>
         await _table.DeleteEntityAsync(Partition, recoveryImageId.ToString(), cancellationToken: ct);
 

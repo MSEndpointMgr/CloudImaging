@@ -5,7 +5,7 @@ using System.Windows.Media;
 namespace CloudImaging.MediaBuilder;
 
 /// <summary>
-/// Fatal-error dialog shown by <see cref="App.ReportFatal"/> for any unhandled startup/runtime
+/// Fatal-error dialog shown by <c>App.ReportFatal</c> for any unhandled startup/runtime
 /// exception.
 ///
 /// Built entirely in code with hardcoded colors/fonts — no XAML, no DynamicResource/WPF-UI

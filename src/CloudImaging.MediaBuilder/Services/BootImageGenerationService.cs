@@ -85,6 +85,7 @@ public sealed partial class BootImageGenerationService
     private readonly Func<bool> _isElevated;
     private readonly Func<string, string, System.Diagnostics.Process> _startElevatedProcess;
 
+    /// <summary>Raised with a message and 0-100 percent as boot image generation progresses.</summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
     /// <summary>
@@ -103,6 +104,7 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public event EventHandler<string>? LogHeartbeat;
 
+    /// <param name="logger">Logger used for generation progress and diagnostics.</param>
     /// <param name="operatorApiClient">
     /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the active
     /// boot media certificate PFX from the Operator API before generation starts, and
@@ -141,7 +143,17 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public void SetOperatorApiAccessToken(string token) => _operatorApiClient?.SetAccessToken(token);
 
-    public sealed record GenerationResult(string WimPath, string Sha256Hash);
+    /// <summary>
+    /// The result of a successful boot image generation.
+    /// </summary>
+    public sealed record GenerationResult(string WimPath, string Sha256Hash)
+    {
+        /// <summary>Full path to the generated WIM file.</summary>
+        public string WimPath { get; init; } = WimPath;
+
+        /// <summary>The SHA-256 hash of the generated WIM file.</summary>
+        public string Sha256Hash { get; init; } = Sha256Hash;
+    }
 
     private sealed record ElevatedGenerationParams(
         string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess);
@@ -997,6 +1009,58 @@ public sealed partial class BootImageGenerationService
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
     }
+
+    /// <summary>
+    /// Copies <c>reagentc.exe</c> (and its en-US resource DLL, if present) from this build
+    /// machine's own <c>%windir%\System32</c> into the mounted WIM.
+    ///
+    /// Microsoft's REAgentC docs only mention Winrecfg.exe (a WinPE add-on tool) as a
+    /// *replacement* for reagentc.exe on the long-obsolete WinPE 2.x-4.x — implying modern
+    /// WinPE is expected to run reagentc.exe directly — but copype.cmd's base WinPE image does
+    /// not actually include it, and there is no dedicated WinPE-*.cab optional component for it
+    /// (unlike WinPE-WMI/WinPE-NetFx above). reagentc.exe is a stable, backward/forward-
+    /// compatible offline-imaging tool (like bcdboot.exe/diskpart.exe, which copype.cmd's base
+    /// image DOES already include) — copying it from whatever Windows version this app happens
+    /// to be running on is the same approach long-documented in the OSD/ConfigMgr community for
+    /// this exact gap, and is safe because it is only ever invoked (by
+    /// <c>Client.Services.RecoveryImageService</c>) with <c>/target</c> against an
+    /// offline image, never against the build machine's own online installation.
+    /// </summary>
+    private void InjectReagentcSupport(string mountDir)
+    {
+        var systemDir = Environment.SystemDirectory; // e.g. C:\Windows\System32 on the build machine
+        var sourceExe = Path.Combine(systemDir, "reagentc.exe");
+        if (!File.Exists(sourceExe))
+        {
+            RaiseLog($"FAILED: \"{sourceExe}\" was not found on this build machine.");
+            throw new InvalidOperationException(
+                $"Could not find \"{sourceExe}\" to inject into the WinPE image. reagentc.exe is required for " +
+                "the Client's \"ApplyRecoveryImage\" pipeline step to run offline against the target disk. " +
+                "This should be present on any Windows build machine — verify the OS installation is not " +
+                "corrupted.");
+        }
+
+        var destDir = Path.Combine(mountDir, "Windows", "System32");
+        Directory.CreateDirectory(destDir);
+        File.Copy(sourceExe, Path.Combine(destDir, "reagentc.exe"), overwrite: true);
+
+        // Best-effort: the localized resource-only MUI is not required for reagentc.exe to run
+        // (it falls back to embedded/neutral resources without it), only for its own displayed
+        // help/error text to be localized, so a missing en-US install on the build machine must
+        // not fail the whole boot image build.
+        var sourceMui = Path.Combine(systemDir, "en-US", "reagentc.exe.mui");
+        if (File.Exists(sourceMui))
+        {
+            var destMuiDir = Path.Combine(destDir, "en-US");
+            Directory.CreateDirectory(destMuiDir);
+            File.Copy(sourceMui, Path.Combine(destMuiDir, "reagentc.exe.mui"), overwrite: true);
+        }
+
+        LogReagentcInjected(_logger, sourceExe);
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "reagentc.exe injected into WinPE image from {SourcePath}.")]
+    private static partial void LogReagentcInjected(ILogger logger, string sourcePath);
 
     /// <summary>
     /// Fails fast, with an actionable message, when <paramref name="clientBinariesPath"/> looks

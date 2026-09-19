@@ -20,6 +20,7 @@ public sealed partial class BootImageLifecycleFunctions
     private readonly BootImageRepository _repo;
     private readonly ILogger<BootImageLifecycleFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootImageLifecycleFunctions"/>.</summary>
     public BootImageLifecycleFunctions(
         BootImageRepository repo,
         ILogger<BootImageLifecycleFunctions> logger)
@@ -30,6 +31,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── DELETE /api/internal/boot-images/{id} ────────────────────────────────
 
+    /// <summary>Soft-deletes (deactivates) a boot image by id.</summary>
     [Function("DeleteBootImage")]
     public async Task<HttpResponseData> DeleteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/boot-images/{id}")] HttpRequestData req,

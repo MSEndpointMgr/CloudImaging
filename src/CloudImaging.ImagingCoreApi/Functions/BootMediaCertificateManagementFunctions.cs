@@ -27,6 +27,7 @@ public sealed partial class BootMediaCertificateManagementFunctions
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<BootMediaCertificateManagementFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootMediaCertificateManagementFunctions"/>.</summary>
     public BootMediaCertificateManagementFunctions(
         BootMediaCertificateRepository certRepo,
         KeyVaultCertificateService kvService,
@@ -41,6 +42,7 @@ public sealed partial class BootMediaCertificateManagementFunctions
 
     // ── POST /api/internal/cert/generate ──────────────────────────────────────
 
+    /// <summary>Generates and activates a new self-signed boot media certificate.</summary>
     [Function("GenerateBootMediaCertificate")]
     public async Task<HttpResponseData> GenerateCertificate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/cert/generate")] HttpRequestData req,
@@ -80,6 +82,7 @@ public sealed partial class BootMediaCertificateManagementFunctions
 
     // ── POST /api/internal/cert/rotate ────────────────────────────────────────
 
+    /// <summary>Rotates the active boot media certificate (generates and activates a new one).</summary>
     [Function("RotateBootMediaCertificate")]
     public async Task<HttpResponseData> RotateCertificate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/cert/rotate")] HttpRequestData req,

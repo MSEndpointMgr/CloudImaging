@@ -51,6 +51,7 @@ public sealed partial class CreateSessionFunction
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Initializes a new instance of the <see cref="CreateSessionFunction"/> class.</summary>
     public CreateSessionFunction(
         ImagingCoreClient coreClient,
         DeviceSessionTokenService tokenService,
@@ -68,6 +69,7 @@ public sealed partial class CreateSessionFunction
         _maxSignatureSkew = TimeSpan.FromSeconds(skewSeconds > 0 ? skewSeconds : DefaultMaxSkewSeconds);
     }
 
+    /// <summary>Handles the session creation HTTP request.</summary>
     [Function("CreateSession")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions")] HttpRequestData req,

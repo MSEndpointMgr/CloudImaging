@@ -17,12 +17,14 @@ public sealed partial class BootImageUploadFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BootImageUploadFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="BootImageUploadFunctions"/> class.</summary>
     public BootImageUploadFunctions(ImagingCoreClient coreClient, ILogger<BootImageUploadFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>Starts a staged boot image upload.</summary>
     [Function("StartBootImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/upload/start")] HttpRequestData req,
@@ -34,6 +36,7 @@ public sealed partial class BootImageUploadFunctions
         return await ProxyAsync(req, core, context.CancellationToken);
     }
 
+    /// <summary>Validates and publishes a staged boot image upload.</summary>
     [Function("PublishBootImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/upload/{token}/publish")] HttpRequestData req,

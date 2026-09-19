@@ -20,12 +20,14 @@ public sealed partial class LocationFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<LocationFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="LocationFunctions"/> class.</summary>
     public LocationFunctions(ImagingCoreClient coreClient, ILogger<LocationFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>Lists all locations from the location catalog.</summary>
     [Function("GetLocations")]
     public async Task<HttpResponseData> GetLocations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "locations")] HttpRequestData req,
@@ -35,6 +37,7 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Creates a location in the catalog.</summary>
     [Function("CreateLocation")]
     public async Task<HttpResponseData> CreateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "locations")] HttpRequestData req,
@@ -47,6 +50,7 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Deletes a location from the catalog.</summary>
     [Function("DeleteLocation")]
     public async Task<HttpResponseData> DeleteLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "locations/{id}")] HttpRequestData req,

@@ -24,6 +24,7 @@ public sealed partial class BootMediaCertificateRepository
     private readonly TableClient _table;
     private readonly ILogger<BootMediaCertificateRepository> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootMediaCertificateRepository"/>.</summary>
     public BootMediaCertificateRepository(
         TableServiceClient tableService,
         ILogger<BootMediaCertificateRepository> logger)

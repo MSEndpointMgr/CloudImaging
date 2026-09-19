@@ -178,7 +178,7 @@ public sealed class ImageCacheValidationTests : IDisposable
     public void GetAvailableDiskSpace_ReturnsNonNegative()
     {
         var space = _cache.GetAvailableDiskSpace();
-        space.Should().BeGreaterOrEqualTo(0, "available disk space is always non-negative");
+        space.Should().BeGreaterThanOrEqualTo(0, "available disk space is always non-negative");
     }
 
     public void Dispose()

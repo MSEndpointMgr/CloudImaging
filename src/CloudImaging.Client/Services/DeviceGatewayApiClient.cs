@@ -348,9 +348,16 @@ public sealed partial class DeviceGatewayApiClient
 /// </summary>
 public sealed class CreateSessionResponse
 {
+    /// <summary>The unique identifier of the created session.</summary>
     public Guid SessionId { get; init; }
+
+    /// <summary>Bearer token used to authenticate subsequent calls for this session.</summary>
     public string DeviceSessionToken { get; init; } = string.Empty;
+
+    /// <summary>Human-readable passcode shown to the user for authorization.</summary>
     public string Passcode { get; init; } = string.Empty;
+
+    /// <summary>The initial state of the session.</summary>
     public string State { get; init; } = string.Empty;
 }
 
@@ -360,12 +367,25 @@ public sealed class CreateSessionResponse
 /// </summary>
 public sealed class SessionStatusResponse
 {
+    /// <summary>The unique identifier of the session.</summary>
     public Guid SessionId { get; init; }
+
+    /// <summary>The current lifecycle state of the session.</summary>
     public string? State { get; init; }
+
+    /// <summary>The name of the currently executing imaging step.</summary>
     public string? CurrentStep { get; init; }
+
+    /// <summary>Overall imaging progress expressed as a percentage (0-100).</summary>
     public int OverallProgressPercent { get; init; }
+
+    /// <summary>The SAS-signed URL for the image blob, when one has been issued.</summary>
     public string? SasTokenUrl { get; init; }
+
+    /// <summary>UTC expiry of <see cref="SasTokenUrl"/>, when present.</summary>
     public string? SasTokenUrlExpiresAt { get; init; }
+
+    /// <summary>SHA-256 hash of the image blob referenced by <see cref="SasTokenUrl"/>.</summary>
     public string? Sha256Hash { get; init; }
 
     /// <summary>
@@ -384,8 +404,13 @@ public sealed record SasRefreshResult(string? SasTokenUrl, DateTimeOffset? Expir
 /// </summary>
 public sealed class LogUploadUrlResponse
 {
+    /// <summary>The log file name to upload.</summary>
     public string FileName { get; init; } = string.Empty;
+
+    /// <summary>Pre-signed URL to which the log file should be uploaded.</summary>
     public string UploadUrl { get; init; } = string.Empty;
+
+    /// <summary>UTC point at which the upload URL expires.</summary>
     public DateTimeOffset ExpiresAt { get; init; }
 }
 
@@ -400,9 +425,16 @@ public sealed class DeviceGatewayApiException : Exception
     /// <summary>Well-known problem type used by <c>DeviceSessionTokenValidationMiddleware</c> for token failures.</summary>
     public const string TokenProblemType = "https://cloudimaging.io/errors/unauthorized";
 
+    /// <summary>The HTTP status code returned by the Device Gateway API.</summary>
     public System.Net.HttpStatusCode StatusCode { get; }
+
+    /// <summary>RFC7807 problem type from the response body, when present.</summary>
     public string? ProblemType { get; }
 
+    /// <summary>
+    /// Creates a new <see cref="DeviceGatewayApiException"/> for the given status code and
+    /// optional RFC7807 details.
+    /// </summary>
     public DeviceGatewayApiException(System.Net.HttpStatusCode statusCode, string? problemType, string? detail)
         : base(detail ?? $"Device Gateway API returned HTTP {(int)statusCode}.")
     {

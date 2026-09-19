@@ -37,6 +37,7 @@ public sealed partial class CreateSessionFunction
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="CreateSessionFunction"/>.</summary>
     public CreateSessionFunction(
         DeviceSessionRepository sessionRepo,
         DevicePreFlightAuthorizationService preFlight,
@@ -55,6 +56,7 @@ public sealed partial class CreateSessionFunction
         _logger = logger;
     }
 
+    /// <summary>Creates a device imaging session with a one-time passcode and pre-flight authorization.</summary>
     [Function(nameof(CreateSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions")] HttpRequestData req,

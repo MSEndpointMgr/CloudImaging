@@ -14,6 +14,7 @@ public sealed partial class ImageApplyService
 {
     private readonly ILogger<ImageApplyService> _logger;
 
+    /// <summary>Creates a new <see cref="ImageApplyService"/>.</summary>
     public ImageApplyService(ILogger<ImageApplyService> logger) => _logger = logger;
 
     /// <summary>

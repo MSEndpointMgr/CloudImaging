@@ -19,8 +19,10 @@ public sealed class UserPreferencesFunctions
 {
     private readonly ImagingCoreClient _coreClient;
 
+    /// <summary>Initializes a new instance of the <see cref="UserPreferencesFunctions"/> class.</summary>
     public UserPreferencesFunctions(ImagingCoreClient coreClient) => _coreClient = coreClient;
 
+    /// <summary>Returns the user's preferred location (or 404) via the Imaging Core API.</summary>
     [Function("GetUserLocationPreference")]
     public async Task<HttpResponseData> GetUserLocationPreference(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "user-preferences/{userId}")] HttpRequestData req,
@@ -31,6 +33,7 @@ public sealed class UserPreferencesFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Sets or clears the user's preferred location via the Imaging Core API.</summary>
     [Function("PutUserLocationPreference")]
     public async Task<HttpResponseData> PutUserLocationPreference(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "user-preferences/{userId}")] HttpRequestData req,

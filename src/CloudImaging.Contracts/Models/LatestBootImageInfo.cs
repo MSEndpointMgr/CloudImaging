@@ -8,8 +8,13 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class LatestBootImageInfo
 {
+    /// <summary>Version of the latest published boot image.</summary>
     public required string Version { get; init; }
+
+    /// <summary>SHA256 hash of the latest boot image WIM blob, for integrity verification.</summary>
     public required string Sha256Hash { get; init; }
+
+    /// <summary>Time-limited SAS download URL for the boot image blob.</summary>
     public required string SasTokenUrl { get; init; }
 
     /// <summary>Boot image architecture (e.g. "x64", "arm64"). Null when the catalog entry predates

@@ -17,6 +17,7 @@ public sealed partial class ImageCatalogFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<ImageCatalogFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="ImageCatalogFunctions"/> class.</summary>
     public ImageCatalogFunctions(
         ImagingCoreClient coreClient,
         ILogger<ImageCatalogFunctions> logger)
@@ -25,12 +26,14 @@ public sealed partial class ImageCatalogFunctions
         _logger = logger;
     }
 
+    /// <summary>Lists OS images in the catalog.</summary>
     [Function("GetImages")]
     public async Task<HttpResponseData> GetImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "images")] HttpRequestData req,
         FunctionContext context)
         => await Proxy(req, await _coreClient.GetImagesAsync(context.CancellationToken), context.CancellationToken);
 
+    /// <summary>Gets a single OS image from the catalog.</summary>
     [Function("GetImageById")]
     public async Task<HttpResponseData> GetImageById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "images/{id}")] HttpRequestData req,
@@ -44,6 +47,7 @@ public sealed partial class ImageCatalogFunctions
         return await Proxy(req, await _coreClient.GetImagesAsync(context.CancellationToken), context.CancellationToken);
     }
 
+    /// <summary>Creates an OS image in the catalog.</summary>
     [Function("CreateImage")]
     public async Task<HttpResponseData> CreateImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "images")] HttpRequestData req,
@@ -54,6 +58,7 @@ public sealed partial class ImageCatalogFunctions
         return await Proxy(req, await _coreClient.CreateImageAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
+    /// <summary>Updates an OS image in the catalog.</summary>
     [Function("UpdateImage")]
     public async Task<HttpResponseData> UpdateImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "images/{id}")] HttpRequestData req,
@@ -69,6 +74,7 @@ public sealed partial class ImageCatalogFunctions
         return await Proxy(req, await _coreClient.UpdateImageAsync(imageId, payload!, context.CancellationToken), context.CancellationToken);
     }
 
+    /// <summary>Deletes an OS image from the catalog.</summary>
     [Function("DeleteImage")]
     public async Task<HttpResponseData> DeleteImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "images/{id}")] HttpRequestData req,

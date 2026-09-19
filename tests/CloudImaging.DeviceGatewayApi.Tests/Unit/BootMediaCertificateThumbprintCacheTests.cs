@@ -142,7 +142,7 @@ public sealed class BootMediaCertificateThumbprintCacheTests : IDisposable
     public void CacheTtl_MustNotExceed60Seconds()
     {
         BootMediaCertificateThumbprintCache.CacheTtl.TotalSeconds
-            .Should().BeLessOrEqualTo(60,
+            .Should().BeLessThanOrEqualTo(60,
                 "FR-069 requires certificate revocation to take effect within 60 seconds");
     }
 

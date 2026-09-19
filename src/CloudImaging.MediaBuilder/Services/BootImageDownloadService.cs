@@ -20,8 +20,10 @@ public sealed partial class BootImageDownloadService
     private readonly HttpClient _httpClient;
     private readonly ILogger<BootImageDownloadService> _logger;
 
+    /// <summary>Raised periodically with the bytes downloaded so far and the total expected bytes.</summary>
     public event EventHandler<(long Downloaded, long Total)>? ProgressChanged;
 
+    /// <summary>Initializes a new instance of the <see cref="BootImageDownloadService"/> class.</summary>
     public BootImageDownloadService(HttpClient httpClient, ILogger<BootImageDownloadService> logger)
     {
         _httpClient = httpClient;

@@ -8,6 +8,7 @@ namespace CloudImaging.Client.Services;
 /// </summary>
 public sealed partial class SasRefreshCoordinator : IDisposable
 {
+    /// <summary>Minimum remaining lifetime at which the SAS token is proactively refreshed.</summary>
     public static readonly TimeSpan RefreshThreshold = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan PollInterval     = TimeSpan.FromMinutes(5);
 
@@ -17,9 +18,15 @@ public sealed partial class SasRefreshCoordinator : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private bool _disposed;
 
+    /// <summary>The most recently refreshed SAS-signed image URL.</summary>
     public string? CurrentSasUrl { get; private set; }
+
+    /// <summary>The expiry of the current SAS token, when known.</summary>
     public DateTimeOffset? SasExpiresAt  { get; private set; }
 
+    /// <summary>
+    /// Creates a new <see cref="SasRefreshCoordinator"/> seeded with the initial SAS URL and expiry.
+    /// </summary>
     public SasRefreshCoordinator(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -70,6 +77,7 @@ public sealed partial class SasRefreshCoordinator : IDisposable
         }
     }
 
+    /// <summary>Stops the background refresh loop and releases resources.</summary>
     public void Dispose()
     {
         // Disposed from both RunAsync's finally block and ImagingWorkflowViewModel.Dispose, and

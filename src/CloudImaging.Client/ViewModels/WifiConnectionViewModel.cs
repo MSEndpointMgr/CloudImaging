@@ -22,6 +22,10 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     private string? _statusMessage;
     private bool _hasSucceeded;
 
+    /// <summary>
+    /// Creates a new <see cref="WifiConnectionViewModel"/> that immediately scans for available
+    /// networks. <paramref name="closeRequested"/> is invoked when the Close command runs.
+    /// </summary>
     public WifiConnectionViewModel(WirelessConnectionService? wifiService = null, Action? closeRequested = null)
     {
         _wifiService    = wifiService ?? new WirelessConnectionService();
@@ -35,8 +39,10 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         _ = RefreshAsync();
     }
 
+    /// <summary>Networks discovered by the most recent scan.</summary>
     public System.Collections.ObjectModel.ObservableCollection<WifiNetwork> Networks { get; } = [];
 
+    /// <summary>Gets or sets the network the technician has selected; resets the status on change.</summary>
     public WifiNetwork? SelectedNetwork
     {
         get => _selectedNetwork;
@@ -63,18 +69,21 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     /// <summary>True when the selected network needs a passphrase (WPA/WPA2/WPA3-Personal). Open networks show no password field at all.</summary>
     public bool ShowPasswordField => SelectedNetwork?.AuthKind == WifiAuthKind.PersonalPsk;
 
+    /// <summary>True while a network scan is in progress.</summary>
     public bool IsScanning
     {
         get => _isScanning;
         private set { _isScanning = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanConnect)); }
     }
 
+    /// <summary>True while a connection attempt is in progress.</summary>
     public bool IsConnecting
     {
         get => _isConnecting;
         private set { _isConnecting = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanConnect)); }
     }
 
+    /// <summary>Message describing the current scan/connect state, or the last error/success.</summary>
     public string? StatusMessage
     {
         get => _statusMessage;
@@ -91,9 +100,16 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         private set { _hasSucceeded = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
+    /// <summary>Re-scans for available networks.</summary>
     public ICommand RefreshCommand { get; }
+
+    /// <summary>Connects to the selected network, optionally with the entered passphrase.</summary>
     public ICommand ConnectCommand { get; }
+
+    /// <summary>Clears the current network selection.</summary>
     public ICommand ClearSelectionCommand { get; }
+
+    /// <summary>Requests that the hosting window be closed.</summary>
     public ICommand CloseCommand { get; }
 
     private async Task RefreshAsync()
@@ -148,6 +164,7 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Raised when a bound property value changes.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
