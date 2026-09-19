@@ -26,6 +26,8 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 /// </summary>
 public sealed partial class ReportProgressFunction
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ImagingStepRepository _stepRepo;
     private readonly SessionHistoryRepository _historyRepo;
@@ -62,8 +64,7 @@ public sealed partial class ReportProgressFunction
         ProgressPayload? payload;
         try
         {
-            payload = await JsonSerializer.DeserializeAsync<ProgressPayload>(
-                req.Body, cancellationToken: context.CancellationToken);
+            payload = await DeserializePayloadAsync(req.Body, context.CancellationToken);
         }
         catch (JsonException) { return req.CreateResponse(HttpStatusCode.BadRequest); }
 
@@ -78,22 +79,33 @@ public sealed partial class ReportProgressFunction
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
 
-        // Persist the step record
+        var allSteps = (await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken)).ToList();
+        var existingStep = allSteps.FirstOrDefault(existing => existing.StepName == payload.StepName);
+        var now = DateTimeOffset.UtcNow;
+
+        // Preserve the initial start timestamp when a later completion/failure report replaces
+        // the same Table Storage row. Without this, completed steps lose their elapsed-time data.
         var step = new ImagingStep
         {
             StepName = payload.StepName,
             Status = payload.Status,
             StepProgressPercent = payload.StepProgressPercent,
             ErrorDetail = payload.ErrorDetail,
-            StartedAt = payload.Status == ImagingStepStatus.InProgress ? DateTimeOffset.UtcNow : null,
+            StartedAt = existingStep?.StartedAt
+                        ?? (payload.Status == ImagingStepStatus.InProgress ? now : null),
             CompletedAt = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed
-                                  ? DateTimeOffset.UtcNow : null,
+                                  ? now : null,
         };
 
         await _stepRepo.UpsertAsync(sessionGuid, step, context.CancellationToken);
 
-        // Reload all steps to recalculate overall progress
-        var allSteps = await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken);
+        if (existingStep is not null)
+        {
+            allSteps.Remove(existingStep);
+        }
+        allSteps.Add(step);
+
+        // Recalculate session summary from the updated step collection.
         var overallPercent = OverallProgressCalculator.Calculate(allSteps);
         var activeStep = OverallProgressCalculator.CurrentOrLastStepName(allSteps);
 
@@ -135,6 +147,8 @@ public sealed partial class ReportProgressFunction
                 DeviceSerialNumber = updated.DeviceSerialNumber,
                 DeviceManufacturer = updated.DeviceManufacturer,
                 DeviceModel = updated.DeviceModel,
+                LocationId = updated.LocationId,
+                LocationName = updated.LocationName,
                 PreFlightAuthorizationResult = updated.PreFlightAuthorizationResult,
                 AssignedOsImageId = updated.AssignedOsImageId,
                 FailedStepName = failedStep?.StepName,
@@ -149,10 +163,15 @@ public sealed partial class ReportProgressFunction
         return response;
     }
 
-    private sealed class ProgressPayload
+    internal static ValueTask<ProgressPayload?> DeserializePayloadAsync(
+        Stream body,
+        CancellationToken cancellationToken = default) =>
+        JsonSerializer.DeserializeAsync<ProgressPayload>(body, JsonOptions, cancellationToken);
+
+    internal sealed class ProgressPayload
     {
-        public ImagingStepName StepName { get; init; }
-        public ImagingStepStatus Status { get; init; }
+        public required ImagingStepName StepName { get; init; }
+        public required ImagingStepStatus Status { get; init; }
         public int? StepProgressPercent { get; init; }
         public string? ErrorDetail { get; init; }
     }

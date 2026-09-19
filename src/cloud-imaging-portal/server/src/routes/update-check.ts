@@ -13,17 +13,28 @@ import { getUpdateStatus } from '../services/updateCheck.js';
  */
 const router = Router();
 
+async function isUpdateCheckEnabled(): Promise<boolean> {
+  try {
+    const config = await operatorApiClient.getConfiguration() as { updateCheckEnabled?: boolean };
+    return config.updateCheckEnabled === true;
+  } catch {
+    // Configuration unreadable: fail closed. A transient Operator API problem can never cause
+    // an outbound call the administrator did not opt in to.
+    return false;
+  }
+}
+
 router.get('/', requireRole('CloudImaging.Administrator'), async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    let enabled = false;
-    try {
-      const config = await operatorApiClient.getConfiguration() as { updateCheckEnabled?: boolean };
-      enabled = config.updateCheckEnabled === true;
-    } catch {
-      // Configuration unreadable: stay disabled. Failing closed here means a transient
-      // Operator API problem can never cause an outbound call the administrator did not opt in to.
-    }
-    res.json(await getUpdateStatus(enabled));
+    res.json(await getUpdateStatus(await isUpdateCheckEnabled()));
+  } catch (err) { next(err); }
+});
+
+// Manual "Check now": bypasses the 6h cache so an administrator gets an immediate answer instead
+// of waiting for it to expire. Still gated by the same opt-in setting as the GET above.
+router.post('/refresh', requireRole('CloudImaging.Administrator'), async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    res.json(await getUpdateStatus(await isUpdateCheckEnabled(), true));
   } catch (err) { next(err); }
 });
 

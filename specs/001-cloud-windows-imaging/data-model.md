@@ -36,7 +36,7 @@ Represents one imaging workflow instance for one device.
 
 1. `SessionAssigned -> SessionStarted` is automatic on next poll when assignment details are requested.
 2. Pre-imaging states expire after 30 minutes of inactivity.
-3. In-progress states fail after heartbeat timeout policy (> 4 hours without heartbeat).
+3. In-progress states fail after heartbeat timeout policy (> 2 hours without heartbeat).
 4. Terminal states are purged after 24 hours.
 5. Pairing passcode has its own configurable TTL (deployment parameter; default: 30 minutes) independent of the session inactivity timeout; invalidated on TTL expiry or successful coupling, whichever occurs first. Passcode uniqueness is scoped to currently active (non-terminal, non-expired) sessions only; passcodes from terminal or expired sessions are considered released and MAY be reused in new sessions.
 

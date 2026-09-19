@@ -107,7 +107,7 @@ Device-facing gateway that supports WinPE clients without direct Entra ID sign-i
 ## Session Timeout Semantics
 
 - **Pre-imaging states** (SessionInit, SessionAllowed, SessionAssigned): Expire after 30 minutes of **idle time** (no GET /status poll).
-- **Active imaging states** (SessionStarted, SessionInProgress): Fail and auto-transition to SessionFailed after more than 4 hours **without poll heartbeat** (30-second polling window).
+- **Active imaging states** (SessionStarted, SessionInProgress): Fail and auto-transition to SessionFailed after more than 2 hours **without poll heartbeat** (30-second polling window).
   - Definition of poll heartbeat: Successfully received GET /status request with valid device-session token; response sent within 30 seconds.
   - Missed heartbeat threshold: Two consecutive 30-second polling windows with no valid GET /status request.
 - **Terminal states** (SessionCompleted, SessionFailed): Persisted for 24 hours, then auto-purged from storage.

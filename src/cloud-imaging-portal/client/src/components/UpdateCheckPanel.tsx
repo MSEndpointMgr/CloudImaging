@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card.tsx';
 import { Switch } from './ui/switch.tsx';
-import { fetchUpdateStatus, displayVersion, type UpdateStatus, type UpdateCheckStatus } from '../lib/updateCheck.ts';
+import { Button, type ButtonStatus } from './ui/button.tsx';
+import { fetchUpdateStatus, triggerUpdateCheck, displayVersion, type UpdateStatus, type UpdateCheckStatus } from '../lib/updateCheck.ts';
 
 /** Plain-language explanation for each non-`ok` status, so the panel never shows a bare code. */
 const STATUS_MESSAGE: Record<UpdateCheckStatus, string> = {
@@ -28,6 +29,7 @@ interface Props {
 export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props): React.ReactElement {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [checkStatus, setCheckStatus] = useState<ButtonStatus>('idle');
 
   const refresh = async () => {
     setLoading(true);
@@ -37,12 +39,38 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
 
   useEffect(() => { void refresh(); }, []);
 
+  const checkNow = async () => {
+    setCheckStatus('loading');
+    const result = await triggerUpdateCheck();
+    if (result) {
+      setStatus(result);
+      setCheckStatus('success');
+    } else {
+      setCheckStatus('error');
+    }
+    setTimeout(() => setCheckStatus('idle'), 2000);
+  };
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <RefreshCw className="h-5 w-5 text-primary" aria-hidden="true" />
-          <CardTitle>Version</CardTitle>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5 text-primary" aria-hidden="true" />
+            <CardTitle>Version</CardTitle>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            status={checkStatus}
+            onClick={() => void checkNow()}
+            disabled={disabled || loading || status?.status === 'disabled'}
+            title={status?.status === 'disabled' ? 'Enable version checking below to check now' : 'Check GitHub now'}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            Check now
+          </Button>
         </div>
         <CardDescription>
           Shows the Cloud Imaging release this deployment is running, and optionally checks
@@ -52,9 +80,9 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-4 rounded-md border border-border bg-muted/30 p-4">
           <div>
-            <p className="text-xs text-muted-foreground">Installed version</p>
+            <p className="text-xs text-muted-foreground">Environment type</p>
             <p className="mt-0.5 font-mono text-sm">
-              {loading ? '…' : displayVersion(status?.current ?? null)}
+              {loading ? '…' : status?.environmentLabel ?? 'Unknown'}
             </p>
           </div>
           <div>

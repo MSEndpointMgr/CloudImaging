@@ -35,6 +35,21 @@ function isValid(token: AccessToken | undefined): token is AccessToken {
   return token !== undefined && token.expiresOnTimestamp - Date.now() > EXPIRY_SKEW_MS;
 }
 
+// Cheap claims check (no signature verification needed, we're inspecting our OWN issued
+// token) so a stale/role-less token served by the platform is visible in logs, not just
+// as a downstream 403 that looks like a config problem.
+function hasPortalAccessRole(token: string): boolean {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return false;
+    const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const roles = (claims as { roles?: unknown }).roles;
+    return Array.isArray(roles) && roles.includes('CloudImaging.PortalAccess');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Returns a valid bearer token for the Operator API, acquiring (and caching) a new one from
  * the managed identity when necessary. Concurrent callers share a single in-flight request.
@@ -57,6 +72,11 @@ export async function getOperatorApiToken(): Promise<string> {
       if (!token) {
         throw new Error('Managed identity returned no token for the Operator API.');
       }
+      // No raw token/claims logged, just enough to catch a role-less token before it 403s downstream.
+      console.log('Operator API token acquired', {
+        hasPortalAccessRole: hasPortalAccessRole(token.token),
+        expiresOn: new Date(token.expiresOnTimestamp).toISOString(),
+      });
       cachedToken = token;
       return token;
     })

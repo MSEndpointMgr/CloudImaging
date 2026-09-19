@@ -22,6 +22,10 @@ resource storageApp 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
+    // install.ps1 and upgrade.ps1 upload component packages with the account key, because a
+    // freshly granted data plane role can take minutes to propagate. Apps still read the
+    // package with their own managed identity.
+    allowSharedKeyAccess: true
   }
 }
 
@@ -34,6 +38,7 @@ resource storageCoreApi 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: true
   }
 }
 
@@ -52,6 +57,14 @@ resource containerOsImages 'Microsoft.Storage/storageAccounts/blobServices/conta
 resource containerBootImages 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobServiceCore
   name: 'boot-images'
+  properties: { publicAccess: 'None' }
+}
+
+// WinRE recovery images, uploaded from the portal's Recovery Images view. Same staged-then-
+// published layout as boot-images.
+resource containerRecoveryImages 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobServiceCore
+  name: 'recovery-images'
   properties: { publicAccess: 'None' }
 }
 
@@ -81,7 +94,7 @@ resource containerSessionLogs 'Microsoft.Storage/storageAccounts/blobServices/co
 }
 
 // Lifecycle policy: delete session log blobs 90 days after last modification. Scoped only to the
-// session-logs/ prefix so it never touches os-images/boot-images/branding/app-packages.
+// session-logs/ prefix so it never touches os-images/boot-images/recovery-images/branding/app-packages.
 resource storageCoreLifecyclePolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
   parent: storageCoreApi
   name: 'default'

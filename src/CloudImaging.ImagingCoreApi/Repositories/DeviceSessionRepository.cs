@@ -42,7 +42,7 @@ public sealed class DeviceSessionRepository
     /// <summary>Persist a newly created session.</summary>
     public async Task CreateAsync(DeviceSession session, CancellationToken ct = default)
     {
-        var entity = ToEntity(session, ActivePartition);
+        var entity = ToEntity(session, PartitionForState(session.State));
         await _table.AddEntityAsync(entity, ct);
     }
 
@@ -73,10 +73,7 @@ public sealed class DeviceSessionRepository
     public async Task UpdateAsync(DeviceSession session, CancellationToken ct = default)
     {
         var key = session.SessionId.ToString();
-        var isTerminal = session.State is SessionState.SessionCompleted
-            or SessionState.SessionFailed
-            or SessionState.SessionNotAuthorized
-            or SessionState.SessionExpired;
+        var isTerminal = IsTerminalState(session.State);
 
         var targetPartition = isTerminal ? TerminalPartition : ActivePartition;
         var entity = ToEntity(session, targetPartition);
@@ -238,6 +235,15 @@ public sealed class DeviceSessionRepository
         ["TerminalAt"] = s.TerminalAt,
         ["PurgeAt"] = s.PurgeAt,
     };
+
+    internal static string PartitionForState(SessionState state) =>
+        IsTerminalState(state) ? TerminalPartition : ActivePartition;
+
+    private static bool IsTerminalState(SessionState state) => state is
+        SessionState.SessionCompleted
+        or SessionState.SessionFailed
+        or SessionState.SessionNotAuthorized
+        or SessionState.SessionExpired;
 
     internal static DeviceSession FromEntity(TableEntity e) => new()
     {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, Upload, X, HardDrive } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -73,7 +74,18 @@ export default function BootImagesPage(): React.ReactElement {
       const res = await apiFetchWithRetry('/api/boot-images', { credentials: 'include' });
       if (res.ok) {
         setImages(await res.json() as BootImage[]);
-      } else notify({ status: 'error', title: 'Failed to load boot images.' });
+      } else {
+        // An empty catalog is a 200 with [], so a failure here is always a real one. Relaying
+        // the server's reason matters most for the 403 a deployment gets when the portal
+        // backend's managed identity has no CloudImaging.PortalAccess role yet: without it the
+        // page is indistinguishable from one that simply has no boot images.
+        setImages([]);
+        notify({
+          status: 'error',
+          title: 'Failed to load boot images.',
+          description: await extractErrorDetail(res, `The server responded with status ${String(res.status)}.`),
+        });
+      }
     } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
   };
@@ -165,7 +177,7 @@ export default function BootImagesPage(): React.ReactElement {
                   <EmptyState
                     icon={HardDrive}
                     title="No boot images"
-                    description="Upload a boot image here, or publish one directly from the Media Builder app."
+                    description="Generate a boot image in the Media Builder app, then upload the WIM file here to publish it."
                     action={isAdministrator ? (
                       <Button onClick={() => setUploadOpen(true)}>
                         <Upload className="h-4 w-4" />
@@ -305,7 +317,9 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
     : '';
   const stagePercent = stage === 'publishing' ? uploadJobProgressPercent(publishJob) : percent;
 
-  return (
+  // Portalled to document.body so the dimming overlay always covers the full viewport (including
+  // the app header) regardless of any stacking context introduced by this page's own layout.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 py-6">
@@ -392,7 +406,8 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
           </div>
         </CardContent>
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

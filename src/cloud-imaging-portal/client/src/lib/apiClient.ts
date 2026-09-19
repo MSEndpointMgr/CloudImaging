@@ -1,5 +1,5 @@
 import type { AccountInfo } from '@azure/msal-browser';
-import { getMsalInstance, getApiScope } from './msal.ts';
+import { getMsalInstance, getApiScope, getSilentRedirectUri } from './msal.ts';
 
 /**
  * A single shared in-flight interactive-redirect promise. `msalInstance.acquireTokenRedirect`
@@ -84,11 +84,143 @@ function pendingForever(): Promise<never> {
 }
 
 /**
+ * Ceiling on interactive sign-in redirects, and the window it applies over.
+ *
+ * Every redirect tears the app down and boots it again, so `redirectInFlight` above only
+ * de-duplicates *within* one page load and can never see a loop that spans loads. A condition
+ * that makes the session look unusable on every single load (the portal backend rejecting every
+ * token because its ENTRA_CLIENT_ID/ENTRA_TENANT_ID don't match the ones the SPA signed in with,
+ * for instance) therefore bounced the browser between the portal and Entra without limit, until
+ * Entra's own loop protection cut in and answered with "We couldn't sign you in. Please try
+ * again." on the account picker. The counter has to live in storage that survives the
+ * navigation for the app to notice that at all.
+ *
+ * Three is deliberately above the one redirect a genuinely expired session costs, so the normal
+ * recovery path is never interrupted.
+ */
+const REDIRECT_BUDGET_KEY = 'cloudimaging.auth.redirectAttempts';
+const REDIRECT_BUDGET_MAX = 3;
+const REDIRECT_BUDGET_WINDOW_MS = 120_000;
+
+let signInLoopDetected = false;
+const signInLoopListeners = new Set<() => void>();
+
+/**
+ * Why the last silent token acquisition failed, persisted across the redirect it triggers.
+ *
+ * Both call sites used to swallow the MSAL error entirely, so a loop left no evidence anywhere:
+ * the redirect never reaches the backend, so there is nothing in server logs either, and the
+ * only visible symptom was the browser bouncing. Keeping the error code (never the token or
+ * claims) is what makes the difference between naming the cause and guessing at it.
+ */
+const SILENT_FAILURE_KEY = 'cloudimaging.auth.lastSilentFailure';
+
+export interface SilentFailureDiagnostic {
+  errorCode: string;
+  message: string;
+  accountCount: number;
+  activeAccountMatched: boolean;
+  at: string;
+}
+
+function recordSilentFailure(err: unknown): void {
+  // Runs inside the auth failure path, so it must never throw and change what the caller does.
+  try {
+    const msalInstance = getMsalInstance();
+    const diagnostic: SilentFailureDiagnostic = {
+      errorCode: (err as { errorCode?: string }).errorCode ?? (err as Error)?.name ?? 'unknown',
+      message: (err as Error)?.message ?? String(err),
+      accountCount: msalInstance.getAllAccounts().length,
+      activeAccountMatched: msalInstance.getActiveAccount() !== null,
+      at: new Date().toISOString(),
+    };
+    console.warn('Silent token acquisition failed', diagnostic);
+    sessionStorage.setItem(SILENT_FAILURE_KEY, JSON.stringify(diagnostic));
+  } catch {
+    // Diagnostics are never worth breaking sign-in over.
+  }
+}
+
+/** Returns the last recorded silent-acquisition failure, for the sign-in loop screen. */
+export function getSilentFailureDiagnostic(): SilentFailureDiagnostic | null {
+  try {
+    const raw = sessionStorage.getItem(SILENT_FAILURE_KEY);
+    return raw ? (JSON.parse(raw) as SilentFailureDiagnostic) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True once the redirect budget has been exhausted; sign-in will not be retried again. */
+export function isSignInLoopDetected(): boolean {
+  return signInLoopDetected;
+}
+
+/** Subscribes to loop detection. Shaped for `useSyncExternalStore`. */
+export function subscribeToSignInLoop(listener: () => void): () => void {
+  signInLoopListeners.add(listener);
+  return () => {
+    signInLoopListeners.delete(listener);
+  };
+}
+
+function reportSignInLoop(): void {
+  if (signInLoopDetected) return;
+  signInLoopDetected = true;
+  for (const listener of signInLoopListeners) listener();
+}
+
+/** Records a redirect attempt. Returns false once the budget for the window is spent. */
+function consumeRedirectBudget(): boolean {
+  const now = Date.now();
+  try {
+    const raw = sessionStorage.getItem(REDIRECT_BUDGET_KEY);
+    let first = now;
+    let count = 0;
+    if (raw) {
+      const parsed = JSON.parse(raw) as { count?: unknown; first?: unknown };
+      if (
+        typeof parsed.first === 'number' &&
+        typeof parsed.count === 'number' &&
+        now - parsed.first < REDIRECT_BUDGET_WINDOW_MS
+      ) {
+        first = parsed.first;
+        count = parsed.count;
+      }
+    }
+    count += 1;
+    sessionStorage.setItem(REDIRECT_BUDGET_KEY, JSON.stringify({ count, first }));
+    return count <= REDIRECT_BUDGET_MAX;
+  } catch {
+    // Storage unavailable (private mode quota). Blocking sign-in over a missing counter would
+    // be a worse failure than the loop it guards against.
+    return true;
+  }
+}
+
+/** Restores the full redirect budget. Called once the server accepts a token. */
+export function clearRedirectBudget(): void {
+  try {
+    sessionStorage.removeItem(REDIRECT_BUDGET_KEY);
+  } catch {
+    // Nothing to clear if storage is unavailable.
+  }
+}
+
+/**
  * Starts (or joins) a single interactive sign-in redirect. Callers should `await` the
  * returned promise and treat it as "this request can never complete on this page load":
  * it only resolves once the browser has navigated away.
  */
 function triggerInteractiveRedirect(account: AccountInfo | null): Promise<never> {
+  if (!consumeRedirectBudget()) {
+    // Stop navigating and let the UI explain the failure. Callers still never settle, which is
+    // the same contract as a redirect, so nothing downstream renders a half-loaded page behind
+    // the notice.
+    reportSignInLoop();
+    return pendingForever();
+  }
+
   if (!redirectInFlight) {
     rememberReturnPath();
     redirectInFlight = getMsalInstance()
@@ -130,9 +262,14 @@ export async function ensureSessionFresh(): Promise<boolean> {
   const account = resolveAccount();
   if (!account) return false;
   try {
-    await getMsalInstance().acquireTokenSilent({ account, scopes: [getApiScope()] });
+    await getMsalInstance().acquireTokenSilent({
+      account,
+      scopes: [getApiScope()],
+      redirectUri: getSilentRedirectUri(),
+    });
     return true;
-  } catch {
+  } catch (err) {
+    recordSilentFailure(err);
     return triggerInteractiveRedirect(account);
   }
 }
@@ -148,9 +285,13 @@ async function acquireApiToken(): Promise<string | null> {
   if (!account) return null;
 
   try {
-    const result = await getMsalInstance().acquireTokenSilent({ account, scopes: [getApiScope()] });
+    const result = await getMsalInstance().acquireTokenSilent({
+      account,
+      scopes: [getApiScope()],
+      redirectUri: getSilentRedirectUri(),
+    });
     return result.accessToken;
-  } catch {
+  } catch (err) {
     // Silent acquisition failed. The common case is an expired session: the access
     // token and refresh token have both lapsed and MSAL's hidden-iframe renewal is
     // blocked by the browser's third-party-cookie restrictions (surfaces as
@@ -159,6 +300,7 @@ async function acquireApiToken(): Promise<string | null> {
     // interactive redirect. Awaiting it here means this call never falls through to
     // an unauthenticated fetch that would otherwise flash a confusing 401/403 error in
     // the instant before the browser navigates to sign-in.
+    recordSilentFailure(err);
     return triggerInteractiveRedirect(account);
   }
 }
@@ -185,6 +327,10 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   if (response.status === 401) {
     return triggerInteractiveRedirect(resolveAccount());
   }
+
+  // Any other status means the server validated the token, so whatever redirect brought us
+  // here did its job. A 403 counts: the token was accepted, the caller just lacks the role.
+  clearRedirectBudget();
 
   return response;
 }

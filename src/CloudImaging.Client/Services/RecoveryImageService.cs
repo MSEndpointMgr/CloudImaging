@@ -11,7 +11,8 @@ namespace CloudImaging.Client.Services;
 ///
 /// Unlike <see cref="ImageApplyService"/> (which uses DISM to apply the full OS image), the
 /// recovery image is simply copied into place and registered with the Windows Recovery
-/// Environment agent (<c>reagentc.exe</c>) — WinRE images are not applied via DISM.
+/// Environment agent (<c>reagentc.exe</c>) — WinRE images are not applied via DISM. Windows
+/// enables the registered image during the applied OS image's first <c>specialize</c> pass.
 ///
 /// <see cref="ApplyAsync"/> applies a Recovery Image downloaded from the Portal catalog (the
 /// preferred path — this is how admins deploy a custom WinRE with injected drivers or tools).
@@ -29,7 +30,7 @@ public sealed partial class RecoveryImageService
     /// <summary>
     /// Verifies the SHA-256 hash of the downloaded WinRE image, copies it to both the
     /// conventional location under the Windows volume (<c>Windows\System32\Recovery\Winre.wim</c>)
-    /// and the dedicated Recovery partition, then registers and enables it via
+    /// and the dedicated Recovery partition, then registers it with the offline Windows image via
     /// <c>reagentc.exe</c>. Finally removes the Recovery partition's temporary drive letter
     /// (assigned by <see cref="DiskFormatService"/> only so this step could write to it) —
     /// best-effort, since a leftover letter is cosmetic and must never fail the pipeline.
@@ -105,8 +106,8 @@ public sealed partial class RecoveryImageService
     /// <summary>
     /// Shared tail of both <see cref="ApplyAsync"/> and <see cref="ApplyFromEmbeddedImageAsync"/>:
     /// copies the WinRE image already staged at <c>{windowsVolume}\Windows\System32\Recovery\Winre.wim</c>
-    /// onto the dedicated Recovery partition, registers and enables it via <c>reagentc.exe</c>, then
-    /// best-effort removes the Recovery partition's temporary drive letter.
+    /// onto the dedicated Recovery partition, registers it against the offline Windows image via
+    /// <c>reagentc.exe</c>, then best-effort removes the Recovery partition's temporary drive letter.
     /// </summary>
     private async Task FinalizeApplyAsync(string windowsVolume, string recoveryVolume, CancellationToken ct)
     {
@@ -115,8 +116,17 @@ public sealed partial class RecoveryImageService
         Directory.CreateDirectory(partitionRecoveryDir);
         File.Copy(windowsRecoveryWimPath, Path.Combine(partitionRecoveryDir, "Winre.wim"), overwrite: true);
 
-        await RunReagentcAsync($"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"", ct);
-        await RunReagentcAsync($"/enable /target \"{windowsVolume}\\Windows\"", ct);
+        await RunReagentcAsync(
+            windowsVolume,
+            BuildSetReimageArguments(partitionRecoveryDir, windowsVolume),
+            ct);
+
+        // Microsoft documents this exact sequence for deploying WinRE to an offline image:
+        // copy Winre.wim, run /setreimage with /target, then hide the recovery partition.
+        // Do not add `/enable /target`: /enable has no /target form. On first boot Windows runs
+        // /enable automatically during specialize. The separate WinPE form is `/enable /osguid
+        // {bcd-guid}` after bcdboot, but forcing that here duplicates the documented specialize
+        // behavior and requires fragile parsing of localized bcdedit output.
 
         await RemoveRecoveryDriveLetterAsync(recoveryVolume, ct);
 
@@ -127,22 +137,27 @@ public sealed partial class RecoveryImageService
     private static string GetWindowsRecoveryWimPath(string windowsVolume) =>
         Path.Combine($"{windowsVolume}\\", "Windows", "System32", "Recovery", "Winre.wim");
 
-    private async Task RunReagentcAsync(string arguments, CancellationToken ct)
+    private static string GetOfflineReagentcPath(string windowsVolume) =>
+        Path.Combine($"{windowsVolume}\\", "Windows", "System32", "reagentc.exe");
+
+    private static string BuildSetReimageArguments(string partitionRecoveryDir, string windowsVolume) =>
+        $"/setreimage /path \"{partitionRecoveryDir}\" /target \"{windowsVolume}\\Windows\"";
+
+    private async Task RunReagentcAsync(string windowsVolume, string arguments, CancellationToken ct)
     {
         LogStartingReagentc(_logger, arguments);
 
-        // Resolved to a fully-qualified path (rather than a bare "reagentc.exe" relying on
-        // PATH/CreateProcess's implicit System32 search) so that, if a boot image was built
-        // before BootImageGenerationService started injecting reagentc.exe into WinPE, the
-        // resulting error clearly names the missing file instead of a generic Win32Exception
-        // "The system cannot find the file specified" with no indication of what/where.
-        var reagentcPath = Path.Combine(Environment.SystemDirectory, "reagentc.exe");
+        // Use the copy belonging to the applied Windows image. It and its adjacent ReAgent.dll
+        // and wimgapi.dll are version-matched; transplanting these binaries from the Media
+        // Builder workstation into WinPE caused STATUS_DLL_NOT_FOUND at runtime.
+        var reagentcPath = GetOfflineReagentcPath(windowsVolume);
+        var targetSystemDir = Path.GetDirectoryName(reagentcPath)!;
         if (!File.Exists(reagentcPath))
         {
             LogReagentcNotFound(_logger, reagentcPath);
             throw new InvalidOperationException(
-                $"\"{reagentcPath}\" was not found. This WinPE boot image was built before reagentc.exe " +
-                "injection was added to boot image generation — rebuild the boot media to pick up the fix.");
+                $"\"{reagentcPath}\" was not found in the applied Windows image. The OS image is " +
+                "incomplete or its Windows directory is not mounted at the expected volume.");
         }
 
         using var process = new Process
@@ -151,6 +166,7 @@ public sealed partial class RecoveryImageService
             {
                 FileName = reagentcPath,
                 Arguments = arguments,
+                WorkingDirectory = targetSystemDir,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

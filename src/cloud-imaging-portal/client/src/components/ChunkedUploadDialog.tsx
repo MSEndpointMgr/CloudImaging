@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { UploadProgressBar } from './UploadProgressBar.tsx';
 import { Button } from './ui/button.tsx';
@@ -196,7 +197,11 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   const duplicateVersion = isDuplicateVersion(version, existingVersions);
   const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion && !atCapacity;
 
-  return (
+  // Portalled to document.body: this component renders deep inside the routed page tree, and a
+  // `position: fixed` overlay only reliably covers the true viewport (including the app header)
+  // if it isn't nested under any ancestor that could establish its own stacking/containing
+  // context. Matches the same rationale already used for the Select dropdown's portalled list.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 py-6">
@@ -338,7 +343,8 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
           </div>
         </CardContent>
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

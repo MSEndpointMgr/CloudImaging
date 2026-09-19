@@ -86,6 +86,15 @@ public sealed partial class BootImageSelfUpdateService
                 return;
             }
 
+            // ARM64 milestone groundwork (todo/arm64-support.md #8): reject a mismatched
+            // architecture before downloading anything. Absent values default to "x64", the
+            // only architecture that exists today, so older manifests/responses are unaffected.
+            if (!ArchitecturesMatch(currentManifest.Architecture, latest.Architecture))
+            {
+                LogArchitectureMismatch(_logger, currentManifest.Architecture ?? "x64", latest.Architecture ?? "x64");
+                return;
+            }
+
             LogNewerVersionFound(_logger, currentManifest.BootImageVersion, latest.Version);
 
             var tempWimPath = Path.Combine(Path.GetTempPath(), $"ci-boot-update-{Guid.NewGuid():N}.wim");
@@ -103,17 +112,7 @@ public sealed partial class BootImageSelfUpdateService
                 var destWimPath = Path.Combine(bootDrive, "sources", "boot.wim");
                 File.Copy(tempWimPath, destWimPath, overwrite: true);
 
-                var updatedManifest = new UsbPreparationManifest
-                {
-                    ManifestVersion = currentManifest.ManifestVersion,
-                    PreparedAt = currentManifest.PreparedAt,
-                    ToolVersion = currentManifest.ToolVersion,
-                    BootImageVersion = latest.Version,
-                    SelectedDiskId = currentManifest.SelectedDiskId,
-                    PartitionSchema = currentManifest.PartitionSchema,
-                    ValidationResults = currentManifest.ValidationResults,
-                    AutoStartConfigured = currentManifest.AutoStartConfigured,
-                };
+                var updatedManifest = BuildUpdatedManifest(currentManifest, latest.Version);
                 await File.WriteAllTextAsync(
                     manifestPath,
                     JsonSerializer.Serialize(updatedManifest, ManifestWriteOptions),
@@ -138,6 +137,27 @@ public sealed partial class BootImageSelfUpdateService
         await using var fileStream = File.Create(destinationPath);
         await responseStream.CopyToAsync(fileStream, ct);
     }
+
+    /// <summary>Copies every field from <paramref name="current"/> except <c>BootImageVersion</c>, which becomes <paramref name="newVersion"/>. Keeping this as its own method is what makes field preservation (e.g. LocationId/LocationName) unit-testable without a real BOOT volume.</summary>
+    private static UsbPreparationManifest BuildUpdatedManifest(UsbPreparationManifest current, string newVersion) =>
+        new()
+        {
+            ManifestVersion = current.ManifestVersion,
+            PreparedAt = current.PreparedAt,
+            ToolVersion = current.ToolVersion,
+            BootImageVersion = newVersion,
+            SelectedDiskId = current.SelectedDiskId,
+            LocationId = current.LocationId,
+            LocationName = current.LocationName,
+            Architecture = current.Architecture,
+            PartitionSchema = current.PartitionSchema,
+            ValidationResults = current.ValidationResults,
+            AutoStartConfigured = current.AutoStartConfigured,
+        };
+
+    /// <summary>Null on either side means "x64" (pre-architecture-tracking manifests/responses).</summary>
+    private static bool ArchitecturesMatch(string? currentArchitecture, string? latestArchitecture) =>
+        string.Equals(currentArchitecture ?? "x64", latestArchitecture ?? "x64", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Locates the BOOT-labelled FAT32 volume this Client is running from — mirrors
@@ -172,14 +192,17 @@ public sealed partial class BootImageSelfUpdateService
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Boot image self-update: could not locate the BOOT volume.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: could not locate the BOOT volume.")]
     private static partial void LogBootVolumeNotFound(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Boot image self-update: no preparation manifest found at {ManifestPath}.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: no preparation manifest found at {ManifestPath}.")]
     private static partial void LogManifestNotFound(ILogger logger, string manifestPath);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "Boot image self-update: no latest boot image info available from Device Gateway API.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: no latest boot image info available from Device Gateway API.")]
     private static partial void LogNoLatestBootImageAvailable(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: architecture mismatch (current {CurrentArchitecture}, latest {LatestArchitecture}) — aborting, keeping the current boot.wim.")]
+    private static partial void LogArchitectureMismatch(ILogger logger, string currentArchitecture, string latestArchitecture);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image self-update: already running the latest version {Version}.")]
     private static partial void LogAlreadyUpToDate(ILogger logger, string version);

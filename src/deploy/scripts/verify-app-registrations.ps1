@@ -27,12 +27,19 @@
 .PARAMETER MediaBuilderClientId
     Application (client) ID of the Cloud Imaging Media Builder app registration (Registration 3).
 
+.PARAMETER TenantId
+    Tenant (directory) ID or domain to sign in to. Optional, but recommended if you have access
+    to more than one Entra tenant, since otherwise the sign-in lands in whichever tenant your
+    browser session defaults to.
+
 .EXAMPLE
     .\verify-app-registrations.ps1 `
         -PortalClientId       "00000000-0000-0000-0000-000000000000" `
         -OperatorApiClientId  "11111111-1111-1111-1111-111111111111" `
-        -MediaBuilderClientId "22222222-2222-2222-2222-222222222222"
+        -MediaBuilderClientId "22222222-2222-2222-2222-222222222222" `
+        -TenantId             "contoso.onmicrosoft.com"
 #>
+#Requires -Modules Microsoft.Graph.Authentication, Microsoft.Graph.Applications
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
@@ -42,21 +49,18 @@ param(
     [string] $OperatorApiClientId,
 
     [Parameter(Mandatory)]
-    [string] $MediaBuilderClientId
+    [string] $MediaBuilderClientId,
+
+    [string] $TenantId
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:failCount = 0
 $script:warnCount = 0
 
 function Test-Check {
-    param(
-        [Parameter(Mandatory)] [string] $Name,
-        [Parameter(Mandatory)] [bool]   $Condition,
-        [string] $FailureHint = ''
-    )
+    param([string] $Name, [bool] $Condition, [string] $FailureHint)
     if ($Condition) {
         Write-Host "  [OK]   $Name"
     } else {
@@ -67,89 +71,81 @@ function Test-Check {
 }
 
 function Write-Note {
-    param([Parameter(Mandatory)] [string] $Message)
+    param([string] $Message)
     Write-Host "  [MANUAL CHECK] $Message" -ForegroundColor Yellow
     $script:warnCount++
 }
 
-# ── Ensure Graph connection (read-only) ───────────────────────────────────────
-
-try {
-    $ctx = Get-MgContext
-    if (-not $ctx -or 'Application.Read.All' -notin $ctx.Scopes) {
-        throw "Not connected with the required scope"
+function Get-App {
+    param([string] $ClientId, [string] $Label)
+    try {
+        $app = Get-MgApplication -Filter "appId eq '$ClientId'" | Select-Object -First 1
+    } catch {
+        Write-Host "  [FAIL] $Label lookup failed for client ID $ClientId" -ForegroundColor Red
+        # The top-level message is often just "One or more errors occurred", so walk the chain.
+        $ex = $_.Exception
+        while ($ex) {
+            Write-Host "         $($ex.GetType().Name): $($ex.Message)" -ForegroundColor Red
+            $ex = $ex.InnerException
+        }
+        $script:failCount++
+        return $null
     }
-    Write-Host "Already connected to Microsoft Graph as $($ctx.Account)"
-} catch {
-    Write-Host "Connecting to Microsoft Graph (browser sign-in will open)..."
-    Connect-MgGraph -Scopes 'Application.Read.All'
-}
-
-function Get-AppOrFail {
-    param([Parameter(Mandatory)] [string] $ClientId, [Parameter(Mandatory)] [string] $Label)
-    # Ask for the nested properties explicitly rather than relying on Graph's default set, and
-    # collapse to a single object so a collection result can't reach the property checks below.
-    $app = @(Get-MgApplication -Filter "appId eq '$ClientId'" -Property @(
-        'appId', 'displayName', 'signInAudience', 'identifierUris', 'isFallbackPublicClient',
-        'spa', 'publicClient', 'api', 'appRoles', 'requiredResourceAccess'
-    ) -ErrorAction SilentlyContinue) | Select-Object -First 1
-
     if (-not $app) {
         Write-Host "  [FAIL] $Label app registration not found for client ID $ClientId" -ForegroundColor Red
+        Write-Host "         Check the client ID, and that the registration lives in the tenant shown above." -ForegroundColor Red
         $script:failCount++
     }
     return $app
 }
 
-<#
-.SYNOPSIS
-    Counts the items in a possibly-absent nested collection.
-.DESCRIPTION
-    An app registration with no platform configured at all returns $null for spa/publicClient,
-    and under Set-StrictMode -Version Latest a chained "$app.Spa.RedirectUris.Count" then throws
-    "The property 'RedirectUris' cannot be found on this object" instead of evaluating to 0.
-    That aborted the whole script on precisely the misconfigurations it exists to report.
-#>
-function Get-NestedCount {
-    param($Object, [Parameter(Mandatory)] [string] $Property)
-    if ($null -eq $Object) { return 0 }
-    $value = $Object.PSObject.Properties[$Property]
-    if ($null -eq $value -or $null -eq $value.Value) { return 0 }
-    return @($value.Value).Count
+# ── Ensure Graph connection (read-only) ───────────────────────────────────────
+
+$authModule = Get-Module -ListAvailable Microsoft.Graph.Authentication | Sort-Object Version -Descending | Select-Object -First 1
+$appsModule = Get-Module -ListAvailable Microsoft.Graph.Applications  | Sort-Object Version -Descending | Select-Object -First 1
+if (-not $authModule -or -not $appsModule) {
+    throw "Microsoft Graph PowerShell modules are missing. Run: Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications -Scope CurrentUser"
+}
+# Mixing majors makes every Graph call fail with the useless "One or more errors occurred".
+if ($authModule.Version.Major -ne $appsModule.Version.Major) {
+    throw "Microsoft.Graph.Authentication $($authModule.Version) and Microsoft.Graph.Applications $($appsModule.Version) are different major versions. Run: Update-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications"
 }
 
-<# Returns a nested collection, or an empty array when any link in the chain is absent.
-   The unary comma matters: a bare "return @()" unrolls to $null on the way out, so callers
-   doing .Count on the result would hit the same StrictMode failure this helper exists to avoid. #>
-function Get-NestedValue {
-    param($Object, [Parameter(Mandatory)] [string] $Property)
-    if ($null -eq $Object) { return ,@() }
-    $value = $Object.PSObject.Properties[$Property]
-    if ($null -eq $value -or $null -eq $value.Value) { return ,@() }
-    return ,@($value.Value)
+$ctx = Get-MgContext
+if (-not $ctx -or 'Application.Read.All' -notin $ctx.Scopes -or ($TenantId -and $ctx.TenantId -ne $TenantId)) {
+    Write-Host "Connecting to Microsoft Graph (browser sign-in will open)..."
+    if ($TenantId) {
+        Connect-MgGraph -Scopes 'Application.Read.All' -TenantId $TenantId | Out-Null
+    } else {
+        Connect-MgGraph -Scopes 'Application.Read.All' | Out-Null
+    }
+    $ctx = Get-MgContext
 }
+
+Write-Host "Connected to tenant $($ctx.TenantId) as $($ctx.Account)."
+Write-Host "Scopes: $($ctx.Scopes -join ', ')"
 
 # ── Registration 1: Cloud Imaging Portal ──────────────────────────────────────
 
 Write-Host ""
 Write-Host "=== Registration 1: Cloud Imaging Portal ==="
-$portalApp = Get-AppOrFail -ClientId $PortalClientId -Label 'Portal'
+$portalApp = Get-App -ClientId $PortalClientId -Label 'Portal'
 if ($portalApp) {
     Test-Check "Single tenant" ($portalApp.SignInAudience -eq 'AzureADMyOrg') `
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
-    Test-Check "Has a Single-page application redirect URI" ((Get-NestedCount $portalApp.Spa 'RedirectUris') -gt 0) `
+    Test-Check "Has a Single-page application redirect URI" ([bool] $portalApp.Spa.RedirectUris) `
         "Add a platform -> Single-page application with at least a placeholder redirect URI."
-    Test-Check "No Mobile/desktop platform added" ((Get-NestedCount $portalApp.PublicClient 'RedirectUris') -eq 0) `
+    Test-Check "No Mobile/desktop platform added" (-not $portalApp.PublicClient.RedirectUris) `
         "A Mobile/desktop platform on this registration causes AADSTS9002326. Remove it."
     Test-Check "'Allow public client flows' is No" (-not $portalApp.IsFallbackPublicClient) `
         "Authentication -> Advanced settings -> Allow public client flows must be No (also AADSTS9002326)."
-    Test-Check "Application ID URI is set" ((Get-NestedCount $portalApp 'IdentifierUris') -gt 0) `
+    Test-Check "Application ID URI is set" ([bool] $portalApp.IdentifierUris) `
         "Expose an API -> set the Application ID URI (accept the default api://<clientId>)."
-    $portalScope = Get-NestedValue $portalApp.Api 'Oauth2PermissionScopes' | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
+    $portalScope = $portalApp.Api.Oauth2PermissionScopes | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
     Test-Check "'user_impersonation' scope exposed and enabled" ($null -ne $portalScope) `
         "Expose an API -> Add a scope named 'user_impersonation', state Enabled. Missing this causes AADSTS500011."
     foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Technician', 'CloudImaging.Reader') {
-        $r = Get-NestedValue $portalApp 'AppRoles' | Where-Object { $_.Value -eq $role }
+        $r = $portalApp.AppRoles | Where-Object { $_.Value -eq $role }
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."
     }
@@ -159,19 +155,20 @@ if ($portalApp) {
 
 Write-Host ""
 Write-Host "=== Registration 2: Cloud Imaging Operator API ==="
-$operatorApp = Get-AppOrFail -ClientId $OperatorApiClientId -Label 'Operator API'
+$operatorScope = $null
+$operatorApp = Get-App -ClientId $OperatorApiClientId -Label 'Operator API'
 if ($operatorApp) {
     Test-Check "Single tenant" ($operatorApp.SignInAudience -eq 'AzureADMyOrg') `
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
-    Test-Check "Application ID URI is set" ((Get-NestedCount $operatorApp 'IdentifierUris') -gt 0) `
+    Test-Check "Application ID URI is set" ([bool] $operatorApp.IdentifierUris) `
         "Expose an API -> set the Application ID URI (accept the default api://<clientId>)."
-    $operatorScope = Get-NestedValue $operatorApp.Api 'Oauth2PermissionScopes' | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
+    $operatorScope = $operatorApp.Api.Oauth2PermissionScopes | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
     Test-Check "'user_impersonation' scope exposed and enabled" ($null -ne $operatorScope) `
         "Expose an API -> Add a scope named 'user_impersonation', state Enabled. Missing this causes AADSTS650057."
-    $portalAccessRole = Get-NestedValue $operatorApp 'AppRoles' | Where-Object { $_.Value -eq 'CloudImaging.PortalAccess' }
+    $portalAccessRole = $operatorApp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.PortalAccess' }
     Test-Check "App role 'CloudImaging.PortalAccess' exists (Applications)" ($portalAccessRole -and $portalAccessRole.AllowedMemberTypes -contains 'Application') `
         "App roles -> add 'CloudImaging.PortalAccess', allowed for Applications."
-    $mediaBuilderAccessRole = Get-NestedValue $operatorApp 'AppRoles' | Where-Object { $_.Value -eq 'CloudImaging.MediaBuilderAccess' }
+    $mediaBuilderAccessRole = $operatorApp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.MediaBuilderAccess' }
     Test-Check "App role 'CloudImaging.MediaBuilderAccess' exists (Users/Groups + Applications)" `
         ($mediaBuilderAccessRole -and $mediaBuilderAccessRole.AllowedMemberTypes -contains 'User' -and $mediaBuilderAccessRole.AllowedMemberTypes -contains 'Application') `
         "App roles -> add 'CloudImaging.MediaBuilderAccess', allowed for Both (Users/Groups + Applications). Must include Users/Groups or Media Builder calls return 403."
@@ -181,24 +178,24 @@ if ($operatorApp) {
 
 Write-Host ""
 Write-Host "=== Registration 3: Cloud Imaging Media Builder ==="
-$mediaBuilderApp = Get-AppOrFail -ClientId $MediaBuilderClientId -Label 'Media Builder'
+$mediaBuilderApp = Get-App -ClientId $MediaBuilderClientId -Label 'Media Builder'
 if ($mediaBuilderApp) {
     Test-Check "Single tenant" ($mediaBuilderApp.SignInAudience -eq 'AzureADMyOrg') `
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
-    Test-Check "Has a Mobile/desktop redirect URI of http://localhost" ((Get-NestedValue $mediaBuilderApp.PublicClient 'RedirectUris') -contains 'http://localhost') `
+    Test-Check "Has a Mobile/desktop redirect URI of http://localhost" ($mediaBuilderApp.PublicClient.RedirectUris -contains 'http://localhost') `
         "Add a platform -> Mobile and desktop applications -> redirect URI http://localhost."
     foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Technician') {
-        $r = Get-NestedValue $mediaBuilderApp 'AppRoles' | Where-Object { $_.Value -eq $role }
+        $r = $mediaBuilderApp.AppRoles | Where-Object { $_.Value -eq $role }
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."
     }
-    if ($operatorApp) {
-        $hasPermission = Get-NestedValue $mediaBuilderApp 'RequiredResourceAccess' |
+    if ($operatorApp -and $operatorScope) {
+        $hasPermission = $mediaBuilderApp.RequiredResourceAccess |
             Where-Object { $_.ResourceAppId -eq $operatorApp.AppId } |
-            ForEach-Object { Get-NestedValue $_ 'ResourceAccess' } |
-            Where-Object { $operatorScope -and $_.Id -eq $operatorScope.Id }
+            ForEach-Object { $_.ResourceAccess } |
+            Where-Object { $_.Id -eq $operatorScope.Id }
         Test-Check "Requests the Operator API's 'user_impersonation' permission" ($null -ne $hasPermission) `
-            "Registration 3, step 7: API permissions -> Add a permission -> My APIs -> Cloud Imaging Operator API -> user_impersonation."
+            "Registration 3, step 7: API permissions -> Add a permission -> APIs my organization uses -> search for $($operatorApp.AppId) -> Delegated permissions -> user_impersonation."
     }
 }
 

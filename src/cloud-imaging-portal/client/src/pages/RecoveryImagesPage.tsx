@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Trash2, Upload, X, ShieldCheck } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -78,7 +79,14 @@ export default function RecoveryImagesPage(): React.ReactElement {
       const res = await apiFetchWithRetry('/api/recovery-images', { credentials: 'include' });
       if (res.ok) {
         setImages(await res.json() as RecoveryImage[]);
-      } else notify({ status: 'error', title: 'Failed to load recovery images.' });
+      } else {
+        setImages([]);
+        notify({
+          status: 'error',
+          title: 'Failed to load recovery images.',
+          description: await extractErrorDetail(res, `The server responded with status ${String(res.status)}.`),
+        });
+      }
     } catch { notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' }); }
     finally { setLoading(false); }
   };
@@ -321,7 +329,9 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
     : '';
   const stagePercent = stage === 'publishing' ? uploadJobProgressPercent(publishJob) : percent;
 
-  return (
+  // Portalled to document.body so the dimming overlay always covers the full viewport (including
+  // the app header) regardless of any stacking context introduced by this page's own layout.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <Card className="w-full max-w-lg">
         <CardContent className="space-y-4 py-6">
@@ -418,6 +428,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
           </div>
         </CardContent>
       </Card>
-    </div>
+    </div>,
+    document.body,
   );
 }

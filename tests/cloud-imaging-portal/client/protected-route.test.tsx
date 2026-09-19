@@ -30,6 +30,7 @@ const API_SCOPE = `api://${TEST_CLIENT_ID}/user_impersonation`;
 
 vi.mock('../../../src/cloud-imaging-portal/client/src/lib/msal.ts', () => ({
   getApiScope: () => API_SCOPE,
+  getSilentRedirectUri: () => 'http://localhost/blank.html',
   getMsalInstance: () => ({ getActiveAccount: () => null, getAllAccounts: () => [] }),
 }));
 

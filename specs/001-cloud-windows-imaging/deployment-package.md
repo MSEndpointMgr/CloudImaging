@@ -12,22 +12,27 @@
 | `DeviceGatewayApi.zip` | Azure Functions isolated-worker .NET 10 package |
 | `OperatorApi.zip` | Azure Functions isolated-worker .NET 10 package |
 | `ImagingCoreApi.zip` | Azure Functions isolated-worker .NET 10 package |
-| `portal-backend.zip` | Node 22 / Express 5 App Service package |
+| `portal-backend.zip` | Node 22 / Express 5 App Service package, including production `node_modules` |
 | `portal-frontend.zip` | React 19 + Vite Static Web App output |
-| `CloudImaging.Client.zip` | WinPE-runnable WPF executable (net10.0-windows, win-x64 self-contained) |
-| `CloudImaging.MediaBuilder.zip` | Technician workstation WPF app (net10.0-windows, win-x64 self-contained) |
-| `deploy/` | Bicep modules, parameter templates, and management scripts |
-| `deploy/bicep/main.bicep` | Root Bicep template, passes to Template Spec wizard |
-| `deploy/uiFormDefinition.json` | Azure Template Spec portal wizard UI definition |
-| `deploy/parameters/dev.parameters.json` | Dev-environment parameter template |
-| `deploy/parameters/test.parameters.json` | Test-environment parameter template |
-| `deploy/parameters/prod.parameters.json` | Production parameter template |
-| `deploy/scripts/publish-template-spec.ps1` | Publishes Bicep + uiFormDefinition as Azure Template Spec |
-| `deploy/scripts/update.ps1` | Community upgrade script, zip-deploys all components |
-| `deploy/scripts/assign-service-roles.ps1` | Assigns Entra app roles post-deployment |
-| `deploy/scripts/grant-graph-permissions.ps1` | Grants Microsoft Graph permissions to ImagingCore MSI |
+| `cloud-imaging-client-v<version>.zip` | WinPE-runnable WPF executable (net10.0-windows, win-x64 self-contained) |
+| `cloud-imaging-mediabuilder-v<version>.zip` | Technician workstation WPF app (net10.0-windows, win-x64 self-contained) |
+| `install.ps1` | Installs the component packages into a newly provisioned environment |
+| `upgrade.ps1` | Upgrades an existing deployment to the release this bundle contains |
+| `post-install.ps1` | Grants the Microsoft Graph permission and Operator API role to the managed identities |
+| `version.txt` | Release version this bundle was built from |
+| `bicep/main.json` | Compiled root ARM template, published as the Template Spec |
+| `bicep/` | Bicep sources and modules, for reference and local builds |
+| `uiFormDefinition.json` | Azure Template Spec portal wizard UI definition |
+| `parameters/dev.parameters.json` | Dev-environment parameter template |
+| `parameters/test.parameters.json` | Test-environment parameter template |
+| `parameters/prod.parameters.json` | Production parameter template |
+| `scripts/publish-template-spec.ps1` | Publishes the compiled template + uiFormDefinition as an Azure Template Spec |
+| `scripts/verify-app-registrations.ps1` | Checks the Entra app registrations against what the deployment expects |
 | `SHA256SUMS` | SHA-256 checksums for all ZIP artifacts |
-| `update.ps1` | Shortcut alias to `deploy/scripts/update.ps1` |
+
+The bundle is flat: `install.ps1`, `upgrade.ps1` and `post-install.ps1` sit at its root, next to
+the component packages they deploy. Nothing is downloaded at run time, so the bundle you extract
+fully determines the version that gets installed.
 
 ---
 
@@ -35,11 +40,14 @@
 
 | Requirement | Version / Notes |
 |---|---|
-| Azure subscription | Owner or Contributor + User Access Administrator on target resource group |
-| Azure CLI | Latest stable (`az login` required for zip deploy) |
-| Az PowerShell module | `Connect-AzAccount` required for Bicep deployment |
-| Azure Static Web Apps CLI | `npm install -g @azure/static-web-apps-cli` |
+| Azure subscription | Owner, or Contributor + User Access Administrator, on the target resource group |
+| Az PowerShell module | `Az.Accounts`, `Az.Resources`, `Az.Storage`, `Az.Websites`, `Az.ManagedServiceIdentity` |
+| Microsoft Graph PowerShell | `Microsoft.Graph.Authentication`, `Microsoft.Graph.Applications`, used by `post-install.ps1` |
+| Azure Static Web Apps CLI | `npm install -g @azure/static-web-apps-cli`, the only non-Az dependency |
 | Entra ID tenant | Permissions to create/modify App Registrations |
+
+Azure CLI is not required. The compiled `bicep/main.json` ships in the bundle, so the Bicep CLI is
+not required either.
 
 ---
 
@@ -48,15 +56,11 @@
 ### 1. Publish the Template Spec
 
 ```powershell
-cd deploy/
-
-.\scripts\publish-template-spec.ps1 `
-  -ResourceGroupName rg-cloudimaging-prod `
-  -Location eastus `
-  -Version 1.0.0
+.\scripts\publish-template-spec.ps1 -ResourceGroupName rg-cloudimaging-prod -Location eastus
 ```
 
-The script outputs a portal URL. Open it to launch the wizard.
+The version is read from the bundle's `version.txt`. The script outputs a portal URL: open it to
+launch the wizard.
 
 ### 2. Fill in the Wizard
 
@@ -64,7 +68,7 @@ The script outputs a portal URL. Open it to launch the wizard.
 |---|---|---|
 | Basics | Subscription | Your subscription |
 | Basics | Resource group | Create or select |
-| Configuration | Resource prefix | `mse` (≤ 4 alphanumeric) |
+| Configuration | Resource prefix | `mse` (1-12 lowercase letters, digits or hyphens) |
 | Configuration | Environment | `prod` |
 | Configuration | User Auth Client ID | App Registration A Client ID |
 | Configuration | Operator API Client ID | App Registration B Client ID |
@@ -74,38 +78,40 @@ The script outputs a portal URL. Open it to launch the wizard.
 
 Click **Review + Create** then **Create**.
 
-### 3. Post-Deployment Scripts
+### 3. Install the Application Code
 
-Run once after Bicep completes:
+The wizard provisions empty resources. Install the component packages into them:
 
 ```powershell
-# Grant Microsoft Graph permission to ImagingCore managed identity
-.\scripts\grant-graph-permissions.ps1 -ResourceGroupName rg-cloudimaging-prod
-
-# Assign service-level Entra app roles
-.\scripts\assign-service-roles.ps1 -ResourceGroupName rg-cloudimaging-prod
+.\install.ps1 -ResourceGroupName rg-cloudimaging-prod -SubscriptionId <subscription-id>
 ```
 
-### 4. Configure GitHub Actions (core dev team only)
+### 4. Complete the Entra Grants
 
-See `docs/setup-instructions.md` for OIDC federated credential setup.
+Run once after the code is installed:
+
+```powershell
+.\post-install.ps1 -ResourceGroupName rg-cloudimaging-prod -SubscriptionId <subscription-id> -OperatorApiClientId <client-id>
+```
+
+This grants `DeviceManagementServiceConfig.Read.All` to the Imaging Core managed identity and
+`CloudImaging.PortalAccess` to the portal backend managed identity. Both grants are idempotent.
 
 ---
 
 ## Upgrade (Existing Deployment)
 
-```powershell
-.\update.ps1 -ResourceGroupName rg-cloudimaging-prod
+Extract the newer release bundle and run the `upgrade.ps1` inside it:
 
-# Or with a specific release archive:
-.\update.ps1 -ResourceGroupName rg-cloudimaging-prod `
-             -ArchivePath C:\Downloads\cloud-imaging-v1.2.0.zip
+```powershell
+.\upgrade.ps1 -ResourceGroupName rg-cloudimaging-prod -SubscriptionId <subscription-id>
 ```
 
 The script:
-1. Discovers deployed Function Apps and App Service by naming convention
-2. Performs zip deploy for each component in sequence
-3. Does **not** re-provision infrastructure
+1. Discovers deployed Function Apps, App Service and Static Web App by naming convention
+2. Uploads each component package to the deployment's own storage account and repoints the app at it
+3. Re-applies the boot image storage CORS rule, which a code-only upgrade would otherwise miss
+4. Does **not** re-provision infrastructure and does **not** download anything
 
 ---
 
@@ -141,13 +147,17 @@ Internet
 
 | Resource type | Pattern | Example |
 |---|---|---|
-| Function Apps | `{prefix}-{env}-func-{name}` | `mse-prod-func-gateway` |
-| App Service | `{prefix}-{env}-app-portal` | `mse-prod-app-portal` |
-| Static Web App | `{prefix}-{env}-swa-portal` | `mse-prod-swa-portal` |
-| Storage Account | `{prefix}{env}st{purpose}` | `mseprodstapp` |
-| Key Vault | `{prefix}-{env}-kv` | `mse-prod-kv` |
-| VNet | `{prefix}-{env}-vnet` | `mse-prod-vnet` |
-| Log Analytics | `{prefix}-{env}-law` | `mse-prod-law` |
+| Function Apps | `{prefix}-{env}-ci-func-{name}` | `mse-prod-ci-func-gateway` |
+| App Service | `{prefix}-{env}-ci-app-portal` | `mse-prod-ci-app-portal` |
+| Static Web App | `{prefix}-{env}-ci-stapp-portal` | `mse-prod-ci-stapp-portal` |
+| Storage Account | `{prefix}{env}ci{purpose}` | `mseprodcistapp` |
+| Key Vault | `{prefix}-{env}-ci-kv` | `mse-prod-ci-kv` |
+| VNet | `{prefix}-{env}-ci-vnet` | `mse-prod-ci-vnet` |
+| Log Analytics | `{prefix}-{env}-ci-law` | `mse-prod-ci-law` |
+
+Storage account names strip the hyphens, because the resource type does not allow them.
+`install.ps1` and `upgrade.ps1` anchor on the `*-ci-func-gateway` Function App and derive every
+other name from it, so nothing has to be passed in.
 
 ---
 

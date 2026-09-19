@@ -1,6 +1,7 @@
 using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
+using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -18,17 +19,17 @@ namespace CloudImaging.MediaBuilder.Tests;
 public sealed class BootImageManifestTests
 {
     [Fact]
-    public void Build_HashesClientExecutable_AndReadsItsFileVersion()
+    public void Build_HashesClientExecutable_AndRecordsFullProductVersion()
     {
         var dir = Directory.CreateTempSubdirectory("ci-manifest-test-").FullName;
         try
         {
             var clientExePath = Path.Combine(dir, "CloudImaging.Client.exe");
-            // A real PE file isn't needed for this test — FileVersionInfo simply comes back
-            // empty for a non-PE file, which is fine; we only assert the checksum here.
-            var bytes = "fake-client-exe-content"u8.ToArray();
-            File.WriteAllBytes(clientExePath, bytes);
+            var sourceAssembly = typeof(BootImageManifestService).Assembly.Location;
+            File.Copy(sourceAssembly, clientExePath);
+            var bytes = File.ReadAllBytes(clientExePath);
             var expectedHash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+            var expectedVersion = FileVersionInfo.GetVersionInfo(sourceAssembly).ProductVersion;
 
             var manifest = BootImageManifestService.Build(
                 clientDestDir: dir,
@@ -41,6 +42,8 @@ public sealed class BootImageManifestTests
             manifest.ComponentChecksums.Should().ContainKey("cloudImagingClient");
             manifest.ComponentChecksums["cloudImagingClient"].Should().Be(expectedHash,
                 "the manifest must hash the exact bytes of the staged Client executable");
+            manifest.ClientVersion.Should().Be(expectedVersion,
+                "the full product version identifies the exact source commit embedded in boot media");
         }
         finally
         {

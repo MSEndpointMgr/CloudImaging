@@ -56,7 +56,6 @@ public sealed class UiThreadResponsivenessTests
     [Theory]
     [InlineData("OperationSelectionView.xaml")]
     [InlineData("SessionInitView.xaml")]
-    [InlineData("ProgressView.xaml")]
     [InlineData("ResultsView.xaml")]
     public void View_ContainsNoScrollViewer(string viewFileName)
     {
@@ -69,6 +68,19 @@ public sealed class UiThreadResponsivenessTests
         var doc = XDocument.Load(path);
         doc.Descendants(Presentation + "ScrollViewer").Should().BeEmpty(
             $"{viewFileName} must fit within the minimum window size without scrolling (FR-002b)");
+    }
+
+    [Fact]
+    public void ProgressView_HasOnlyBoundedActivityLogScrollViewer()
+    {
+        var path = Path.Combine(GetViewsDirectory(), "ProgressView.xaml");
+        var doc = XDocument.Load(path);
+        var viewers = doc.Descendants(Presentation + "ScrollViewer").ToArray();
+
+        viewers.Should().ContainSingle(
+            "the page must not scroll, but its bounded activity log needs both axes");
+        viewers[0].Attribute(XName.Get("Name", "http://schemas.microsoft.com/winfx/2006/xaml"))!
+            .Value.Should().Be("ActivityLogScrollViewer");
     }
 
     // ── Async operations must use Task, not Thread.Sleep ─────────────────────

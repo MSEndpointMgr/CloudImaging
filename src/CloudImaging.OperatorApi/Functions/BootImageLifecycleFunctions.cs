@@ -11,8 +11,10 @@ namespace CloudImaging.OperatorApi.Functions;
 /// Portal-role boot image lifecycle CRUD proxy endpoints (T116, FR-063).
 /// Requires CloudImaging.Administrator role (enforced by AppRoleAuthorizationMiddleware).
 ///
-/// POST   /api/boot-images/publish    → ImagingCore POST /api/internal/boot-images/publish
 /// DELETE /api/boot-images/{id}       → ImagingCore DELETE /api/internal/boot-images/{id}
+///
+/// Publishing is not here: it happens through the staged upload pipeline
+/// (BootImageUploadFunctions), which verifies the blob before it reaches the catalog.
 /// </summary>
 public sealed partial class BootImageLifecycleFunctions
 {
@@ -26,23 +28,6 @@ public sealed partial class BootImageLifecycleFunctions
     {
         _coreClient = coreClient;
         _logger = logger;
-    }
-
-    // ── POST /api/boot-images/publish ─────────────────────────────────────────
-
-    /// <summary>Publishes a boot image to the catalog.</summary>
-    [Function("PublishBootImage")]
-    public async Task<HttpResponseData> PublishBootImage(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/publish")] HttpRequestData req,
-        FunctionContext context)
-    {
-        using var body = await System.Text.Json.JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
-        var payload = JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
-
-        var coreResponse = await _coreClient.PublishBootImageAsync(payload!, context.CancellationToken);
-
-        LogPublishProxied(_logger, (int)coreResponse.StatusCode);
-        return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
     // ── DELETE /api/boot-images/{id} ─────────────────────────────────────────
@@ -87,10 +72,6 @@ public sealed partial class BootImageLifecycleFunctions
         }
         return response;
     }
-
-    [LoggerMessage(Level = LogLevel.Information,
-        Message = "Boot image publish proxied — ImagingCore HTTP {StatusCode}.")]
-    private static partial void LogPublishProxied(ILogger logger, int statusCode);
 
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Boot image delete proxied for {BootImageId} — ImagingCore HTTP {StatusCode}.")]

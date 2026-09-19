@@ -25,8 +25,12 @@ namespace CloudImaging.DeviceGatewayApi.Functions;
 /// {
 ///   "version": "...",
 ///   "sha256Hash": "...",
-///   "sasTokenUrl": "..."
+///   "sasTokenUrl": "...",
+///   "architecture": "x64"
 /// }
+///
+/// <c>architecture</c> is hardcoded to "x64" — the only architecture ImagingCoreApi's catalog
+/// carries today. See todo/arm64-support.md #8 for the deferred per-architecture catalog lookup.
 /// </summary>
 public sealed partial class GetLatestBootImageFunction
 {
@@ -96,6 +100,8 @@ public sealed partial class GetLatestBootImageFunction
             version,
             sha256Hash = sasRoot.GetProperty("sha256Hash").GetString(),
             sasTokenUrl = sasRoot.GetProperty("sasTokenUrl").GetString(),
+            // Only x64 boot images exist today; see todo/arm64-support.md #8 for the ARM64 milestone.
+            architecture = "x64",
         }), context.CancellationToken);
         return response;
     }

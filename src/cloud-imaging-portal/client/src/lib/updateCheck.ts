@@ -11,6 +11,9 @@ import { apiFetch } from './apiClient.ts';
 /** Why a check produced no `latest` value. Mirrors the backend's UpdateCheckStatus. */
 export type UpdateCheckStatus = 'ok' | 'disabled' | 'unreachable' | 'rate-limited' | 'unknown';
 
+/** Mirrors the backend's EnvironmentLabel. */
+export type EnvironmentLabel = 'Development' | 'Production';
+
 export interface UpdateStatus {
   current: string;
   latest: string | null;
@@ -18,12 +21,28 @@ export interface UpdateStatus {
   releaseUrl: string | null;
   checkedAt: string | null;
   status: UpdateCheckStatus;
+  environmentLabel: EnvironmentLabel;
 }
 
 /** Fetches the update status. Returns null on any failure, which renders as "unavailable". */
 export async function fetchUpdateStatus(): Promise<UpdateStatus | null> {
   try {
     const res = await apiFetch('/api/update-check', { credentials: 'include' });
+    if (!res.ok) return null;
+    return await res.json() as UpdateStatus;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Forces an immediate GitHub check, bypassing the server's 6h cache. Used by the
+ * administrator's manual "Check now" action. Returns null on any failure, same as
+ * `fetchUpdateStatus`.
+ */
+export async function triggerUpdateCheck(): Promise<UpdateStatus | null> {
+  try {
+    const res = await apiFetch('/api/update-check/refresh', { method: 'POST', credentials: 'include' });
     if (!res.ok) return null;
     return await res.json() as UpdateStatus;
   } catch {

@@ -9,11 +9,18 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!--
-      Audit only direct dependencies — transitive dependency vulnerabilities
-      are surfaced as advisory information but do not break the build.
-      We override specific vulnerable transitive packages explicitly below.
+      Transitive pinning lets a PackageVersion entry below raise a transitive
+      dependency to a patched version without adding a direct PackageReference
+      to every project. Used for the security overrides at the end of this file.
     -->
-    <NuGetAuditMode>direct</NuGetAuditMode>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!--
+      Audit direct AND transitive dependencies so `dotnet restore` surfaces
+      NU1901/NU1902/NU1903/NU1904 for anything vulnerable that ships with us.
+      These stay warnings (see WarningsNotAsErrors in Directory.Build.props); the
+      release workflows fail hard on High/Critical before anything is published.
+    -->
+    <NuGetAuditMode>all</NuGetAuditMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,8 +40,8 @@
 
     <!-- Microsoft Identity / Graph -->
     <PackageVersion Include="Microsoft.Identity.Web"              Version="4.14.2" />
-    <PackageVersion Include="Microsoft.Identity.Client"           Version="4.89.0" />
-    <PackageVersion Include="Microsoft.Graph"                     Version="6.6.0" />
+    <PackageVersion Include="Microsoft.Identity.Client"           Version="4.90.0" />
+    <PackageVersion Include="Microsoft.Graph"                     Version="6.7.0" />
 
     <!-- ASP.NET / HTTP -->
     <PackageVersion Include="Microsoft.Extensions.Http"           Version="10.0.12" />
@@ -50,8 +57,8 @@
     <!-- Fluent design for WPF desktop apps -->
     <PackageVersion Include="WPF-UI"                              Version="4.3.0" />
     <!-- Server-side image resizing for uploaded branding logos (FR-038) -->
-    <PackageVersion Include="SkiaSharp"                           Version="4.152.0" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.152.0" />
+    <PackageVersion Include="SkiaSharp"                           Version="4.152.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.152.1" />
     <!-- Pure-managed ISO9660/UDF reading, to extract install.wim/install.esd from uploaded OS image ISOs -->
     <PackageVersion Include="DiscUtils.Iso9660"                   Version="0.16.13" />
     <PackageVersion Include="DiscUtils.Udf"                       Version="0.16.13" />
@@ -62,7 +69,27 @@
     <PackageVersion Include="Moq"                                 Version="4.20.72" />
     <!-- Not moving FluentAssertions beyond v7 as the license model has changed -->
     <PackageVersion Include="FluentAssertions"                    Version="7.2.2" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk"              Version="18.10.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk"              Version="18.10.1" />
+  </ItemGroup>
+
+  <!-- =========================================================
+       Security overrides for transitive dependencies.
+       These packages are not referenced directly; they arrive via
+       Microsoft.AspNetCore.OpenApi, Microsoft.Identity.Web and
+       Microsoft.Graph. Transitive pinning (enabled above) raises them
+       to the first patched version for the advisories listed.
+       Remove an entry once the owning package pulls in a fixed version
+       on its own, verified with the .slnx package-list vulnerability
+       audit, including transitive dependencies.
+       ========================================================= -->
+  <ItemGroup>
+    <!-- GHSA-v5pm-xwqc-g5wc (High) — via Microsoft.AspNetCore.OpenApi -->
+    <PackageVersion Include="Microsoft.OpenApi"                   Version="2.12.0" />
+    <!-- GHSA-cvvh-rhrc-wg4q, GHSA-g8r8-53c2-pm3f, GHSA-23rf-6693-g89p,
+         GHSA-8q5v-6pqq-x66h, GHSA-mmjf-rqrv-855v (High) — via Microsoft.Identity.Web -->
+    <PackageVersion Include="System.Security.Cryptography.Xml"    Version="10.0.10" />
+    <!-- GHSA-7j59-v9qr-6fq9 (High) — via Microsoft.Graph -->
+    <PackageVersion Include="Microsoft.Kiota.Abstractions"        Version="2.0.0" />
   </ItemGroup>
 
 </Project>

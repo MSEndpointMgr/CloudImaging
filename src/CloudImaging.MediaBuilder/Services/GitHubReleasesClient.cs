@@ -24,7 +24,9 @@ namespace CloudImaging.MediaBuilder.Services;
 public sealed partial class GitHubReleasesClient
 {
     private const string ReleasesApiUrl = "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/mse-ci-client-latest";
-    private const string ClientAssetName = "CloudImaging.Client.zip";
+    // Tag releases carry a versioned name (cloud-imaging-client-v1.0.0.zip), but the alias release
+    // this class resolves publishes an unversioned copy, so there is no version to parse here.
+    private const string ClientAssetName = "cloud-imaging-client.zip";
     private const string ChecksumAssetName = "SHA256SUMS";
     private const int MaxAttempts = 3;
 
@@ -50,7 +52,7 @@ public sealed partial class GitHubReleasesClient
     public event EventHandler<(string Message, int Percent, bool Replace)>? ProgressChanged;
 
     /// <summary>
-    /// Resolves the "mse-ci-client-latest" alias release, downloads the <c>CloudImaging.Client.zip</c>
+    /// Resolves the "mse-ci-client-latest" alias release, downloads the <c>cloud-imaging-client.zip</c>
     /// asset, and extracts it into a fresh directory under <c>%TEMP%</c>. Returns the extracted
     /// folder path, ready to use as a Client binaries source.
     /// </summary>

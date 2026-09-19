@@ -645,14 +645,6 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Adding WinPE .NET Framework support", 37);
                 await InjectNetFxOptionalComponentAsync(adkPath, mountDir, ct);
 
-                // Unlike WMI/NetFx above, there is no WinPE optional component that provides
-                // reagentc.exe. Without it, RecoveryImageService's "ApplyRecoveryImage" pipeline
-                // step fails at runtime trying to launch it (Win32Exception: "The system cannot
-                // find the file specified"), even though the WinRE image itself was already
-                // staged onto the Recovery partition successfully.
-                ReportProgress("Adding WinPE Recovery Environment agent", 38);
-                InjectReagentcSupport(mountDir);
-
                 ReportProgress("Injecting Cloud Imaging Client", 50);
                 var clientDestDir = Path.Combine(mountDir, "CloudImaging");
                 Directory.CreateDirectory(clientDestDir);
@@ -1067,6 +1059,9 @@ public sealed partial class BootImageGenerationService
         LogReagentcInjected(_logger, sourceExe);
     }
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "reagentc.exe injected into WinPE image from {SourcePath}.")]
+    private static partial void LogReagentcInjected(ILogger logger, string sourcePath);
+
     /// <summary>
     /// Fails fast, with an actionable message, when <paramref name="clientBinariesPath"/> looks
     /// like a framework-dependent build (e.g. a plain <c>dotnet build</c>/<c>dotnet run</c>
@@ -1089,7 +1084,7 @@ public sealed partial class BootImageGenerationService
             throw new InvalidOperationException(
                 $"\"{clientBinariesPath}\" does not contain CloudImaging.Client.exe. Point the local client " +
                 "binaries source at a folder produced by \"dotnet publish -r win-x64 --self-contained\" (or a " +
-                "downloaded CloudImaging.Client.zip release), not a plain build output folder.");
+                "downloaded cloud-imaging-client release), not a plain build output folder.");
 
         if (!File.Exists(Path.Combine(clientBinariesPath, "hostfxr.dll")))
             throw new InvalidOperationException(
@@ -1511,9 +1506,6 @@ public sealed partial class BootImageGenerationService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Injected {Count} driver package(s) from driver root {DriverRoot}.")]
     private static partial void LogDriversInjected(ILogger logger, int count, string driverRoot);
-
-    [LoggerMessage(Level = LogLevel.Information, Message = "reagentc.exe injected into WinPE image from {SourcePath}.")]
-    private static partial void LogReagentcInjected(ILogger logger, string sourcePath);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image manifest embedded (imageVersion={ImageVersion}, driversInjected={DriversInjected}).")]
     private static partial void LogManifestEmbedded(ILogger logger, string imageVersion, int driversInjected);

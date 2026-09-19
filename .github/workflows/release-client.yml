@@ -9,6 +9,9 @@ on:
   push:
     tags:
       - 'mse-ci-client-v[0-9]+.[0-9]+.[0-9]+'
+      # Pre-release tags (e.g. mse-ci-client-v1.2.0-beta.1); see release-iac.yml for why the
+      # stable pattern alone never matches them.
+      - 'mse-ci-client-v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -91,6 +94,15 @@ jobs:
           "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable)"
 
+      # `Check out the resolved tag` below replaces the working tree with the tag's code, and
+      # tags cut before this gate existed have no .github/scripts directory at all, so the gate
+      # script has to be copied out of the working tree first. The gate is release tooling, not
+      # shipped code: it should match the workflow file being run (which on a manual run comes
+      # from the dispatched branch, not the tag), so running the staged copy is also the correct
+      # behaviour for tags that do contain a version of the script.
+      - name: Stage the dependency gate script
+        run: Copy-Item .github/scripts/Assert-NoVulnerableDependencies.ps1 $env:RUNNER_TEMP
+
       # A manual run checks out a branch, so the working tree holds whatever that branch points at
       # rather than the tag being packaged. Without this the release would carry the tag's name and
       # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
@@ -104,17 +116,26 @@ jobs:
       - name: Restore CloudImaging.Client (win-x64)
         run: dotnet restore src/CloudImaging.Client/CloudImaging.Client.csproj -r win-x64
 
+      # Release gate: halt before the client is built or published if one of its
+      # dependencies has a known High/Critical advisory. Runs after restore because
+      # `dotnet list package` needs the resolved assets file.
+      - name: Fail the release on vulnerable dependencies
+        run: |
+          & "$env:RUNNER_TEMP/Assert-NoVulnerableDependencies.ps1" -MinimumSeverity High `
+            -Project 'src/CloudImaging.Client/CloudImaging.Client.csproj'
+
       - name: Build CloudImaging.Client (WPF, self-contained win-x64)
         run: |
           dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `
             -c Release -r win-x64 --self-contained -o publish/Client --no-restore
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
-          Compress-Archive publish/Client/* release-artifacts/CloudImaging.Client.zip
+          Compress-Archive publish/Client/* "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip"
 
       - name: Generate SHA-256 checksum manifest
         run: |
-          $hash = (Get-FileHash release-artifacts/CloudImaging.Client.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  CloudImaging.Client.zip" | Out-File "release-artifacts/SHA256SUMS"
+          $asset = "cloud-imaging-client-${{ steps.tag.outputs.version }}.zip"
+          $hash = (Get-FileHash "release-artifacts/$asset" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $asset" | Out-File "release-artifacts/SHA256SUMS"
           Write-Host "Client zip SHA-256: $hash"
 
       - name: Create GitHub Release
@@ -130,10 +151,10 @@ jobs:
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `CloudImaging.Client.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
+            | `cloud-imaging-client-${{ steps.tag.outputs.version }}.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
             | `SHA256SUMS` | SHA-256 checksum for integrity verification |
           files: |
-            release-artifacts/CloudImaging.Client.zip
+            release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip
             release-artifacts/SHA256SUMS
           draft: false
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}
@@ -142,21 +163,48 @@ jobs:
       # GitHubReleasesClient.cs resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the iac/mediabuilder
       # streams interleave with this one.
-      - name: Move 'mse-ci-client-latest' alias to this release
+      #
+      # The alias tag is moved with git rather than created on the fly by the Releases API:
+      # GITHUB_TOKEN can publish a release for an existing tag, but minting the missing alias tag
+      # as part of creating the release fails with "HTTP 403: Resource not accessible by
+      # integration". See release-iac.yml, where the same step failed that way.
+      - name: Move the 'mse-ci-client-latest' tag to this release's commit
         if: ${{ steps.tag.outputs.stable == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The alias does not exist before the first stable release, and 'gh release delete' exits
-          # non-zero when it is missing, which would fail the job *after* the real release had
-          # already published. Treat "nothing to move" as success.
+          # The alias release does not exist before the first stable release, and 'gh release
+          # delete' exits non-zero when it is missing, which would fail the job *after* the real
+          # release had already published. Treat "nothing to move" as success. The tag is kept
+          # (no --cleanup-tag) and force-moved below instead.
           $ErrorActionPreference = 'Continue'
-          gh release delete mse-ci-client-latest --yes --cleanup-tag 2>&1 | Write-Host
+          gh release delete mse-ci-client-latest --yes 2>&1 | Write-Host
           $ErrorActionPreference = 'Stop'
-          gh release create mse-ci-client-latest `
-            "release-artifacts/CloudImaging.Client.zip" `
-            "release-artifacts/SHA256SUMS" `
-            --target "${{ steps.tag.outputs.sha }}" `
-            --title "Cloud Imaging Client (latest: ${{ steps.tag.outputs.version }})" `
-            --notes "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes." `
-            --latest=false
+          git tag -f mse-ci-client-latest "${{ steps.tag.outputs.sha }}"
+          git push -f origin refs/tags/mse-ci-client-latest
+
+      # The alias is a moving pointer, so its asset carries no version. GitHubReleasesClient.cs
+      # matches this exact name, which is why it never has to parse a version out of an asset
+      # name, and it keeps releases/download/mse-ci-client-latest/cloud-imaging-client.zip a
+      # permanent link. SHA256SUMS is regenerated because it lists the name it verifies.
+      - name: Stage the alias release artifacts
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        run: |
+          New-Item alias-artifacts -ItemType Directory -Force | Out-Null
+          Copy-Item "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip" alias-artifacts/cloud-imaging-client.zip
+          $hash = (Get-FileHash alias-artifacts/cloud-imaging-client.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  cloud-imaging-client.zip" | Out-File "alias-artifacts/SHA256SUMS"
+
+      - name: Publish the 'mse-ci-client-latest' alias release
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: mse-ci-client-latest
+          name:     "Cloud Imaging Client (latest: ${{ steps.tag.outputs.tag }})"
+          body:     "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes."
+          files: |
+            alias-artifacts/cloud-imaging-client.zip
+            alias-artifacts/SHA256SUMS
+          make_latest: false
+          draft: false
+          prerelease: false

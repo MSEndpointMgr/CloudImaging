@@ -28,6 +28,12 @@ public sealed class SessionHistoryRecord
     /// <summary>Device model of the imaged device.</summary>
     public required string DeviceModel { get; init; }
 
+    /// <summary>Location snapshot retained even if the catalog entry is later renamed or deleted.</summary>
+    public Guid? LocationId { get; init; }
+
+    /// <summary>Location name snapshot retained even if the catalog entry is later renamed or deleted.</summary>
+    public string? LocationName { get; init; }
+
     /// <summary>Outcome of the device pre-flight authorization check, if enabled.</summary>
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 

@@ -19,6 +19,7 @@
     "vnetAddressPrefix": { "value": "10.11.0.0/16" },
     "apiFunctionSubnetPrefix": { "value": "10.11.1.0/24" },
     "privateEndpointSubnetPrefix": { "value": "10.11.2.0/24" },
-    "location": { "value": "eastus" }
+    "location": { "value": "eastus" },
+    "staticWebAppLocation": { "value": "eastus2" }
   }
 }

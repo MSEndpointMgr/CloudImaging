@@ -35,7 +35,7 @@ public sealed partial class DeviceSessionLifecycleService
     /// client checks in every 30s while a step is running (SessionHeartbeatCoordinator), so this
     /// is an outage/crash backstop, not the expected cadence.
     /// </summary>
-    public static readonly TimeSpan ActiveImagingHeartbeatTimeout = TimeSpan.FromHours(4);
+    public static readonly TimeSpan ActiveImagingHeartbeatTimeout = TimeSpan.FromHours(2);
 
     /// <summary>Terminal sessions older than this are purged from storage.</summary>
     public static readonly TimeSpan TerminalPurgeTtl = TimeSpan.FromHours(24);
@@ -179,6 +179,8 @@ public sealed partial class DeviceSessionLifecycleService
             DeviceSerialNumber = s.DeviceSerialNumber,
             DeviceManufacturer = s.DeviceManufacturer,
             DeviceModel = s.DeviceModel,
+            LocationId = s.LocationId,
+            LocationName = s.LocationName,
             PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
             AssignedOsImageId = s.AssignedOsImageId,
             ErrorDetail = s.State == SessionState.SessionFailed

@@ -105,15 +105,42 @@ Automated checks run the same build/test/lint steps per component on every
 pull request, scoped to what changed. Fix failures caused by your change
 rather than suppressing them.
 
+### Dependency advisories
+
+Every release workflow halts before it builds or publishes anything if a
+dependency that ships in that release has a known High or Critical advisory.
+Run the same gate locally:
+
+```powershell
+# Backend and portal (release-iac.yml)
+./.github/scripts/Assert-NoVulnerableDependencies.ps1 -MinimumSeverity High `
+  -Project 'src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj',
+           'src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj',
+           'src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj' `
+  -NpmDirectory 'src/cloud-imaging-portal/server',
+                'src/cloud-imaging-portal/client'
+```
+
+NuGet packages are pinned centrally in `Directory.Packages.props`. Transitive
+pinning is enabled there, so a vulnerable transitive dependency is fixed by
+adding a `PackageVersion` entry for it under the security overrides at the end
+of that file, not by adding a direct `PackageReference`.
+
 Use disposable VMs, test disks, and a non-production Azure tenant for manual
 imaging and deployment testing; imaging workflows format disks and Media
 Builder workflows erase USB drives.
 
 ## Open a pull request
 
-- Use a clear, descriptive title; Conventional Commit style
-  (`fix(device-gateway): ...`, `feat(portal): ...`) is preferred but not
-  required.
+- Use a clear, plain, user-facing title describing the visible outcome, not a
+  Conventional Commit-style prefix (write "Fixed the sign-in loop caused by
+  stale v1 tokens", not "fix(portal): sign-in loop, v1/v2 token validation").
+  Release notes are generated from PR titles, and the fix/feature/docs
+  category is already conveyed by the PR's label, so repeating it in the text
+  is redundant.
+- Apply a `bug`, `enhancement`, or `documentation` label as appropriate; this
+  is what buckets the change under the right heading in the generated release
+  notes.
 - Explain the reason for the change, what changed, and how you validated it.
 - Link related issues with `Closes #123` where applicable.
 - Include screenshots for visible Portal UI changes.

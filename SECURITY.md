@@ -63,7 +63,7 @@ Relevant reports include, but are not limited to:
 - Secret or credential exposure in logs, telemetry, or Application Insights
   that should have been redacted.
 - Supply-chain issues in the published Template Spec, release archives, or
-  `update.ps1`.
+  the bundled deployment scripts.
 
 ## Out of scope
 

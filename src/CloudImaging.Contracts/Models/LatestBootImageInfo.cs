@@ -16,4 +16,8 @@ public sealed class LatestBootImageInfo
 
     /// <summary>Time-limited SAS download URL for the boot image blob.</summary>
     public required string SasTokenUrl { get; init; }
+
+    /// <summary>Boot image architecture (e.g. "x64", "arm64"). Null when the catalog entry predates
+    /// architecture tracking; the Client treats a null value as "x64" (todo/arm64-support.md #8).</summary>
+    public string? Architecture { get; init; }
 }

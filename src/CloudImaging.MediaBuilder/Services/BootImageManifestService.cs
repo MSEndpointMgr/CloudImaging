@@ -27,7 +27,8 @@ public static class BootImageManifestService
     /// <summary>
     /// Builds the manifest describing this generation run's inputs. <paramref name="clientDestDir"/>
     /// is expected to contain <c>CloudImaging.Client.exe</c> (used both to hash and to read
-    /// <see cref="BootImageManifest.ClientVersion"/> from its file version info).
+    /// <see cref="BootImageManifest.ClientVersion"/> from its product version, which includes
+    /// the source commit in normal .NET builds).
     /// </summary>
     public static BootImageManifest Build(
         string clientDestDir,
@@ -46,7 +47,7 @@ public static class BootImageManifestService
         {
             componentChecksums["cloudImagingClient"] = Sha256Hex(File.ReadAllBytes(clientExePath));
             clientVersion = System.Diagnostics.FileVersionInfo
-                .GetVersionInfo(clientExePath).FileVersion;
+                .GetVersionInfo(clientExePath).ProductVersion;
         }
 
         if (logoBytes is { Length: > 0 })

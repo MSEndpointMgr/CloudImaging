@@ -9,6 +9,11 @@ on:
   push:
     tags:
       - 'mse-ci-v[0-9]+.[0-9]+.[0-9]+'
+      # Pre-release tags (e.g. mse-ci-v1.2.0-beta.1). GitHub's tag filter has to match the whole
+      # ref, so the stable pattern above never fires for a suffixed tag -- without this line the
+      # workflow's own pre-release support (prerelease: / stable: outputs) was unreachable from a
+      # tag push and only ever ran via workflow_dispatch.
+      - 'mse-ci-v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
       tag_name:
@@ -98,6 +103,15 @@ jobs:
           "version=$version" | Out-File $env:GITHUB_OUTPUT -Append
           Write-Host "Release tag: $tag (stable: $stable)"
 
+      # `Check out the resolved tag` below replaces the working tree with the tag's code, and
+      # tags cut before this gate existed have no .github/scripts directory at all, so the gate
+      # script has to be copied out of the working tree first. The gate is release tooling, not
+      # shipped code: it should match the workflow file being run (which on a manual run comes
+      # from the dispatched branch, not the tag), so running the staged copy is also the correct
+      # behaviour for tags that do contain a version of the script.
+      - name: Stage the dependency gate script
+        run: Copy-Item .github/scripts/Assert-NoVulnerableDependencies.ps1 $env:RUNNER_TEMP
+
       # A manual run checks out a branch, so the working tree holds whatever that branch points at
       # rather than the tag being packaged. Without this the release would carry the tag's name and
       # the branch's code. Safe to interpolate: the tag was validated against a strict pattern above.
@@ -109,6 +123,22 @@ jobs:
 
       - name: Restore .NET solution
         run: dotnet restore CloudImaging.slnx
+
+      # Release gate: halt before anything is built or published if a dependency that
+      # ships in this release has a known High/Critical advisory. Runs after restore
+      # because `dotnet list package` needs the resolved assets file. Test projects are
+      # excluded deliberately -- they are not part of any artifact.
+      - name: Fail the release on vulnerable dependencies
+        run: |
+          & "$env:RUNNER_TEMP/Assert-NoVulnerableDependencies.ps1" -MinimumSeverity High `
+            -Project 'src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj',
+                     'src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj',
+                     'src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj' `
+            -NpmDirectory 'src/cloud-imaging-portal/server',
+                          'src/cloud-imaging-portal/client'
+
+      - name: Initialize release artifact directory
+        run: New-Item release-artifacts -ItemType Directory -Force | Out-Null
 
       - name: Publish DeviceGatewayApi
         run: |
@@ -142,7 +172,20 @@ jobs:
             Out-File -Encoding utf8 src/version.ts
           Write-Host "Stamped portal backend version: ${{ steps.tag.outputs.tag }}"
           npm run build
-          Compress-Archive dist/* ../../../release-artifacts/portal-backend.zip
+
+          # Assemble a self-contained bundle: compiled dist + manifest + production
+          # node_modules. Zipping dist alone omits package.json/node_modules, so the Node worker
+          # cannot resolve its runtime deps and App Service fails to start 'node dist/index.js'
+          # with SCM_DO_BUILD_DURING_DEPLOYMENT pinned false. Mirrors the portal-backend job in
+          # ci.yml.
+          Remove-Item deploy-pkg -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item deploy-pkg/dist -ItemType Directory -Force | Out-Null
+          Copy-Item dist/* deploy-pkg/dist/ -Recurse
+          Copy-Item package.json, package-lock.json deploy-pkg/
+          Push-Location deploy-pkg
+          npm ci --omit=dev
+          Compress-Archive -Path * -DestinationPath "$env:GITHUB_WORKSPACE/release-artifacts/portal-backend.zip"
+          Pop-Location
 
       - name: Build portal client (SWA)
         working-directory: src/cloud-imaging-portal/client
@@ -153,17 +196,19 @@ jobs:
 
       # ── Deploy scripts + Bicep ────────────────────────────────────────────────
 
-      - name: Package deploy artifacts
+      - name: Compile the Bicep template
         run: |
-          New-Item release-artifacts -ItemType Directory -Force | Out-Null
-          Copy-Item src/deploy -Recurse -Destination release-artifacts/deploy
-          Compress-Archive release-artifacts/deploy/* release-artifacts/deploy.zip
+          # Ship the compiled ARM template so publish-template-spec.ps1 needs no Bicep CLI.
+          az bicep install
+          az bicep build --file src/deploy/bicep/main.bicep --outfile src/deploy/bicep/main.json
 
       # ── Assemble release bundle ───────────────────────────────────────────────
 
       - name: Assemble backend/IaC release bundle
         run: |
-          $version = "${{ steps.tag.outputs.tag }}"
+          # The asset name is the tag minus the internal 'mse-ci-' prefix, so the product name does
+          # not stutter as 'cloud-imaging-mse-ci-v1.0.0'.
+          $version = "${{ steps.tag.outputs.version }}"
           $bundleName = "cloud-imaging-$version"
           $bundleDir  = "release-bundle/$bundleName"
           New-Item $bundleDir -ItemType Directory -Force | Out-Null
@@ -173,14 +218,30 @@ jobs:
           Copy-Item release-artifacts/ImagingCoreApi.zip       $bundleDir/
           Copy-Item release-artifacts/portal-backend.zip       $bundleDir/
           Copy-Item release-artifacts/portal-frontend.zip      $bundleDir/
-          Copy-Item release-artifacts/deploy.zip               $bundleDir/
-          Copy-Item src/deploy/scripts/update.ps1              $bundleDir/
+
+          # The deploy folder ships flat at the bundle root, so an administrator extracts once
+          # and runs everything from one place: install.ps1, post-install.ps1 and upgrade.ps1
+          # alongside scripts/, bicep/, parameters/ and uiFormDefinition.json.
+          Copy-Item src/deploy/* -Recurse -Destination $bundleDir/
+
+          # Internal tooling never ships to customers.
+          $internalTools = @(
+            "generate-types.ps1"
+            "verify-release-secrets.ps1"
+          )
+          foreach ($tool in $internalTools) {
+            Remove-Item "$bundleDir/scripts/$tool" -Force -ErrorAction SilentlyContinue
+          }
+
+          # Records which release this bundle is, so publish-template-spec.ps1 can version the
+          # Template Spec to match the packages beside it and the deploy scripts can report it.
+          "${{ steps.tag.outputs.version }}" | Out-File "$bundleDir/version.txt" -Encoding utf8 -NoNewline
 
           Compress-Archive release-bundle/$bundleName/* release-bundle/$bundleName.zip
 
       - name: Generate SHA-256 checksum manifest
         run: |
-          $version = "${{ steps.tag.outputs.tag }}"
+          $version = "${{ steps.tag.outputs.version }}"
           $zip     = "release-bundle/cloud-imaging-$version.zip"
           $hash    = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           "$hash  cloud-imaging-$version.zip" | Out-File "release-bundle/SHA256SUMS"
@@ -201,37 +262,67 @@ jobs:
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `cloud-imaging-*.zip` | Backend/IaC bundle (5 components + deploy scripts) |
+            | `cloud-imaging-${{ steps.tag.outputs.version }}.zip` | Backend/IaC bundle (5 components + deploy scripts) |
             | `SHA256SUMS` | SHA-256 checksums for integrity verification |
-
-            ### Upgrade instructions
-            Run `update.ps1 -ResourceGroupName <your-rg>` from the bundle root.
-            See `deploy/` for Bicep templates and parameter files.
           files: |
-            release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip
+            release-bundle/cloud-imaging-${{ steps.tag.outputs.version }}.zip
             release-bundle/SHA256SUMS
           draft: false
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}
 
       # ── Move the 'mse-ci-iac-latest' alias (stable releases only) ─────────────
-      # update.ps1's -Version latest resolves this fixed tag instead of GitHub's
+      # The portal's release check resolves this fixed tag instead of GitHub's
       # repo-wide /releases/latest, which would be unsafe once the client/mediabuilder
       # streams interleave with this one.
-      - name: Move 'mse-ci-iac-latest' alias to this release
+      #
+      # The alias tag is moved with git rather than created on the fly by the Releases API.
+      # GITHUB_TOKEN happily publishes a release for a tag that already exists (the step above
+      # does exactly that), but asking the API to mint the missing alias tag as part of creating
+      # the release fails with "HTTP 403: Resource not accessible by integration". Pushing the
+      # tag over git uses the credentials actions/checkout persisted, which is the same path this
+      # job already uses to create a missing version tag.
+      - name: Move the 'mse-ci-iac-latest' tag to this release's commit
         if: ${{ steps.tag.outputs.stable == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The alias does not exist before the first stable release, and 'gh release delete' exits
-          # non-zero when it is missing, which would fail the job *after* the real release had
-          # already published. Treat "nothing to move" as success.
+          # Drop the previous alias release first so its body and title describe this version.
+          # The tag itself is deliberately kept (no --cleanup-tag): it is force-moved below
+          # instead. The release does not exist before the first stable release and 'gh release
+          # delete' exits non-zero when it is missing, which would fail the job *after* the real
+          # release had already published, so treat "nothing to move" as success.
           $ErrorActionPreference = 'Continue'
-          gh release delete mse-ci-iac-latest --yes --cleanup-tag 2>&1 | Write-Host
+          gh release delete mse-ci-iac-latest --yes 2>&1 | Write-Host
           $ErrorActionPreference = 'Stop'
-          gh release create mse-ci-iac-latest `
-            "release-bundle/cloud-imaging-${{ steps.tag.outputs.tag }}.zip" `
-            "release-bundle/SHA256SUMS" `
-            --target "${{ steps.tag.outputs.sha }}" `
-            --title "Cloud Imaging (latest: ${{ steps.tag.outputs.version }})" `
-            --notes "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes." `
-            --latest=false
+          git tag -f mse-ci-iac-latest "${{ steps.tag.outputs.sha }}"
+          git push -f origin refs/tags/mse-ci-iac-latest
+
+      # The alias is a moving pointer, so its asset carries no version: that keeps
+      # releases/download/mse-ci-iac-latest/cloud-imaging.zip a permanent link, and a versioned
+      # name on a moving target would leave a stale bundle sitting next to the current one.
+      # The version is in the release title and in version.txt inside the bundle.
+      - name: Stage the alias release artifacts
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        run: |
+          New-Item alias-bundle -ItemType Directory -Force | Out-Null
+          Copy-Item "release-bundle/cloud-imaging-${{ steps.tag.outputs.version }}.zip" alias-bundle/cloud-imaging.zip
+          $hash = (Get-FileHash alias-bundle/cloud-imaging.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  cloud-imaging.zip" | Out-File "alias-bundle/SHA256SUMS"
+
+      # The title carries the *full* mse-ci-v#.#.# tag, not the bare version: the portal reads
+      # the real version out of this alias release's name (its own tag_name is literally
+      # 'mse-ci-iac-latest'), and its pattern looks for the prefixed form. A bare 'v1.2.3' here
+      # left the portal reporting the available version as "mse-ci-iac-latest".
+      - name: Publish the 'mse-ci-iac-latest' alias release
+        if: ${{ steps.tag.outputs.stable == 'true' }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: mse-ci-iac-latest
+          name:     "Cloud Imaging (latest: ${{ steps.tag.outputs.tag }})"
+          body:     "Always points to the newest stable backend/IaC release. See ${{ steps.tag.outputs.tag }} for full release notes."
+          files: |
+            alias-bundle/cloud-imaging.zip
+            alias-bundle/SHA256SUMS
+          make_latest: false
+          draft: false
+          prerelease: false

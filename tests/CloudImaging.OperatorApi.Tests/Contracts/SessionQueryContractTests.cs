@@ -43,7 +43,7 @@ public sealed class SessionQueryContractTests
             "sessionId", "state", "deviceSerialNumber", "deviceManufacturer", "deviceModel",
             "macAddress", "hardware",
             "preFlightAuthorizationResult", "assignedOsImageId", "overallProgressPercent",
-            "currentStep", "createdAt", "lastHeartbeatAt", "terminalAt",
+            "currentStep", "steps", "createdAt", "lastHeartbeatAt", "terminalAt",
         };
 
         summaryFields.Should().NotIntersectWith(forbiddenFields,

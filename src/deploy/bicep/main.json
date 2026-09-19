@@ -4,16 +4,17 @@
   "metadata": {
     "_generator": {
       "name": "bicep",
-      "version": "0.44.1.10279",
-      "templateHash": "6961423943871990407"
+      "version": "0.47.16.16243",
+      "templateHash": "5676885086676333451"
     }
   },
   "parameters": {
     "resourcePrefix": {
       "type": "string",
-      "maxLength": 4,
+      "minLength": 1,
+      "maxLength": 12,
       "metadata": {
-        "description": "Short alphanumeric organization identifier used as the leading segment of all resource names."
+        "description": "Short organization identifier used as the leading segment of all resource names. Lowercase letters, digits and hyphens, starting and ending with a letter or digit."
       }
     },
     "environment": {
@@ -133,6 +134,20 @@
         "description": "Azure region for all resources."
       }
     },
+    "staticWebAppLocation": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "allowedValues": [
+        "centralus",
+        "eastus2",
+        "westus2",
+        "westeurope",
+        "eastasia"
+      ],
+      "metadata": {
+        "description": "Azure region for the Static Web App (Portal frontend). Static Web Apps is a non-regional/globally-distributed service available in only a handful of regions, independent of where the rest of the solution is deployed."
+      }
+    },
     "functionAppSku": {
       "type": "string",
       "defaultValue": "EP1",
@@ -142,7 +157,7 @@
         "EP3"
       ],
       "metadata": {
-        "description": "Elastic Premium SKU for all API Function App plans. EP1 is required as the minimum for mTLS, VNet integration, and pre-warmed instances."
+        "description": "Elastic Premium SKU for all Function App plans. EP1 is required as the minimum for mTLS, VNet integration, and pre-warmed instances."
       }
     },
     "appServiceSku": {
@@ -160,7 +175,7 @@
   },
   "variables": {
     "prefix": "[format('{0}-{1}-ci', parameters('resourcePrefix'), parameters('environment'))]",
-    "storagePrefix": "[format('{0}{1}ci', parameters('resourcePrefix'), parameters('environment'))]",
+    "storagePrefix": "[format('{0}{1}ci', replace(parameters('resourcePrefix'), '-', ''), parameters('environment'))]",
     "names": {
       "vnet": "[format('{0}-vnet', variables('prefix'))]",
       "apiFunctionSubnet": "[format('{0}-snet-functions', variables('prefix'))]",
@@ -218,8 +233,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "10106186670538943663"
+              "version": "0.47.16.16243",
+              "templateHash": "9552375597396608952"
             }
           },
           "parameters": {
@@ -327,8 +342,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "2131608780797951936"
+              "version": "0.47.16.16243",
+              "templateHash": "10574589282811260677"
             }
           },
           "parameters": {
@@ -619,8 +634,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "14514817572365898"
+              "version": "0.47.16.16243",
+              "templateHash": "2922245252610294499"
             }
           },
           "parameters": {
@@ -675,7 +690,8 @@
               "properties": {
                 "supportsHttpsTrafficOnly": true,
                 "minimumTlsVersion": "TLS1_2",
-                "allowBlobPublicAccess": false
+                "allowBlobPublicAccess": false,
+                "allowSharedKeyAccess": true
               }
             },
             {
@@ -690,7 +706,8 @@
               "properties": {
                 "supportsHttpsTrafficOnly": true,
                 "minimumTlsVersion": "TLS1_2",
-                "allowBlobPublicAccess": false
+                "allowBlobPublicAccess": false,
+                "allowSharedKeyAccess": true
               }
             },
             {
@@ -716,6 +733,17 @@
               "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
               "apiVersion": "2023-05-01",
               "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'boot-images')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'recovery-images')]",
               "properties": {
                 "publicAccess": "None"
               },
@@ -921,8 +949,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "16766759999519200286"
+              "version": "0.47.16.16243",
+              "templateHash": "3517475370508126049"
             }
           },
           "parameters": {
@@ -1088,8 +1116,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "8070990333772523265"
+              "version": "0.47.16.16243",
+              "templateHash": "18193049734022500430"
             }
           },
           "parameters": {
@@ -1261,8 +1289,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "3905918478730965669"
+              "version": "0.47.16.16243",
+              "templateHash": "6509811024739731521"
             }
           },
           "parameters": {
@@ -1384,6 +1412,14 @@
                     {
                       "name": "AzureWebJobsStorage__accountName",
                       "value": "[parameters('storageAccountName')]"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage__credential",
+                      "value": "managedidentity"
+                    },
+                    {
+                      "name": "AzureWebJobsStorage__clientId",
+                      "value": "[parameters('msiClientId')]"
                     },
                     {
                       "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
@@ -1565,8 +1601,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "6714019051965794713"
+              "version": "0.47.16.16243",
+              "templateHash": "1738765861948239604"
             }
           },
           "parameters": {
@@ -1750,8 +1786,8 @@
                   "metadata": {
                     "_generator": {
                       "name": "bicep",
-                      "version": "0.44.1.10279",
-                      "templateHash": "13823829760470150816"
+                      "version": "0.47.16.16243",
+                      "templateHash": "15176266638635645760"
                     }
                   },
                   "parameters": {
@@ -1900,8 +1936,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "10427801790542416925"
+              "version": "0.47.16.16243",
+              "templateHash": "18364433846278459800"
             }
           },
           "parameters": {
@@ -2097,6 +2133,9 @@
           "location": {
             "value": "[parameters('location')]"
           },
+          "staticWebAppLocation": {
+            "value": "[parameters('staticWebAppLocation')]"
+          },
           "appServiceName": {
             "value": "[variables('names').appPortalBackend]"
           },
@@ -2129,6 +2168,9 @@
           },
           "appServiceSku": {
             "value": "[parameters('appServiceSku')]"
+          },
+          "deploymentEnvironment": {
+            "value": "[parameters('environment')]"
           }
         },
         "template": {
@@ -2137,12 +2179,15 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "13454643036550055213"
+              "version": "0.47.16.16243",
+              "templateHash": "8871062599962740504"
             }
           },
           "parameters": {
             "location": {
+              "type": "string"
+            },
+            "staticWebAppLocation": {
               "type": "string"
             },
             "appServiceName": {
@@ -2183,6 +2228,10 @@
                 "P2v3",
                 "P3v3"
               ]
+            },
+            "deploymentEnvironment": {
+              "type": "string",
+              "defaultValue": "dev"
             }
           },
           "resources": [
@@ -2255,6 +2304,10 @@
                       "value": "[format('{0}{1}', environment().authentication.loginEndpoint, parameters('tenantId'))]"
                     },
                     {
+                      "name": "DEPLOYMENT_ENVIRONMENT",
+                      "value": "[parameters('deploymentEnvironment')]"
+                    },
+                    {
                       "name": "CORS_ALLOWED_ORIGINS",
                       "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/staticSites', parameters('stappName')), '2024-04-01').defaultHostname)]"
                     }
@@ -2287,7 +2340,7 @@
               "type": "Microsoft.Web/staticSites",
               "apiVersion": "2024-04-01",
               "name": "[parameters('stappName')]",
-              "location": "[parameters('location')]",
+              "location": "[parameters('staticWebAppLocation')]",
               "sku": {
                 "name": "Standard",
                 "tier": "Standard"
@@ -2360,8 +2413,8 @@
           "metadata": {
             "_generator": {
               "name": "bicep",
-              "version": "0.44.1.10279",
-              "templateHash": "13706924707627705438"
+              "version": "0.47.16.16243",
+              "templateHash": "5496281286854435759"
             }
           },
           "parameters": {

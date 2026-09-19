@@ -15,10 +15,20 @@ if (aiConnectionString) {
     .setAutoCollectRequests(true)
     .setAutoCollectExceptions(true)
     .setAutoCollectDependencies(true)
+    // Second argument is what forwards console.* to App Insights traces. Without it the
+    // backend's own diagnostics (token validation failures, operator token role checks) only
+    // reach container stdout, which App Service discards unless filesystem logging happens to
+    // be switched on.
+    .setAutoCollectConsole(true, true)
     .start();
 }
 
 const app = express();
+
+// Trusts exactly one hop: App Service's own front-end reverse proxy sets X-Forwarded-For/-Proto,
+// so rate-limiting (and any req.ip use) must trust it, or express-rate-limit refuses to key
+// requests and express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR on every request.
+app.set('trust proxy', 1);
 
 // Security headers
 app.use(helmet());

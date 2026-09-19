@@ -27,7 +27,9 @@
 
         <ui:TitleBar Grid.Row="0"
                      Title="Cloud Imaging Client — Log"
-                     ShowMaximize="False" />
+                     ShowMaximize="False"
+                     Background="{DynamicResource ApplicationBackgroundBrush}"
+                     Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
         <Grid Grid.Row="1" Margin="16,8,16,8">
             <Grid.ColumnDefinitions>
@@ -76,6 +78,15 @@
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1" CornerRadius="4">
+            <!-- Neutralize the TextBox template's focus/hover chrome (see the matching override
+                 on the path TextBox above, and Media Builder's GenerateBootImageView log viewer)
+                 — otherwise hovering the log content darkens/lightens its own background and
+                 reduces contrast against the text, which is out of place on a read-only,
+                 console-style field. -->
+            <Border.Resources>
+                <SolidColorBrush x:Key="TextControlFocusedBorderBrush" Color="Transparent" />
+                <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="Transparent" />
+            </Border.Resources>
             <!--
                 The WPF UI TextBox control template's own PART_ContentHost ScrollViewer never
                 surfaces a horizontal scrollbar thumb (only vertical), no matter what

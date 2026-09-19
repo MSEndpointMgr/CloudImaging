@@ -19,7 +19,7 @@ app/identity, not a person).
 | `CloudImaging.Administrator` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Full access: catalog writes, branding, configuration, boot-media certificate, plus everything Technician can do |
 | `CloudImaging.Technician` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Day-to-day imaging operations: sessions, coupling, assignment, read-only catalogs |
 | `CloudImaging.Reader` | **Cloud Imaging Portal** registration only | Users / groups | Read-only visibility: Dashboard summary and Reports, nothing else. No Media Builder equivalent. |
-| `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `assign-service-roles.ps1`; nothing to do manually. |
+| `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `post-install.ps1`; nothing to do manually. |
 | `CloudImaging.MediaBuilderAccess` | **Cloud Imaging Operator API** registration | Users / groups | Lets a signed-in technician's Media Builder client actually call the Operator API. Required **in addition to** `CloudImaging.Administrator`/`Technician`; see [Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians). |
 
 > **Because the Portal and Media Builder are separate app registrations, `Administrator`/`Technician`
@@ -28,6 +28,11 @@ app/identity, not a person).
 > technician who only ever uses the Portal doesn't need a Media Builder assignment at all.
 
 ### How to assign `Administrator` / `Technician` / `Reader` to a user or group
+
+Prefer assigning a **group per persona** rather than individual users. A single person needs
+assignments across up to three enterprise applications, and per-user assignment is where access
+problems start. [Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians)
+walks through the group-based approach and lists every application/role pair in one table.
 
 For **each** registration the person needs (Portal, Media Builder, or both; `Reader` only exists
 on the Portal registration):
@@ -49,8 +54,8 @@ Entra ID → **Enterprise applications** → **Cloud Imaging Operator API** → 
 for why this is required in addition to the Media Builder registration's own
 `Administrator`/`Technician` role.
 
-`PortalAccess` requires no manual assignment; `assign-service-roles.ps1` (run once during
-[Phase 3, Step 1](setup-instructions.md#step-1-run-the-post-deployment-scripts)) grants it to the
+`PortalAccess` requires no manual assignment; `post-install.ps1` (run once during
+[Phase 3, Step 1](setup-instructions.md#step-1-complete-the-microsoft-entra-grants)) grants it to the
 Portal backend's managed identity.
 
 ---
@@ -61,7 +66,7 @@ Portal backend's managed identity.
 |---|---|---|---|---|
 | Sign in | Allowed, but "Access denied" screen | ✅ | ✅ | ✅ |
 | **Dashboard**: Completed Sessions summary | ❌ | ✅ (only stat shown) | ✅ (full) | ✅ (full) |
-| **Reports**: session outcomes, image inventory, failure detail | ❌ | ✅ | ❌ | ✅ |
+| **Reports**: device outcomes, location statistics, image inventory, failure detail | ❌ | ✅ | ❌ | ✅ |
 | **Sessions**: view, couple, single-assign, bulk-assign | ❌ | ❌ | ✅ | ✅ |
 | **OS Images** catalog: view | ❌ | ❌ | ✅ (read-only) | ✅ |
 | **OS Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |
@@ -98,10 +103,15 @@ prep screen) is available to any Technician or Administrator, while managing the
 
 ## 3. What each role can do in the Media Builder
 
-| Workflow | Technician | Administrator |
-|---|---|---|
-| **Prepare USB Storage Device** | ✅ | ✅ |
-| **Generate Boot Image** | ❌ (nav item disabled, with a "restricted by role" explanation) | ✅ |
+| Workflow | No role | Technician | Administrator |
+|---|---|---|---|
+| **Prepare USB Storage Device** | ❌ | ✅ | ✅ |
+| **Generate Boot Image** | ❌ | ❌ (nav item disabled, with a "restricted by role" explanation) | ✅ |
+
+A user with neither role can sign in but reaches no workflow at all: both the Home tiles and the
+navigation items are disabled, and the Media Builder explains that a role must be assigned. This
+matches what the Operator API would do anyway, since every workflow calls it and a user with no
+role assignment gets a `403`.
 
 Generate Boot Image is Administrator-only because it embeds the active mTLS boot-media
 certificate and branding into a new image, a higher-privilege operation than deploying an
@@ -115,7 +125,7 @@ always shows the specific reason that applies:
 2. **ADK gate**: the Windows ADK + WinPE add-on must be installed on the workstation (see
    [setup-instructions.md](setup-instructions.md#installing-the-windows-adk-on-technician-workstations)).
 
-`Prepare USB Storage Device` has neither gate beyond sign-in; any signed-in Technician or
+`Prepare USB Storage Device` has no ADK or certificate gate; any signed-in Technician or
 Administrator with `CloudImaging.MediaBuilderAccess` on the Operator API can use it, including
 reading the location catalog to optionally tag the USB with a site label.
 

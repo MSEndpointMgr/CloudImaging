@@ -3,6 +3,7 @@ import { FileDown, HardDrive } from 'lucide-react';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
+import { formatImageVersion, formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
@@ -84,19 +85,19 @@ export default function ReportImageInventoryPage(): React.ReactElement {
         // already knows from those pages instead of introducing a one-off wording/style.
         const combined: InventoryRow[] = [
           ...osImages.map((img): InventoryRow => ({
-            catalog: 'OS Image', id: img.imageId, name: `${img.name} v${img.version}`,
+            catalog: 'OS Image', id: img.imageId, name: formatOsImageInventoryName(img.name, img.version),
             sizeBytes: img.sizeBytes, date: img.uploadedAt,
             statusLabel: img.isInUse ? 'In Use' : 'Available',
             statusVariant: img.isInUse ? 'info' : 'success', statusDot: true,
           })),
           ...bootImages.map((img): InventoryRow => ({
-            catalog: 'Boot Image', id: img.bootImageId, name: `v${img.version}`,
+            catalog: 'Boot Image', id: img.bootImageId, name: formatImageVersion(img.version),
             sizeBytes: img.sizeBytes, date: img.createdAt,
             statusLabel: img.isLatestPublished ? 'Latest' : img.isActive ? 'Active' : 'Inactive',
             statusVariant: img.isLatestPublished ? 'info' : 'muted', statusDot: img.isLatestPublished || img.isActive,
           })),
           ...recoveryImages.map((img): InventoryRow => ({
-            catalog: 'Recovery Image', id: img.recoveryImageId, name: `v${img.version}`,
+            catalog: 'Recovery Image', id: img.recoveryImageId, name: formatImageVersion(img.version),
             sizeBytes: img.sizeBytes, date: img.uploadedAt,
             statusLabel: img.isLatestPublished ? 'Latest' : img.isActive ? 'Active' : 'Inactive',
             statusVariant: img.isLatestPublished ? 'info' : 'muted', statusDot: img.isLatestPublished || img.isActive,

@@ -35,6 +35,10 @@ public sealed class UsbPreparationManifest
     /// <summary>Disk identifier of the USB device the media was prepared onto.</summary>
     public required string SelectedDiskId { get; init; }
 
+    /// <summary>Boot image architecture (e.g. "x64", "arm64"). Null on manifests written before
+    /// architecture tracking existed; the Client treats a null value as "x64" (todo/arm64-support.md #8).</summary>
+    public string? Architecture { get; init; }
+
     /// <summary>
     /// Admin-defined location label selected in Media Builder when this media was prepared
     /// (e.g. "Seattle HQ"). Null when no location catalog entry was selected — the Client and

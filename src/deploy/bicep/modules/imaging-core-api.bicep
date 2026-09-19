@@ -58,6 +58,8 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'AzureWebJobsStorage__accountName', value: storageAccountName }
+        { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
+        { name: 'AzureWebJobsStorage__clientId', value: msiClientId }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
         { name: 'AZURE_CLIENT_ID', value: msiClientId }
         { name: 'Entra__TenantId', value: tenantId }
@@ -132,7 +134,7 @@ resource corePackageReadAccess 'Microsoft.Authorization/roleAssignments@2022-04-
 // Note: Microsoft Graph app role assignments require a separate approach:
 // The managed identity principalId must be granted this role via PowerShell/CLI post-deploy
 // because Bicep does not natively support Graph API role assignments.
-// The grant-graph-permissions.ps1 script handles this step.
+// The post-install.ps1 script handles this step.
 
 output internalBaseUrl string = 'https://${func.properties.defaultHostName}'
 output funcId string = func.id

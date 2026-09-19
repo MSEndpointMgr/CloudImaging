@@ -18,12 +18,12 @@ describe('Portal frontend: sign-in return path', () => {
   });
 
   it('returns the stored path once', () => {
-    sessionStorage.setItem(RETURN_PATH_KEY, '/reports/session-outcomes');
-    expect(consumeReturnPath()).toBe('/reports/session-outcomes');
+    sessionStorage.setItem(RETURN_PATH_KEY, '/reports/device-outcomes');
+    expect(consumeReturnPath()).toBe('/reports/device-outcomes');
   });
 
   it('always clears the key, so a leftover value cannot affect a later page load', () => {
-    sessionStorage.setItem(RETURN_PATH_KEY, '/reports/session-outcomes');
+    sessionStorage.setItem(RETURN_PATH_KEY, '/reports/device-outcomes');
     consumeReturnPath();
     expect(sessionStorage.getItem(RETURN_PATH_KEY)).toBeNull();
     expect(consumeReturnPath()).toBeNull();
@@ -43,11 +43,11 @@ describe('Portal frontend: sign-in return path', () => {
 
   it('does NOT restore on an ordinary load, even with a leftover path', () => {
     // The exact bug: a refresh with a stale key rewrote the URL and stranded the user.
-    expect(shouldRestore(null, '/reports/session-outcomes', '/reports')).toBe(false);
+    expect(shouldRestore(null, '/reports/device-outcomes', '/reports')).toBe(false);
   });
 
   it('restores only when a redirect response was actually processed', () => {
-    expect(shouldRestore({ account: {} }, '/reports/session-outcomes', '/')).toBe(true);
+    expect(shouldRestore({ account: {} }, '/reports/device-outcomes', '/')).toBe(true);
   });
 
   it('does not restore when already on the target path', () => {

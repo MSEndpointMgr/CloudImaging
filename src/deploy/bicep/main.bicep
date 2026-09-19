@@ -7,8 +7,9 @@ targetScope = 'resourceGroup'
 
 // ── Parameters ───────────────────────────────────────────────────────────────
 
-@maxLength(4)
-@description('Short alphanumeric organization identifier used as the leading segment of all resource names.')
+@minLength(1)
+@maxLength(12)
+@description('Short organization identifier used as the leading segment of all resource names. Lowercase letters, digits and hyphens, starting and ending with a letter or digit.')
 param resourcePrefix string
 
 @maxLength(4)
@@ -63,7 +64,11 @@ param gatewaySubnetPrefix string = '10.0.4.0/24'
 @description('Azure region for all resources.')
 param location string = resourceGroup().location
 
-@description('Elastic Premium SKU for all API Function App plans. EP1 is required as the minimum for mTLS, VNet integration, and pre-warmed instances.')
+@description('Azure region for the Static Web App (Portal frontend). Static Web Apps is a non-regional/globally-distributed service available in only a handful of regions, independent of where the rest of the solution is deployed.')
+@allowed(['centralus', 'eastus2', 'westus2', 'westeurope', 'eastasia'])
+param staticWebAppLocation string = 'eastus2'
+
+@description('Elastic Premium SKU for all Function App plans. EP1 is required as the minimum for mTLS, VNet integration, and pre-warmed instances.')
 @allowed(['EP1','EP2','EP3'])
 param functionAppSku string = 'EP1'
 
@@ -78,7 +83,8 @@ param appServiceSku string = 'P1v3'
 // solution, so a technician can distinguish them from other workloads in the subscription.
 
 var prefix = '${resourcePrefix}-${environment}-ci'
-var storagePrefix = '${resourcePrefix}${environment}ci'
+// Storage account names allow no hyphens and cap at 24 characters, so the prefix is flattened.
+var storagePrefix = '${replace(resourcePrefix, '-', '')}${environment}ci'
 
 // Resource names
 var names = {
@@ -271,6 +277,7 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
   name: 'cloud-imaging-portal'
   params: {
     location: location
+    staticWebAppLocation: staticWebAppLocation
     appServiceName: names.appPortalBackend
     planName: names.planPortalBackend
     stappName: names.stappPortalFrontend
@@ -282,6 +289,7 @@ module cloudImagingPortal 'modules/cloud-imaging-portal.bicep' = {
     sharedEntraClientId: portalClientId
     tenantId: tenantId
     appServiceSku: appServiceSku
+    deploymentEnvironment: environment
   }
 }
 
