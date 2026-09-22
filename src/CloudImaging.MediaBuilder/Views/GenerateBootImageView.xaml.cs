@@ -8,6 +8,7 @@ namespace CloudImaging.MediaBuilder.Views;
 /// </summary>
 public partial class GenerateBootImageView : UserControl
 {
+    /// <summary>Initializes a new instance of <see cref="GenerateBootImageView"/>.</summary>
     public GenerateBootImageView()
     {
         InitializeComponent();

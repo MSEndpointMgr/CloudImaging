@@ -32,8 +32,8 @@ Requires:
 Restore and build the .NET solution:
 
 ```powershell
-dotnet restore CloudImaging.sln
-dotnet build CloudImaging.sln --configuration Release
+dotnet restore CloudImaging.slnx
+dotnet build CloudImaging.slnx --configuration Release
 ```
 
 Install portal dependencies:
@@ -88,8 +88,8 @@ tasks):
 
 ```powershell
 # .NET solution
-dotnet build CloudImaging.sln --configuration Release
-dotnet test CloudImaging.sln --configuration Release
+dotnet build CloudImaging.slnx --configuration Release
+dotnet test CloudImaging.slnx --configuration Release
 
 # Portal client
 cd src/cloud-imaging-portal/client; npm run lint; npm run test:run

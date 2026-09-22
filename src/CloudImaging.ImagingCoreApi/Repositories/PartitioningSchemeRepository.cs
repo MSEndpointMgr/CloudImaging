@@ -21,6 +21,7 @@ public sealed partial class PartitioningSchemeRepository
     private readonly TableClient _table;
     private readonly ILogger<PartitioningSchemeRepository> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="PartitioningSchemeRepository"/>.</summary>
     public PartitioningSchemeRepository(
         TableServiceClient tableService,
         ILogger<PartitioningSchemeRepository> logger)

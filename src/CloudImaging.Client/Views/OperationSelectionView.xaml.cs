@@ -10,6 +10,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class OperationSelectionView : Page
 {
+    /// <summary>Creates the operation selection screen and loads the portal branding logo.</summary>
     public OperationSelectionView()
     {
         InitializeComponent();

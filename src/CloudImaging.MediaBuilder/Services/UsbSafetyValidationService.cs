@@ -17,8 +17,17 @@ public sealed partial class UsbSafetyValidationService
 {
     private readonly ILogger<UsbSafetyValidationService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="UsbSafetyValidationService"/> class.</summary>
+    /// <param name="logger">The logger instance.</param>
     public UsbSafetyValidationService(ILogger<UsbSafetyValidationService> logger) => _logger = logger;
 
+    /// <summary>Describes a physical disk device enumerated by WMI.</summary>
+    /// <param name="DiskNumber">Physical disk index.</param>
+    /// <param name="Caption">The disk's friendly caption.</param>
+    /// <param name="SizeBytes">Total disk capacity in bytes.</param>
+    /// <param name="BusType">Disk bus type (e.g. USB).</param>
+    /// <param name="IsRemovable">Whether the disk is marked as removable.</param>
+    /// <param name="IsSystemDisk">Whether the disk hosts the running Windows installation.</param>
     public sealed record DiskInfo(
         uint DiskNumber,
         string Caption,
@@ -27,6 +36,9 @@ public sealed partial class UsbSafetyValidationService
         bool IsRemovable,
         bool IsSystemDisk);
 
+    /// <summary>Result of validating whether a disk is safe for USB imaging.</summary>
+    /// <param name="Valid">Whether the disk passed validation.</param>
+    /// <param name="FailureReason">The reason validation failed, or null when valid.</param>
     public sealed record ValidationResult(bool Valid, string? FailureReason);
 
     /// <summary>Returns all physical disks enumerated by WMI.</summary>

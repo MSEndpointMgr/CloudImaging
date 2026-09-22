@@ -11,7 +11,18 @@ namespace CloudImaging.Client.ViewModels;
 /// </summary>
 public sealed class ResultsViewModel : INotifyPropertyChanged
 {
-    public enum Outcome { Success, Failure, NotAuthorized, Expired }
+    /// <summary>Terminal outcome displayed by the ResultsView.</summary>
+    public enum Outcome
+    {
+        /// <summary>Imaging completed successfully.</summary>
+        Success,
+        /// <summary>Imaging failed.</summary>
+        Failure,
+        /// <summary>The session was not authorized.</summary>
+        NotAuthorized,
+        /// <summary>The session expired before completion.</summary>
+        Expired
+    }
 
     /// <summary>How long the Success outcome waits before automatically restarting the device.</summary>
     private const int RestartCountdownDurationSeconds = 10;
@@ -24,6 +35,9 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     private readonly DispatcherTimer? _restartTimer;
     private int _restartCountdownSecondsRemaining = RestartCountdownDurationSeconds;
 
+    /// <summary>
+    /// Creates a new <see cref="ResultsViewModel"/> for the given terminal <paramref name="outcome"/>.
+    /// </summary>
     public ResultsViewModel(
         Outcome outcome,
         string? deviceSerialNumber,
@@ -63,8 +77,13 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>True when the outcome is <see cref="Outcome.Success"/>.</summary>
     public bool IsSuccess       => _outcome == Outcome.Success;
+
+    /// <summary>True when the outcome is <see cref="Outcome.Failure"/>.</summary>
     public bool IsFailure       => _outcome == Outcome.Failure;
+
+    /// <summary>True when the outcome is <see cref="Outcome.NotAuthorized"/>.</summary>
     public bool IsNotAuthorized => _outcome == Outcome.NotAuthorized;
 
     /// <summary>
@@ -74,8 +93,13 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsExpired      => _outcome == Outcome.Expired;
 
+    /// <summary>The device serial number carried through from registration, when known.</summary>
     public string? DeviceSerialNumber => _deviceSerialNumber;
+
+    /// <summary>Support reference code for a failure, when one was generated.</summary>
     public string? SupportReferenceCode { get; }
+
+    /// <summary>Detailed error message for a failure outcome.</summary>
     public string? ErrorDetail  => _errorDetail;
 
     /// <summary>Seconds remaining before an automatic restart (Success outcome only).</summary>
@@ -108,6 +132,7 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
         _restartSystem?.Invoke();
     }
 
+    /// <summary>Returns to the start of the workflow.</summary>
     public ICommand RetryCommand { get; }
 
     /// <summary>
@@ -116,6 +141,7 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     /// </summary>
     public ICommand ExitCommand { get; }
 
+    /// <summary>Raised when a bound property value changes.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

@@ -25,12 +25,14 @@ public sealed partial class SessionHistoryFunction
     private readonly SessionHistoryRepository _historyRepo;
     private readonly ILogger<SessionHistoryFunction> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="SessionHistoryFunction"/>.</summary>
     public SessionHistoryFunction(SessionHistoryRepository historyRepo, ILogger<SessionHistoryFunction> logger)
     {
         _historyRepo = historyRepo;
         _logger = logger;
     }
 
+    /// <summary>Queries session history records within an optional date range.</summary>
     [Function(nameof(SessionHistoryFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/session-history")] HttpRequestData req,

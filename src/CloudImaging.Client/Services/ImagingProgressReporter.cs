@@ -48,6 +48,9 @@ public sealed partial class ImagingProgressReporter
     private ImagingStepName? _lastProgressStep;
     private DateTimeOffset _lastProgressReportUtc = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// Creates a new <see cref="ImagingProgressReporter"/> for the given session.
+    /// </summary>
     public ImagingProgressReporter(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,

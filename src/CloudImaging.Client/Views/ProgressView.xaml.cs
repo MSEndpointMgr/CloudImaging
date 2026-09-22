@@ -8,6 +8,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class ProgressView : Page
 {
+    /// <summary>Creates the imaging progress screen.</summary>
     public ProgressView()
     {
         InitializeComponent();

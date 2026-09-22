@@ -25,6 +25,7 @@ public sealed partial class RecoveryImageFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<RecoveryImageFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="RecoveryImageFunctions"/>.</summary>
     public RecoveryImageFunctions(
         RecoveryImageRepository recoveryImageRepo,
         PortalConfigurationRepository configRepo,
@@ -39,6 +40,7 @@ public sealed partial class RecoveryImageFunctions
 
     // ── GET /api/internal/recovery-images ────────────────────────────────────
 
+    /// <summary>Lists active recovery images.</summary>
     [Function("GetRecoveryImages")]
     public async Task<HttpResponseData> GetRecoveryImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/recovery-images")] HttpRequestData req,
@@ -56,6 +58,7 @@ public sealed partial class RecoveryImageFunctions
 
     // ── GET /api/internal/recovery-images/{id} ───────────────────────────────
 
+    /// <summary>Gets a single recovery image by id.</summary>
     [Function("GetRecoveryImageById")]
     public async Task<HttpResponseData> GetRecoveryImageById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/recovery-images/{id}")] HttpRequestData req,
@@ -81,6 +84,7 @@ public sealed partial class RecoveryImageFunctions
 
     // ── POST /api/internal/recovery-images/{id}/sas ──────────────────────────
 
+    /// <summary>Issues a time-limited SAS URL and hash for a recovery image.</summary>
     [Function("GetRecoveryImageSasUrl")]
     public async Task<HttpResponseData> GetRecoveryImageSasUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/recovery-images/{id}/sas")] HttpRequestData req,

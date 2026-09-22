@@ -16,12 +16,15 @@ public sealed class BootImageRepository
     private const int MaxActiveEntries = 5;
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="BootImageRepository"/>.</summary>
     public BootImageRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Publishes a new boot image, auto-demoting the oldest if at capacity.</summary>
     public async Task<BootImage> PublishAsync(BootImage image, CancellationToken ct = default)
     {
         // Demote oldest active entry if catalog is full (FR-063)
@@ -58,6 +61,7 @@ public sealed class BootImageRepository
         return newImage;
     }
 
+    /// <summary>Retrieves a boot image by ID, or <c>null</c> if not found.</summary>
     public async Task<BootImage?> GetByIdAsync(Guid bootImageId, CancellationToken ct = default)
     {
         try
@@ -68,12 +72,14 @@ public sealed class BootImageRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Lists all active boot images.</summary>
     public IAsyncEnumerable<BootImage> ListActiveAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition} and IsActive eq true");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
     }
 
+    /// <summary>Deletes a boot image by ID.</summary>
     public async Task DeleteAsync(Guid bootImageId, CancellationToken ct = default) =>
         await _table.DeleteEntityAsync(Partition, bootImageId.ToString(), cancellationToken: ct);
 

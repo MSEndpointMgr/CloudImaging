@@ -33,6 +33,7 @@ public sealed partial class GitHubReleasesClient
     private readonly HttpClient _http;
     private readonly ILogger<GitHubReleasesClient> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="GitHubReleasesClient"/> class.</summary>
     public GitHubReleasesClient(HttpClient http, ILogger<GitHubReleasesClient> logger)
     {
         _http   = http;

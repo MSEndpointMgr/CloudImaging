@@ -22,12 +22,14 @@ public sealed partial class RecoveryImageFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<RecoveryImageFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="RecoveryImageFunctions"/> class.</summary>
     public RecoveryImageFunctions(ImagingCoreClient coreClient, ILogger<RecoveryImageFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>Lists active recovery images.</summary>
     [Function(nameof(GetRecoveryImages))]
     public async Task<HttpResponseData> GetRecoveryImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "recovery-images")] HttpRequestData req,
@@ -37,6 +39,7 @@ public sealed partial class RecoveryImageFunctions
         return await ForwardAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Issues a SAS URL for a recovery image.</summary>
     [Function(nameof(GetRecoveryImageSas))]
     public async Task<HttpResponseData> GetRecoveryImageSas(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "recovery-images/{id}/sas")] HttpRequestData req,
@@ -52,6 +55,7 @@ public sealed partial class RecoveryImageFunctions
         return await ForwardAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Deletes a recovery image.</summary>
     [Function(nameof(DeleteRecoveryImage))]
     public async Task<HttpResponseData> DeleteRecoveryImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "recovery-images/{id}")] HttpRequestData req,
@@ -67,6 +71,7 @@ public sealed partial class RecoveryImageFunctions
         return await ForwardAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Starts a staged recovery image upload.</summary>
     [Function(nameof(StartRecoveryImageUpload))]
     public async Task<HttpResponseData> StartRecoveryImageUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "recovery-images/upload/start")] HttpRequestData req,
@@ -77,6 +82,7 @@ public sealed partial class RecoveryImageFunctions
         return await ForwardAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>Commits and publishes a staged recovery image upload.</summary>
     [Function(nameof(PublishRecoveryImageUpload))]
     public async Task<HttpResponseData> PublishRecoveryImageUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "recovery-images/upload/{uploadId}/publish")] HttpRequestData req,

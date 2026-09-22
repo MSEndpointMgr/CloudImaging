@@ -18,6 +18,7 @@ public sealed partial class PortalConfigurationRepository
     private readonly TableClient _table;
     private readonly ILogger<PortalConfigurationRepository> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="PortalConfigurationRepository"/>.</summary>
     public PortalConfigurationRepository(
         TableServiceClient tableService,
         ILogger<PortalConfigurationRepository> logger)

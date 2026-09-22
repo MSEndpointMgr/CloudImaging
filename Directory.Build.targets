@@ -27,6 +27,36 @@
       <Compile Remove="App.xaml.cs" />
     </ItemGroup>
   </Target>
+  <PropertyGroup>
+    <CheckForPackageUpdatesOnBuild Condition="'$(CheckForPackageUpdatesOnBuild)' == ''">true</CheckForPackageUpdatesOnBuild>
+  </PropertyGroup>
+
+  <Target Name="CheckForOutdatedPackages"
+          AfterTargets="Build"
+          Condition="'$(CheckForPackageUpdatesOnBuild)' == 'true'
+                     and '$(DesignTimeBuild)' != 'true'
+                     and '$(IsCrossTargetingBuild)' != 'true'
+                     and '$(CI_SKIP_PACKAGE_UPDATE_CHECK)' != '1'
+                     and '$(MSBuildProjectExtension)' == '.csproj'">
+    <Exec Command="dotnet list &quot;$(MSBuildProjectFullPath)&quot; package --outdated"
+          ConsoleToMsBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="Low"
+          StandardErrorImportance="High"
+          EnvironmentVariables="CI_SKIP_PACKAGE_UPDATE_CHECK=1">
+      <Output TaskParameter="ConsoleOutput" ItemName="_PackageUpdateCheckOutput" />
+    </Exec>
+
+    <ItemGroup>
+      <!-- Exclude pinned packages (e.g., FluentAssertions is pinned to v7.x because the license model changed in v8+) -->
+      <_OutdatedPackageLines Include="@(_PackageUpdateCheckOutput)"
+                             Condition="$([System.String]::Copy('%(_PackageUpdateCheckOutput.Identity)').Trim().StartsWith('>'))
+                                        and !$([System.String]::Copy('%(_PackageUpdateCheckOutput.Identity)').Contains('FluentAssertions'))" />
+    </ItemGroup>
+
+    <Warning Text="NuGet package update available: %(_OutdatedPackageLines.Identity)"
+             Condition="'@(_OutdatedPackageLines)' != ''" />
+  </Target>
 
 </Project>
 

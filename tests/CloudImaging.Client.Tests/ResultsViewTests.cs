@@ -86,7 +86,7 @@ public sealed class ResultsViewModelTests
         vm.SupportReferenceCode.Should().NotBeNull(
             "a failure must produce a support reference code for troubleshooting");
         vm.SupportReferenceCode!.Should().MatchRegex("^CIC-[A-F0-9]{8}-[A-Z]+-.+",
-            "reference code must match the CIC-{sessionRef}-{stage}-{epoch} format");
+            "reference code must match the CIC-{{sessionRef}}-{{stage}}-{{epoch}} format");
     }
 
     [Fact]

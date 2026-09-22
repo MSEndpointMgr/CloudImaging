@@ -17,6 +17,9 @@ public sealed class SignInViewModel : INotifyPropertyChanged
     private bool _hasError;
     private bool _isBusy;
 
+    /// <summary>
+    /// Creates the view model for the sign-in welcome screen.
+    /// </summary>
     public SignInViewModel(
         EntraAuthenticationService authService,
         Action navigateToOperationSelection)
@@ -26,22 +29,27 @@ public sealed class SignInViewModel : INotifyPropertyChanged
         SignInCommand = new RelayCommand(async _ => await SignInAsync(), _ => CanSignIn);
     }
 
+    /// <summary>Status text shown while signing in, or on completion/failure.</summary>
     public string StatusMessage
     {
         get => _statusMessage;
         private set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True when the last sign-in attempt failed, shown visually via <see cref="StatusMessage"/>.</summary>
     public bool HasError
     {
         get => _hasError;
         private set { _hasError = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True when a sign-in attempt can be started (no attempt currently in flight).</summary>
     public bool CanSignIn => !_isBusy;
 
+    /// <summary>True while a sign-in attempt is in flight.</summary>
     public bool IsBusy => _isBusy;
 
+    /// <summary>Command that initiates the interactive sign-in flow.</summary>
     public ICommand SignInCommand { get; }
 
     // ── Sign-in flow ──────────────────────────────────────────────────────────
@@ -81,6 +89,7 @@ public sealed class SignInViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

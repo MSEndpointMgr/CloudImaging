@@ -16,6 +16,7 @@ namespace CloudImaging.DeviceGatewayApi.Security;
 /// </summary>
 public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
 {
+    /// <summary>Time-to-live of a cached thumbprint before a refresh is attempted.</summary>
     public static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
     private readonly Func<CancellationToken, Task<string?>> _loader;
@@ -33,6 +34,7 @@ public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
     /// Async delegate that fetches the active thumbprint from the backing store
     /// (Table Storage in production).  Receives a <see cref="CancellationToken"/>.
     /// </param>
+    /// <param name="logger">Logger used by the cache.</param>
     public BootMediaCertificateThumbprintCache(
         Func<CancellationToken, Task<string?>> loader,
         ILogger<BootMediaCertificateThumbprintCache> logger)
@@ -99,6 +101,7 @@ public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
         LogInvalidated(_logger);
     }
 
+    /// <summary>Releases the resources held by the cache.</summary>
     public void Dispose()
     {
         if (!_disposed)

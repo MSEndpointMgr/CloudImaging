@@ -14,6 +14,7 @@ public sealed partial class BootMediaCertificateCheckService
     private readonly OperatorApiClient _operatorApiClient;
     private readonly ILogger<BootMediaCertificateCheckService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="BootMediaCertificateCheckService"/> class.</summary>
     public BootMediaCertificateCheckService(OperatorApiClient operatorApiClient, ILogger<BootMediaCertificateCheckService> logger)
     {
         _operatorApiClient = operatorApiClient;

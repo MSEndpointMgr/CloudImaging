@@ -15,12 +15,15 @@ public sealed class BrandingRepository
     private const string Key = "default";
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="BrandingRepository"/>.</summary>
     public BrandingRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Returns the current branding configuration, or defaults if not yet configured.</summary>
     public async Task<BrandingConfiguration> GetAsync(CancellationToken ct = default)
     {
         try
@@ -34,6 +37,7 @@ public sealed class BrandingRepository
         }
     }
 
+    /// <summary>Upserts the branding configuration.</summary>
     public async Task UpsertAsync(BrandingConfiguration branding, CancellationToken ct = default)
     {
         var entity = new TableEntity(Partition, Key)

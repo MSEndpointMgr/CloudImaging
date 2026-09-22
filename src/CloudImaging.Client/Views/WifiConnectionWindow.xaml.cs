@@ -14,6 +14,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class WifiConnectionWindow : FluentWindow
 {
+    /// <summary>Creates the Wi-Fi support tool window and binds it to a fresh WifiConnectionViewModel.</summary>
     public WifiConnectionWindow()
     {
         InitializeComponent();

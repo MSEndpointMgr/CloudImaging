@@ -18,6 +18,7 @@ public sealed partial class KeyVaultCertificateService
     private readonly SecretClient _kvClient;
     private readonly ILogger<KeyVaultCertificateService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="KeyVaultCertificateService"/> class.</summary>
     public KeyVaultCertificateService(
         SecretClient kvClient,
         ILogger<KeyVaultCertificateService> logger)

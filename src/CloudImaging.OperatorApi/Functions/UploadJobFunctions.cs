@@ -20,11 +20,13 @@ public sealed class UploadJobFunctions
 {
     private readonly ImagingCoreClient _coreClient;
 
+    /// <summary>Initializes a new instance of the <see cref="UploadJobFunctions"/> class.</summary>
     public UploadJobFunctions(ImagingCoreClient coreClient)
     {
         _coreClient = coreClient;
     }
 
+    /// <summary>Returns the status of a background image publish job.</summary>
     [Function("GetUploadJob")]
     public async Task<HttpResponseData> GetUploadJob(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "upload-jobs/{uploadId}")] HttpRequestData req,

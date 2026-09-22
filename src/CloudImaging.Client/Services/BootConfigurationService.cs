@@ -13,6 +13,7 @@ public sealed partial class BootConfigurationService
 {
     private readonly ILogger<BootConfigurationService> _logger;
 
+    /// <summary>Creates a new <see cref="BootConfigurationService"/>.</summary>
     public BootConfigurationService(ILogger<BootConfigurationService> logger) => _logger = logger;
 
     /// <summary>

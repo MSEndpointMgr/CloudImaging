@@ -68,19 +68,24 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         LaunchCommandPromptCommand = new RelayCommand(_ => LaunchCommandPrompt(), _ => IsCommandPromptAvailable);
     }
 
+    /// <summary>The currently selected imaging operation.</summary>
     public string? SelectedOperation
     {
         get => _selectedOperation;
         set { _selectedOperation = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanContinue)); }
     }
 
+    /// <summary>Message describing the current status or error, when any.</summary>
     public string? StatusMessage
     {
         get => _statusMessage;
         private set { _statusMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
+    /// <summary>True when <see cref="StatusMessage"/> describes an error.</summary>
     public bool HasError     => !string.IsNullOrEmpty(StatusMessage);
+
+    /// <summary>True when a valid operation is selected and no work is in progress.</summary>
     public bool CanContinue  => SelectedOperation is not null && !_isBusy;
 
     /// <summary>
@@ -119,8 +124,13 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsCommandPromptAvailable { get; }
 
+    /// <summary>Selects an operation by name.</summary>
     public ICommand SelectOperationCommand   { get; }
+
+    /// <summary>Proceeds with the selected operation.</summary>
     public ICommand ContinueCommand          { get; }
+
+    /// <summary>Launches the interactive command prompt, when available.</summary>
     public ICommand LaunchCommandPromptCommand { get; }
 
     private void LaunchCommandPrompt()
@@ -392,6 +402,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     // ── INotifyPropertyChanged ────────────────────────────────────────────────
 
+    /// <summary>Raised when a bound property value changes.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

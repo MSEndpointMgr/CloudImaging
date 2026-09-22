@@ -11,9 +11,9 @@
     obligation. The .wxs authoring targets the v4 schema, which v5, v6 and v7 all share, so moving
     forward later is a version bump.
 
-    This project is deliberately NOT part of CloudImaging.sln: it consumes the *published*
+    This project is deliberately NOT part of CloudImaging.slnx: it consumes the *published*
     self-contained output of CloudImaging.MediaBuilder rather than its build output, so a plain
-    `dotnet build CloudImaging.sln` (which never publishes) would fail on a missing payload folder.
+    `dotnet build CloudImaging.slnx` (which never publishes) would fail on a missing payload folder.
     It is built explicitly by .github/workflows/release-mediabuilder.yml, and smoke-built by the
     MediaBuilder job in .github/workflows/ci.yml.
 

@@ -17,6 +17,7 @@ public sealed partial class AssignSessionFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<AssignSessionFunction> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="AssignSessionFunction"/> class.</summary>
     public AssignSessionFunction(
         ImagingCoreClient coreClient,
         ILogger<AssignSessionFunction> logger)
@@ -25,6 +26,7 @@ public sealed partial class AssignSessionFunction
         _logger = logger;
     }
 
+    /// <summary>Assigns an OS image to a single session.</summary>
     [Function(nameof(AssignSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sessions/{sessionId}/assign")] HttpRequestData req,

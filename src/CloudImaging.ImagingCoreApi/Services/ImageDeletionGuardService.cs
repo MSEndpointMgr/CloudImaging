@@ -13,6 +13,7 @@ public sealed partial class ImageDeletionGuardService
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ILogger<ImageDeletionGuardService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="ImageDeletionGuardService"/> class.</summary>
     public ImageDeletionGuardService(
         DeviceSessionRepository sessionRepo,
         ILogger<ImageDeletionGuardService> logger)

@@ -43,7 +43,7 @@ public sealed class SupportReferenceCodeTests
         var code = SupportReferenceCode.ForMediaBuilder("ABCD1234", stageCode);
 
         code.ToString().Should().MatchRegex(@"^CMB-[A-Z0-9]+-[A-Z]+-\d+$",
-            "support reference code must follow CMB-{sessionRef}-{stageCode}-{epoch} format");
+            "support reference code must follow CMB-{{sessionRef}}-{{stageCode}}-{{epoch}} format");
         code.ToString().Should().Contain(stageCode, "stage code must appear in the reference");
         code.ToString().Should().StartWith("CMB-", "CMB prefix identifies Media Builder errors");
     }

@@ -15,12 +15,15 @@ public sealed class OsImageRepository
 {
     private const string TableName = "OSImages";
     private const string Partition = "catalog";
+    /// <summary>Maximum number of active catalog entries.</summary>
     public const int MaxActiveEntries = 500;
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="OsImageRepository"/>.</summary>
     public OsImageRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
@@ -28,9 +31,11 @@ public sealed class OsImageRepository
     public async Task<int> GetActiveCountAsync(CancellationToken ct = default) =>
         await ListActiveAsync(ct).CountAsync(ct);
 
+    /// <summary>Creates a new OS image catalog entry.</summary>
     public async Task CreateAsync(OsImage image, CancellationToken ct = default) =>
         await _table.AddEntityAsync(ToEntity(image), ct);
 
+    /// <summary>Retrieves an OS image by ID, or <c>null</c> if not found.</summary>
     public async Task<OsImage?> GetByIdAsync(Guid imageId, CancellationToken ct = default)
     {
         try
@@ -41,12 +46,15 @@ public sealed class OsImageRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Updates an existing OS image entry.</summary>
     public async Task UpdateAsync(OsImage image, CancellationToken ct = default) =>
         await _table.UpdateEntityAsync(ToEntity(image), ETag.All, TableUpdateMode.Replace, ct);
 
+    /// <summary>Deletes an OS image by ID.</summary>
     public async Task DeleteAsync(Guid imageId, CancellationToken ct = default) =>
         await _table.DeleteEntityAsync(Partition, imageId.ToString(), cancellationToken: ct);
 
+    /// <summary>Lists all active OS images.</summary>
     public IAsyncEnumerable<OsImage> ListActiveAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition} and IsActive eq true");

@@ -29,6 +29,7 @@ public sealed partial class BrandingLogoEmbedService
     private readonly OperatorApiClient _operatorApiClient;
     private readonly ILogger<BrandingLogoEmbedService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="BrandingLogoEmbedService"/> class.</summary>
     public BrandingLogoEmbedService(
         HttpClient http,
         OperatorApiClient operatorApiClient,

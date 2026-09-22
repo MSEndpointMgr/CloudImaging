@@ -26,9 +26,16 @@ public sealed class SessionStatusPoller : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _pollTask;
 
+    /// <summary>Raised with the current status whenever a poll succeeds.</summary>
     public event EventHandler<StatusResult>? StatusReceived;
+
+    /// <summary>Raised when a poll fails with the exception that caused the failure.</summary>
     public event EventHandler<Exception>? PollError;
 
+    /// <summary>
+    /// Creates a new <see cref="SessionStatusPoller"/> polling every
+    /// <paramref name="pollIntervalSeconds"/> seconds.
+    /// </summary>
     public SessionStatusPoller(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -100,6 +107,7 @@ public sealed class SessionStatusPoller : IDisposable
         }
     }
 
+    /// <summary>Stops the polling loop and releases resources.</summary>
     public void Dispose()
     {
         _cts.Cancel();

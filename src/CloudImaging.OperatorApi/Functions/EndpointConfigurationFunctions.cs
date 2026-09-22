@@ -25,6 +25,7 @@ public sealed partial class EndpointConfigurationFunctions
     private readonly string _deviceGatewayApiBaseUrl;
     private readonly ILogger<EndpointConfigurationFunctions> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="EndpointConfigurationFunctions"/> class.</summary>
     public EndpointConfigurationFunctions(IConfiguration configuration, ILogger<EndpointConfigurationFunctions> logger)
     {
         _deviceGatewayApiBaseUrl = configuration["DeviceGatewayApi:BaseUrl"]
@@ -33,6 +34,7 @@ public sealed partial class EndpointConfigurationFunctions
         _logger = logger;
     }
 
+    /// <summary>Returns the environment-level endpoint configuration (Device Gateway API base URL).</summary>
     [Function(nameof(GetEndpointConfiguration))]
     public async Task<HttpResponseData> GetEndpointConfiguration(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "configuration/endpoints")] HttpRequestData req,

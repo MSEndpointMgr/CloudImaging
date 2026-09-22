@@ -16,12 +16,14 @@ public sealed class CorporateIdentifierGraphClient
     private readonly HttpClient _httpClient;
     private readonly TokenCredential _credential;
 
+    /// <summary>Initializes a client that queries Microsoft Graph with the supplied HTTP and token clients.</summary>
     public CorporateIdentifierGraphClient(HttpClient httpClient, TokenCredential credential)
     {
         _httpClient = httpClient;
         _credential = credential;
     }
 
+    /// <summary>Determines whether Microsoft Graph contains the specified device corporate identifier.</summary>
     public async Task<bool> ExistsAsync(
         string manufacturer,
         string model,

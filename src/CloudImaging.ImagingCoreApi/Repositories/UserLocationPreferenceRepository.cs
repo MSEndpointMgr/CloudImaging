@@ -14,12 +14,15 @@ public sealed class UserLocationPreferenceRepository
     private const string Partition = "user-preference";
     private readonly TableClient _table;
 
+    /// <summary>Initializes a new instance of <see cref="UserLocationPreferenceRepository"/>.</summary>
     public UserLocationPreferenceRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Ensures the backing table exists.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Retrieves a user's location preference, or <c>null</c> if not found.</summary>
     public async Task<UserLocationPreference?> GetAsync(string userId, CancellationToken ct = default)
     {
         try
@@ -30,6 +33,7 @@ public sealed class UserLocationPreferenceRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Upserts a user's location preference.</summary>
     public async Task<UserLocationPreference> UpsertAsync(UserLocationPreference preference, CancellationToken ct = default)
     {
         var updated = new UserLocationPreference

@@ -7,6 +7,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class ResultsView : Page
 {
+    /// <summary>Creates the results / completion screen.</summary>
     public ResultsView()
     {
         InitializeComponent();

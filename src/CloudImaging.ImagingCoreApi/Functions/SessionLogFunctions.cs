@@ -32,12 +32,14 @@ public sealed partial class SessionLogFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<SessionLogFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="SessionLogFunctions"/>.</summary>
     public SessionLogFunctions(BlobServiceClient blobClient, ILogger<SessionLogFunctions> logger)
     {
         _blobClient = blobClient;
         _logger = logger;
     }
 
+    /// <summary>Issues a write SAS URL for the client to upload a diagnostic log file.</summary>
     [Function(nameof(RequestLogUploadUrl))]
     public async Task<HttpResponseData> RequestLogUploadUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/logs/upload-url")] HttpRequestData req,
@@ -80,6 +82,7 @@ public sealed partial class SessionLogFunctions
         return response;
     }
 
+    /// <summary>Lists the diagnostic logs uploaded for a session.</summary>
     [Function(nameof(ListSessionLogs))]
     public async Task<HttpResponseData> ListSessionLogs(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/logs")] HttpRequestData req,
@@ -97,7 +100,7 @@ public sealed partial class SessionLogFunctions
 
         try
         {
-            await foreach (var blob in container.GetBlobsAsync(prefix: prefix, cancellationToken: context.CancellationToken))
+            await foreach (var blob in container.GetBlobsAsync(Azure.Storage.Blobs.Models.BlobTraits.None, Azure.Storage.Blobs.Models.BlobStates.None, prefix, context.CancellationToken))
             {
                 items.Add(new
                 {
@@ -121,6 +124,7 @@ public sealed partial class SessionLogFunctions
         return response;
     }
 
+    /// <summary>Issues a read SAS URL for downloading a session log file.</summary>
     [Function(nameof(GetLogDownloadUrl))]
     public async Task<HttpResponseData> GetLogDownloadUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/logs/{fileName}/download-url")] HttpRequestData req,

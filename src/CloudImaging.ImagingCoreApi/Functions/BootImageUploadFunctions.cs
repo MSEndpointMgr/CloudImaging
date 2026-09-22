@@ -28,6 +28,7 @@ public sealed partial class BootImageUploadFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BootImageUploadFunctions> _logger;
 
+    /// <summary>Initializes a new instance of <see cref="BootImageUploadFunctions"/>.</summary>
     public BootImageUploadFunctions(
         UploadJobRepository jobRepo,
         BootImageValidationService validator,
@@ -42,6 +43,7 @@ public sealed partial class BootImageUploadFunctions
 
     // ── POST /api/internal/boot-images/upload/start ───────────────────────────
 
+    /// <summary>Starts a staged boot image upload and returns a direct-to-blob upload URL.</summary>
     [Function("StartBootImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/upload/start")] HttpRequestData req,
@@ -99,6 +101,7 @@ public sealed partial class BootImageUploadFunctions
 
     // ── POST /api/internal/boot-images/upload/{token}/publish ─────────────────
 
+    /// <summary>Validates an uploaded boot image signature and queues background publish.</summary>
     [Function("PublishBootImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/upload/{token}/publish")] HttpRequestData req,

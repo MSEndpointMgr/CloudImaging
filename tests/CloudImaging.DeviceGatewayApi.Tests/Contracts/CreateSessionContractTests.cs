@@ -82,7 +82,7 @@ public sealed class CreateSessionContractTests
         const int passcodeLength  = 6;
         double entropy = Math.Log2(Math.Pow(allowedChars.Length, passcodeLength));
 
-        entropy.Should().BeGreaterOrEqualTo(30,
+        entropy.Should().BeGreaterThanOrEqualTo(30,
             "passcode entropy must be at least 30 bits for adequate one-time security");
     }
 }

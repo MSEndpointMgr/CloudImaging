@@ -122,7 +122,7 @@ jobs:
       # ── .NET component builds ────────────────────────────────────────────────
 
       - name: Restore .NET solution
-        run: dotnet restore CloudImaging.sln
+        run: dotnet restore CloudImaging.slnx
 
       # Release gate: halt before anything is built or published if a dependency that
       # ships in this release has a known High/Critical advisory. Runs after restore

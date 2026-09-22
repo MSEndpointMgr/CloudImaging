@@ -27,6 +27,8 @@ public sealed partial class UsbPartitionProvisioningService
 
     private readonly ILogger<UsbPartitionProvisioningService> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="UsbPartitionProvisioningService"/> class.</summary>
+    /// <param name="logger">The logger instance.</param>
     public UsbPartitionProvisioningService(ILogger<UsbPartitionProvisioningService> logger)
         => _logger = logger;
 
@@ -51,6 +53,7 @@ public sealed partial class UsbPartitionProvisioningService
     /// to use in progress messages instead of the bare disk number. Falls back to "disk N" when
     /// not supplied.
     /// </param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task ProvisionAsync(
         uint diskNumber,
         long diskSizeBytes,

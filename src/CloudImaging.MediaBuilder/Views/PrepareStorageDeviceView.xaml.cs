@@ -6,6 +6,7 @@ namespace CloudImaging.MediaBuilder.Views;
 
 public partial class PrepareStorageDeviceView : UserControl
 {
+    /// <summary>Initializes a new instance of <see cref="PrepareStorageDeviceView"/>.</summary>
     public PrepareStorageDeviceView()
     {
         InitializeComponent();

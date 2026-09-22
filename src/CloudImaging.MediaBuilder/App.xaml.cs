@@ -14,6 +14,11 @@ public partial class App : System.Windows.Application
 {
     private Serilog.Core.Logger? _logger;
 
+    /// <summary>
+    /// Application startup: wires unhandled-exception handlers, initializes Serilog, loads
+    /// configuration, builds the service graph, and shows the shell (or the simulated launch
+    /// in DEV_SIMULATION builds).
+    /// </summary>
     protected override void OnStartup(StartupEventArgs e)
     {
         // Surface any unhandled failure instead of the process dying silently
@@ -189,6 +194,7 @@ public partial class App : System.Windows.Application
         }
     }
 
+    /// <summary>Application shutdown: disposes the Serilog logger before exiting.</summary>
     protected override void OnExit(ExitEventArgs e)
     {
         _logger?.Dispose();
@@ -200,7 +206,7 @@ public partial class App : System.Windows.Application
     /// <summary>
     /// DEV-ONLY: shows the simulation launcher that lets a developer jump directly to any
     /// view and bypass the Entra ID sign-in gate. Compiled only when DEV_SIMULATION is
-    /// defined (Debug builds &mdash; see the &lt;DefineConstants&gt; condition in the .csproj), so
+    /// defined (Debug builds — see the &lt;DefineConstants&gt; condition in the .csproj), so
     /// it can never appear in a released build.
     ///
     /// MANDATORY: every navigable view MUST be reachable here. When a new view is added to

@@ -61,6 +61,7 @@ public sealed partial class IsoGenerationService
     private sealed record IsoGenerationParams(string WimPath, string OutputIsoPath);
     private sealed record ElevatedIsoGenerationResult(bool Success, string? Error);
 
+    /// <param name="logger">Logger used for ISO generation diagnostics.</param>
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
     /// <param name="startElevatedProcessOverride">Test seam. Defaults to a real "runas"-elevated <see cref="Process"/> launch.</param>
     public IsoGenerationService(
@@ -89,6 +90,7 @@ public sealed partial class IsoGenerationService
     /// <param name="wimPath">Path to the already-downloaded/hash-verified boot WIM.</param>
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task GenerateElevatedAsync(
         string wimPath,
         string outputIsoPath,
@@ -107,6 +109,7 @@ public sealed partial class IsoGenerationService
     /// <param name="wimPath">Path to the already-downloaded/hash-verified boot WIM.</param>
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task GenerateAsync(
         string wimPath,
         string outputIsoPath,

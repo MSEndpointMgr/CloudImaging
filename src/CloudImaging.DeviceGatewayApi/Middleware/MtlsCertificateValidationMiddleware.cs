@@ -41,6 +41,7 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
     private readonly BootMediaCertificateThumbprintCache _thumbprintCache;
     private readonly ILogger<MtlsCertificateValidationMiddleware> _logger;
 
+    /// <summary>Initializes a new instance of the <see cref="MtlsCertificateValidationMiddleware"/> class.</summary>
     public MtlsCertificateValidationMiddleware(
         BootMediaCertificateThumbprintCache thumbprintCache,
         ILogger<MtlsCertificateValidationMiddleware> logger)
@@ -49,6 +50,7 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
         _logger = logger;
     }
 
+    /// <summary>Validates the mTLS client certificate for the current request.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var httpContext = await context.GetHttpRequestDataAsync();
