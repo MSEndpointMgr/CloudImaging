@@ -133,6 +133,13 @@ public sealed partial class RecoveryImageUploadFunctions
         var description = body.RootElement.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
         var extension = Path.GetExtension(blobName);
 
+        if (!ImageArchitecture.TryReadRequested(body.RootElement, out var requestedArchitecture))
+        {
+            var badArch = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badArch.WriteStringAsync(ImageArchitecture.InvalidArchitectureMessage, context.CancellationToken);
+            return badArch;
+        }
+
         // The client uploaded the whole file in a single PUT (see StartUpload), so there is no
         // block list to commit here. Only the cheap file-signature check (a ranged read of the
         // first ~36 KB) runs inline; the full-file SHA-256 and the copy to the published prefix
@@ -151,6 +158,18 @@ public sealed partial class RecoveryImageUploadFunctions
             return bad;
         }
 
+        // A WinRE of the wrong architecture would make the installed OS unrecoverable.
+        var detectedRaw = await _validator.ReadWimProcessorArchitectureAsync(blobClient, context.CancellationToken);
+        var rejection = ImageArchitecture.Resolve(detectedRaw, requestedArchitecture, "recovery image", out var architecture);
+        if (rejection is not null)
+        {
+            LogValidationFailed(_logger, blobName, rejection);
+            await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
+            var mismatch = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+            await mismatch.WriteStringAsync(rejection, context.CancellationToken);
+            return mismatch;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var job = new UploadJob
         {
@@ -161,6 +180,7 @@ public sealed partial class RecoveryImageUploadFunctions
             Sha256Hash = sha256Hash,
             Version = version,
             Description = description,
+            Architecture = architecture,
             SizeBytes = sizeBytes,
             CreatedAt = now,
             UpdatedAt = now,

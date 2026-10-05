@@ -1,6 +1,18 @@
+using System.Net;
+using System.Net.Http;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
+
+/// <summary>Outcome of a boot media certificate check. A denied call is deliberately distinct
+/// from "none configured", since the two need completely different remediation.</summary>
+public enum BootMediaCertificateStatus
+{
+    Configured,
+    NotConfigured,
+    AccessDenied,
+    CheckFailed,
+}
 
 /// <summary>
 /// Checks whether an active boot media certificate is configured in the Cloud Imaging Portal,
@@ -21,25 +33,34 @@ public sealed partial class BootMediaCertificateCheckService
     }
 
     /// <summary>
-    /// Returns true when an active boot media certificate is configured (metadata endpoint
-    /// returns 200 with IsActive = true). Returns false when none is configured (404) or when
-    /// the check itself fails (network error, unauthenticated, etc.) — a failed check is
-    /// treated the same as "not configured" so Generate Boot Image stays safely disabled
-    /// rather than silently permitting generation without a confirmed certificate.
+    /// Reports whether an active boot media certificate is configured. Every non-success
+    /// outcome keeps Generate Boot Image disabled, but each is reported distinctly so the UI
+    /// never tells the user to create a certificate when the real problem is that the Operator
+    /// API refused the call.
     /// </summary>
-    public async Task<bool> IsCertificateConfiguredAsync(CancellationToken ct = default)
+    public async Task<BootMediaCertificateStatus> CheckAsync(CancellationToken ct = default)
     {
         try
         {
             var metadata = await _operatorApiClient.GetBootMediaCertMetadataAsync(ct);
-            return metadata is { IsActive: true };
+            return metadata is { IsActive: true }
+                ? BootMediaCertificateStatus.Configured
+                : BootMediaCertificateStatus.NotConfigured;
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
+        {
+            LogAccessDenied(_logger, (int)ex.StatusCode.Value, ex);
+            return BootMediaCertificateStatus.AccessDenied;
         }
         catch (Exception ex)
         {
             LogCheckFailed(_logger, ex);
-            return false;
+            return BootMediaCertificateStatus.CheckFailed;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Operator API denied the boot media certificate metadata check ({StatusCode}). The signed-in user is most likely missing the CloudImaging.MediaBuilderAccess app role on the Cloud Imaging Operator API enterprise application.")]
+    private static partial void LogAccessDenied(ILogger logger, int statusCode, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media certificate metadata check failed; Generate Boot Image will be disabled.")]
     private static partial void LogCheckFailed(ILogger logger, Exception ex);

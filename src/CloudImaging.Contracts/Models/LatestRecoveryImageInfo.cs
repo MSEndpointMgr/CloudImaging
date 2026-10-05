@@ -11,4 +11,7 @@ public sealed class LatestRecoveryImageInfo
     public required string Version { get; init; }
     public required string Sha256Hash { get; init; }
     public required string SasTokenUrl { get; init; }
+
+    /// <summary>Null from gateways that predate architecture tracking (x64).</summary>
+    public MachineArchitecture? Architecture { get; init; }
 }

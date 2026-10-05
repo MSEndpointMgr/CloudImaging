@@ -34,6 +34,7 @@ public sealed class DeviceSessionEntityMappingTests
         },
         LocationId = Guid.Parse("1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed"),
         LocationName = "Copenhagen HQ",
+        Architecture = MachineArchitecture.Arm64,
         PreFlightAuthorizationResult = PreFlightAuthorizationResult.MatchedAutopilotV1,
         Passcode = "hashed-passcode",
         PasscodeExpiresAt = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.Zero),

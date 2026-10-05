@@ -10,6 +10,7 @@
  */
 
 import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
+import type { ImageArchitecture } from '../lib/wimMetadata.ts';
 import { waitForUploadJob, type UploadJob } from './uploadJobService.ts';
 
 export interface ChunkedUploadSession {
@@ -201,13 +202,14 @@ export async function finalizeChunkedUpload(
   version:    string,
   sha256Hash: string,
   sizeBytes:  number,
+  architecture: ImageArchitecture,
   options?:   { onStatus?: (job: UploadJob) => void; signal?: AbortSignal },
 ): Promise<UploadJob> {
   const res = await apiFetch(`/api/images/upload/${session.uploadId}/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ blobName: session.blobName, blockIds, name, version, sha256Hash, sizeBytes }),
+    body: JSON.stringify({ blobName: session.blobName, blockIds, name, version, sha256Hash, sizeBytes, architecture }),
   });
   if (!res.ok) {
     const msg = await extractErrorDetail(res, `Finalize failed: HTTP ${res.status}`);

@@ -46,6 +46,12 @@ public sealed class UploadJob
     /// <summary>Optional operator-supplied note. Recovery images only.</summary>
     public string? Description { get; init; }
 
+    /// <summary>
+    /// Operator-selected target architecture (todo/arm64-support.md). Null when not supplied; the
+    /// publish worker then uses the architecture read from the WIM, or x64 when it records none.
+    /// </summary>
+    public MachineArchitecture? Architecture { get; init; }
+
     /// <summary>Size of the uploaded file as reported by the browser, used for the catalog entry.</summary>
     public long SizeBytes { get; init; }
 

@@ -1,3 +1,4 @@
+using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -98,6 +99,35 @@ public sealed class BootImageGenerationTests
 
             await act.Should().ThrowAsync<InvalidOperationException>()
                 .WithMessage("*self-contained*");
+        }
+        finally
+        {
+            Directory.Delete(clientDir, recursive: true);
+            Directory.Delete(outputDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateAsync_Throws_WhenClientBinariesArchitectureDoesNotMatchSelected()
+    {
+        // A technician pointing "Use local path" at an x64 build while ARM64 is selected (or vice
+        // versa) must be rejected here rather than only surfacing as a WinPE boot failure later.
+        var svc = new BootImageGenerationService(NullLogger<BootImageGenerationService>.Instance);
+        var clientDir = Directory.CreateTempSubdirectory("ci-client-archmismatch-").FullName;
+        var outputDir = Directory.CreateTempSubdirectory("ci-genoutput-").FullName;
+        try
+        {
+            PeTestFileFactory.WriteMinimalPeFile(Path.Combine(clientDir, "CloudImaging.Client.exe"), arm64: true);
+            File.WriteAllText(Path.Combine(clientDir, "hostfxr.dll"), "fake hostfxr");
+
+            Func<Task> act = async () => await svc.GenerateAsync(
+                clientBinariesPath: clientDir,
+                pfxBytes: null,
+                outputDirectory: outputDir,
+                architecture: MachineArchitecture.X64);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*arm64*x64*");
         }
         finally
         {

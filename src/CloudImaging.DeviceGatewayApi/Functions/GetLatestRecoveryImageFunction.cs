@@ -8,10 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.DeviceGatewayApi.Functions;
 
 /// <summary>
-/// GET /api/v1/recovery-image/latest — Device-facing lookup of the currently published recovery
-/// (WinRE) image, mirroring <see cref="GetLatestBootImageFunction"/>. The Client always downloads
-/// and applies the "latest published" recovery image — there is no per-session manual assignment,
-/// matching the boot-image self-update convention.
+/// GET /api/v1/recovery-image/latest?architecture=x64|arm64: device-facing lookup of the currently
+/// published recovery (WinRE) image for the device's architecture (x64 when omitted), mirroring
+/// <see cref="GetLatestBootImageFunction"/>. There is no per-session manual assignment.
 ///
 /// Requires a valid device-session Bearer token (DeviceSessionTokenValidationMiddleware), since —
 /// unlike the boot image check — this only makes sense once a session/imaging pipeline exists.
@@ -20,7 +19,8 @@ namespace CloudImaging.DeviceGatewayApi.Functions;
 /// {
 ///   "version": "...",
 ///   "sha256Hash": "...",
-///   "sasTokenUrl": "..."
+///   "sasTokenUrl": "...",
+///   "architecture": "x64"
 /// }
 /// </summary>
 public sealed partial class GetLatestRecoveryImageFunction
@@ -39,6 +39,13 @@ public sealed partial class GetLatestRecoveryImageFunction
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/recovery-image/latest")] HttpRequestData req,
         FunctionContext context)
     {
+        if (!LatestImageSelector.TryReadArchitecture(req.Query["architecture"], out var architecture))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("architecture must be \"x64\" or \"arm64\".", context.CancellationToken);
+            return bad;
+        }
+
         var listResponse = await _coreClient.GetRecoveryImagesAsync(context.CancellationToken);
         if (!listResponse.IsSuccessStatusCode)
         {
@@ -51,15 +58,7 @@ public sealed partial class GetLatestRecoveryImageFunction
         using var listJson = await listResponse.Content.ReadAsStreamAsync(context.CancellationToken);
         using var listDoc = await JsonDocument.ParseAsync(listJson, cancellationToken: context.CancellationToken);
 
-        JsonElement? latest = null;
-        foreach (var image in listDoc.RootElement.EnumerateArray())
-        {
-            if (image.TryGetProperty("isLatestPublished", out var flag) && flag.GetBoolean())
-            {
-                latest = image;
-                break;
-            }
-        }
+        var latest = LatestImageSelector.FindLatestForArchitecture(listDoc.RootElement, architecture);
 
         if (latest is null)
         {
@@ -89,6 +88,7 @@ public sealed partial class GetLatestRecoveryImageFunction
             version,
             sha256Hash = sasRoot.GetProperty("sha256Hash").GetString(),
             sasTokenUrl = sasRoot.GetProperty("sasTokenUrl").GetString(),
+            architecture,
         }), context.CancellationToken);
         return response;
     }

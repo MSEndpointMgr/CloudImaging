@@ -120,6 +120,13 @@ public sealed partial class BootImageUploadFunctions
         var sizeBytes = sizeProp.GetInt64();
         var extension = Path.GetExtension(blobName);
 
+        if (!ImageArchitecture.TryReadRequested(body.RootElement, out var requestedArchitecture))
+        {
+            var badArch = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badArch.WriteStringAsync(ImageArchitecture.InvalidArchitectureMessage, context.CancellationToken);
+            return badArch;
+        }
+
         // Only the cheap file-signature check (a ranged read of the first ~36 KB) runs inline, so a
         // wrong file is still rejected immediately. The full-file SHA-256 and the copy to the
         // published prefix scale with image size and would blow the 45s Static Web Apps request
@@ -137,6 +144,19 @@ public sealed partial class BootImageUploadFunctions
             return bad;
         }
 
+        // The WIM's own metadata is authoritative: a mislabeled image would otherwise be served to
+        // devices of the wrong architecture and only fail at boot.
+        var detectedRaw = await _validator.ReadWimProcessorArchitectureAsync(blobClient, context.CancellationToken);
+        var rejection = ImageArchitecture.Resolve(detectedRaw, requestedArchitecture, "boot image", out var architecture);
+        if (rejection is not null)
+        {
+            LogValidationFailed(_logger, blobName, rejection);
+            await blobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
+            var mismatch = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+            await mismatch.WriteStringAsync(rejection, context.CancellationToken);
+            return mismatch;
+        }
+
         var now = DateTimeOffset.UtcNow;
         var job = new UploadJob
         {
@@ -146,6 +166,7 @@ public sealed partial class BootImageUploadFunctions
             BlobName = blobName,
             Sha256Hash = sha256Hash,
             Version = version,
+            Architecture = architecture,
             SizeBytes = sizeBytes,
             CreatedAt = now,
             UpdatedAt = now,

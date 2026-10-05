@@ -5,6 +5,7 @@
  */
 
 import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
+import type { ImageArchitecture } from '../lib/wimMetadata.ts';
 import { waitForUploadJob, type UploadJob } from './uploadJobService.ts';
 
 export interface UploadSession {
@@ -22,6 +23,10 @@ export interface UploadOptions {
   file: File;
   onProgress?: (percent: number) => void;
 }
+
+/** Target processor architecture for a boot image (todo/arm64-support.md). */
+export type BootImageArchitecture = ImageArchitecture;
+
 
 /**
  * Starts a staged boot image upload session.
@@ -83,6 +88,7 @@ export async function publishBootImageUpload(
   session: UploadSession,
   sizeBytes: number,
   version: string,
+  architecture: BootImageArchitecture,
   options?: { onStatus?: (job: UploadJob) => void; signal?: AbortSignal },
 ): Promise<UploadJob> {
   const res = await apiFetch(`/api/boot-images/upload/${session.uploadId}/publish`, {
@@ -94,6 +100,7 @@ export async function publishBootImageUpload(
       sha256Hash: session.sha256Hash,
       version,
       sizeBytes,
+      architecture,
     }),
   });
   if (!res.ok) {

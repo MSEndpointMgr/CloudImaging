@@ -90,6 +90,7 @@ public sealed class SessionHistoryRepository
             ["LocationId"] = r.LocationId?.ToString(),
             ["LocationName"] = r.LocationName,
             ["PreFlightAuthorizationResult"] = r.PreFlightAuthorizationResult.ToString(),
+            ["Architecture"] = MachineArchitecturePlatform.Slug(r.Architecture),
             ["AssignedOsImageId"] = r.AssignedOsImageId?.ToString(),
             ["FailedStepName"] = r.FailedStepName?.ToString(),
             ["ErrorDetail"] = r.ErrorDetail,
@@ -109,6 +110,7 @@ public sealed class SessionHistoryRepository
         LocationName = e.GetString("LocationName"),
         PreFlightAuthorizationResult = Enum.Parse<PreFlightAuthorizationResult>(
             e.GetString("PreFlightAuthorizationResult") ?? nameof(PreFlightAuthorizationResult.Skipped)),
+        Architecture = MachineArchitecturePlatform.ParseSlugOrDefault(e.GetString("Architecture")),
         AssignedOsImageId = e.GetString("AssignedOsImageId") is string sid ? Guid.Parse(sid) : null,
         FailedStepName = e.GetString("FailedStepName") is string fsn ? Enum.Parse<ImagingStepName>(fsn) : null,
         ErrorDetail = e.GetString("ErrorDetail"),

@@ -1,9 +1,9 @@
 name: GitHub Release - Cloud Imaging Client Package & Publish
 
 # Triggered on Client version tags (e.g. mse-ci-client-v1.2.0).
-# Builds the CloudImaging.Client WinPE binary and creates a GitHub Release. This
-# is the asset Media Builder's "Automatic download" source option pulls, via the
-# 'mse-ci-client-latest' alias release (see GitHubReleasesClient.cs).
+# Builds the CloudImaging.Client WinPE binary for both win-x64 and win-arm64 and creates a
+# GitHub Release. These are the assets Media Builder's "Automatic download" source option pulls,
+# via the 'mse-ci-client-latest' alias release (see GitHubReleasesClient.cs).
 
 on:
   push:
@@ -111,32 +111,40 @@ jobs:
         run: git checkout --detach "refs/tags/${{ steps.tag.outputs.tag }}"
 
       # CloudImaging.Client.csproj has no <RuntimeIdentifiers>, so a plain solution restore
-      # produces an assets file with no win-x64 target -- the later --no-restore publish
-      # then fails with NETSDK1047. Restore the project itself with the RID instead.
-      - name: Restore CloudImaging.Client (win-x64)
-        run: dotnet restore src/CloudImaging.Client/CloudImaging.Client.csproj -r win-x64
+      # produces an assets file with no win-x64/win-arm64 target -- the later --no-restore
+      # publish then fails with NETSDK1047. Restore the project itself with each RID instead.
+      - name: Restore CloudImaging.Client (win-x64, win-arm64)
+        run: |
+          dotnet restore src/CloudImaging.Client/CloudImaging.Client.csproj -r win-x64
+          dotnet restore src/CloudImaging.Client/CloudImaging.Client.csproj -r win-arm64
 
       # Release gate: halt before the client is built or published if one of its
       # dependencies has a known High/Critical advisory. Runs after restore because
-      # `dotnet list package` needs the resolved assets file.
+      # `dotnet list package` needs the resolved assets file. The advisory list doesn't vary
+      # per RID, so this only needs to run once.
       - name: Fail the release on vulnerable dependencies
         run: |
           & "$env:RUNNER_TEMP/Assert-NoVulnerableDependencies.ps1" -MinimumSeverity High `
             -Project 'src/CloudImaging.Client/CloudImaging.Client.csproj'
 
-      - name: Build CloudImaging.Client (WPF, self-contained win-x64)
+      # Publishes both architectures (todo/arm64-support.md, Milestone 4) so Media Builder's
+      # architecture-aware download (GitHubReleasesClient.cs) always finds a matching asset,
+      # regardless of which target architecture the technician selected.
+      - name: Build CloudImaging.Client (WPF, self-contained win-x64 + win-arm64)
         run: |
-          dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj `
-            -c Release -r win-x64 --self-contained -o publish/Client --no-restore
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
-          Compress-Archive publish/Client/* "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip"
+          foreach ($rid in 'win-x64', 'win-arm64') {
+            dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj -c Release -r $rid --self-contained -o "publish/Client-$rid" --no-restore
+            Compress-Archive "publish/Client-$rid/*" "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}-$rid.zip"
+          }
 
       - name: Generate SHA-256 checksum manifest
         run: |
-          $asset = "cloud-imaging-client-${{ steps.tag.outputs.version }}.zip"
-          $hash = (Get-FileHash "release-artifacts/$asset" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $asset" | Out-File "release-artifacts/SHA256SUMS"
-          Write-Host "Client zip SHA-256: $hash"
+          Get-ChildItem release-artifacts/*.zip | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Add-Content "release-artifacts/SHA256SUMS"
+            Write-Host "$($_.Name) SHA-256: $hash"
+          }
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -146,15 +154,18 @@ jobs:
           body:      |
             WinPE-runnable binary embedded into boot images by Media Builder, either via the
             "Automatic download" source option (always resolves the `mse-ci-client-latest` alias
-            release) or by pointing Media Builder at a local extracted copy of this ZIP.
+            release) or by pointing Media Builder at a local extracted copy of one of these ZIPs
+            matching its selected target architecture.
 
             ### Release artifacts
             | File | Description |
             |------|-------------|
-            | `cloud-imaging-client-${{ steps.tag.outputs.version }}.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
-            | `SHA256SUMS` | SHA-256 checksum for integrity verification |
+            | `cloud-imaging-client-${{ steps.tag.outputs.version }}-win-x64.zip` | Self-contained win-x64 WPF client (net10.0-windows) |
+            | `cloud-imaging-client-${{ steps.tag.outputs.version }}-win-arm64.zip` | Self-contained win-arm64 WPF client (net10.0-windows) |
+            | `SHA256SUMS` | SHA-256 checksums for integrity verification |
           files: |
-            release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip
+            release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}-win-x64.zip
+            release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}-win-arm64.zip
             release-artifacts/SHA256SUMS
           draft: false
           prerelease: ${{ steps.tag.outputs.stable != 'true' }}
@@ -183,17 +194,24 @@ jobs:
           git tag -f mse-ci-client-latest "${{ steps.tag.outputs.sha }}"
           git push -f origin refs/tags/mse-ci-client-latest
 
-      # The alias is a moving pointer, so its asset carries no version. GitHubReleasesClient.cs
-      # matches this exact name, which is why it never has to parse a version out of an asset
-      # name, and it keeps releases/download/mse-ci-client-latest/cloud-imaging-client.zip a
-      # permanent link. SHA256SUMS is regenerated because it lists the name it verifies.
+      # The alias is a moving pointer, so its assets carry no version. GitHubReleasesClient.cs
+      # requests "cloud-imaging-client-<arch>.zip" by name, which is why it never has to parse a
+      # version out of an asset name. "cloud-imaging-client.zip" (x64, unversioned, no arch suffix)
+      # is kept indefinitely alongside the new architecture-specific names: Media Builder versions
+      # released before architecture-aware downloads existed hardcode that exact legacy name and
+      # never send an architecture, so it must keep resolving to a working x64 Client
+      # (todo/arm64-support.md, Milestone 4). SHA256SUMS is regenerated because it lists the names it verifies.
       - name: Stage the alias release artifacts
         if: ${{ steps.tag.outputs.stable == 'true' }}
         run: |
           New-Item alias-artifacts -ItemType Directory -Force | Out-Null
-          Copy-Item "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}.zip" alias-artifacts/cloud-imaging-client.zip
-          $hash = (Get-FileHash alias-artifacts/cloud-imaging-client.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  cloud-imaging-client.zip" | Out-File "alias-artifacts/SHA256SUMS"
+          Copy-Item "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}-win-x64.zip" alias-artifacts/cloud-imaging-client.zip
+          Copy-Item "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}-win-x64.zip" alias-artifacts/cloud-imaging-client-x64.zip
+          Copy-Item "release-artifacts/cloud-imaging-client-${{ steps.tag.outputs.version }}-win-arm64.zip" alias-artifacts/cloud-imaging-client-arm64.zip
+          Get-ChildItem alias-artifacts/*.zip | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Add-Content "alias-artifacts/SHA256SUMS"
+          }
 
       - name: Publish the 'mse-ci-client-latest' alias release
         if: ${{ steps.tag.outputs.stable == 'true' }}
@@ -204,6 +222,8 @@ jobs:
           body:     "Always points to the newest stable Client release. See ${{ steps.tag.outputs.tag }} for full release notes."
           files: |
             alias-artifacts/cloud-imaging-client.zip
+            alias-artifacts/cloud-imaging-client-x64.zip
+            alias-artifacts/cloud-imaging-client-arm64.zip
             alias-artifacts/SHA256SUMS
           make_latest: false
           draft: false

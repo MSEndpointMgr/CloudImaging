@@ -157,6 +157,16 @@ export class OperatorApiClient {
     await this.http.delete<unknown>(`/api/boot-images/${encodeURIComponent(bootImageId)}`);
   }
 
+  async promoteBootImage(bootImageId: string): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/boot-images/${encodeURIComponent(bootImageId)}/promote`);
+    return data;
+  }
+
+  async demoteBootImage(bootImageId: string): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/boot-images/${encodeURIComponent(bootImageId)}/demote`);
+    return data;
+  }
+
   // ── Configuration ─────────────────────────────────────────────────────────
 
   async getConfiguration(): Promise<unknown> {

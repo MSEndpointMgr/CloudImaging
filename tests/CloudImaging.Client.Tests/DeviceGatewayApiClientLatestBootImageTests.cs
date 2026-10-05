@@ -1,4 +1,5 @@
 using CloudImaging.Client.Services;
+using CloudImaging.Contracts.Models;
 using FluentAssertions;
 using System.Net;
 using System.Net.Http;
@@ -44,6 +45,43 @@ public sealed class DeviceGatewayApiClientLatestBootImageTests
         var result = await client.GetLatestBootImageAsync();
 
         result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(MachineArchitecture.X64, "x64")]
+    [InlineData(MachineArchitecture.Arm64, "arm64")]
+    public async Task GetLatestBootImageAsync_RequestsLatestForItsOwnArchitecture(MachineArchitecture architecture, string expectedQuery)
+    {
+        Uri? requested = null;
+        var handler = new FakeHttpMessageHandler(request =>
+        {
+            requested = request.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+        var client = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+
+        await client.GetLatestBootImageAsync(architecture);
+
+        requested!.PathAndQuery.Should().Be($"/api/v1/boot-image/latest?architecture={expectedQuery}",
+            "latest is resolved per architecture, so an ARM64 stick must never be offered the x64 latest image");
+    }
+
+    [Fact]
+    public async Task GetLatestBootImageAsync_SendsCurrentImageId_AndTreats204AsNoUpdate()
+    {
+        Uri? requested = null;
+        var handler = new FakeHttpMessageHandler(request =>
+        {
+            requested = request.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        var client = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        var current = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
+        var result = await client.GetLatestBootImageAsync(MachineArchitecture.X64, current);
+
+        requested!.Query.Should().Contain($"currentBootImageId={current}");
+        result.Should().BeNull("204 means this stick runs a pre-production image that must not be replaced");
     }
 
     private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

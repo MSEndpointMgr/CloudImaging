@@ -6,7 +6,7 @@ export default function SessionsPage(): React.ReactElement {
 import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown } from 'lucide-react';
-import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
+import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Select } from '../components/ui/select.tsx';
@@ -20,6 +20,8 @@ import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/Confi
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
 import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
+import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
+import { assignableImages, compatibleSessions } from '../lib/assignmentCompatibility.ts';
 import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
 import { cn, formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
@@ -55,6 +57,7 @@ interface Session {
   terminalAt?: string | null;
   macAddress?: string | null;
   hardware?: SessionHardware | null;
+  architecture?: ImageArchitecture;
 }
 
 interface SessionLogEntry {
@@ -67,6 +70,7 @@ interface OsImage {
   imageId: string;
   name: string;
   version: string;
+  architecture?: ImageArchitecture;
 }
 
 // States for which the Client may have uploaded a diagnostic log on failure. These get their own
@@ -115,10 +119,11 @@ function stateBadgeVariant(state: string): BadgeProps['variant'] {
 const MAX_IMAGE_OPTION_CHARS = 100;
 
 function imageOptionLabel(image: OsImage): string {
-  const label = formatOsImageInventoryName(image.name, image.version);
-  return label.length > MAX_IMAGE_OPTION_CHARS
-    ? `${label.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
-    : label;
+  const name = formatOsImageInventoryName(image.name, image.version);
+  const trimmed = name.length > MAX_IMAGE_OPTION_CHARS
+    ? `${name.slice(0, MAX_IMAGE_OPTION_CHARS - 1)}\u2026`
+    : name;
+  return `${trimmed} \u00b7 ${architectureLabel(image.architecture)}`;
 }
 
 // ── Inline passcode coupling (per Available row) ──────────────────────────
@@ -342,6 +347,12 @@ function SessionsPageImpl(): React.ReactElement {
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
   ), [locationFiltered, coupledSort]);
+  // An image can only go to devices of its own architecture (Imaging Core rejects anything else),
+  // so a mixed batch is imaged one architecture at a time.
+  const pickerImages = useMemo(() => assignableImages(images, coupled), [images, coupled]);
+  const targetSessions = useMemo(
+    () => compatibleSessions(coupled, images.find(i => i.imageId === selectedImageId)),
+    [coupled, images, selectedImageId]);
   const monitor = useMemo(() => sortRows(
     locationFiltered.filter(s => MONITOR_STATES.has(s.state)),
     monitorSort,
@@ -437,7 +448,7 @@ function SessionsPageImpl(): React.ReactElement {
       notify({ status: 'error', title: 'Upload an OS image before starting imaging.' });
       return;
     }
-    if (!selectedImageId || coupled.length === 0 || startingImages) return;
+    if (!selectedImageId || targetSessions.length === 0 || startingImages) return;
     setPendingBulkAssign(false);
     setStartingImages(true);
     try {
@@ -445,7 +456,7 @@ function SessionsPageImpl(): React.ReactElement {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ sessionIds: coupled.map(s => s.sessionId), osImageId: selectedImageId }),
+        body: JSON.stringify({ sessionIds: targetSessions.map(s => s.sessionId), osImageId: selectedImageId }),
       });
       if (res.ok) {
         const data = await res.json() as { assigned: number; skipped: number; assignedIds: string[]; skippedIds: string[] };
@@ -467,7 +478,12 @@ function SessionsPageImpl(): React.ReactElement {
         setSelectedImageId(null);
         handleRefresh();
       } else {
-        notify({ status: 'error', title: 'Failed to start imaging. Please try again.' });
+        notify({
+          status: 'error',
+          title: 'Failed to start imaging.',
+          description: await extractErrorDetail(res, 'Please try again.'),
+        });
+        if (res.status === 409) handleRefresh();
       }
     } catch {
       notify({ status: 'error', title: 'Network error. Please try again.' });
@@ -477,12 +493,16 @@ function SessionsPageImpl(): React.ReactElement {
   };
 
   const selectedImageLabel = images.find(i => i.imageId === selectedImageId);
+  const excludedCount = coupled.length - targetSessions.length;
+  const excludedNote = selectedImageLabel && excludedCount > 0
+    ? ` ${excludedCount} ${architectureLabel(selectedImageLabel.architecture) === 'x64' ? 'ARM64' : 'x64'} device${excludedCount !== 1 ? 's' : ''} stay coupled until an image of that architecture is assigned.`
+    : '';
 
   const bulkAssignCopy: ConfirmImpactCopy = {
-    confirmTitle: `Start imaging on ${coupled.length} device${coupled.length !== 1 ? 's' : ''}?`,
+    confirmTitle: `Start imaging on ${targetSessions.length} device${targetSessions.length !== 1 ? 's' : ''}?`,
     impact: selectedImageLabel
-      ? `This assigns "${selectedImageLabel.version}" to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`
-      : `This assigns the selected OS image to all ${coupled.length} coupled device${coupled.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`,
+      ? `This assigns "${selectedImageLabel.version}" (${architectureLabel(selectedImageLabel.architecture)}) to ${targetSessions.length} coupled ${architectureLabel(selectedImageLabel.architecture)} device${targetSessions.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.${excludedNote}`
+      : `This assigns the selected OS image to ${targetSessions.length} coupled device${targetSessions.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`,
     confirmLabel: 'Start Imaging',
     destructive: false,
   };
@@ -669,21 +689,26 @@ function SessionsPageImpl(): React.ReactElement {
                 aria-label="OS image to assign"
                 value={selectedImageId ?? ''}
                 onValueChange={(value: string) => setSelectedImageId(value || null)}
-                options={images.map(img => ({ value: img.imageId, label: imageOptionLabel(img) }))}
+                options={pickerImages.map(img => ({ value: img.imageId, label: imageOptionLabel(img) }))}
                 placeholder={hasOsImages ? 'Select OS image\u2026' : 'No OS images uploaded'}
-                disabled={coupled.length === 0 || images.length === 0}
+                disabled={coupled.length === 0 || pickerImages.length === 0}
                 title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
               />
               <Button
                 size="sm"
                 className="ml-auto shrink-0"
                 onClick={() => setPendingBulkAssign(true)}
-                disabled={!selectedImageId || coupled.length === 0 || startingImages}
+                disabled={!selectedImageId || targetSessions.length === 0 || startingImages}
                 title={!hasOsImages ? 'Upload an OS image before starting imaging.' : undefined}
               >
-                {startingImages ? 'Starting…' : `Start Imaging (${coupled.length})`}
+                {startingImages ? 'Starting…' : `Start Imaging (${selectedImageId ? targetSessions.length : coupled.length})`}
               </Button>
             </div>
+            {hasOsImages && coupled.length > 0 && pickerImages.length === 0 && (
+              <p className="border-b border-border px-4 py-3 text-sm text-muted-foreground">
+                No OS image matches the coupled devices' architecture. Upload an image for {[...new Set(coupled.map(s => architectureLabel(s.architecture)))].join(' and ')}.
+              </p>
+            )}
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -713,7 +738,10 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell>
                       <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                     </TableCell>
-                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell>
+                      {s.deviceManufacturer} {s.deviceModel}{' '}
+                      <Badge variant="outline">{architectureLabel(s.architecture)}</Badge>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
                     <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
                     <TableCell>

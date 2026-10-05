@@ -139,6 +139,7 @@ public sealed partial class UploadPublishService
         string finalBlobName;
         string finalHash;
         long finalSizeBytes;
+        var architecture = job.Architecture;
 
         // An uploaded ISO isn't itself usable — the Client's DISM apply step needs a genuine
         // WIM/ESD — so extract sources\install.wim (or install.esd) once here and publish that
@@ -163,6 +164,18 @@ public sealed partial class UploadPublishService
             finalHash = isoResult.Hash!;
             finalSizeBytes = isoResult.SizeBytes;
             LogIsoExtracted(_logger, job.BlobName, isoResult.SourcePath!, finalSizeBytes);
+
+            // The install image inside an ISO can only be inspected once extracted.
+            var extracted = container.GetBlobClient(finalBlobName);
+            var detectedRaw = await _validator.ReadWimProcessorArchitectureAsync(extracted, ct);
+            var rejection = ImageArchitecture.Resolve(detectedRaw, job.Architecture, "OS image", out architecture);
+            if (rejection is not null)
+            {
+                await extracted.DeleteIfExistsAsync(cancellationToken: ct);
+                await _jobRepo.FailAsync(job.UploadId, rejection, ct);
+                return;
+            }
+
             await progress.BeginStageAsync(UploadJobStage.Publishing);
         }
         else
@@ -197,6 +210,7 @@ public sealed partial class UploadPublishService
             StoragePath = $"{OsImageContainer}/{finalBlobName}",
             UploadedAt = DateTimeOffset.UtcNow,
             Sha256Hash = finalHash,
+            Architecture = architecture ?? MachineArchitecture.X64,
         };
 
         await _osImageRepo.CreateAsync(image, ct);
@@ -239,6 +253,9 @@ public sealed partial class UploadPublishService
             StoragePath = $"{BootImageContainer}/{finalBlobName}",
             ManifestVersion = "1.0",
             Sha256Hash = validation.ActualHash!,
+            // A job predating architecture tracking (or one where the operator left the picker
+            // unset) still defaults to x64 (see MachineArchitecture's own doc comment).
+            Architecture = job.Architecture ?? MachineArchitecture.X64,
         }, ct);
 
         await _jobRepo.CompleteAsync(job.UploadId, published.BootImageId, ct);
@@ -279,6 +296,7 @@ public sealed partial class UploadPublishService
             SizeBytes = job.SizeBytes,
             StoragePath = $"{RecoveryImageContainer}/{finalBlobName}",
             Sha256Hash = validation.ActualHash!,
+            Architecture = job.Architecture ?? MachineArchitecture.X64,
         }, ct);
 
         await _jobRepo.CompleteAsync(job.UploadId, published.RecoveryImageId, ct);

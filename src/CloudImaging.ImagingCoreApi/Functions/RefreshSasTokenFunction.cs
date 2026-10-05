@@ -76,6 +76,13 @@ public sealed partial class RefreshSasTokenFunction
         if (needsRefresh)
         {
             var image = await _imageRepo.GetByIdAsync(session.AssignedOsImageId.Value, context.CancellationToken);
+            // Never hand out a download URL for an image the device cannot run (e.g. an assignment made before enforcement).
+            if (image is not null && image.Architecture != session.Architecture)
+            {
+                return await ArchitectureCompatibility.ConflictAsync(
+                    req, new ArchitectureMismatchException(image.Architecture, [(sessionGuid, session.Architecture)]), context.CancellationToken);
+            }
+
             if (image is not null)
             {
                 sasUrl = await GenerateSasUrlAsync(_blobClient, image.StoragePath, sasExpiry, context.CancellationToken);

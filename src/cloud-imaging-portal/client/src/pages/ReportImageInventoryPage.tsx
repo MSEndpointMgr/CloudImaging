@@ -4,6 +4,7 @@ import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { formatImageVersion, formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
+import { BOOT_IMAGE_STAGE_LABELS, bootImageStage } from '../lib/bootImageStage.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
@@ -24,7 +25,9 @@ interface BootImage {
   version: string;
   createdAt: string;
   sizeBytes: number;
+  architecture?: 'x64' | 'arm64';
   isLatestPublished: boolean;
+  isProduction?: boolean;
   isActive: boolean;
 }
 
@@ -91,10 +94,12 @@ export default function ReportImageInventoryPage(): React.ReactElement {
             statusVariant: img.isInUse ? 'info' : 'success', statusDot: true,
           })),
           ...bootImages.map((img): InventoryRow => ({
-            catalog: 'Boot Image', id: img.bootImageId, name: formatImageVersion(img.version),
+            // "Latest" is per architecture, so the architecture disambiguates two Latest rows.
+            catalog: 'Boot Image', id: img.bootImageId, name: `${formatImageVersion(img.version)} (${img.architecture === 'arm64' ? 'ARM64' : 'x64'})`,
             sizeBytes: img.sizeBytes, date: img.createdAt,
-            statusLabel: img.isLatestPublished ? 'Latest' : img.isActive ? 'Active' : 'Inactive',
-            statusVariant: img.isLatestPublished ? 'info' : 'muted', statusDot: img.isLatestPublished || img.isActive,
+            statusLabel: BOOT_IMAGE_STAGE_LABELS[bootImageStage(img)],
+            statusVariant: img.isLatestPublished ? 'info' : bootImageStage(img) === 'preProduction' ? 'warning' : 'muted',
+            statusDot: true,
           })),
           ...recoveryImages.map((img): InventoryRow => ({
             catalog: 'Recovery Image', id: img.recoveryImageId, name: formatImageVersion(img.version),

@@ -34,6 +34,7 @@ public static class DeviceSessionFactory
             HardwareMetadata = registration.Hardware,
             LocationId = registration.LocationId,
             LocationName = registration.LocationName,
+            Architecture = registration.Architecture ?? MachineArchitecture.X64,
             PreFlightAuthorizationResult = PreFlightAuthorizationResult.Skipped,
             Passcode = passcodeHash,
             PasscodeExpiresAt = now + passcodeTtl,

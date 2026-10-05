@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -34,8 +35,6 @@ namespace CloudImaging.MediaBuilder.Services;
 /// </summary>
 public sealed partial class IsoGenerationService
 {
-    private const string WinPeArch = "amd64";
-
     /// <summary>
     /// Prefix for the per-run staging directory created under <c>%TEMP%</c>. Not swept up by
     /// any orphan-cleanup pass (unlike <see cref="BootImageGenerationService"/>'s work
@@ -58,7 +57,7 @@ public sealed partial class IsoGenerationService
     private readonly Func<bool> _isElevated;
     private readonly Func<string, string, Process> _startElevatedProcess;
 
-    private sealed record IsoGenerationParams(string WimPath, string OutputIsoPath);
+    private sealed record IsoGenerationParams(string WimPath, string OutputIsoPath, MachineArchitecture Architecture);
     private sealed record ElevatedIsoGenerationResult(bool Success, string? Error);
 
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
@@ -88,28 +87,32 @@ public sealed partial class IsoGenerationService
     /// </summary>
     /// <param name="wimPath">Path to the already-downloaded/hash-verified boot WIM.</param>
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
+    /// <param name="architecture">Target processor architecture of <paramref name="wimPath"/> (todo/arm64-support.md). Defaults to x64.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
     public async Task GenerateElevatedAsync(
         string wimPath,
         string outputIsoPath,
+        MachineArchitecture architecture = MachineArchitecture.X64,
         Action<string, int>? onProgress = null,
         CancellationToken ct = default)
     {
         if (_isElevated())
         {
-            await GenerateAsync(wimPath, outputIsoPath, onProgress, ct);
+            await GenerateAsync(wimPath, outputIsoPath, architecture, onProgress, ct);
             return;
         }
 
-        await RunElevatedChildProcessAsync(wimPath, outputIsoPath, onProgress, ct);
+        await RunElevatedChildProcessAsync(wimPath, outputIsoPath, architecture, onProgress, ct);
     }
 
     /// <param name="wimPath">Path to the already-downloaded/hash-verified boot WIM.</param>
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
+    /// <param name="architecture">Target processor architecture of <paramref name="wimPath"/> (todo/arm64-support.md). Defaults to x64.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
     public async Task GenerateAsync(
         string wimPath,
         string outputIsoPath,
+        MachineArchitecture architecture = MachineArchitecture.X64,
         Action<string, int>? onProgress = null,
         CancellationToken ct = default)
     {
@@ -125,7 +128,7 @@ public sealed partial class IsoGenerationService
         {
             onProgress?.Invoke("Staging WinPE media files…", 10);
             var winPeRoot = Path.Combine(workDir, "WinPE");
-            await CopyWinPeFilesAsync(adkPath, winPeRoot, ct);
+            await CopyWinPeFilesAsync(adkPath, winPeRoot, architecture, ct);
 
             ct.ThrowIfCancellationRequested();
             onProgress?.Invoke("Inserting selected boot image into WinPE media…", 45);
@@ -156,28 +159,30 @@ public sealed partial class IsoGenerationService
         }
     }
 
-    /// <summary>Stages a fresh WinPE media tree via copype.cmd — identical env-var setup to <see cref="BootImageGenerationService"/>'s own copype invocation, since both shell out to the same ADK tools.</summary>
-    private static async Task CopyWinPeFilesAsync(string adkPath, string winPeRoot, CancellationToken ct)
+    /// <summary>Stages a fresh WinPE media tree via copype.cmd. See <see cref="BootImageGenerationService.CopyWinPeFilesAsync"/> for why DISMRoot/OSCDImgRoot must use the host architecture rather than the selected target.</summary>
+    private static async Task CopyWinPeFilesAsync(string adkPath, string winPeRoot, MachineArchitecture architecture, CancellationToken ct)
     {
         var copype = Path.Combine(adkPath, "Windows Preinstallation Environment", "copype.cmd");
+        var adkArch = MachineArchitecturePlatform.AdkArchitectureName(architecture);
+        var hostArch = MachineArchitecturePlatform.AdkArchitectureName(MachineArchitecturePlatform.HostArchitecture());
         var env = new Dictionary<string, string>
         {
             ["WinPERoot"]   = Path.Combine(adkPath, "Windows Preinstallation Environment"),
-            ["OSCDImgRoot"] = Path.Combine(adkPath, "Deployment Tools", WinPeArch, "Oscdimg"),
-            ["DISMRoot"]    = Path.Combine(adkPath, "Deployment Tools", WinPeArch, "DISM"),
+            ["OSCDImgRoot"] = Path.Combine(adkPath, "Deployment Tools", hostArch, "Oscdimg"),
+            ["DISMRoot"]    = Path.Combine(adkPath, "Deployment Tools", hostArch, "DISM"),
         };
 
         // See BootImageGenerationService.CopyWinPeFilesAsync for why the whole /c argument is
         // wrapped in one extra outer pair of quotes (cmd.exe's quote-stripping fallback with
         // more than two embedded quotes, which both copype's own path and winPeRoot can contain
         // via spaces).
-        await RunExternalAsync("cmd.exe", $"/c \"\"{copype}\" {WinPeArch} \"{winPeRoot}\"\"", env, ct);
+        await RunExternalAsync("cmd.exe", $"/c \"\"{copype}\" {adkArch} \"{winPeRoot}\"\"", env, ct);
     }
 
     private static async Task RunMakeWinPeMediaAsync(string adkPath, string winPeRoot, string outputIsoPath, CancellationToken ct)
     {
         var makeMedia   = Path.Combine(adkPath, "Windows Preinstallation Environment", "MakeWinPEMedia.cmd");
-        var oscdimgRoot = Path.Combine(adkPath, "Deployment Tools", WinPeArch, "Oscdimg");
+        var oscdimgRoot = Path.Combine(adkPath, "Deployment Tools", MachineArchitecturePlatform.AdkArchitectureName(MachineArchitecturePlatform.HostArchitecture()), "Oscdimg");
 
         // Unlike copype.cmd (which calls Dism.exe via the fully-qualified "%DISMRoot%\Dism.exe"),
         // MakeWinPEMedia.cmd's ISO-packaging path invokes "oscdimg" by bare name and relies on
@@ -185,7 +190,10 @@ public sealed partial class IsoGenerationService
         // and Imaging Tools Environment" prompt (Deployment Tools\DandISetEnv.bat), which this
         // app never launches from. Without prepending OSCDImgRoot onto PATH here, the child
         // cmd.exe fails with "'oscdimg' is not recognized as an internal or external command"
-        // even though the ADK/WinPE add-on are correctly installed.
+        // even though the ADK/WinPE add-on are correctly installed. This must be the HOST
+        // architecture's Oscdimg folder (a native oscdimg.exe that can actually run); the ISO's
+        // target-arch boot-sector data (efisys.bin etc.) comes from "%WORKINGDIR%\bootbins",
+        // already staged there for the target architecture by copype.cmd, not from this folder.
         var env = new Dictionary<string, string>
         {
             ["WinPERoot"]   = Path.Combine(adkPath, "Windows Preinstallation Environment"),
@@ -228,7 +236,7 @@ public sealed partial class IsoGenerationService
     private static bool TryDeleteDirectoryRecursive(string path) => ElevationHelper.TryDeleteDirectoryRecursive(path);
 
     private async Task RunElevatedChildProcessAsync(
-        string wimPath, string outputIsoPath, Action<string, int>? onProgress, CancellationToken ct)
+        string wimPath, string outputIsoPath, MachineArchitecture architecture, Action<string, int>? onProgress, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran. These folders
@@ -238,6 +246,7 @@ public sealed partial class IsoGenerationService
 
         var ipcDir = Path.Combine(Path.GetTempPath(), $"{ElevatedIpcDirPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(ipcDir);
+        ElevationHelper.WriteOwnerMarker(ipcDir);
         var paramsFile   = Path.Combine(ipcDir, "params.json");
         var progressFile = Path.Combine(ipcDir, "progress.txt");
         var resultFile   = Path.Combine(ipcDir, "result.json");
@@ -245,7 +254,7 @@ public sealed partial class IsoGenerationService
 
         try
         {
-            var request = new IsoGenerationParams(wimPath, outputIsoPath);
+            var request = new IsoGenerationParams(wimPath, outputIsoPath, architecture);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -381,7 +390,7 @@ public sealed partial class IsoGenerationService
                 }
             }
 
-            await svc.GenerateAsync(p.WimPath, p.OutputIsoPath, OnProgress, cts.Token);
+            await svc.GenerateAsync(p.WimPath, p.OutputIsoPath, p.Architecture, OnProgress, cts.Token);
 
             await File.WriteAllTextAsync(resultFile, JsonSerializer.Serialize(new ElevatedIsoGenerationResult(true, null)));
         }
@@ -437,7 +446,12 @@ public sealed partial class IsoGenerationService
         try
         {
             foreach (var dir in Directory.GetDirectories(Path.GetTempPath(), $"{ElevatedIpcDirPrefix}*"))
+            {
+                if (ElevationHelper.IsOwnedByLiveProcess(dir))
+                    continue;
+
                 ElevationHelper.TryDeleteDirectoryRecursive(dir);
+            }
         }
         catch (Exception ex)
         {

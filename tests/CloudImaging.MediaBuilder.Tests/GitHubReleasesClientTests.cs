@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -66,7 +67,7 @@ public sealed class GitHubReleasesClientTests
 
         var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
 
-        var extractDir = await svc.DownloadLatestClientAsync();
+        var extractDir = await svc.DownloadLatestClientAsync(MachineArchitecture.X64);
 
         try
         {
@@ -127,7 +128,7 @@ public sealed class GitHubReleasesClientTests
 
         var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
 
-        Func<Task> act = async () => await svc.DownloadLatestClientAsync();
+        Func<Task> act = async () => await svc.DownloadLatestClientAsync(MachineArchitecture.X64);
 
         var assertion = await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*after 3 attempts*");
@@ -148,24 +149,235 @@ public sealed class GitHubReleasesClientTests
         var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
         var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
 
-        Func<Task> act = async () => await svc.DownloadLatestClientAsync();
+        Func<Task> act = async () => await svc.DownloadLatestClientAsync(MachineArchitecture.X64);
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*mse-ci-client-latest*",
                 "a missing alias release (no stable Client version ever published) must surface a clear, actionable error instead of a generic HTTP failure");
     }
 
-    private static byte[] CreateFakeClientZip()
+    [Fact]
+    public async Task DownloadLatestClientAsync_ResolvesArchitectureSpecificAsset_WhenPresent()
+    {
+        var zipBytes = CreateFakeClientZip();
+        var validSums = $"{Convert.ToHexStringLower(SHA256.HashData(zipBytes))}  cloud-imaging-client-arm64.zip\n";
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri == ClientLatestApiUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent(
+                        """
+                        {
+                          "tag_name": "mse-ci-client-latest",
+                          "name": "Cloud Imaging Client (latest: mse-ci-client-v1.2.3)",
+                          "assets": [
+                            { "name": "cloud-imaging-client.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client.zip" },
+                            { "name": "cloud-imaging-client-x64.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client-x64.zip" },
+                            { "name": "cloud-imaging-client-arm64.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client-arm64.zip" },
+                            { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
+                          ]
+                        }
+                        """)
+                };
+            }
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/cloud-imaging-client-arm64.zip")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/SHA256SUMS")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(validSums) };
+
+            // The legacy/x64 assets must never be requested when an arm64-specific asset exists.
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
+
+        var extractDir = await svc.DownloadLatestClientAsync(MachineArchitecture.Arm64);
+
+        try
+        {
+            Directory.Exists(extractDir).Should().BeTrue();
+            File.Exists(Path.Combine(extractDir, "CloudImaging.Client.exe")).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadLatestClientAsync_FallsBackToLegacyAsset_WhenX64RequestedButOnlyLegacyAssetExists()
+    {
+        // Simulates the "mse-ci-client-latest" alias still pointing at a release cut before
+        // architecture-specific assets existed (todo/arm64-support.md Milestone 4): only the
+        // old unversioned x64 asset is present.
+        var zipBytes = CreateFakeClientZip();
+        var validSums = $"{Convert.ToHexStringLower(SHA256.HashData(zipBytes))}  cloud-imaging-client.zip\n";
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri == ClientLatestApiUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent(
+                        """
+                        {
+                          "tag_name": "mse-ci-client-latest",
+                          "name": "Cloud Imaging Client (latest: mse-ci-client-v1.0.0)",
+                          "assets": [
+                            { "name": "cloud-imaging-client.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client.zip" },
+                            { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
+                          ]
+                        }
+                        """)
+                };
+            }
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/cloud-imaging-client.zip")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/SHA256SUMS")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(validSums) };
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
+
+        var extractDir = await svc.DownloadLatestClientAsync(MachineArchitecture.X64);
+
+        try
+        {
+            Directory.Exists(extractDir).Should().BeTrue();
+            File.Exists(Path.Combine(extractDir, "CloudImaging.Client.exe")).Should().BeTrue();
+        }
+        finally
+        {
+            if (Directory.Exists(extractDir)) Directory.Delete(extractDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadLatestClientAsync_ThrowsActionableError_WhenArm64RequestedButOnlyLegacyX64AssetExists()
+    {
+        // Unlike x64, there is no legacy ARM64 asset to fall back to: a release cut before
+        // architecture-specific assets existed only ever published x64.
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri == ClientLatestApiUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent(
+                        """
+                        {
+                          "tag_name": "mse-ci-client-latest",
+                          "name": "Cloud Imaging Client (latest: mse-ci-client-v1.0.0)",
+                          "assets": [
+                            { "name": "cloud-imaging-client.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client.zip" },
+                            { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
+                          ]
+                        }
+                        """)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
+
+        Func<Task> act = async () => await svc.DownloadLatestClientAsync(MachineArchitecture.Arm64);
+
+        var assertion = await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*after 3 attempts*");
+        assertion.Which.InnerException!.Message.Should().Contain("cloud-imaging-client-arm64.zip",
+            "the error must name the missing asset so a technician can tell this apart from a transient network failure");
+    }
+
+    [Fact]
+    public async Task DownloadLatestClientAsync_ThrowsAndCleansUpTempDir_WhenExtractedExeArchitectureDoesNotMatchRequested()
+    {
+        // A release-pipeline packaging mistake (e.g. the win-arm64 build accidentally zipped
+        // under the win-x64 asset name) must never be silently trusted just because the
+        // checksum matches. The checksum only proves the ZIP wasn't corrupted in transit.
+        var zipBytes = CreateFakeClientZip(arm64: true);
+        var validSums = $"{Convert.ToHexStringLower(SHA256.HashData(zipBytes))}  cloud-imaging-client-x64.zip\n";
+
+        var handler = new FakeHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.AbsoluteUri == ClientLatestApiUrl)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent(
+                        """
+                        {
+                          "tag_name": "mse-ci-client-latest",
+                          "name": "Cloud Imaging Client (latest: mse-ci-client-v1.2.3)",
+                          "assets": [
+                            { "name": "cloud-imaging-client-x64.zip", "browser_download_url": "https://example.com/download/cloud-imaging-client-x64.zip" },
+                            { "name": "SHA256SUMS", "browser_download_url": "https://example.com/download/SHA256SUMS" }
+                          ]
+                        }
+                        """)
+                };
+            }
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/cloud-imaging-client-x64.zip")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(zipBytes) };
+
+            if (req.RequestUri!.AbsoluteUri == "https://example.com/download/SHA256SUMS")
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(validSums) };
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var tempDirsBefore = Directory.GetDirectories(Path.GetTempPath(), "ci-client-*");
+        var svc = new GitHubReleasesClient(new HttpClient(handler), NullLogger<GitHubReleasesClient>.Instance);
+
+        Func<Task> act = async () => await svc.DownloadLatestClientAsync(MachineArchitecture.X64);
+
+        var assertion = await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*after 3 attempts*");
+        assertion.Which.InnerException!.Message.Should().Contain("packaging mistake");
+
+        Directory.GetDirectories(Path.GetTempPath(), "ci-client-*").Except(tempDirsBefore).Should().BeEmpty(
+            "a detected architecture mismatch must clean up the extraction directory, same as any other failed attempt");
+    }
+
+    private static byte[] CreateFakeClientZip(bool arm64 = false)
     {
         using var ms = new MemoryStream();
         using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
             var entry = archive.CreateEntry("CloudImaging.Client.exe");
             using var entryStream = entry.Open();
-            using var writer = new StreamWriter(entryStream);
-            writer.Write("fake client binary");
+            if (arm64)
+            {
+                using var tempFile = new TempFile();
+                PeTestFileFactory.WriteMinimalPeFile(tempFile.Path, arm64: true);
+                using var peStream = File.OpenRead(tempFile.Path);
+                peStream.CopyTo(entryStream);
+            }
+            else
+            {
+                using var writer = new StreamWriter(entryStream, leaveOpen: true);
+                writer.Write("fake client binary");
+            }
         }
         return ms.ToArray();
+    }
+
+    private sealed class TempFile : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"ci-pe-test-{Guid.NewGuid():N}.bin");
+        public void Dispose() { try { File.Delete(Path); } catch { /* best-effort */ } }
     }
 
     private static StringContent JsonContent(string json) =>

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { CopyableId } from './ui/copyable-id.tsx';
 import { RelativeTime } from './ui/relative-time.tsx';
 import { formatDateTime } from '../lib/utils.ts';
+import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
 
 export interface SessionHardware {
   motherboardManufacturer?: string | null;
@@ -18,6 +19,7 @@ export interface SessionDetails {
   deviceSerialNumber: string;
   deviceManufacturer: string;
   deviceModel: string;
+  architecture?: ImageArchitecture;
   macAddress?: string | null;
   hardware?: SessionHardware | null;
   locationName: string | null;
@@ -146,6 +148,10 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
 
       <DetailField label="Model">
         <Maybe value={session.deviceModel} />
+      </DetailField>
+
+      <DetailField label="Architecture">
+        {architectureLabel(session.architecture)}
       </DetailField>
 
       {/* The primary adapter's MAC. Operators use it to line a device up against DHCP/switch

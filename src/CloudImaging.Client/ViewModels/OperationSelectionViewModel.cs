@@ -182,6 +182,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
                 Hardware     = hardware,
                 LocationId   = locationId,
                 LocationName = locationName,
+                Architecture = MachineArchitecturePlatform.HostArchitecture(),
             };
 
             var sessionResponse = await _gatewayClient.CreateSessionAsync(payload);

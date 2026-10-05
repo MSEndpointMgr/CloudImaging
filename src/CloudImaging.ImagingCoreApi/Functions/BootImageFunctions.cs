@@ -155,7 +155,10 @@ public sealed partial class BootImageFunctions
         storagePath = b.StoragePath,
         manifestVersion = b.ManifestVersion,
         sha256Hash = b.Sha256Hash,
+        architecture = MachineArchitecturePlatform.Slug(b.Architecture),
         isLatestPublished = b.IsLatestPublished,
+        isProduction = b.IsProduction,
+        promotedAt = b.PromotedAt,
         isActive = b.IsActive,
     };
 

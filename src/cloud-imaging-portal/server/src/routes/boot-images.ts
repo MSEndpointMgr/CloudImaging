@@ -32,6 +32,20 @@ router.post('/upload/:token/publish', requireRole('CloudImaging.Administrator'),
   } catch (err) { next(err); }
 });
 
+// Moves a tested pre-production image to production and makes it latest for its architecture.
+router.post('/:id/promote', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await operatorApiClient.promoteBootImage(req.params['id'] as string));
+  } catch (err) { next(err); }
+});
+
+// Reverts a promote: back to pre-production, restoring the previously promoted image as latest.
+router.post('/:id/demote', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json(await operatorApiClient.demoteBootImage(req.params['id'] as string));
+  } catch (err) { next(err); }
+});
+
 router.delete('/:id', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.deleteBootImage(req.params['id'] as string);

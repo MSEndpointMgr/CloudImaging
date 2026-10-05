@@ -9,6 +9,8 @@ import { Card, CardContent } from './ui/card.tsx';
 import { fileAccept, OS_IMAGE_EXTENSIONS, validateImageFile } from '../lib/imageFileValidation.ts';
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
+import { useWimArchitecture } from '../lib/useWimArchitecture.ts';
+import { ArchitectureField } from './ArchitectureField.tsx';
 import {
   startChunkedUpload,
   uploadBlocks,
@@ -59,6 +61,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   // the verification/extraction/publish work happens server-side, so this is what the operator
   // watches for what is by far the longest part of a multi-GB upload.
   const [publishJob, setPublishJob] = useState<UploadJob | null>(null);
+  const wimArchitecture           = useWimArchitecture();
   const abortRef                  = useRef<AbortController | null>(null);
   const sessionRef                = useRef<ChunkedUploadSession | null>(null);
   const hashRunId                 = useRef(0);
@@ -76,6 +79,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
     hashRunId.current++; // invalidate any in-flight hashing so it doesn't clobber state after reset
     setFile(null); setVersion(''); setSha256(''); setHashProgress(0); setProgress(0);
     setState('idle'); setError(null); setResuming(false); setPublishJob(null);
+    void wimArchitecture.inspect(null);
     sessionRef.current = null;
   };
 
@@ -93,6 +97,15 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
     setFile(selected);
     setSha256('');
     setHashProgress(0);
+
+    void wimArchitecture.inspect(selected).then(unsupported => {
+      if (!unsupported || hashRunId.current !== runId) return;
+      hashRunId.current++; // stop hashing a file that can never be published
+      setFile(null);
+      setSha256('');
+      setError(unsupported);
+      setState('error');
+    });
 
     if (!selected) {
       setState('idle');
@@ -129,7 +142,8 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   };
 
   const handleUpload = async () => {
-    if (!file || !version.trim() || sha256.length !== 64 || duplicateVersion) return;
+    const { architecture } = wimArchitecture;
+    if (!file || !version.trim() || sha256.length !== 64 || duplicateVersion || architecture === '') return;
     setState('uploading'); setError(null);
 
     abortRef.current = new AbortController();
@@ -160,7 +174,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
       setState('finalizing');
       setPublishJob(null);
       const result = await finalizeChunkedUpload(
-        session, blockIds, file.name, version, sha256, file.size,
+        session, blockIds, file.name, version, sha256, file.size, architecture,
         { onStatus: setPublishJob },
       );
       clearPersistedUpload();
@@ -195,7 +209,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
     : '';
   const stagePercent = state === 'finalizing' ? uploadJobProgressPercent(publishJob) : progress;
   const duplicateVersion = isDuplicateVersion(version, existingVersions);
-  const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion && !atCapacity;
+  const canUpload = !!file && version.trim().length > 0 && sha256.length === 64 && state !== 'hashing' && !duplicateVersion && !atCapacity && wimArchitecture.architecture !== '';
 
   // Portalled to document.body: this component renders deep inside the routed page tree, and a
   // `position: fixed` overlay only reliably covers the true viewport (including the app header)
@@ -302,6 +316,14 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
               <p className="text-sm text-destructive">Version "{version.trim()}" already exists.</p>
             )}
           </div>
+
+          <ArchitectureField
+            id="osImageArchitecture"
+            state={wimArchitecture}
+            hasFile={!!file}
+            isIso={!!file && file.name.toLowerCase().endsWith('.iso')}
+            disabled={state === 'uploading' || state === 'finalizing'}
+          />
 
           {(state === 'uploading' || state === 'finalizing') && (
             <UploadProgressBar percent={stagePercent} label={stageLabel} />

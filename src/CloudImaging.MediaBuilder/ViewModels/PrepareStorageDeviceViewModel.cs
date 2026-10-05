@@ -244,7 +244,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>Footer caption explaining what the action button does — changes with the selected target.</summary>
     public string PrepareDescription => PrepareAsIso
-        ? "Downloads (or reuses a cached copy of) the selected boot image and packages it into a bootable ISO file you can attach to a Hyper-V VM's DVD drive or burn to physical media."
+        ? "Downloads (or reuses a cached copy of) the selected boot image and packages it into a bootable ISO file you can attach to a virtual machine's DVD drive or burn to physical media."
         : "Downloads (or reuses a cached copy of) the selected boot image, partitions the USB device, and deploys WinPE with auto-start onto it.";
 
     /// <summary>Success modal title — changes with the selected target.</summary>
@@ -404,8 +404,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         catch (Exception ex)
         {
-            ErrorTitle   = "Refresh failed";
-            ErrorMessage = ex.Message;
+            ErrorTitle   = OperatorApiErrorDescription.IsAccessDenied(ex) ? "Access denied" : "Refresh failed";
+            ErrorMessage = OperatorApiErrorDescription.Describe(ex);
         }
         finally
         {
@@ -451,25 +451,34 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         var images = await _operatorApi.GetBootImagesAsync();
 
         BootImages.Clear();
-        foreach (var image in images
-            .Where(i => i.IsActive)
+        foreach (var image in VisibleBootImages(images, _authService.IsAdministrator)
             .OrderByDescending(i => i.Version, Comparer<string>.Create(CompareVersions)))
         {
-            var latest = image.IsLatestPublished ? " (latest)" : string.Empty;
+            var stage = image.IsLatestPublished ? " (latest)" : image.IsProduction ? string.Empty : " (pre-production)";
             var label  = string.Create(CultureInfo.InvariantCulture,
-                $"v{image.Version} ({FormatBytes(image.SizeBytes)}){latest}");
+                $"v{image.Version} · {DisplayArchitecture(image.Architecture)} ({FormatBytes(image.SizeBytes)}){stage}");
             BootImages.Add(new BootImageChoice(image.BootImageId, label, image));
         }
 
-        // FR-053: pre-select the latest published boot image.
-        SelectedBootImage = BootImages.FirstOrDefault(b => b.Dto.IsLatestPublished)
+        // FR-053: pre-select the latest published boot image. Latest is per architecture, so
+        // prefer x64 (the default media type) when both architectures have one.
+        SelectedBootImage = BootImages.FirstOrDefault(b => b.Dto.IsLatestPublished && b.Dto.Architecture == MachineArchitecture.X64)
+                            ?? BootImages.FirstOrDefault(b => b.Dto.IsLatestPublished)
                             ?? BootImages.FirstOrDefault();
         OnPropertyChanged(nameof(HasBootImages));
         OnPropertyChanged(nameof(IsBootImageSelectionEnabled));
         StatusMessage = BootImages.Count > 0
             ? "Confirm the destructive action, then prepare the USB device."
-            : "No published boot images are available in the portal.";
+            : "No production boot images are available yet. An Administrator must promote one in the portal.";
     }
+
+    /// <summary>
+    /// Pre-production images are only offered to Administrators, who test them before promoting.
+    /// The Operator API cannot tell the roles apart (both use MediaBuilderAccess), so this is a
+    /// workflow filter rather than an access control.
+    /// </summary>
+    public static IEnumerable<BootImageDto> VisibleBootImages(IEnumerable<BootImageDto> images, bool isAdministrator) =>
+        images.Where(i => i.IsActive && (i.IsProduction || isAdministrator));
 
     /// <summary>
     /// Loads the admin-managed location catalog (Location Labels feature) so the technician can
@@ -564,6 +573,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 await _cache.SaveAsync(wimPath, SelectedBootImage.Id, SelectedBootImage.Dto.Version, sas.Sha256Hash, ct);
             }
 
+            // Must run before partitioning so a mislabeled image never erases the USB device.
+            await EnsureWimMatchesCatalogArchitectureAsync(wimPath, SelectedBootImage.Dto, ct);
+
             _currentStage = "PRT";
             SetProgress("Partitioning USB device…", 60);
 
@@ -590,7 +602,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 toolVersion,
                 SelectedDisk.Info.Caption,
                 SelectedLocation?.Id,
-                SelectedLocation?.Name);
+                SelectedLocation?.Name,
+                SelectedBootImage.Dto.Architecture,
+                SelectedBootImage.Dto.BootImageId,
+                !SelectedBootImage.Dto.IsProduction);
             await _preparation.PrepareElevatedAsync(preparationParams, ct);
 
             SetProgress("USB device prepared successfully.", 100);
@@ -683,6 +698,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 await _cache.SaveAsync(wimPath, SelectedBootImage.Id, SelectedBootImage.Dto.Version, sas.Sha256Hash, ct);
             }
 
+            await EnsureWimMatchesCatalogArchitectureAsync(wimPath, SelectedBootImage.Dto, ct);
+
             _currentStage = "ISO";
             ct.ThrowIfCancellationRequested();
             SetProgress("Building bootable ISO…", 30);
@@ -692,7 +709,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             // pattern UsbPreparationService's partition/deploy steps already use.
             void OnIsoProgress(string message, int percent) =>
                 SetProgress(message, 30 + (int)(0.70 * percent));
-            await _isoGeneration.GenerateElevatedAsync(wimPath, IsoOutputPath, OnIsoProgress, ct);
+            await _isoGeneration.GenerateElevatedAsync(wimPath, IsoOutputPath, SelectedBootImage.Dto.Architecture, OnIsoProgress, ct);
 
             var isoSizeBytes = new FileInfo(IsoOutputPath).Length;
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
@@ -755,15 +772,33 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     }
 
     /// <summary>
-    /// The default/suggested ISO filename for the currently selected boot image — version-specific
-    /// ("cloud-imaging-boot-v{version}.iso") once a boot image is selected, otherwise the generic
-    /// "cloud-imaging-boot.iso". Shared by the auto-updated <see cref="IsoOutputPath"/> default and
-    /// the Browse dialog's suggested filename so both stay consistent.
+    /// The default/suggested ISO filename for the currently selected boot image, e.g.
+    /// "cloud-imaging-boot-arm64-v{version}.iso", otherwise the generic "cloud-imaging-boot.iso".
+    /// Shared by the auto-updated <see cref="IsoOutputPath"/> default and the Browse dialog.
     /// </summary>
     private string GetDefaultIsoFileName() =>
         SelectedBootImage is not null
-            ? $"cloud-imaging-boot-v{SelectedBootImage.Dto.Version}.iso"
+            ? $"cloud-imaging-boot-{MachineArchitecturePlatform.Slug(SelectedBootImage.Dto.Architecture)}-v{SelectedBootImage.Dto.Version}.iso"
             : "cloud-imaging-boot.iso";
+
+    /// <summary>Operator-facing architecture label, matching the Portal's Boot Images badge.</summary>
+    private static string DisplayArchitecture(MachineArchitecture architecture) =>
+        architecture == MachineArchitecture.Arm64 ? "ARM64" : "x64";
+
+    /// <summary>
+    /// Rejects a WIM whose own metadata contradicts the catalog's architecture label. Skipped when
+    /// the WIM carries no readable architecture (the catalog label is then all there is).
+    /// </summary>
+    public static async Task EnsureWimMatchesCatalogArchitectureAsync(string wimPath, BootImageDto image, CancellationToken ct)
+    {
+        var raw = await WimMetadataReader.ReadProcessorArchitectureAsync(wimPath, ct);
+        if (raw is null)
+            return;
+
+        if (WimMetadataReader.ToMachineArchitecture(raw.Value) != image.Architecture)
+            throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture,
+                $"Boot image v{image.Version} is labeled {DisplayArchitecture(image.Architecture)} in the portal, but the image itself targets {WimMetadataReader.DescribeProcessorArchitecture(raw.Value)}. Nothing was written. Delete it in the portal and upload it again."));
+    }
 
     /// <summary>
     /// Default ISO output location: a "Cloud Imaging Media Builder\ISO Files" subfolder under

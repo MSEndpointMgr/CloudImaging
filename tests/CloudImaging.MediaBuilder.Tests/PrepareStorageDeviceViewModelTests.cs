@@ -1,3 +1,4 @@
+using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 using CloudImaging.MediaBuilder.ViewModels;
 using FluentAssertions;
@@ -111,7 +112,7 @@ public sealed class PrepareStorageDeviceViewModelTests
 
         vm.SelectedBootImage = CreateBootImage();
 
-        vm.IsoOutputPath.Should().Be(Path.Combine(folderBeforeSelection!, "cloud-imaging-boot-v1.0.0.iso"),
+        vm.IsoOutputPath.Should().Be(Path.Combine(folderBeforeSelection!, "cloud-imaging-boot-x64-v1.0.0.iso"),
             "the suggested ISO filename should already be version-specific by default, matching what Browse would suggest, without requiring a Browse click");
     }
 
@@ -129,11 +130,60 @@ public sealed class PrepareStorageDeviceViewModelTests
             Sha256Hash        = "def",
             IsLatestPublished = true,
             IsActive          = true,
+            Architecture      = MachineArchitecture.Arm64,
         });
         vm.SelectedBootImage = otherImage;
 
-        vm.IsoOutputPath.Should().EndWith("cloud-imaging-boot-v2.0.0.iso",
-            "the suggested filename keeps tracking the selected boot image until the technician explicitly picks a path via Browse");
+        vm.IsoOutputPath.Should().EndWith("cloud-imaging-boot-arm64-v2.0.0.iso",
+            "the suggested filename keeps tracking the selected boot image (including its architecture) until the technician explicitly picks a path via Browse");
+    }
+
+    [Theory]
+    [InlineData(true, 2)]
+    [InlineData(false, 1)]
+    public void PreProductionBootImages_AreOnlyOfferedToAdministrators(bool isAdministrator, int expectedCount)
+    {
+        var images = new[]
+        {
+            new BootImageDto { Version = "1.0", IsActive = true, IsProduction = true, IsLatestPublished = true },
+            new BootImageDto { Version = "2.0", IsActive = true, IsProduction = false },
+            new BootImageDto { Version = "0.9", IsActive = false, IsProduction = true },
+        };
+
+        PrepareStorageDeviceViewModel.VisibleBootImages(images, isAdministrator).Should().HaveCount(expectedCount);
+    }
+
+    [Fact]
+    public async Task EnsureWimMatchesCatalogArchitecture_Throws_WhenWimContradictsCatalogLabel()
+    {
+        var wimPath = SyntheticWim.Write(SyntheticWim.Arm64);
+        try
+        {
+            var image = CreateBootImage().Dto; // cataloged as x64
+
+            var act = () => PrepareStorageDeviceViewModel.EnsureWimMatchesCatalogArchitectureAsync(wimPath, image, CancellationToken.None);
+
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*labeled x64*targets arm64*Nothing was written*");
+        }
+        finally { File.Delete(wimPath); }
+    }
+
+    [Theory]
+    [InlineData(SyntheticWim.Amd64, MachineArchitecture.X64)]
+    [InlineData(SyntheticWim.Arm64, MachineArchitecture.Arm64)]
+    public async Task EnsureWimMatchesCatalogArchitecture_Passes_WhenWimMatchesCatalogLabel(int wimArch, MachineArchitecture catalogArch)
+    {
+        var wimPath = SyntheticWim.Write(wimArch);
+        try
+        {
+            var image = new BootImageDto { Version = "1.0.0", Architecture = catalogArch };
+
+            var act = () => PrepareStorageDeviceViewModel.EnsureWimMatchesCatalogArchitectureAsync(wimPath, image, CancellationToken.None);
+
+            await act.Should().NotThrowAsync();
+        }
+        finally { File.Delete(wimPath); }
     }
 
     [Fact]

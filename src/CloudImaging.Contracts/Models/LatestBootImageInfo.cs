@@ -8,11 +8,14 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class LatestBootImageInfo
 {
+    /// <summary>Catalog id of the latest image; null from gateways that predate it.</summary>
+    public Guid? BootImageId { get; init; }
+
     public required string Version { get; init; }
     public required string Sha256Hash { get; init; }
     public required string SasTokenUrl { get; init; }
 
-    /// <summary>Boot image architecture (e.g. "x64", "arm64"). Null when the catalog entry predates
-    /// architecture tracking; the Client treats a null value as "x64" (todo/arm64-support.md #8).</summary>
-    public string? Architecture { get; init; }
+    /// <summary>Boot image architecture. Null when the catalog entry predates architecture tracking;
+    /// the Client treats a null value as <see cref="MachineArchitecture.X64"/> (todo/arm64-support.md #8).</summary>
+    public MachineArchitecture? Architecture { get; init; }
 }

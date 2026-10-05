@@ -21,6 +21,10 @@ import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/image
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
+import { architectureLabel, countByArchitecture, type ImageArchitecture } from '../lib/wimMetadata.ts';
+import { useWimArchitecture } from '../lib/useWimArchitecture.ts';
+import { ArchitectureField } from '../components/ArchitectureField.tsx';
+import { ArchitectureCapacityCard } from '../components/ArchitectureCapacityCard.tsx';
 import {
   startRecoveryImageUpload,
   uploadRecoveryFileToBlobStorage,
@@ -39,17 +43,19 @@ interface RecoveryImage {
   createdAt: string;
   sizeBytes: number;
   sha256Hash: string;
+  architecture?: ImageArchitecture;
   isLatestPublished: boolean;
   isActive: boolean;
 }
 
-/** Maximum number of active recovery image entries (mirrors the boot image catalog cap). */
+/** Maximum number of active recovery image entries per architecture (mirrors the boot image catalog cap). */
 const MAX_RECOVERY_IMAGES = 5;
 
-type RecoveryImageSortKey = 'version' | 'size' | 'sha256' | 'created' | 'status';
+type RecoveryImageSortKey = 'version' | 'architecture' | 'size' | 'sha256' | 'created' | 'status';
 
 const RECOVERY_IMAGE_SORT_ACCESSORS: Record<RecoveryImageSortKey, (row: RecoveryImage) => string | number> = {
   version: row => row.version,
+  architecture: row => row.architecture ?? 'x64',
   size:    row => row.sizeBytes,
   sha256:  row => row.sha256Hash,
   created: row => row.createdAt,
@@ -111,10 +117,8 @@ export default function RecoveryImagesPage(): React.ReactElement {
     });
   };
 
-  const used      = images.length;
-  const remaining = Math.max(0, MAX_RECOVERY_IMAGES - used);
-  const atCapacity = remaining === 0;
-  const usedPct   = Math.min(100, Math.round((used / MAX_RECOVERY_IMAGES) * 100));
+  // Capacity and "latest" are per architecture: an ARM64 device gets the latest ARM64 WinRE.
+  const activeCounts = countByArchitecture(images);
   const sortedImages = sortRows(images, sort, RECOVERY_IMAGE_SORT_ACCESSORS);
 
   return (
@@ -135,43 +139,14 @@ export default function RecoveryImagesPage(): React.ReactElement {
       </div>
 
       {/* Capacity indicator */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3 sm:w-44">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Active entries</p>
-              <p className="text-2xl font-semibold tabular-nums">
-                {used}<span className="text-base font-normal text-muted-foreground"> / {MAX_RECOVERY_IMAGES}</span>
-              </p>
-            </div>
-          </div>
-          <div className="flex-1">
-            <div className="mb-2 flex items-center justify-between text-xs">
-              <span className={atCapacity ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
-                {atCapacity
-                  ? 'At capacity. The oldest entry is replaced on the next upload'
-                  : `${remaining} slot${remaining === 1 ? '' : 's'} remaining`}
-              </span>
-              <span className="tabular-nums text-muted-foreground">{usedPct}%</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={['h-full rounded-full transition-all', atCapacity ? 'bg-amber-500' : 'bg-primary'].join(' ')}
-                style={{ width: `${usedPct}%` }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <ArchitectureCapacityCard counts={activeCounts} max={MAX_RECOVERY_IMAGES} icon={ShieldCheck} />
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} />
+              <SortableHead label="Architecture" sortKey="architecture" sort={sort} onSort={toggleSort} />
               <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} />
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
@@ -181,10 +156,10 @@ export default function RecoveryImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSkeletonRows columns={isAdministrator ? 6 : 5} />
+              <TableSkeletonRows columns={isAdministrator ? 7 : 6} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={isAdministrator ? 6 : 5} className="p-0">
+                <TableCell colSpan={isAdministrator ? 7 : 6} className="p-0">
                   <EmptyState
                     icon={ShieldCheck}
                     title="No recovery images"
@@ -206,6 +181,9 @@ export default function RecoveryImagesPage(): React.ReactElement {
                     <p className="mt-0.5 font-normal text-xs text-muted-foreground">{img.description}</p>
                   )}
                 </TableCell>
+                <TableCell>
+                  <Badge variant="outline">{architectureLabel(img.architecture)}</Badge>
+                </TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell>
                   <CopyableId
@@ -223,7 +201,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                 </TableCell>
                 {isAdministrator && (
                   <TableCell>
-                    <Tooltip content={img.isLatestPublished ? 'Publish a replacement before deleting' : 'Delete'}>
+                    <Tooltip content={img.isLatestPublished ? `Publish a newer ${architectureLabel(img.architecture)} recovery image before deleting` : 'Delete'}>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -246,7 +224,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
 
       {uploadOpen && (
         <UploadRecoveryImageDialog
-          atCapacity={atCapacity}
+          activeCounts={activeCounts}
           existingVersions={images.map(img => img.version)}
           onClose={() => setUploadOpen(false)}
           onPublished={() => { setUploadOpen(false); void loadImages(); }}
@@ -259,7 +237,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
 type UploadStage = 'form' | 'hashing' | 'uploading' | 'publishing';
 
 interface UploadRecoveryImageDialogProps {
-  atCapacity: boolean;
+  activeCounts: Record<ImageArchitecture, number>;
   /** Versions already present in the catalog; the new version must not match any of these. */
   existingVersions: string[];
   onClose: () => void;
@@ -267,7 +245,7 @@ interface UploadRecoveryImageDialogProps {
 }
 
 /** Staged recovery image upload modal: hash → SAS upload → publish. */
-function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPublished }: UploadRecoveryImageDialogProps): React.ReactElement {
+function UploadRecoveryImageDialog({ activeCounts, existingVersions, onClose, onPublished }: UploadRecoveryImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
   // Tracks whether the current `version` value was populated automatically from the
   // selected file's name, so a subsequent file pick can safely replace it — but a
@@ -275,6 +253,8 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
   const [versionAutoFilled, setVersionAutoFilled] = useState(false);
   const [description, setDescription] = useState('');
   const [file, setFile]       = useState<File | null>(null);
+  const wimArchitecture = useWimArchitecture();
+  const { architecture } = wimArchitecture;
   const [stage, setStage]     = useState<UploadStage>('form');
   const [percent, setPercent] = useState(0);
   const [error, setError]     = useState<string | null>(null);
@@ -286,10 +266,11 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
   const busy = stage !== 'form';
   const trimmedVersion = version.trim();
   const duplicateVersion = isDuplicateVersion(trimmedVersion, existingVersions);
+  const atCapacity = architecture !== '' && activeCounts[architecture] >= MAX_RECOVERY_IMAGES;
 
   const handleSubmit = async () => {
-    if (!version.trim() || !file) {
-      setError('Provide a version and select a .wim file.');
+    if (!version.trim() || !file || architecture === '') {
+      setError('Provide a version, select a .wim file, and choose its architecture.');
       return;
     }
     if (duplicateVersion) {
@@ -311,7 +292,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
       setStage('publishing');
       setPublishJob(null);
       await publishRecoveryImageUpload(
-        { ...session, sha256Hash }, file.size, version.trim(), description,
+        { ...session, sha256Hash }, file.size, version.trim(), architecture, description,
         { onStatus: setPublishJob },
       );
 
@@ -344,7 +325,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
 
           {atCapacity && (
             <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-              The catalog is at capacity ({MAX_RECOVERY_IMAGES}). Publishing will replace the oldest entry.
+              The {architectureLabel(architecture)} catalog is at capacity ({MAX_RECOVERY_IMAGES}). Publishing will replace the oldest {architectureLabel(architecture)} entry.
             </p>
           )}
 
@@ -364,12 +345,18 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
                   if (validationError) {
                     setError(validationError);
                     setFile(null);
+                    void wimArchitecture.inspect(null);
                     e.target.value = '';
                     return;
                   }
                 }
                 setFile(selected);
                 setError(null);
+                void wimArchitecture.inspect(selected).then(unsupported => {
+                  if (!unsupported) return;
+                  setFile(null);
+                  setError(unsupported);
+                });
                 // Auto-fill the version from a date embedded in the filename, unless the
                 // operator has already typed their own version for this dialog session.
                 if (selected && (version.trim() === '' || versionAutoFilled)) {
@@ -406,6 +393,8 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
             )}
           </div>
 
+          <ArchitectureField id="recoveryImageArchitecture" state={wimArchitecture} hasFile={!!file} disabled={busy} />
+
           <div className="space-y-2">
             <Label htmlFor="recoveryImageDescription">Description (optional)</Label>
             <Input
@@ -422,7 +411,7 @@ function UploadRecoveryImageDialog({ atCapacity, existingVersions, onClose, onPu
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || duplicateVersion}>
+            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || duplicateVersion || architecture === ''}>
               {busy ? 'Working…' : 'Upload & publish'}
             </Button>
           </div>

@@ -85,7 +85,11 @@ public sealed partial class UsbPreparationService
         // during device registration. Trailing/optional so this round-trips through the elevated
         // worker's JSON IPC file with no changes needed there.
         Guid? SelectedLocationId = null,
-        string? SelectedLocationName = null);
+        string? SelectedLocationName = null,
+        // Defaults to x64 for callers/tests that predate architecture tracking (todo/arm64-support.md).
+        MachineArchitecture Architecture = MachineArchitecture.X64,
+        Guid? BootImageId = null,
+        bool PreparedForTesting = false);
 
     public sealed record PreparationResult(string BootDriveLetter, string? CacheDriveLetter);
 
@@ -129,7 +133,7 @@ public sealed partial class UsbPreparationService
         _deployer.ProgressChanged += OnDeployProgress;
         try
         {
-            await _deployer.DeployAsync(p.WimPath, bootDrive, ct);
+            await _deployer.DeployAsync(p.WimPath, bootDrive, p.Architecture, ct);
         }
         finally
         {
@@ -145,9 +149,12 @@ public sealed partial class UsbPreparationService
             PreparedAt       = DateTimeOffset.UtcNow,
             ToolVersion      = p.ToolVersion,
             BootImageVersion = p.BootImageVersion,
+            BootImageId      = p.BootImageId,
+            PreparedForTesting = p.PreparedForTesting,
             SelectedDiskId   = p.SelectedDiskId,
             LocationId       = p.SelectedLocationId,
             LocationName     = p.SelectedLocationName,
+            Architecture     = p.Architecture,
             PartitionSchema  = new Dictionary<string, object>
             {
                 ["bootDriveLetter"]  = bootDrive,
@@ -178,6 +185,7 @@ public sealed partial class UsbPreparationService
 
         var ipcDir = Path.Combine(Path.GetTempPath(), $"{ElevatedIpcDirPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(ipcDir);
+        ElevationHelper.WriteOwnerMarker(ipcDir);
         var paramsFile   = Path.Combine(ipcDir, "params.json");
         var progressFile = Path.Combine(ipcDir, "progress.txt");
         var resultFile   = Path.Combine(ipcDir, "result.json");
@@ -383,7 +391,12 @@ public sealed partial class UsbPreparationService
         try
         {
             foreach (var dir in Directory.GetDirectories(Path.GetTempPath(), $"{ElevatedIpcDirPrefix}*"))
+            {
+                if (ElevationHelper.IsOwnedByLiveProcess(dir))
+                    continue;
+
                 ElevationHelper.TryDeleteDirectoryRecursive(dir);
+            }
         }
         catch (Exception ex)
         {

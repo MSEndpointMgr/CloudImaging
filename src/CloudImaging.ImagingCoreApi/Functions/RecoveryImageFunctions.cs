@@ -155,6 +155,7 @@ public sealed partial class RecoveryImageFunctions
         sizeBytes = i.SizeBytes,
         storagePath = i.StoragePath,
         sha256Hash = i.Sha256Hash,
+        architecture = MachineArchitecturePlatform.Slug(i.Architecture),
         isLatestPublished = i.IsLatestPublished,
         isActive = i.IsActive,
     };

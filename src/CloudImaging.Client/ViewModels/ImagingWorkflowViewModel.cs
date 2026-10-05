@@ -138,6 +138,13 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 return;
             }
 
+            var deviceArchitecture = MachineArchitecturePlatform.HostArchitecture();
+            if (Services.ArchitecturePreflight.CheckOsImage(deviceArchitecture, _status.OsImageArchitecture) is { } architectureError)
+            {
+                await FailAsync(reporter, ImagingStepName.FormatDisk, "ARC", architectureError, ct);
+                return;
+            }
+
             _sasCoordinator = new Services.SasRefreshCoordinator(
                 _gatewayClient,
                 _sessionId,
@@ -310,7 +317,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.UpdateStep(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress);
             await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, ct: ct);
 
-            var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(ct);
+            var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(deviceArchitecture, ct);
+            // A mismatched WinRE would leave the OS unrecoverable; the OS image's own embedded WinRE always matches.
+            if (recoveryInfo is not null && !Services.ArchitecturePreflight.IsRecoveryImageCompatible(deviceArchitecture, recoveryInfo.Architecture))
+                recoveryInfo = null;
             var recoveryService = new Services.RecoveryImageService(pipelineLoggerFactory.CreateLogger<Services.RecoveryImageService>());
 
             if (recoveryInfo is null)

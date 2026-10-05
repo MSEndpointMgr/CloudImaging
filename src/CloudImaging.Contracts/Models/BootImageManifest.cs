@@ -15,13 +15,18 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class BootImageManifest
 {
-    public const string ManifestSchemaVersion = "1.0";
+    /// <summary>Bumped to 1.1 when <see cref="Architecture"/> was added (todo/arm64-support.md).
+    /// Manifests at 1.0 predate architecture tracking and are treated as x64.</summary>
+    public const string ManifestSchemaVersion = "1.1";
 
     public required string ManifestVersion { get; init; }
     public required string ImageVersion { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public string? WinPeVersion { get; init; }
     public string? ClientVersion { get; init; }
+
+    /// <summary>Target processor architecture this boot image was generated for (todo/arm64-support.md).</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 
     /// <summary>SHA-256 hex hash per embedded component (e.g. "cloudImagingClient", "brandingLogo", "bootMediaCertificate").</summary>
     public Dictionary<string, string> ComponentChecksums { get; init; } = [];

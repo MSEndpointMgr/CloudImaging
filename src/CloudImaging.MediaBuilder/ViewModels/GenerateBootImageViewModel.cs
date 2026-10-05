@@ -38,11 +38,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>Label of the one step that is skipped (not done) when no driver path is given.</summary>
     private const string DriverInjectionStepLabel = "Inject drivers (optional)";
 
+    /// <summary>Label of the one step that is skipped (not done) when no tools path is given.</summary>
+    private const string ToolsInjectionStepLabel = "Copy support tools (optional)";
+
     private bool _useGitHubSource = true;
     private string _localSourcePath = string.Empty;
     private string _outputFolderPath = GetDefaultOutputFolder();
     private string _driverRootPath = string.Empty;
+    private string _toolsRootPath = string.Empty;
     private bool _enableCommandPromptAccess;
+    private bool _isArm64Selected;
     private bool _isGenerating;
     private bool _isCancelling;
     private bool _isComplete;
@@ -101,6 +106,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         BrowseCommand      = new RelayCommand(_ => BrowseLocalPath());
         BrowseOutputCommand = new RelayCommand(_ => BrowseOutputFolder());
         BrowseDriverRootCommand = new RelayCommand(_ => BrowseDriverRoot());
+        BrowseToolsRootCommand = new RelayCommand(_ => BrowseToolsRoot());
         BackCommand        = new RelayCommand(_ => _navigateBack(), _ => !IsGenerating);
         NewGenerationCommand = new RelayCommand(_ => ResetToConfiguration(), _ => !IsGenerating);
         OpenOutputFolderCommand = new RelayCommand(_ => OpenOutputFolder(), _ => HasOutputWimPath);
@@ -141,6 +147,17 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     }
 
     /// <summary>
+    /// Optional root folder of pre-staged troubleshooting utilities to copy
+    /// into the boot image WIM at <c>X:\Tools</c>, for manual use from the command prompt
+    /// (FR-051d). Empty means nothing is copied.
+    /// </summary>
+    public string ToolsRootPath
+    {
+        get => _toolsRootPath;
+        set { _toolsRootPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
+    }
+
+    /// <summary>
     /// Opt-in (default off, FR-051d). When enabled, stamps <c>SupportTools:CommandPromptEnabled</c>
     /// into the Client's appsettings.json, which shows a "Command Prompt" button on the
     /// Operation Selection screen granting full unrestricted WinPE shell access. A deliberate
@@ -152,6 +169,38 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         get => _enableCommandPromptAccess;
         set { _enableCommandPromptAccess = value; OnPropertyChanged(); }
     }
+
+    /// <summary>
+    /// Target processor architecture for the generated boot image (todo/arm64-support.md,
+    /// Milestone 1). No implicit default toward either radio button is rendered in the view
+    /// (both are explicit) but the backing field defaults to x64 so an untouched view model
+    /// still behaves like every boot image generated before this feature existed.
+    /// </summary>
+    public bool IsX64Selected
+    {
+        get => !_isArm64Selected;
+        set
+        {
+            _isArm64Selected = !value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsArm64Selected));
+            OnPropertyChanged(nameof(SelectedArchitecture));
+        }
+    }
+
+    public bool IsArm64Selected
+    {
+        get => _isArm64Selected;
+        set
+        {
+            _isArm64Selected = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsX64Selected));
+            OnPropertyChanged(nameof(SelectedArchitecture));
+        }
+    }
+
+    public MachineArchitecture SelectedArchitecture => IsArm64Selected ? MachineArchitecture.Arm64 : MachineArchitecture.X64;
 
     public bool IsGenerating
     {
@@ -326,13 +375,15 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public bool CanGenerate => !IsGenerating
         && !string.IsNullOrWhiteSpace(OutputFolderPath)
         && (!UseLocalSource || Directory.Exists(LocalSourcePath))
-        && (string.IsNullOrWhiteSpace(DriverRootPath) || Directory.Exists(DriverRootPath));
+        && (string.IsNullOrWhiteSpace(DriverRootPath) || Directory.Exists(DriverRootPath))
+        && (string.IsNullOrWhiteSpace(ToolsRootPath) || Directory.Exists(ToolsRootPath));
 
     public ICommand GenerateCommand     { get; }
     public ICommand CancelCommand       { get; }
     public ICommand BrowseCommand       { get; }
     public ICommand BrowseOutputCommand { get; }
     public ICommand BrowseDriverRootCommand { get; }
+    public ICommand BrowseToolsRootCommand { get; }
     public ICommand BackCommand         { get; }
     public ICommand NewGenerationCommand { get; }
     public ICommand OpenOutputFolderCommand { get; }
@@ -401,7 +452,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 pfxBytes: null,
                 _outputFolderPath,
                 driverRootPath: string.IsNullOrWhiteSpace(_driverRootPath) ? null : _driverRootPath,
+                toolsRootPath: string.IsNullOrWhiteSpace(_toolsRootPath) ? null : _toolsRootPath,
                 enableCommandPromptAccess: _enableCommandPromptAccess,
+                architecture: SelectedArchitecture,
                 ct: _cts.Token);
 
             OutputWimPath = result.WimPath;
@@ -412,6 +465,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             WasCancelled    = true;
             ProgressMessage = "Generation cancelled.";
             AppendLogLine("Generation cancelled. Cleaning up (unmounting/discarding any in-progress WIM mount, deleting temp files).");
+            MarkActiveStepFailed();
         }
         catch (Exception ex)
         {
@@ -424,8 +478,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             // T160/FR-058: every failure path surfaces a support reference code so a technician
             // can quote it to support without needing log access.
             var code = SupportReferenceCode.ForMediaBuilder("GENBOOT", _currentStage);
-            ErrorMessage = string.Create(CultureInfo.InvariantCulture, $"{ex.Message} (Error reference: {code})");
+            ErrorMessage = string.Create(CultureInfo.InvariantCulture, $"{OperatorApiErrorDescription.Describe(ex)} (Error reference: {code})");
             AppendLogLine($"FAILED: {ErrorMessage}");
+            MarkActiveStepFailed();
         }
         finally
         {
@@ -487,7 +542,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _gitHubReleasesClient.ProgressChanged += OnProgress;
         try
         {
-            return await _gitHubReleasesClient.DownloadLatestClientAsync(_cts!.Token);
+            return await _gitHubReleasesClient.DownloadLatestClientAsync(SelectedArchitecture, _cts!.Token);
         }
         finally
         {
@@ -514,6 +569,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select driver root folder (optional)" };
         if (dialog.ShowDialog() == true)
             DriverRootPath = dialog.FolderName;
+    }
+
+    private void BrowseToolsRoot()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select support tools folder (optional)" };
+        if (dialog.ShowDialog() == true)
+            ToolsRootPath = dialog.FolderName;
     }
 
     /// <summary>Returns to the configuration view to start a fresh generation.</summary>
@@ -592,7 +654,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         new("Copy WinPE base files", 15),
         new("Mount WIM for customization", 30),
         new("Inject Cloud Imaging Client", 50),
-        new(DriverInjectionStepLabel, 70),
+        new(DriverInjectionStepLabel, 61, "Skipped (no drivers to inject)"),
+        new(ToolsInjectionStepLabel, 63, "Skipped (no support tools to copy)"),
         new("Unmount and commit WIM", 75),
         new("Copy output and hash", 88),
         new("Complete", 100),
@@ -613,16 +676,31 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
             if (isCompleted)
             {
-                // The driver-injection step is optional (FR-051c) — when no driver root path was
-                // given nothing was actually injected, so it reads as Skipped rather than Done.
+                // The driver-injection and support-tools steps are optional (FR-051c/FR-051d) —
+                // when no path was given for one, nothing was actually done for it, so it reads
+                // as Skipped rather than Done.
                 var noDriversToInject = step.Label == DriverInjectionStepLabel && string.IsNullOrWhiteSpace(_driverRootPath);
-                step.State = noDriversToInject ? GenerationStepState.Skipped : GenerationStepState.Done;
+                var noToolsToCopy = step.Label == ToolsInjectionStepLabel && string.IsNullOrWhiteSpace(_toolsRootPath);
+                step.State = (noDriversToInject || noToolsToCopy) ? GenerationStepState.Skipped : GenerationStepState.Done;
             }
             else if (percent >= step.StartPercent)
                 step.State = GenerationStepState.Active;
             else
                 step.State = GenerationStepState.Pending;
         }
+    }
+
+    /// <summary>
+    /// Called when generation ends in error or cancellation: the step that was still
+    /// <see cref="GenerationStepState.Active"/> never reached <see cref="GenerationStepState.Done"/>,
+    /// so left alone it would keep rendering as "in progress" forever alongside the terminal
+    /// failed/cancelled state shown above it. Marks it (there's at most one) Failed instead.
+    /// </summary>
+    private void MarkActiveStepFailed()
+    {
+        var activeStep = Steps.FirstOrDefault(s => s.State == GenerationStepState.Active);
+        if (activeStep is not null)
+            activeStep.State = GenerationStepState.Failed;
     }
 
     /// <summary>
@@ -662,6 +740,9 @@ public enum GenerationStepState
 
     /// <summary>Step was bypassed because its optional input was not provided (e.g. no drivers to inject).</summary>
     Skipped,
+
+    /// <summary>Generation ended (error or cancellation) while this was the active step.</summary>
+    Failed,
 }
 
 /// <summary>
@@ -669,7 +750,7 @@ public enum GenerationStepState
 /// view. <see cref="StartPercent"/> is the overall-progress percentage at which the step
 /// becomes active (see GenerateBootImageViewModel.UpdateSteps).
 /// </summary>
-public sealed class GenerationStep(string label, int startPercent) : INotifyPropertyChanged
+public sealed class GenerationStep(string label, int startPercent, string? skippedCaption = null) : INotifyPropertyChanged
 {
     private GenerationStepState _state = GenerationStepState.Pending;
 
@@ -694,13 +775,14 @@ public sealed class GenerationStep(string label, int startPercent) : INotifyProp
     public bool IsSkipped => _state == GenerationStepState.Skipped;
 
     /// <summary>Short explanatory line shown under a skipped step; null for every other state.</summary>
-    public string? Caption => IsSkipped ? "Skipped (no drivers to inject)" : null;
+    public string? Caption => IsSkipped ? skippedCaption ?? "Skipped" : null;
 
-    /// <summary>Symbol shown next to the step label: done ✓, active ▶, skipped –, pending ○.</summary>
+    /// <summary>Symbol shown next to the step label: done ✓, active ▶, failed ✕, skipped –, pending ○.</summary>
     public string Glyph => _state switch
     {
         GenerationStepState.Done    => "\u2713", // ✓
         GenerationStepState.Active  => "\u25B6", // ▶
+        GenerationStepState.Failed  => "\u2715", // ✕
         GenerationStepState.Skipped => "\u2013", // –
         _                           => "\u25CB", // ○
     };

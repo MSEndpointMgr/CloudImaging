@@ -20,4 +20,7 @@ public sealed class RecoveryImage
 
     /// <summary>SHA256 hash of the .wim blob for cache/integrity validation.</summary>
     public required string Sha256Hash { get; init; }
+
+    /// <summary>Target processor architecture; latest and capacity are tracked per architecture.</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 }

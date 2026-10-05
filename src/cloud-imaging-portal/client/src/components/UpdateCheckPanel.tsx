@@ -78,11 +78,17 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4 rounded-md border border-border bg-muted/30 p-4">
+        <div className="grid grid-cols-1 gap-4 rounded-md border border-border bg-muted/30 p-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">Environment type</p>
             <p className="mt-0.5 font-mono text-sm">
               {loading ? '…' : status?.environmentLabel ?? 'Unknown'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Current version</p>
+            <p className="mt-0.5 font-mono text-sm">
+              {loading ? '…' : status?.current ? displayVersion(status.current) : 'Unknown'}
             </p>
           </div>
           <div>

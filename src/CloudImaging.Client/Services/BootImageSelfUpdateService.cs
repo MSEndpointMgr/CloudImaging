@@ -66,7 +66,11 @@ public sealed partial class BootImageSelfUpdateService
                 return;
             }
 
-            var latest = await _gateway.GetLatestBootImageAsync(ct);
+            // Only test sticks identify their image: the gateway then holds them on it while it is pre-production.
+            var latest = await _gateway.GetLatestBootImageAsync(
+                currentManifest.Architecture ?? MachineArchitecture.X64,
+                currentManifest.PreparedForTesting ? currentManifest.BootImageId : null,
+                ct);
             if (latest is null)
             {
                 LogNoLatestBootImageAvailable(_logger);
@@ -80,11 +84,11 @@ public sealed partial class BootImageSelfUpdateService
             }
 
             // ARM64 milestone groundwork (todo/arm64-support.md #8): reject a mismatched
-            // architecture before downloading anything. Absent values default to "x64", the
+            // architecture before downloading anything. Absent values default to X64, the
             // only architecture that exists today, so older manifests/responses are unaffected.
             if (!ArchitecturesMatch(currentManifest.Architecture, latest.Architecture))
             {
-                LogArchitectureMismatch(_logger, currentManifest.Architecture ?? "x64", latest.Architecture ?? "x64");
+                LogArchitectureMismatch(_logger, currentManifest.Architecture ?? MachineArchitecture.X64, latest.Architecture ?? MachineArchitecture.X64);
                 return;
             }
 
@@ -105,7 +109,7 @@ public sealed partial class BootImageSelfUpdateService
                 var destWimPath = Path.Combine(bootDrive, "sources", "boot.wim");
                 File.Copy(tempWimPath, destWimPath, overwrite: true);
 
-                var updatedManifest = BuildUpdatedManifest(currentManifest, latest.Version);
+                var updatedManifest = BuildUpdatedManifest(currentManifest, latest.Version, latest.BootImageId);
                 await File.WriteAllTextAsync(
                     manifestPath,
                     JsonSerializer.Serialize(updatedManifest, ManifestWriteOptions),
@@ -132,13 +136,15 @@ public sealed partial class BootImageSelfUpdateService
     }
 
     /// <summary>Copies every field from <paramref name="current"/> except <c>BootImageVersion</c>, which becomes <paramref name="newVersion"/>. Keeping this as its own method is what makes field preservation (e.g. LocationId/LocationName) unit-testable without a real BOOT volume.</summary>
-    private static UsbPreparationManifest BuildUpdatedManifest(UsbPreparationManifest current, string newVersion) =>
+    private static UsbPreparationManifest BuildUpdatedManifest(UsbPreparationManifest current, string newVersion, Guid? newBootImageId) =>
         new()
         {
             ManifestVersion = current.ManifestVersion,
             PreparedAt = current.PreparedAt,
             ToolVersion = current.ToolVersion,
             BootImageVersion = newVersion,
+            BootImageId = newBootImageId,
+            PreparedForTesting = false,
             SelectedDiskId = current.SelectedDiskId,
             LocationId = current.LocationId,
             LocationName = current.LocationName,
@@ -148,9 +154,9 @@ public sealed partial class BootImageSelfUpdateService
             AutoStartConfigured = current.AutoStartConfigured,
         };
 
-    /// <summary>Null on either side means "x64" (pre-architecture-tracking manifests/responses).</summary>
-    private static bool ArchitecturesMatch(string? currentArchitecture, string? latestArchitecture) =>
-        string.Equals(currentArchitecture ?? "x64", latestArchitecture ?? "x64", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Null on either side means <see cref="MachineArchitecture.X64"/> (pre-architecture-tracking manifests/responses).</summary>
+    private static bool ArchitecturesMatch(MachineArchitecture? currentArchitecture, MachineArchitecture? latestArchitecture) =>
+        (currentArchitecture ?? MachineArchitecture.X64) == (latestArchitecture ?? MachineArchitecture.X64);
 
     /// <summary>
     /// Locates the BOOT-labelled FAT32 volume this Client is running from — mirrors
@@ -195,7 +201,7 @@ public sealed partial class BootImageSelfUpdateService
     private static partial void LogNoLatestBootImageAvailable(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: architecture mismatch (current {CurrentArchitecture}, latest {LatestArchitecture}) — aborting, keeping the current boot.wim.")]
-    private static partial void LogArchitectureMismatch(ILogger logger, string currentArchitecture, string latestArchitecture);
+    private static partial void LogArchitectureMismatch(ILogger logger, MachineArchitecture currentArchitecture, MachineArchitecture latestArchitecture);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image self-update: already running the latest version {Version}.")]
     private static partial void LogAlreadyUpToDate(ILogger logger, string version);
