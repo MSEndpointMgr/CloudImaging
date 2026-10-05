@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Trash2, Upload, X, HardDrive } from 'lucide-react';
+import { Trash2, Upload, X, HardDrive, Rocket, Undo2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -21,10 +21,18 @@ import { fileAccept, WIM_ONLY_EXTENSIONS, validateImageFile } from '../lib/image
 import { computeSha256Streaming } from '../lib/sha256.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { suggestVersionFromFileName, isDuplicateVersion } from '../lib/versionSuggestion.ts';
+import { architectureLabel, countByArchitecture } from '../lib/wimMetadata.ts';
+import { useWimArchitecture } from '../lib/useWimArchitecture.ts';
+import { ArchitectureField } from '../components/ArchitectureField.tsx';
+import { ArchitectureCapacityCard } from '../components/ArchitectureCapacityCard.tsx';
+import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
+import { BOOT_IMAGE_STAGE_LABELS, bootImageStage, demoteFallback } from '../lib/bootImageStage.ts';
+import type { BadgeProps } from '../components/ui/badge';
 import {
   startBootImageUpload,
   uploadFileToBlobStorage,
   publishBootImageUpload,
+  type BootImageArchitecture,
 } from '../services/bootImageUploadService.ts';
 import {
   uploadJobProgressPercent,
@@ -38,22 +46,34 @@ interface BootImage {
   createdAt: string;
   sizeBytes: number;
   sha256Hash: string;
+  architecture: 'x64' | 'arm64';
   isLatestPublished: boolean;
+  isProduction?: boolean;
+  promotedAt?: string | null;
   isActive: boolean;
 }
 
-type BootImageSortKey = 'version' | 'size' | 'sha256' | 'created' | 'status';
+type BootImageSortKey = 'version' | 'size' | 'sha256' | 'created' | 'status' | 'architecture';
 
 const BOOT_IMAGE_SORT_ACCESSORS: Record<BootImageSortKey, (row: BootImage) => string | number> = {
   version: row => row.version,
   size:    row => row.sizeBytes,
   sha256:  row => row.sha256Hash,
   created: row => row.createdAt,
-  status:  row => (row.isLatestPublished ? 'Latest' : row.isActive ? 'Active' : ''),
+  status:  row => BOOT_IMAGE_STAGE_LABELS[bootImageStage(row)],
+  architecture: row => row.architecture,
 };
 
-/** Maximum number of active boot image entries (FR-063). */
+const STAGE_BADGE: Record<ReturnType<typeof bootImageStage>, BadgeProps['variant']> = {
+  latest: 'info',
+  production: 'success',
+  preProduction: 'warning',
+};
+
+/** Maximum number of active boot image entries per architecture (FR-063). */
 const MAX_BOOT_IMAGES = 5;
+
+const archLabel = architectureLabel;
 
 function fmtSize(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
@@ -66,6 +86,8 @@ export default function BootImagesPage(): React.ReactElement {
   const [images, setImages]   = useState<BootImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [stageChange, setStageChange] = useState<{ action: 'promote' | 'demote'; image: BootImage } | null>(null);
+  const [changingStage, setChangingStage] = useState(false);
   const [sort, toggleSort] = useSort<BootImageSortKey>({ key: 'created', dir: 'desc' });
 
   const loadImages = async () => {
@@ -105,11 +127,84 @@ export default function BootImagesPage(): React.ReactElement {
     });
   };
 
-  const used      = images.length;
-  const remaining = Math.max(0, MAX_BOOT_IMAGES - used);
-  const atCapacity = remaining === 0;
-  const usedPct   = Math.min(100, Math.round((used / MAX_BOOT_IMAGES) * 100));
+  // Capacity and "latest" are tracked per architecture, so publishing ARM64 never displaces x64.
+  const activeCounts = countByArchitecture(images);
   const sortedImages = sortRows(images, sort, BOOT_IMAGE_SORT_ACCESSORS);
+
+  const handleStageChange = async () => {
+    if (!stageChange) return;
+    const { action, image } = stageChange;
+    setChangingStage(true);
+    try {
+      const res = await apiFetch(`/api/boot-images/${image.bootImageId}/${action}`, { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        notify({
+          status: 'success',
+          title: action === 'promote'
+            ? `v${image.version} is now the latest ${archLabel(image.architecture)} boot image.`
+            : `v${image.version} is back in pre-production.`,
+        });
+        setStageChange(null);
+        void loadImages();
+        return;
+      }
+      notify({
+        status: 'error',
+        title: action === 'promote' ? 'Failed to promote boot image.' : 'Failed to demote boot image.',
+        description: await extractErrorDetail(res, `The server responded with status ${String(res.status)}.`),
+      });
+    } catch {
+      notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' });
+    } finally {
+      setChangingStage(false);
+    }
+  };
+
+  const demoteCopy = (candidate: BootImage): ConfirmImpactCopy => {
+    const arch = archLabel(candidate.architecture);
+    const title = `Demote v${candidate.version} to pre-production?`;
+    if (!candidate.isLatestPublished) {
+      return {
+        confirmTitle: title,
+        impact: 'Technicians can no longer prepare USB devices with it. Only Administrators see it in Media Builder. USB devices are not affected.',
+        confirmLabel: 'Demote',
+        destructive: false,
+      };
+    }
+    const fallback = demoteFallback(images, candidate);
+    return fallback
+      ? {
+        confirmTitle: title,
+        impact: `Technicians can no longer use it. v${fallback.version} becomes the latest ${arch} image again, and ${arch} USB devices that updated to v${candidate.version} go back to v${fallback.version} on their next boot.`,
+        confirmLabel: 'Demote',
+        destructive: true,
+      }
+      : {
+        confirmTitle: title,
+        impact: `No other production ${arch} boot image exists. Technicians will have no ${arch} image to prepare USB devices with, and ${arch} USB devices keep the image they have until another is promoted.`,
+        confirmLabel: 'Demote',
+        destructive: true,
+      };
+  };
+
+  const promoteCopy = (candidate: BootImage): ConfirmImpactCopy => {
+    const arch = archLabel(candidate.architecture);
+    const current = images.find(img => img.isLatestPublished && img.architecture === candidate.architecture);
+    const replaces = current ? ` It replaces v${current.version} as the latest ${arch} image.` : '';
+    return bootImageStage(candidate) === 'preProduction'
+      ? {
+        confirmTitle: `Promote v${candidate.version} to production?`,
+        impact: `Technicians can prepare USB devices with it, and ${arch} USB devices update to it on their next boot.${replaces} Promote only after testing it on a device.`,
+        confirmLabel: 'Promote',
+        destructive: false,
+      }
+      : {
+        confirmTitle: `Make v${candidate.version} the latest ${arch} boot image?`,
+        impact: `${arch} USB devices update to it on their next boot.${replaces}`,
+        confirmLabel: 'Make latest',
+        destructive: false,
+      };
+  };
 
   return (
     <>
@@ -124,43 +219,14 @@ export default function BootImagesPage(): React.ReactElement {
       </div>
 
       {/* Capacity indicator (FR-063) */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3 sm:w-44">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-              <HardDrive className="h-5 w-5" aria-hidden="true" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Active entries</p>
-              <p className="text-2xl font-semibold tabular-nums">
-                {used}<span className="text-base font-normal text-muted-foreground"> / {MAX_BOOT_IMAGES}</span>
-              </p>
-            </div>
-          </div>
-          <div className="flex-1">
-            <div className="mb-2 flex items-center justify-between text-xs">
-              <span className={atCapacity ? 'font-medium text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
-                {atCapacity
-                  ? 'At capacity. The oldest entry is replaced on the next upload'
-                  : `${remaining} slot${remaining === 1 ? '' : 's'} remaining`}
-              </span>
-              <span className="tabular-nums text-muted-foreground">{usedPct}%</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={['h-full rounded-full transition-all', atCapacity ? 'bg-amber-500' : 'bg-primary'].join(' ')}
-                style={{ width: `${usedPct}%` }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <ArchitectureCapacityCard counts={activeCounts} max={MAX_BOOT_IMAGES} icon={HardDrive} />
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} />
+              <SortableHead label="Architecture" sortKey="architecture" sort={sort} onSort={toggleSort} />
               <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} />
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
@@ -170,14 +236,14 @@ export default function BootImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSkeletonRows columns={isAdministrator ? 6 : 5} />
+              <TableSkeletonRows columns={isAdministrator ? 7 : 6} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={isAdministrator ? 6 : 5} className="p-0">
+                <TableCell colSpan={isAdministrator ? 7 : 6} className="p-0">
                   <EmptyState
                     icon={HardDrive}
                     title="No boot images"
-                    description="Generate a boot image in the Media Builder app, then upload the WIM file here to publish it."
+                    description="Generate a boot image in the Media Builder app, then upload the WIM file here. It starts in pre-production so you can test it before promoting it."
                     action={isAdministrator ? (
                       <Button onClick={() => setUploadOpen(true)}>
                         <Upload className="h-4 w-4" />
@@ -190,6 +256,9 @@ export default function BootImagesPage(): React.ReactElement {
             ) : sortedImages.map(img => (
               <TableRow key={img.bootImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{archLabel(img.architecture)}</Badge>
+                </TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell>
                   <CopyableId
@@ -201,29 +270,51 @@ export default function BootImagesPage(): React.ReactElement {
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground"><RelativeTime value={img.createdAt} /></TableCell>
                 <TableCell>
-                  {img.isLatestPublished
-                    ? <Badge variant="info" dot>Latest</Badge>
-                    : <Badge variant="muted" dot>Active</Badge>}
+                  <Badge variant={STAGE_BADGE[bootImageStage(img)]} dot>{BOOT_IMAGE_STAGE_LABELS[bootImageStage(img)]}</Badge>
                 </TableCell>
                 {isAdministrator && (
                   <TableCell>
-                    {/*
-                      The currently published entry cannot be deleted — Imaging Core rejects it
-                      with 409 until a replacement is published — so the action is disabled here
-                      rather than offering a click that can only fail (mirrors Recovery Images).
-                    */}
-                    <Tooltip content={img.isLatestPublished ? 'Publish a replacement before deleting' : 'Delete'}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Delete boot image"
-                        disabled={img.isLatestPublished}
-                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => void handleDelete(img.bootImageId)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </Tooltip>
+                    <div className="flex items-center gap-1">
+                      {!img.isLatestPublished && (
+                        <Tooltip content={bootImageStage(img) === 'preProduction' ? 'Promote to production' : `Make latest ${archLabel(img.architecture)} image`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Promote boot image ${img.version}`}
+                            className="text-muted-foreground hover:text-primary"
+                            onClick={() => setStageChange({ action: 'promote', image: img })}
+                          >
+                            <Rocket className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
+                      )}
+                      {bootImageStage(img) !== 'preProduction' && (
+                        <Tooltip content="Demote to pre-production">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Demote boot image ${img.version}`}
+                            className="text-muted-foreground hover:text-primary"
+                            onClick={() => setStageChange({ action: 'demote', image: img })}
+                          >
+                            <Undo2 className="h-4 w-4" />
+                          </Button>
+                        </Tooltip>
+                      )}
+                      {/* The latest entry cannot be deleted (Imaging Core returns 409) until another is promoted. */}
+                      <Tooltip content={img.isLatestPublished ? `Promote another ${archLabel(img.architecture)} boot image before deleting` : 'Delete'}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Delete boot image"
+                          disabled={img.isLatestPublished}
+                          className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => void handleDelete(img.bootImageId)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </Tooltip>
+                    </div>
                   </TableCell>
                 )}
               </TableRow>
@@ -235,10 +326,28 @@ export default function BootImagesPage(): React.ReactElement {
 
       {uploadOpen && (
         <UploadBootImageDialog
-          atCapacity={atCapacity}
+          activeCounts={activeCounts}
           existingVersions={images.map(img => img.version)}
           onClose={() => setUploadOpen(false)}
-          onPublished={() => { setUploadOpen(false); void loadImages(); }}
+          onPublished={() => {
+            setUploadOpen(false);
+            notify({
+              status: 'success',
+              title: 'Boot image uploaded in pre-production.',
+              description: 'Prepare a USB device with it in Media Builder, test it, then promote it here.',
+            });
+            void loadImages();
+          }}
+        />
+      )}
+
+      {stageChange && (
+        <ConfirmImpactDialog
+          copy={stageChange.action === 'promote' ? promoteCopy(stageChange.image) : demoteCopy(stageChange.image)}
+          busy={changingStage}
+          onCancel={() => setStageChange(null)}
+          onConfirm={() => void handleStageChange()}
+          titleId="boot-image-stage-change-title"
         />
       )}
     </>
@@ -248,7 +357,8 @@ export default function BootImagesPage(): React.ReactElement {
 type UploadStage = 'form' | 'hashing' | 'uploading' | 'publishing';
 
 interface UploadBootImageDialogProps {
-  atCapacity: boolean;
+  /** Active catalog entries per architecture; capacity is enforced per architecture. */
+  activeCounts: Record<BootImageArchitecture, number>;
   /** Versions already present in the catalog; the new version must not match any of these. */
   existingVersions: string[];
   onClose: () => void;
@@ -256,12 +366,14 @@ interface UploadBootImageDialogProps {
 }
 
 /** Staged boot image upload modal: hash → SAS upload → publish (T128, FR-063). */
-function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublished }: UploadBootImageDialogProps): React.ReactElement {
+function UploadBootImageDialog({ activeCounts, existingVersions, onClose, onPublished }: UploadBootImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
   // Tracks whether the current `version` value was populated automatically from the
   // selected file's name, so a subsequent file pick can safely replace it — but a
   // manual edit to the field immediately "claims" it and stops any further auto-fill.
   const [versionAutoFilled, setVersionAutoFilled] = useState(false);
+  const wimArchitecture = useWimArchitecture();
+  const { architecture } = wimArchitecture;
   const [file, setFile]       = useState<File | null>(null);
   const [stage, setStage]     = useState<UploadStage>('form');
   const [percent, setPercent] = useState(0);
@@ -274,10 +386,19 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
   const busy = stage !== 'form';
   const trimmedVersion = version.trim();
   const duplicateVersion = isDuplicateVersion(trimmedVersion, existingVersions);
+  const atCapacity = architecture !== '' && activeCounts[architecture] >= MAX_BOOT_IMAGES;
+
+  const handleFileSelected = async (selected: File | null) => {
+    const unsupported = await wimArchitecture.inspect(selected);
+    if (unsupported) {
+      setFile(null);
+      setError(unsupported);
+    }
+  };
 
   const handleSubmit = async () => {
-    if (!version.trim() || !file) {
-      setError('Provide a version and select a .wim file.');
+    if (!version.trim() || !file || architecture === '') {
+      setError('Provide a version, select a .wim file, and choose its architecture.');
       return;
     }
     if (duplicateVersion) {
@@ -299,7 +420,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
       setStage('publishing');
       setPublishJob(null);
       await publishBootImageUpload(
-        { ...session, sha256Hash }, file.size, version.trim(),
+        { ...session, sha256Hash }, file.size, version.trim(), architecture,
         { onStatus: setPublishJob },
       );
 
@@ -332,7 +453,7 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
 
           {atCapacity && (
             <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-              The catalog is at capacity ({MAX_BOOT_IMAGES}). Publishing will replace the oldest entry.
+              The {archLabel(architecture)} catalog is at capacity ({MAX_BOOT_IMAGES}). Publishing will replace the oldest {archLabel(architecture)} entry.
             </p>
           )}
 
@@ -352,12 +473,14 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
                   if (validationError) {
                     setError(validationError);
                     setFile(null);
+                    void wimArchitecture.inspect(null);
                     e.target.value = '';
                     return;
                   }
                 }
                 setFile(selected);
                 setError(null);
+                void handleFileSelected(selected);
                 // Auto-fill the version from a date embedded in the filename (e.g. the
                 // `cloud-imaging-boot-20260827-170846.wim` Media Builder produces), unless
                 // the operator has already typed their own version for this dialog session.
@@ -395,12 +518,14 @@ function UploadBootImageDialog({ atCapacity, existingVersions, onClose, onPublis
             )}
           </div>
 
+          <ArchitectureField id="bootImageArchitecture" state={wimArchitecture} hasFile={!!file} disabled={busy} />
+
           {busy && <UploadProgressBar percent={stagePercent} label={stageLabel} />}
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || duplicateVersion}>
+            <Button onClick={() => void handleSubmit()} disabled={busy || !version.trim() || !file || duplicateVersion || architecture === ''}>
               {busy ? 'Working…' : 'Upload & publish'}
             </Button>
           </div>

@@ -22,7 +22,7 @@
 
         <ui:TitleBar Grid.Row="0"
                      Title="Cloud Imaging Media Builder"
-                     ShowMaximize="False">
+                     ShowMaximize="True">
             <ui:TitleBar.Icon>
                 <ui:ImageIcon Source="/Assets/taskbar.ico" />
             </ui:TitleBar.Icon>

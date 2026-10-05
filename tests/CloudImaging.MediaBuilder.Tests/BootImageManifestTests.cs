@@ -105,6 +105,38 @@ public sealed class BootImageManifestTests
     }
 
     [Fact]
+    public void Build_RecordsSupportToolFilesInjected_AndToolsRootPath_WhenProvided()
+    {
+        var manifest = BootImageManifestService.Build(
+            clientDestDir: Directory.CreateTempSubdirectory("ci-manifest-test-").FullName,
+            imageVersion: "20260101-000000",
+            driversInjectedCount: 0,
+            driverRootPath: null,
+            logoBytes: null,
+            pfxBytes: null,
+            toolsInjectedCount: 2,
+            toolsRootPath: @"C:\tools");
+
+        manifest.DeploymentMetadata["supportToolFilesInjected"].Should().Be(2);
+        manifest.DeploymentMetadata["toolsRootPath"].Should().Be(@"C:\tools");
+    }
+
+    [Fact]
+    public void Build_RecordsSupportToolFilesInjected_AsZero_ByDefault()
+    {
+        var manifest = BootImageManifestService.Build(
+            clientDestDir: Directory.CreateTempSubdirectory("ci-manifest-test-").FullName,
+            imageVersion: "20260101-000000",
+            driversInjectedCount: 0,
+            driverRootPath: null,
+            logoBytes: null,
+            pfxBytes: null);
+
+        manifest.DeploymentMetadata["supportToolFilesInjected"].Should().Be(0);
+        manifest.DeploymentMetadata["toolsRootPath"].Should().Be(string.Empty);
+    }
+
+    [Fact]
     public void Build_DoesNotSignOrCertifyAnything()
     {
         // Option B (rescoped FR-051): the manifest has no signature field at all.
@@ -149,6 +181,37 @@ public sealed class BootImageManifestTests
             commandPromptEnabled: true);
 
         manifest.SupportToolsEnabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Build_DefaultsArchitectureToX64_WhenNotSpecified()
+    {
+        // Milestone 1 (todo/arm64-support.md): existing callers/tests that don't pass an
+        // architecture must keep behaving as x64, unchanged.
+        var manifest = BootImageManifestService.Build(
+            clientDestDir: Directory.CreateTempSubdirectory("ci-manifest-test-").FullName,
+            imageVersion: "20260101-000000",
+            driversInjectedCount: 0,
+            driverRootPath: null,
+            logoBytes: null,
+            pfxBytes: null);
+
+        manifest.Architecture.Should().Be(MachineArchitecture.X64);
+    }
+
+    [Fact]
+    public void Build_RecordsArchitecture_WhenArm64IsSpecified()
+    {
+        var manifest = BootImageManifestService.Build(
+            clientDestDir: Directory.CreateTempSubdirectory("ci-manifest-test-").FullName,
+            imageVersion: "20260101-000000",
+            driversInjectedCount: 0,
+            driverRootPath: null,
+            logoBytes: null,
+            pfxBytes: null,
+            architecture: MachineArchitecture.Arm64);
+
+        manifest.Architecture.Should().Be(MachineArchitecture.Arm64);
     }
 
     [Fact]

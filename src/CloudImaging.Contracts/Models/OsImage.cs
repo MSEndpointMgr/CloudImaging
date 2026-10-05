@@ -14,4 +14,7 @@ public sealed class OsImage
 
     /// <summary>SHA256 hash of the WIM/ESD blob for cache validation (FR-009a, FR-009b).</summary>
     public required string Sha256Hash { get; init; }
+
+    /// <summary>Target processor architecture; x64 for catalog entries that predate it.</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 }

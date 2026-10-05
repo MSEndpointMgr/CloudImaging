@@ -37,7 +37,10 @@ public static class BootImageManifestService
         string? driverRootPath,
         byte[]? logoBytes,
         byte[]? pfxBytes,
-        bool commandPromptEnabled = false)
+        bool commandPromptEnabled = false,
+        int toolsInjectedCount = 0,
+        string? toolsRootPath = null,
+        MachineArchitecture architecture = MachineArchitecture.X64)
     {
         var componentChecksums = new Dictionary<string, string>();
         string? clientVersion = null;
@@ -63,14 +66,18 @@ public static class BootImageManifestService
             CreatedAt = DateTimeOffset.UtcNow,
             ClientVersion = clientVersion,
             ComponentChecksums = componentChecksums,
+            Architecture = architecture,
             DeploymentMetadata = new Dictionary<string, object>
             {
                 ["driverPackagesInjected"] = driversInjectedCount,
                 ["driverRootPath"] = driverRootPath ?? string.Empty,
+                ["supportToolFilesInjected"] = toolsInjectedCount,
+                ["toolsRootPath"] = toolsRootPath ?? string.Empty,
             },
             SupportToolsEnabled = commandPromptEnabled,
         };
     }
+
 
     /// <summary>Serializes <paramref name="manifest"/> to <c>{mountDir}\ci-manifest.json</c>.</summary>
     public static async Task EmbedAsync(string mountDir, BootImageManifest manifest, CancellationToken ct = default)

@@ -212,17 +212,25 @@ public sealed partial class DeviceGatewayApiClient
     /// device-session token — so it can run independently of session bootstrap. Returns null on
     /// any non-success response (no active session/token is required, but network/service
     /// errors are treated as "nothing to update" rather than thrown, since this check must never
-    /// block Client startup).
+    /// block Client startup). Also null on 204, which means this stick runs a pre-production
+    /// image that must not be replaced.
     /// </summary>
-    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(CancellationToken ct = default)
+    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, Guid? currentBootImageId = null, CancellationToken ct = default)
     {
-        LogHttpRequest(_logger, "GET", "/api/v1/boot-image/latest");
-        var response = await _http.GetAsync("/api/v1/boot-image/latest", ct);
-        LogHttpResponse(_logger, "GET", "/api/v1/boot-image/latest", (int)response.StatusCode);
+        var path = $"/api/v1/boot-image/latest?architecture={MachineArchitecturePlatform.Slug(architecture)}"
+            + (currentBootImageId is { } current ? $"&currentBootImageId={current}" : string.Empty);
+        LogHttpRequest(_logger, "GET", path);
+        var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
             var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
-            LogHttpRequestFailed(_logger, "GET", "/api/v1/boot-image/latest", (int)response.StatusCode, failure.ProblemType, failure.Message);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            return null;
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+        {
             return null;
         }
 
@@ -241,15 +249,16 @@ public sealed partial class DeviceGatewayApiClient
     /// to apply the recovery image to the Recovery partition. Requires the device-session token
     /// Bearer (set via <see cref="SetSessionToken"/>). Returns null on any non-success response.
     /// </summary>
-    public async Task<LatestRecoveryImageInfo?> GetLatestRecoveryImageAsync(CancellationToken ct = default)
+    public async Task<LatestRecoveryImageInfo?> GetLatestRecoveryImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, CancellationToken ct = default)
     {
-        LogHttpRequest(_logger, "GET", "/api/v1/recovery-image/latest");
-        var response = await _http.GetAsync("/api/v1/recovery-image/latest", ct);
-        LogHttpResponse(_logger, "GET", "/api/v1/recovery-image/latest", (int)response.StatusCode);
+        var path = $"/api/v1/recovery-image/latest?architecture={MachineArchitecturePlatform.Slug(architecture)}";
+        LogHttpRequest(_logger, "GET", path);
+        var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
             var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
-            LogHttpRequestFailed(_logger, "GET", "/api/v1/recovery-image/latest", (int)response.StatusCode, failure.ProblemType, failure.Message);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
             return null;
         }
 
@@ -367,6 +376,9 @@ public sealed class SessionStatusResponse
     public string? SasTokenUrl { get; init; }
     public string? SasTokenUrlExpiresAt { get; init; }
     public string? Sha256Hash { get; init; }
+
+    /// <summary>Architecture of the assigned OS image; null from backends that predate it (x64).</summary>
+    public MachineArchitecture? OsImageArchitecture { get; init; }
 
     /// <summary>
     /// The partitioning scheme snapshotted onto this session at creation time. Null only if the

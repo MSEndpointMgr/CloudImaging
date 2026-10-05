@@ -148,6 +148,7 @@ public sealed partial class CreateSessionFunction
                 LocationId = finalSession.LocationId,
                 LocationName = finalSession.LocationName,
                 PreFlightAuthorizationResult = finalSession.PreFlightAuthorizationResult,
+                Architecture = finalSession.Architecture,
                 AssignedOsImageId = finalSession.AssignedOsImageId,
                 CreatedAt = finalSession.CreatedAt,
                 TerminalAt = finalSession.TerminalAt ?? DateTimeOffset.UtcNow,

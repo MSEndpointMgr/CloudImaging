@@ -119,6 +119,7 @@ public sealed partial class ImageCatalogFunctions
             SizeBytes = image.SizeBytes,
             StoragePath = image.StoragePath,
             Sha256Hash = image.Sha256Hash,
+            Architecture = image.Architecture,
             UploadedAt = image.UploadedAt == default ? DateTimeOffset.UtcNow : image.UploadedAt,
         };
 
@@ -160,6 +161,7 @@ public sealed partial class ImageCatalogFunctions
             SizeBytes = existing.SizeBytes,
             StoragePath = existing.StoragePath,
             Sha256Hash = existing.Sha256Hash,
+            Architecture = existing.Architecture,
             UploadedAt = existing.UploadedAt,
             IsInUse = existing.IsInUse,
         };
@@ -218,6 +220,7 @@ public sealed partial class ImageCatalogFunctions
         UploadedAt = image.UploadedAt,
         IsInUse = isInUse,
         Sha256Hash = image.Sha256Hash,
+        Architecture = image.Architecture,
     };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Image {ImageId} created: {Name}.")]

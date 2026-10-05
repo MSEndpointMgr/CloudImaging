@@ -99,6 +99,12 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> DeleteBootImageAsync(Guid bootImageId, CancellationToken ct = default) =>
         _http.DeleteAsync($"/api/internal/boot-images/{bootImageId}", ct);
 
+    public Task<HttpResponseMessage> PromoteBootImageAsync(Guid bootImageId, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/boot-images/{bootImageId}/promote", null, ct);
+
+    public Task<HttpResponseMessage> DemoteBootImageAsync(Guid bootImageId, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/boot-images/{bootImageId}/demote", null, ct);
+
     // ── Branding ──────────────────────────────────────────────────────────────
 
     public Task<HttpResponseMessage> GetBrandingAsync(CancellationToken ct = default) =>

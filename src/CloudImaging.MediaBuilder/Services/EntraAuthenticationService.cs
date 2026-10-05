@@ -37,15 +37,30 @@ public sealed partial class EntraAuthenticationService
     /// privilege — never fail-open to Administrator.
     /// </summary>
     private const string AdministratorRoleClaim = "CloudImaging.Administrator";
+    private const string TechnicianRoleClaim    = "CloudImaging.Technician";
 
     /// <summary>
     /// True when the signed-in user holds the <c>CloudImaging.Administrator</c> app role.
     /// Gates Media Builder's Generate Boot Image workflow (FR-050b) — Technician (or no-role)
     /// users only get Prepare USB Storage Device. False before sign-in completes.
     /// </summary>
-    public bool IsAdministrator =>
+    public bool IsAdministrator => HasRole(AdministratorRoleClaim);
+
+    /// <summary>
+    /// True when the signed-in user holds the <c>CloudImaging.Technician</c> app role.
+    /// </summary>
+    public bool IsTechnician => HasRole(TechnicianRoleClaim);
+
+    /// <summary>
+    /// True when the signed-in user holds either Media Builder app role. A user with no role
+    /// assigned can sign in but must not reach any workflow, since every one of them calls the
+    /// Operator API and would fail with 403 anyway.
+    /// </summary>
+    public bool HasMediaBuilderRole => IsAdministrator || IsTechnician;
+
+    private bool HasRole(string role) =>
         _lastResult?.ClaimsPrincipal?.Claims.Any(c =>
-            c.Type == "roles" && string.Equals(c.Value, AdministratorRoleClaim, StringComparison.Ordinal)) ?? false;
+            c.Type == "roles" && string.Equals(c.Value, role, StringComparison.Ordinal)) ?? false;
 
     public EntraAuthenticationService(
         string clientId,

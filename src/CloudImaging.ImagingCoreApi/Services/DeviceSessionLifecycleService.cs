@@ -181,6 +181,7 @@ public sealed partial class DeviceSessionLifecycleService
             LocationId = s.LocationId,
             LocationName = s.LocationName,
             PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
+            Architecture = s.Architecture,
             AssignedOsImageId = s.AssignedOsImageId,
             ErrorDetail = s.State == SessionState.SessionFailed
                 ? $"Session inactivity timeout while in progress (last step: {s.CurrentStep ?? "unknown"})."

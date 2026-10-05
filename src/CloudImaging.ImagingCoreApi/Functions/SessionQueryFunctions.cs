@@ -126,10 +126,12 @@ public sealed partial class SessionQueryFunctions
         }
 
         string? sha256Hash = null;
+        MachineArchitecture? osImageArchitecture = null;
         if (session.AssignedOsImageId is Guid assignedId)
         {
             var image = await _osImageRepo.GetByIdAsync(assignedId, context.CancellationToken);
             sha256Hash = image?.Sha256Hash;
+            osImageArchitecture = image?.Architecture;
         }
 
         object? partitioningScheme = session.PartitioningSchemeSnapshotJson is string schemeJson
@@ -145,6 +147,7 @@ public sealed partial class SessionQueryFunctions
             sasTokenUrl = session.SasTokenUrl,
             sasTokenUrlExpiresAt = session.SasTokenUrlExpiresAt,
             sha256Hash,
+            osImageArchitecture,
             partitioningScheme,
         };
 
@@ -169,6 +172,7 @@ public sealed partial class SessionQueryFunctions
             ToHardwareSummary(s.HardwareMetadata),
             s.LocationId,
             s.LocationName,
+            s.Architecture,
             s.PreFlightAuthorizationResult.ToString(),
             s.AssignedOsImageId,
             s.OverallProgressPercent,
@@ -211,6 +215,7 @@ public sealed partial class SessionQueryFunctions
         HardwareSummary? Hardware,
         Guid? LocationId,
         string? LocationName,
+        MachineArchitecture Architecture,
         string PreFlightAuthorizationResult,
         Guid? AssignedOsImageId,
         int OverallProgressPercent,

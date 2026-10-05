@@ -106,7 +106,7 @@
                     <TextBlock Text="Target"
                                Style="{StaticResource BodyStrongTextBlockStyle}"
                                Margin="0,0,0,4" />
-                    <TextBlock Text="Choose whether to write the boot image directly to a USB storage device, or package it as a bootable ISO file you can attach to a Hyper-V VM's DVD drive (or burn to physical media) instead."
+                    <TextBlock Text="Choose whether to write the boot image directly to a USB storage device, or package it as a bootable ISO file you can attach to a virtual machine's DVD drive (or burn to physical media) instead."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap"
@@ -116,7 +116,7 @@
                                  IsChecked="{Binding PrepareAsUsb}"
                                  IsEnabled="{Binding IsFormEnabled}"
                                  Margin="0,0,0,8" />
-                    <RadioButton Content="ISO File (boot a Hyper-V VM or physical media)"
+                    <RadioButton Content="ISO File (boot a virtual machine or physical media)"
                                  IsChecked="{Binding PrepareAsIso}"
                                  IsEnabled="{Binding IsIsoGenerationAvailable}" />
                     <TextBlock Text="Generating an ISO requires the Windows ADK with the WinPE add-on installed on this workstation."
@@ -125,6 +125,36 @@
                                TextWrapping="Wrap"
                                Margin="24,4,0,0"
                                Visibility="{Binding IsIsoGenerationAvailable, Converter={StaticResource InverseBoolToVisibility}}" />
+                </StackPanel>
+            </ui:Card>
+
+            <!-- USB device: shown immediately after the Target choice, above the optional Location
+                 card below, so the required disk selection is never pushed down by optional
+                 configuration. -->
+            <ui:Card Margin="0,0,0,16" Padding="20"
+                     Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="USB Device"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="Only removable USB disks that aren't the machine's system disk are eligible. Internal and fixed disks are hidden from this list entirely to prevent an accidental wipe. The list updates automatically when you plug in or remove a USB device."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,12" />
+
+                    <ComboBox ItemsSource="{Binding Disks}"
+                              SelectedItem="{Binding SelectedDisk}"
+                              DisplayMemberPath="Label"
+                              IsEnabled="{Binding IsDiskSelectionEnabled}"
+                              HorizontalAlignment="Stretch" />
+
+                    <ui:InfoBar Title="Disk not eligible"
+                                Message="{Binding ValidationMessage}"
+                                Severity="Warning"
+                                IsOpen="{Binding HasValidationMessage}"
+                                IsClosable="False"
+                                Margin="0,12,0,0" />
                 </StackPanel>
             </ui:Card>
 
@@ -164,34 +194,6 @@
                             <ui:SymbolIcon Symbol="Dismiss24" />
                         </ui:Button>
                     </Grid>
-                </StackPanel>
-            </ui:Card>
-
-            <!-- USB device -->
-            <ui:Card Margin="0,0,0,16" Padding="20"
-                     Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">
-                <StackPanel>
-                    <TextBlock Text="USB Device"
-                               Style="{StaticResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,4" />
-                    <TextBlock Text="Only removable USB disks that aren't the machine's system disk are eligible. Internal and fixed disks are hidden from this list entirely to prevent an accidental wipe. The list updates automatically when you plug in or remove a USB device."
-                               Style="{StaticResource CaptionTextBlockStyle}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap"
-                               Margin="0,0,0,12" />
-
-                    <ComboBox ItemsSource="{Binding Disks}"
-                              SelectedItem="{Binding SelectedDisk}"
-                              DisplayMemberPath="Label"
-                              IsEnabled="{Binding IsDiskSelectionEnabled}"
-                              HorizontalAlignment="Stretch" />
-
-                    <ui:InfoBar Title="Disk not eligible"
-                                Message="{Binding ValidationMessage}"
-                                Severity="Warning"
-                                IsOpen="{Binding HasValidationMessage}"
-                                IsClosable="False"
-                                Margin="0,12,0,0" />
                 </StackPanel>
             </ui:Card>
 

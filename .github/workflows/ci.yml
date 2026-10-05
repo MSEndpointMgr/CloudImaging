@@ -338,6 +338,22 @@ jobs:
         run: dotnet build src/CloudImaging.Client/CloudImaging.Client.csproj -c Release --no-restore
       - name: Test
         run: dotnet test tests/CloudImaging.Client.Tests/CloudImaging.Client.Tests.csproj -c Release --no-restore
+      # Mirrors release-client.yml so an ARM64-only publish break fails here, not at release time.
+      # Checks each exe's PE machine type (0x8664 x64, 0xAA64 arm64) because Media Builder rejects a mismatch.
+      - name: Smoke-publish Client (self-contained win-x64 + win-arm64)
+        run: |
+          $expected = @{ 'win-x64' = 0x8664; 'win-arm64' = 0xAA64 }
+          foreach ($rid in $expected.Keys) {
+            dotnet restore src/CloudImaging.Client/CloudImaging.Client.csproj -r $rid
+            dotnet publish src/CloudImaging.Client/CloudImaging.Client.csproj -c Release -r $rid --self-contained -o "publish/Client-$rid" --no-restore
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed for $rid." }
+            $exe = "publish/Client-$rid/CloudImaging.Client.exe"
+            if (-not (Test-Path "publish/Client-$rid/hostfxr.dll")) { throw "$rid publish is not self-contained (no hostfxr.dll)." }
+            $bytes = [IO.File]::ReadAllBytes($exe)
+            $machine = [BitConverter]::ToUInt16($bytes, [BitConverter]::ToInt32($bytes, 0x3C) + 4)
+            if ($machine -ne $expected[$rid]) { throw ("{0}: CloudImaging.Client.exe machine type 0x{1:X4}, expected 0x{2:X4}." -f $rid, $machine, $expected[$rid]) }
+            Write-Host ("{0}: OK (machine 0x{1:X4})" -f $rid, $machine)
+          }
 
   # ── Component: MediaBuilder (WPF, build + test only — never deployed) ────────
   media-builder:

@@ -125,6 +125,45 @@ public sealed class GenerateBootImageSourceSelectionTests
         vm.CanGenerate.Should().BeTrue("an existing driver root folder is valid (FR-051c)");
     }
 
+    // ── Optional support tools copy (FR-051d) ─────────────────────────────────
+
+    [Fact]
+    public void ToolsRootPath_DefaultsToEmpty()
+    {
+        var vm = CreateViewModel();
+        vm.ToolsRootPath.Should().BeEmpty("copying support tools is optional and off by default (FR-051d)");
+    }
+
+    [Fact]
+    public void CanGenerate_IsTrue_WhenToolsRootEmpty_AndOtherInputsValid()
+    {
+        var vm = CreateViewModel();
+        vm.UseGitHubSource  = true;
+        vm.OutputFolderPath = Path.GetTempPath();
+        vm.ToolsRootPath    = "";
+        vm.CanGenerate.Should().BeTrue("an empty tools root is valid — copying support tools is optional (FR-051d)");
+    }
+
+    [Fact]
+    public void CanGenerate_IsFalse_WhenToolsRootSet_But_PathInvalid()
+    {
+        var vm = CreateViewModel();
+        vm.UseGitHubSource  = true;
+        vm.OutputFolderPath = Path.GetTempPath();
+        vm.ToolsRootPath    = @"C:\DoesNotExist\Tools";
+        vm.CanGenerate.Should().BeFalse("a specified tools root folder must exist before generation (FR-051d)");
+    }
+
+    [Fact]
+    public void CanGenerate_IsTrue_WhenToolsRootSet_ToExistingFolder()
+    {
+        var vm = CreateViewModel();
+        vm.UseGitHubSource  = true;
+        vm.OutputFolderPath = Path.GetTempPath();
+        vm.ToolsRootPath    = Path.GetTempPath();
+        vm.CanGenerate.Should().BeTrue("an existing tools root folder is valid (FR-051d)");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static CloudImaging.MediaBuilder.ViewModels.GenerateBootImageViewModel CreateViewModel()

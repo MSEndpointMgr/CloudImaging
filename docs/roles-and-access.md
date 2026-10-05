@@ -72,6 +72,7 @@ Portal backend's managed identity.
 | **OS Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |
 | **Boot Images** / **Recovery Images** catalog: view | ❌ | ❌ | ✅ (read-only) | ✅ |
 | **Boot Images** / **Recovery Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |
+| **Boot Images**: promote a tested pre-production image to production, or demote one back | ❌ | ❌ | ❌ | ✅ |
 | **Locations**: select a location (Header account menu picker, Devices filter) | ❌ | ❌ | ✅ | ✅ |
 | **Locations** catalog page: add / remove locations | ❌ | ❌ | ❌ | ✅ |
 | **Branding**: view / edit logo | ❌ | ❌ | ❌ | ✅ |
@@ -105,8 +106,16 @@ prep screen) is available to any Technician or Administrator, while managing the
 
 | Workflow | No role | Technician | Administrator |
 |---|---|---|---|
-| **Prepare USB Storage Device** | ❌ | ✅ | ✅ |
+| **Prepare USB Storage Device** | ❌ | ✅ (production boot images) | ✅ (production and pre-production boot images) |
 | **Generate Boot Image** | ❌ | ❌ (nav item disabled, with a "restricted by role" explanation) | ✅ |
+
+A newly uploaded boot image starts in **pre-production**. Only Administrators see it in Prepare USB
+Storage Device, so they can test it on a device; it reaches Technicians, and the self-update of
+existing USB devices, only once an Administrator promotes it in the Portal's Boot Images page. A USB
+device prepared with a pre-production image is never self-updated back to the production image
+while the test image exists. The Operator API cannot tell the two Media Builder roles apart (both
+call it with `MediaBuilderAccess`), so hiding pre-production images from Technicians is a workflow
+guard, not an access control.
 
 A user with neither role can sign in but reaches no workflow at all: both the Home tiles and the
 navigation items are disabled, and the Media Builder explains that a role must be assigned. This

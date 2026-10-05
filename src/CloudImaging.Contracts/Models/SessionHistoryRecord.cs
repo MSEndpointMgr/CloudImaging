@@ -28,6 +28,9 @@ public sealed class SessionHistoryRecord
 
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 
+    /// <summary>Device processor architecture; x64 for records that predate it.</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
+
     public Guid? AssignedOsImageId { get; init; }
 
     /// <summary>The step that was in progress when the session failed, if applicable.</summary>

@@ -8,7 +8,8 @@ namespace CloudImaging.MediaBuilder.Services;
 
 /// <summary>
 /// Deploys a WinPE boot image to the FAT32 boot partition of a prepared USB drive (T071, FR-055).
-/// Copies boot.wim to the partition, then makes it bootable (BIOS + UEFI) via bcdboot.
+/// Copies boot.wim to the partition, then makes it bootable via bcdboot (BIOS + UEFI for x64,
+/// UEFI only for ARM64).
 /// </summary>
 public sealed partial class BootImageDeploymentService
 {
@@ -27,6 +28,7 @@ public sealed partial class BootImageDeploymentService
     public async Task DeployAsync(
         string wimPath,
         string bootDriveLetter,
+        MachineArchitecture architecture = MachineArchitecture.X64,
         CancellationToken ct = default)
     {
         LogStarting(_logger, wimPath, bootDriveLetter);
@@ -46,7 +48,7 @@ public sealed partial class BootImageDeploymentService
         // Step 2: Make the partition actually bootable (BIOS + UEFI) via bcdboot, sourced
         // directly from the boot.wim we just copied — see ConfigureBootFilesAsync for details.
         ReportProgress("Configuring boot files (bcdboot)…", 70);
-        await ConfigureBootFilesAsync(destWim, mediaRoot, ct);
+        await ConfigureBootFilesAsync(destWim, mediaRoot, architecture, ct);
         ReportProgress("USB boot partition activated.", 100);
 
         LogComplete(_logger, bootDriveLetter);
@@ -94,7 +96,7 @@ public sealed partial class BootImageDeploymentService
     /// (<c>%windir%\System32</c>) — unlike <c>bootsect.exe</c>, no Windows ADK is required on
     /// the machine running "Prepare USB Storage Device".
     /// </summary>
-    private static async Task ConfigureBootFilesAsync(string wimPath, string mediaRoot, CancellationToken ct)
+    private static async Task ConfigureBootFilesAsync(string wimPath, string mediaRoot, MachineArchitecture architecture, CancellationToken ct)
     {
         var mountDir = Path.Combine(Path.GetTempPath(), $"ci-deploy-mount-{Guid.NewGuid():N}");
         Directory.CreateDirectory(mountDir);
@@ -112,10 +114,14 @@ public sealed partial class BootImageDeploymentService
                 throw new InvalidOperationException(
                     $"The boot image does not contain a \\Windows directory at \"{windowsDir}\" — cannot configure boot files with bcdboot.");
 
-            // /f ALL writes both the legacy BIOS (bootmgr, \Boot\BCD) and UEFI
-            // (\efi\boot\bootx64.efi, \efi\microsoft\boot\BCD) boot-loader files, with the BCD
-            // ramdisk entry pointing at \sources\boot.wim on this same volume.
-            await RunExternalAsync("bcdboot.exe", $"\"{windowsDir}\" /s {mediaRoot} /f ALL", ct);
+            // x64: /f ALL writes BIOS (bootmgr, \Boot\BCD) and UEFI (\efi\boot\bootx64.efi,
+            // \efi\microsoft\boot\BCD) files. ARM64 is UEFI-only and its WinPE has no PCAT
+            // files, so requesting BIOS support there would fail.
+            var firmware = architecture == MachineArchitecture.Arm64 ? "UEFI" : "ALL";
+            await RunExternalAsync("bcdboot.exe", $"\"{windowsDir}\" /s {mediaRoot} /f {firmware}", ct);
+
+            if (architecture == MachineArchitecture.Arm64)
+                EnsureUefiFallbackLoader(windowsDir, mediaRoot, architecture);
         }
         finally
         {
@@ -133,6 +139,30 @@ public sealed partial class BootImageDeploymentService
             }
             ElevationHelper.TryDeleteDirectoryRecursive(mountDir);
         }
+    }
+
+    /// <summary>
+    /// Ensures removable-media UEFI firmware can find the architecture's fallback loader
+    /// (\efi\boot\bootaa64.efi for ARM64). bcdboot running on an x64 host may name it after the
+    /// host, so it is copied from the image's own bootmgfw.efi when missing, then verified.
+    /// </summary>
+    private static void EnsureUefiFallbackLoader(string windowsDir, string mediaRoot, MachineArchitecture architecture)
+    {
+        var loaderName = MachineArchitecturePlatform.UefiBootLoaderFileName(architecture);
+        var loaderPath = Path.Combine(mediaRoot + "\\", "efi", "boot", loaderName);
+        if (!File.Exists(loaderPath))
+        {
+            var bootManager = Path.Combine(windowsDir, "Boot", "EFI", "bootmgfw.efi");
+            if (!File.Exists(bootManager))
+                throw new InvalidOperationException($"The boot image has no UEFI boot manager at \"{bootManager}\", so {loaderName} could not be created.");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(loaderPath)!);
+            File.Copy(bootManager, loaderPath, overwrite: true);
+        }
+
+        var bcdPath = Path.Combine(mediaRoot + "\\", "efi", "microsoft", "boot", "BCD");
+        if (!File.Exists(bcdPath))
+            throw new InvalidOperationException($"bcdboot did not create the UEFI BCD store at \"{bcdPath}\". The USB device will not boot.");
     }
 
     /// <summary>

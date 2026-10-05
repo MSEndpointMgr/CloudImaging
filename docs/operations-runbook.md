@@ -219,7 +219,7 @@ Validity (days)** deployment parameter (default 365).
 |---|---|---|
 | `DeviceSessions` | `active`, `terminal` | Sessions move from `active` to `terminal` on completion; `terminal` rows are purged after 24 hours by the lifecycle timer |
 | `OSImages` | `catalog` | All uploaded OS image metadata |
-| `BootImages` | `catalog` | Boot image entries, max 5 active |
+| `BootImages` | `catalog` | Boot image entries, max 5 active per architecture |
 | `BootMediaCertificate` | `cert` | Exactly one row with `IsActive=true` |
 | `BrandingConfiguration` | `branding` | Single row |
 | `PortalConfiguration` | `config` | Single row |

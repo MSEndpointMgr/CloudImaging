@@ -14,6 +14,9 @@ public partial class App : System.Windows.Application
 {
     private Serilog.Core.Logger? _logger;
 
+    /// <summary>True in a headless elevated-worker process, where a fatal-error dialog would be orphaned.</summary>
+    private bool _isElevatedWorkerMode;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         // Surface any unhandled failure instead of the process dying silently
@@ -45,6 +48,8 @@ public partial class App : System.Windows.Application
             // Administrator privileges. Runs headless — no window, no sign-in — and exits.
             if (e.Args.Length == 5 && e.Args[0] == BootImageGenerationService.ElevatedWorkerArg)
             {
+                _isElevatedWorkerMode = true;
+
                 // Run on the thread pool (NOT the current thread): OnStartup runs under WPF's
                 // DispatcherSynchronizationContext, so blocking here with GetResult() while the
                 // worker's async continuations post back to this same (blocked) dispatcher thread
@@ -63,6 +68,7 @@ public partial class App : System.Windows.Application
             // which require Administrator privileges.
             if (e.Args.Length == 5 && e.Args[0] == UsbPreparationService.ElevatedWorkerArg)
             {
+                _isElevatedWorkerMode = true;
                 System.Threading.Tasks.Task.Run(() =>
                         UsbPreparationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], e.Args[4], loggerFactory))
                     .GetAwaiter().GetResult();
@@ -76,6 +82,7 @@ public partial class App : System.Windows.Application
             // privileges.
             if (e.Args.Length == 5 && e.Args[0] == IsoGenerationService.ElevatedWorkerArg)
             {
+                _isElevatedWorkerMode = true;
                 System.Threading.Tasks.Task.Run(() =>
                         IsoGenerationService.RunElevatedWorkerAsync(e.Args[1], e.Args[2], e.Args[3], e.Args[4], loggerFactory))
                     .GetAwaiter().GetResult();
@@ -169,6 +176,10 @@ public partial class App : System.Windows.Application
         {
             // Never let error reporting itself crash shutdown.
         }
+
+        // The parent window reports a dead worker itself (stalled-worker detection); log only.
+        if (_isElevatedWorkerMode)
+            return;
 
         try
         {

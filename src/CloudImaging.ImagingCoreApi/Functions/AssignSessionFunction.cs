@@ -26,7 +26,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 ///   201 Created — assignment succeeded; returns session ID + SAS token URL.
 ///   404 Not Found — session not found.
 ///   400 Bad Request — image not found in active catalog.
-///   409 Conflict — session not in assignable state.
+///   409 Conflict — session not in assignable state, or the image's architecture differs from the device's.
 /// </summary>
 public sealed partial class AssignSessionFunction
 {
@@ -92,6 +92,13 @@ public sealed partial class AssignSessionFunction
             var notFound = req.CreateResponse(HttpStatusCode.BadRequest);
             await notFound.WriteStringAsync("OS image not found in active catalog.", context.CancellationToken);
             return notFound;
+        }
+
+        if (image.Architecture != session.Architecture)
+        {
+            LogArchitectureMismatch(_logger, sessionGuid, session.Architecture, image.Architecture);
+            return await ArchitectureCompatibility.ConflictAsync(
+                req, new ArchitectureMismatchException(image.Architecture, [(sessionGuid, session.Architecture)]), context.CancellationToken);
         }
 
         // Read SAS expiry from portal configuration
@@ -160,6 +167,9 @@ public sealed partial class AssignSessionFunction
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "OS image {ImageId} not found in active catalog.")]
     private static partial void LogImageNotFound(ILogger logger, Guid imageId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Assignment rejected for session {SessionId}: device is {DeviceArchitecture}, image is {ImageArchitecture}.")]
+    private static partial void LogArchitectureMismatch(ILogger logger, Guid sessionId, MachineArchitecture deviceArchitecture, MachineArchitecture imageArchitecture);
 
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Session {SessionId} assigned OS image {ImageId} — state=SessionStarted.")]

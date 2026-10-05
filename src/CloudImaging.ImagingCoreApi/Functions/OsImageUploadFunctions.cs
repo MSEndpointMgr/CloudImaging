@@ -155,6 +155,13 @@ public sealed partial class OsImageUploadFunctions
         var version = versionProp.GetString()!;
         var sizeBytes = sizeProp.GetInt64();
 
+        if (!ImageArchitecture.TryReadRequested(body.RootElement, out var requestedArchitecture))
+        {
+            var badArch = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badArch.WriteStringAsync(ImageArchitecture.InvalidArchitectureMessage, context.CancellationToken);
+            return badArch;
+        }
+
         // Reject before committing any blocks so the caller isn't left holding an orphaned blob.
         var activeCount = await _imageRepo.GetActiveCountAsync(context.CancellationToken);
         if (activeCount >= OsImageRepository.MaxActiveEntries)
@@ -211,6 +218,23 @@ public sealed partial class OsImageUploadFunctions
             return bad;
         }
 
+        // WIM/ESD metadata is readable inline; an ISO's install image is only checked by the
+        // background worker after extraction.
+        var architecture = requestedArchitecture;
+        if (!string.Equals(extension, ".iso", StringComparison.OrdinalIgnoreCase))
+        {
+            var detectedRaw = await _validator.ReadWimProcessorArchitectureAsync(blockBlobClient, context.CancellationToken);
+            var rejection = ImageArchitecture.Resolve(detectedRaw, requestedArchitecture, "OS image", out architecture);
+            if (rejection is not null)
+            {
+                LogValidationFailed(_logger, blobName, rejection);
+                await blockBlobClient.DeleteIfExistsAsync(cancellationToken: context.CancellationToken);
+                var mismatch = req.CreateResponse(HttpStatusCode.UnprocessableEntity);
+                await mismatch.WriteStringAsync(rejection, context.CancellationToken);
+                return mismatch;
+            }
+        }
+
         var now = DateTimeOffset.UtcNow;
         var job = new UploadJob
         {
@@ -221,6 +245,7 @@ public sealed partial class OsImageUploadFunctions
             Sha256Hash = sha256Hash,
             Version = version,
             Name = name,
+            Architecture = architecture,
             SizeBytes = sizeBytes,
             CreatedAt = now,
             UpdatedAt = now,

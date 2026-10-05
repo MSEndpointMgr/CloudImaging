@@ -52,6 +52,10 @@ public sealed partial class BulkAssignFunction
         {
             result = await _bulkService.AssignAsync(sessionIds, osImageId, context.CancellationToken);
         }
+        catch (ArchitectureMismatchException mismatch)
+        {
+            return await ArchitectureCompatibility.ConflictAsync(req, mismatch, context.CancellationToken);
+        }
         catch (InvalidOperationException ex)
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);

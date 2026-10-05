@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json.Serialization;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -11,9 +12,10 @@ namespace CloudImaging.MediaBuilder.Services;
 /// <summary>
 /// Resolves the MSEndpointMgr/CloudImaging "mse-ci-client-latest" alias release (always the newest
 /// stable Client release; see release-client.yml) and downloads the Cloud Imaging Client
-/// binaries asset for the GenerateBootImageView's "Automatic download" source option
-/// (T152/T153, FR-051a). Verifies the download against the release's published SHA256SUMS
-/// asset before ever extracting or using it.
+/// binaries asset matching the selected target architecture for the GenerateBootImageView's
+/// "Automatic download" source option (T152/T153, FR-051a; todo/arm64-support.md Milestone 4/5).
+/// Verifies the download against the release's published SHA256SUMS asset, and the extracted
+/// exe's actual PE machine type, before ever using it.
 ///
 /// Per FR-051a's clarified error-handling behavior: if the GitHub releases API, the asset
 /// download, or the checksum verification fails, this retries up to <see cref="MaxAttempts"/>
@@ -26,9 +28,18 @@ public sealed partial class GitHubReleasesClient
     private const string ReleasesApiUrl = "https://api.github.com/repos/MSEndpointMgr/CloudImaging/releases/tags/mse-ci-client-latest";
     // Tag releases carry a versioned name (cloud-imaging-client-v1.0.0.zip), but the alias release
     // this class resolves publishes an unversioned copy, so there is no version to parse here.
-    private const string ClientAssetName = "cloud-imaging-client.zip";
+    // Legacy asset name published before architecture-specific Client releases existed
+    // (todo/arm64-support.md, Milestone 4). Every release before that change only ever built
+    // x64, so it stays on the alias release indefinitely as a safe x64 fallback: Media Builder
+    // versions released before this change hardcode this exact name and never send an
+    // architecture, so release-client.yml must keep publishing it alongside the new
+    // architecture-specific assets below.
+    private const string LegacyX64AssetName = "cloud-imaging-client.zip";
     private const string ChecksumAssetName = "SHA256SUMS";
     private const int MaxAttempts = 3;
+
+    /// <summary>Architecture-specific asset name published on the alias release (todo/arm64-support.md, Milestone 4).</summary>
+    private static string AssetName(MachineArchitecture architecture) => $"cloud-imaging-client-{MachineArchitecturePlatform.Slug(architecture)}.zip";
 
     private readonly HttpClient _http;
     private readonly ILogger<GitHubReleasesClient> _logger;
@@ -51,11 +62,11 @@ public sealed partial class GitHubReleasesClient
     public event EventHandler<(string Message, int Percent, bool Replace)>? ProgressChanged;
 
     /// <summary>
-    /// Resolves the "mse-ci-client-latest" alias release, downloads the <c>cloud-imaging-client.zip</c>
-    /// asset, and extracts it into a fresh directory under <c>%TEMP%</c>. Returns the extracted
-    /// folder path, ready to use as a Client binaries source.
+    /// Resolves the "mse-ci-client-latest" alias release, downloads the asset matching
+    /// <paramref name="architecture"/>, and extracts it into a fresh directory under
+    /// <c>%TEMP%</c>. Returns the extracted folder path, ready to use as a Client binaries source.
     /// </summary>
-    public async Task<string> DownloadLatestClientAsync(CancellationToken ct = default)
+    public async Task<string> DownloadLatestClientAsync(MachineArchitecture architecture, CancellationToken ct = default)
     {
         Exception? lastError = null;
 
@@ -64,7 +75,7 @@ public sealed partial class GitHubReleasesClient
             ct.ThrowIfCancellationRequested();
             try
             {
-                return await DownloadOnceAsync(attempt, ct).ConfigureAwait(false);
+                return await DownloadOnceAsync(architecture, attempt, ct).ConfigureAwait(false);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -93,16 +104,26 @@ public sealed partial class GitHubReleasesClient
             "Check your internet connection, or switch to the Custom local path option instead.", lastError);
     }
 
-    private async Task<string> DownloadOnceAsync(int attempt, CancellationToken ct)
+    private async Task<string> DownloadOnceAsync(MachineArchitecture architecture, int attempt, CancellationToken ct)
     {
         ReportProgress($"Resolving latest Cloud Imaging Client release (attempt {attempt}/{MaxAttempts})", 0);
         var release = await _http.GetFromJsonAsync<GitHubReleaseDto>(ReleasesApiUrl, ct).ConfigureAwait(false)
             ?? throw new InvalidOperationException("GitHub returned an empty release response.");
 
-        var asset = release.Assets.FirstOrDefault(a =>
-                string.Equals(a.Name, ClientAssetName, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException(
-                $"Release \"{release.TagName}\" does not contain a \"{ClientAssetName}\" asset.");
+        var assetName = AssetName(architecture);
+        var asset = release.Assets.FirstOrDefault(a => string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase));
+        if (asset is null && architecture == MachineArchitecture.X64)
+        {
+            // The "mse-ci-client-latest" alias may still point at a release cut before
+            // architecture-specific assets existed (todo/arm64-support.md, Milestone 4), since every
+            // release before that only ever published x64 under the legacy name, so it's a safe fallback.
+            assetName = LegacyX64AssetName;
+            asset = release.Assets.FirstOrDefault(a => string.Equals(a.Name, LegacyX64AssetName, StringComparison.OrdinalIgnoreCase));
+        }
+        if (asset is null)
+            throw new InvalidOperationException(
+                $"Release \"{release.TagName}\" does not contain a \"{AssetName(architecture)}\" asset for the selected " +
+                $"{MachineArchitecturePlatform.Slug(architecture)} architecture.");
 
         var checksumAsset = release.Assets.FirstOrDefault(a =>
                 string.Equals(a.Name, ChecksumAssetName, StringComparison.OrdinalIgnoreCase))
@@ -111,7 +132,7 @@ public sealed partial class GitHubReleasesClient
 
         var extractDir = Path.Combine(Path.GetTempPath(), $"ci-client-{Guid.NewGuid():N}");
         Directory.CreateDirectory(extractDir);
-        var zipPath = Path.Combine(extractDir, ClientAssetName);
+        var zipPath = Path.Combine(extractDir, assetName);
 
         try
         {
@@ -122,11 +143,23 @@ public sealed partial class GitHubReleasesClient
             await DownloadWithProgressAsync(asset.BrowserDownloadUrl, zipPath, ct).ConfigureAwait(false);
 
             ReportProgress("Verifying download integrity", 92);
-            await VerifyChecksumAsync(checksumAsset.BrowserDownloadUrl, zipPath, ct).ConfigureAwait(false);
+            await VerifyChecksumAsync(checksumAsset.BrowserDownloadUrl, zipPath, assetName, ct).ConfigureAwait(false);
 
             ReportProgress("Extracting Cloud Imaging Client", 95);
             ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
             try { File.Delete(zipPath); } catch { /* best-effort */ }
+
+            // Belt-and-braces: the checksum only proves the ZIP wasn't corrupted/tampered with, not
+            // that release-client.yml packaged the RID it named the asset after (todo/arm64-support.md,
+            // Milestone 5). A mismatch here would otherwise only surface as a WinPE boot failure on
+            // real hardware, with nothing pointing back at a bad release asset.
+            var clientExePath = Path.Combine(extractDir, "CloudImaging.Client.exe");
+            var actualArchitecture = File.Exists(clientExePath) ? PeArchitectureInspector.ReadArchitecture(clientExePath) : null;
+            if (actualArchitecture is not null && actualArchitecture != architecture)
+                throw new InvalidOperationException(
+                    $"Downloaded asset \"{assetName}\" contains a {MachineArchitecturePlatform.Slug(actualArchitecture.Value)} " +
+                    $"build, but {MachineArchitecturePlatform.Slug(architecture)} was requested. This points at a " +
+                    "packaging mistake in the release; report it rather than retrying.");
 
             ReportProgress("Cloud Imaging Client ready", 100);
             LogDownloaded(_logger, displayVersion, asset.Name);
@@ -147,12 +180,12 @@ public sealed partial class GitHubReleasesClient
     /// asset entry is missing or the computed hash doesn't match — a corrupted or tampered download
     /// must never be extracted and used to build a boot image.
     /// </summary>
-    private async Task VerifyChecksumAsync(string checksumUrl, string zipPath, CancellationToken ct)
+    private async Task VerifyChecksumAsync(string checksumUrl, string zipPath, string assetName, CancellationToken ct)
     {
         var sumsText = await _http.GetStringAsync(checksumUrl, ct).ConfigureAwait(false);
-        var expectedHash = ParseExpectedHash(sumsText, ClientAssetName)
+        var expectedHash = ParseExpectedHash(sumsText, assetName)
             ?? throw new InvalidOperationException(
-                $"\"{ChecksumAssetName}\" does not contain an entry for \"{ClientAssetName}\".");
+                $"\"{ChecksumAssetName}\" does not contain an entry for \"{assetName}\".");
 
         string actualHash;
         await using (var stream = File.OpenRead(zipPath))
@@ -163,7 +196,7 @@ public sealed partial class GitHubReleasesClient
         if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                $"Downloaded \"{ClientAssetName}\" failed SHA-256 verification (expected {expectedHash}, got " +
+                $"Downloaded \"{assetName}\" failed SHA-256 verification (expected {expectedHash}, got " +
                 $"{actualHash}). The download may be corrupted or tampered with.");
         }
 

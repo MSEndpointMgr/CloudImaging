@@ -83,17 +83,38 @@
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                Margin="0,6,0,0"
                                Visibility="{Binding IsRestrictedByRole, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="Requires the Technician or Administrator role"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding HasNoRole, Converter={StaticResource BoolToVisibility}}" />
                     <TextBlock Text="⚠ Requires a boot media certificate (not configured)"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                Margin="0,6,0,0"
                                Visibility="{Binding IsBlockedByMissingCertificate, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="⚠ Operator API access denied"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding IsBlockedByApiAccess, Converter={StaticResource BoolToVisibility}}" />
+                    <TextBlock Text="⚠ Boot media certificate could not be verified"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding IsBlockedByFailedCertificateCheck, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Border>
 
-            <!-- Prepare USB -->
-            <Border Margin="14,0,0,0" Padding="20" CornerRadius="8" Cursor="Hand">
+            <!-- Prepare USB — open to both roles, disabled when the signed-in user holds none -->
+            <Border Margin="14,0,0,0" Padding="20" CornerRadius="8" Cursor="Hand"
+                    IsEnabled="{Binding IsPrepareUsbAvailable}"
+                    ToolTipService.ShowOnDisabled="True"
+                    ToolTip="{Binding PrepareUsbUnavailableReason}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -103,6 +124,10 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
                                 <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                                <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                         </Style.Triggers>
                     </Style>
@@ -126,6 +151,12 @@
                                Style="{StaticResource BodyTextBlockStyle}"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="Requires the Technician or Administrator role"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                               Margin="0,6,0,0"
+                               Visibility="{Binding HasNoRole, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </Border>
         </UniformGrid>
@@ -163,6 +194,34 @@
             </Grid>
         </Border>
 
+        <!-- FR-050b: no-role banner, shown when the signed-in user holds neither app role -->
+        <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                BorderThickness="1"
+                Visibility="{Binding HasNoRole, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="LockClosed24"
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="No role assigned. " FontWeight="SemiBold" /><Run Text="Your account has no Cloud Imaging role, so no workflow is available. Ask your Cloud Imaging administrator to assign you the Technician role to prepare USB media, or the Administrator role to also generate boot images."
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <!-- FR-050b: Administrator-role banner, shown when the signed-in user's role is the reason Generate Boot Image is unavailable -->
         <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
                 Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
@@ -185,6 +244,62 @@
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock TextWrapping="Wrap">
                         <Run Text="Administrator role required. " FontWeight="SemiBold" /><Run Text="Generating boot images is restricted to the Administrator role. Ask your Cloud Imaging administrator to grant it if you need access."
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Operator API refused the certificate check: an app role assignment problem, not a missing certificate -->
+        <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsBlockedByApiAccess, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="LockClosed24"
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="Operator API access denied. " FontWeight="SemiBold" /><Run Text="Your account needs the CloudImaging.MediaBuilderAccess app role on the Cloud Imaging Operator API enterprise application, which is granted separately from your Technician or Administrator role. Ask your Cloud Imaging administrator to assign it."
+                             Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBlock>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Certificate check could not be completed (network or service error) -->
+        <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
+                BorderThickness="1"
+                Visibility="{Binding IsBlockedByFailedCertificateCheck, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <ui:SymbolIcon Grid.Column="0"
+                               Symbol="Warning24"
+                               FontSize="18"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock TextWrapping="Wrap">
+                        <Run Text="Certificate check failed. " FontWeight="SemiBold" /><Run Text="The boot media certificate could not be verified. Check your connection to the Cloud Imaging Operator API and relaunch."
                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </TextBlock>
                 </StackPanel>

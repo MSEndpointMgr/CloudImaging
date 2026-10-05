@@ -23,11 +23,25 @@ public sealed class UsbPreparationManifest
     public DateTimeOffset PreparedAt { get; init; }
     public required string ToolVersion { get; init; }
     public required string BootImageVersion { get; init; }
+
+    /// <summary>
+    /// Catalog id of the deployed boot image, so self-update can tell a pre-production test stick
+    /// apart from an outdated one. Null on manifests written before it existed.
+    /// </summary>
+    public Guid? BootImageId { get; init; }
+
+    /// <summary>
+    /// True when an Administrator prepared this stick with a pre-production image to test it. Only
+    /// such sticks are held on their image; others always follow the latest production image,
+    /// including back to an earlier one after a demote.
+    /// </summary>
+    public bool PreparedForTesting { get; init; }
+
     public required string SelectedDiskId { get; init; }
 
-    /// <summary>Boot image architecture (e.g. "x64", "arm64"). Null on manifests written before
-    /// architecture tracking existed; the Client treats a null value as "x64" (todo/arm64-support.md #8).</summary>
-    public string? Architecture { get; init; }
+    /// <summary>Boot image architecture. Null on manifests written before architecture tracking
+    /// existed; the Client treats a null value as <see cref="MachineArchitecture.X64"/> (todo/arm64-support.md #8).</summary>
+    public MachineArchitecture? Architecture { get; init; }
 
     /// <summary>
     /// Admin-defined location label selected in Media Builder when this media was prepared

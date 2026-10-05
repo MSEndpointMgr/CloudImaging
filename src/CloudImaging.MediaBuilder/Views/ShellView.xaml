@@ -126,14 +126,21 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Prepare USB Device -->
-                    <Border>
+                    <!-- Prepare USB Device — open to both roles, disabled when the signed-in
+                         user holds neither (FR-050b) -->
+                    <Border IsEnabled="{Binding IsPrepareUsbAvailable}"
+                            ToolTipService.ShowOnDisabled="True"
+                            ToolTip="{Binding PrepareUsbUnavailableReason}">
                         <Border.Style>
                             <Style TargetType="Border" BasedOn="{StaticResource NavItemStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsPrepareUsbActive}" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
                                     </DataTrigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter Property="Opacity" Value="0.45" />
+                                        <Setter Property="Cursor" Value="Arrow" />
+                                    </Trigger>
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>

@@ -49,6 +49,104 @@ public sealed class BootImageLifecycleIntegrationTests
             "exactly one entry must have IsLatestPublished=true");
     }
 
+    // ── Per-architecture capacity + pre-production promote ───────────────────
+
+    [Fact]
+    public void PlanCapacity_Arm64Upload_NeverCountsX64Entries()
+    {
+        var active = Enumerable.Range(0, 5)
+            .Select(i => Image(MachineArchitecture.X64, daysAgo: i, latest: i == 0))
+            .Append(Image(MachineArchitecture.Arm64, daysAgo: 1, latest: true))
+            .ToList();
+
+        BootImageRepository.PlanCapacity(active, MachineArchitecture.Arm64)
+            .Should().BeEmpty("ARM64 has only one active entry, and x64's five never count against it");
+    }
+
+    [Fact]
+    public void PlanCapacity_DemotesOldestOfSameArchitecture_WhenThatArchitectureIsFull()
+    {
+        var active = Enumerable.Range(0, 5)
+            .Select(i => Image(MachineArchitecture.X64, daysAgo: i, latest: i == 0))
+            .Append(Image(MachineArchitecture.Arm64, daysAgo: 30, latest: true))
+            .ToList();
+
+        BootImageRepository.PlanCapacity(active, MachineArchitecture.X64)
+            .Should().ContainSingle().Which.CreatedAt.Should().Be(active.Where(b => b.Architecture == MachineArchitecture.X64).Min(b => b.CreatedAt),
+                "the oldest x64 entry is demoted, never the (older) ARM64 one");
+    }
+
+    [Fact]
+    public void PlanCapacity_NeverDemotesTheLatestProductionImage()
+    {
+        // The latest production image is the oldest entry; four newer pre-production uploads fill the catalog.
+        var active = Enumerable.Range(0, 5)
+            .Select(i => Image(MachineArchitecture.X64, daysAgo: i, latest: i == 4))
+            .ToList();
+
+        var demoted = BootImageRepository.PlanCapacity(active, MachineArchitecture.X64);
+
+        demoted.Should().ContainSingle().Which.IsLatestPublished.Should().BeFalse(
+            "devices self-update to the latest image, so it must survive any number of untested uploads");
+    }
+
+    [Fact]
+    public void PlanPromote_ClearsLatestOnlyForTheSameArchitecture()
+    {
+        var x64Latest = Image(MachineArchitecture.X64, daysAgo: 5, latest: true);
+        var armLatest = Image(MachineArchitecture.Arm64, daysAgo: 5, latest: true);
+        var candidate = Image(MachineArchitecture.X64, daysAgo: 0, latest: false);
+
+        BootImageRepository.PlanPromote([x64Latest, armLatest, candidate], candidate)
+            .Should().ContainSingle().Which.Should().BeSameAs(x64Latest);
+    }
+
+    [Fact]
+    public void PlanPromote_IsIdempotentForTheCurrentLatest()
+    {
+        var x64Latest = Image(MachineArchitecture.X64, daysAgo: 5, latest: true);
+
+        BootImageRepository.PlanPromote([x64Latest], x64Latest).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void PlanDemote_RestoresTheMostRecentlyPromotedImageOfTheSameArchitecture()
+    {
+        var current = Image(MachineArchitecture.X64, daysAgo: 0, latest: true, promotedDaysAgo: 0);
+        var previous = Image(MachineArchitecture.X64, daysAgo: 10, latest: false, promotedDaysAgo: 2);
+        var older = Image(MachineArchitecture.X64, daysAgo: 5, latest: false, promotedDaysAgo: 4);
+        var arm = Image(MachineArchitecture.Arm64, daysAgo: 0, latest: false, promotedDaysAgo: 1);
+        var testOnly = Image(MachineArchitecture.X64, daysAgo: 0, latest: false, production: false);
+
+        BootImageRepository.PlanDemote([current, previous, older, arm, testOnly], current)
+            .Should().BeSameAs(previous, "reverting a promote restores what was latest before it, not merely the newest upload");
+    }
+
+    [Fact]
+    public void PlanDemote_RestoresNothing_WhenTheImageIsNotLatest_OrNoOtherProductionImageExists()
+    {
+        var latest = Image(MachineArchitecture.X64, daysAgo: 0, latest: true);
+        var other = Image(MachineArchitecture.X64, daysAgo: 3, latest: false);
+
+        BootImageRepository.PlanDemote([latest, other], other).Should().BeNull("demoting a non-latest image leaves the latest alone");
+        BootImageRepository.PlanDemote([latest], latest).Should().BeNull();
+    }
+
+    private static BootImage Image(MachineArchitecture architecture, int daysAgo, bool latest, int? promotedDaysAgo = null, bool production = true) => new()
+    {
+        BootImageId = Guid.NewGuid(),
+        Version = $"1.0.{daysAgo}",
+        CreatedAt = DateTimeOffset.UtcNow.AddDays(-daysAgo),
+        PromotedAt = promotedDaysAgo is { } p ? DateTimeOffset.UtcNow.AddDays(-p) : null,
+        IsProduction = production,
+        StoragePath = "boot-images/test.wim",
+        ManifestVersion = "1.1",
+        Sha256Hash = "abc",
+        Architecture = architecture,
+        IsLatestPublished = latest,
+        IsActive = true,
+    };
+
     // ── Upload commit validation ───────────────────────────────────────────────
 
     [Fact]

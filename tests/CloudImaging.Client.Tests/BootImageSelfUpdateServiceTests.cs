@@ -115,17 +115,20 @@ public sealed class BootImageSelfUpdateServiceTests
             SelectedDiskId = "disk-1",
             LocationId = Guid.NewGuid(),
             LocationName = "Seattle HQ",
-            Architecture = "x64",
+            Architecture = MachineArchitecture.X64,
             PartitionSchema = new Dictionary<string, object> { ["bootDriveLetter"] = "X:" },
             ValidationResults = new Dictionary<string, object> { ["busType"] = "USB" },
             AutoStartConfigured = true,
         };
 
+        var newId = Guid.NewGuid();
         var method = typeof(BootImageSelfUpdateService).GetMethod(
             "BuildUpdatedManifest", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var updated = (UsbPreparationManifest)method.Invoke(null, [current, "2026.02.01"])!;
+        var updated = (UsbPreparationManifest)method.Invoke(null, [current, "2026.02.01", newId])!;
 
-        updated.BootImageVersion.Should().Be("2026.02.01", "only the boot image version changes");
+        updated.BootImageVersion.Should().Be("2026.02.01", "only the boot image version and id change");
+        updated.BootImageId.Should().Be(newId, "the next self-update check must identify the image now on the stick");
+        updated.PreparedForTesting.Should().BeFalse("a stick that self-updated now carries a production image");
         updated.ManifestVersion.Should().Be(current.ManifestVersion);
         updated.PreparedAt.Should().Be(current.PreparedAt);
         updated.ToolVersion.Should().Be(current.ToolVersion);
@@ -139,13 +142,13 @@ public sealed class BootImageSelfUpdateServiceTests
     }
 
     [Theory]
-    [InlineData("x64", "x64", true)]
-    [InlineData("arm64", "arm64", true)]
-    [InlineData("x64", "arm64", false)]
-    [InlineData(null, "x64", true)]
+    [InlineData(MachineArchitecture.X64, MachineArchitecture.X64, true)]
+    [InlineData(MachineArchitecture.Arm64, MachineArchitecture.Arm64, true)]
+    [InlineData(MachineArchitecture.X64, MachineArchitecture.Arm64, false)]
+    [InlineData(null, MachineArchitecture.X64, true)]
     [InlineData(null, null, true)]
-    [InlineData(null, "arm64", false)]
-    public void ArchitecturesMatch_TreatsNullAsX64_AndComparesCaseInsensitively(string? current, string? latest, bool expected)
+    [InlineData(null, MachineArchitecture.Arm64, false)]
+    public void ArchitecturesMatch_TreatsNullAsX64(MachineArchitecture? current, MachineArchitecture? latest, bool expected)
     {
         var method = typeof(BootImageSelfUpdateService).GetMethod(
             "ArchitecturesMatch", BindingFlags.Static | BindingFlags.NonPublic)!;

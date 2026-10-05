@@ -61,6 +61,7 @@ public sealed class OsImageRepository
         ["StoragePath"] = i.StoragePath,
         ["SizeBytes"] = i.SizeBytes,
         ["Sha256Hash"] = i.Sha256Hash,
+        ["Architecture"] = MachineArchitecturePlatform.Slug(i.Architecture),
         ["IsInUse"] = i.IsInUse,
         ["IsActive"] = true,
         ["UploadedAt"] = i.UploadedAt,
@@ -75,6 +76,7 @@ public sealed class OsImageRepository
         StoragePath = e.GetString("StoragePath") ?? string.Empty,
         SizeBytes = e.GetInt64("SizeBytes") ?? 0L,
         Sha256Hash = e.GetString("Sha256Hash") ?? string.Empty,
+        Architecture = MachineArchitecturePlatform.ParseSlugOrDefault(e.GetString("Architecture")),
         IsInUse = e.GetBoolean("IsInUse") ?? false,
         UploadedAt = e.GetDateTimeOffset("UploadedAt") ?? DateTimeOffset.UtcNow,
     };

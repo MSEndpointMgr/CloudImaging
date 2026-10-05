@@ -243,6 +243,13 @@ public sealed class UploadJobRepository
     private static UploadJobStage ParseStage(string? value) =>
         Enum.TryParse<UploadJobStage>(value, out var parsed) ? parsed : UploadJobStage.Queued;
 
+    private static MachineArchitecture? ParseArchitecture(string? value) => value switch
+    {
+        "x64" => MachineArchitecture.X64,
+        "arm64" => MachineArchitecture.Arm64,
+        _ => null,
+    };
+
     private static TableEntity ToEntity(UploadJob j) => new(Partition, j.UploadId)
     {
         ["Kind"] = j.Kind.ToString(),
@@ -252,6 +259,7 @@ public sealed class UploadJobRepository
         ["Version"] = j.Version,
         ["Name"] = j.Name,
         ["Description"] = j.Description,
+        ["Architecture"] = j.Architecture is { } architecture ? MachineArchitecturePlatform.Slug(architecture) : null,
         ["SizeBytes"] = j.SizeBytes,
         ["CreatedAt"] = j.CreatedAt,
         ["UpdatedAt"] = j.UpdatedAt,
@@ -273,6 +281,7 @@ public sealed class UploadJobRepository
         Version = e.GetString("Version") ?? string.Empty,
         Name = e.GetString("Name"),
         Description = e.GetString("Description"),
+        Architecture = ParseArchitecture(e.GetString("Architecture")),
         SizeBytes = e.GetInt64("SizeBytes") ?? 0L,
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
         UpdatedAt = e.GetDateTimeOffset("UpdatedAt") ?? DateTimeOffset.UtcNow,

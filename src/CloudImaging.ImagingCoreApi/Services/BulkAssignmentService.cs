@@ -56,6 +56,23 @@ public sealed partial class BulkAssignmentService
             throw new InvalidOperationException($"OS image {osImageId} not found in active catalog.");
         }
 
+        // Resolve every session first: an architecture mismatch rejects the whole batch before
+        // any session is assigned or any SAS URL is issued.
+        var sessions = new List<(Guid Id, DeviceSession? Session)>();
+        foreach (var sessionId in sessionIds)
+        {
+            sessions.Add((sessionId, await _sessionRepo.GetByIdAsync(sessionId, ct)));
+        }
+
+        var incompatible = sessions
+            .Where(s => IsAssignable(s.Session) && s.Session!.Architecture != image.Architecture)
+            .Select(s => (s.Id, s.Session!.Architecture))
+            .ToList();
+        if (incompatible.Count > 0)
+        {
+            throw new ArchitectureMismatchException(image.Architecture, incompatible);
+        }
+
         var config = await _configRepo.GetAsync(ct);
         var sasExpiry = TimeSpan.FromMinutes(
             config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
@@ -70,11 +87,9 @@ public sealed partial class BulkAssignmentService
         var assigned = new List<Guid>();
         var skipped = new List<Guid>();
 
-        foreach (var sessionId in sessionIds)
+        foreach (var (sessionId, session) in sessions)
         {
-            var session = await _sessionRepo.GetByIdAsync(sessionId, ct);
-
-            if (session is null || session.State != SessionState.SessionAssigned || session.AssignedOsImageId.HasValue)
+            if (!IsAssignable(session))
             {
                 skipped.Add(sessionId);
                 // CA1873: pre-compute the string to avoid expensive evaluation when logging is disabled
@@ -83,7 +98,7 @@ public sealed partial class BulkAssignmentService
                 continue;
             }
 
-            var updated = session with
+            var updated = session! with
             {
                 State = SessionState.SessionStarted,
                 AssignedOsImageId = osImageId,
@@ -100,6 +115,9 @@ public sealed partial class BulkAssignmentService
         LogBulkAssignCompleted(_logger, assigned.Count, skipped.Count);
         return new BulkAssignResult(assigned.Count, skipped.Count, assigned, skipped);
     }
+
+    private static bool IsAssignable(DeviceSession? session) =>
+        session is not null && session.State == SessionState.SessionAssigned && !session.AssignedOsImageId.HasValue;
 
     private async Task<string> GenerateSasUrlAsync(string storagePath, TimeSpan expiry, CancellationToken cancellationToken)
     {

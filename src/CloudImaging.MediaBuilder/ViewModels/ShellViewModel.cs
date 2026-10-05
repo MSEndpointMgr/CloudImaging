@@ -40,7 +40,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// (optimistic) so the nav item isn't spuriously disabled before the async check below
     /// completes; refined to the real value shortly after construction.
     /// </summary>
-    private bool _certificateConfigured = true;
+    private BootMediaCertificateStatus _certificateStatus = BootMediaCertificateStatus.Configured;
 
     public ShellViewModel(
         EntraAuthenticationService authService,
@@ -70,10 +70,11 @@ public sealed class ShellViewModel : INotifyPropertyChanged
 
         AdkAvailable    = (isAdkInstalled ?? BootImageGenerationService.IsAdkInstalled)();
         IsAdministrator = _authService.IsAdministrator;
+        HasMediaBuilderRole = _authService.HasMediaBuilderRole;
 
         GoHomeCommand       = new RelayCommand(_ => GoHome(), _ => CanNavigate);
         GoGenerateCommand   = new RelayCommand(_ => GoGenerate(), _ => IsGenerateBootImageAvailable && CanNavigate);
-        GoPrepareUsbCommand = new RelayCommand(_ => GoPrepareUsb(), _ => CanNavigate);
+        GoPrepareUsbCommand = new RelayCommand(_ => GoPrepareUsb(), _ => IsPrepareUsbAvailable && CanNavigate);
 
         GoHome();
 
@@ -100,15 +101,36 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsAdministrator { get; }
 
+    /// <summary>
+    /// True when the signed-in user holds either Media Builder app role. A user with no role at
+    /// all can sign in but reaches no workflow, since every one of them calls the Operator API
+    /// and would fail with 403.
+    /// </summary>
+    public bool HasMediaBuilderRole { get; }
+
     /// <summary>True when the "Generate Boot Image" nav item should be reachable at all — requires the ADK, the Administrator role, AND a configured boot media certificate (T151).</summary>
-    public bool IsGenerateBootImageAvailable => AdkAvailable && IsAdministrator && _certificateConfigured;
+    public bool IsGenerateBootImageAvailable =>
+        AdkAvailable && IsAdministrator && _certificateStatus == BootMediaCertificateStatus.Configured;
+
+    /// <summary>True when the "Prepare USB Device" nav item should be reachable — open to both roles, closed to a no-role user.</summary>
+    public bool IsPrepareUsbAvailable => HasMediaBuilderRole;
 
     /// <summary>Tooltip/reason shown when the Generate Boot Image nav item is disabled; role restriction takes precedence.</summary>
     public string? GenerateBootImageUnavailableReason =>
-        !IsAdministrator ? "Generate Boot Image requires the Administrator role."
+        !HasMediaBuilderRole ? "Generate Boot Image requires the Technician or Administrator role."
+        : !IsAdministrator ? "Generate Boot Image requires the Administrator role."
         : !AdkAvailable ? "Install the Windows ADK to unlock this section."
-        : !_certificateConfigured ? "Generate a boot media certificate in Portal Configuration before generating boot images."
-        : null;
+        : _certificateStatus switch
+        {
+            BootMediaCertificateStatus.AccessDenied => OperatorApiErrorDescription.AccessDenied,
+            BootMediaCertificateStatus.CheckFailed => "The boot media certificate could not be verified. Check your connection to the Cloud Imaging Operator API and relaunch.",
+            BootMediaCertificateStatus.NotConfigured => "Generate a boot media certificate in Portal Configuration before generating boot images.",
+            _ => null,
+        };
+
+    /// <summary>Tooltip/reason shown when the Prepare USB Device nav item is disabled.</summary>
+    public string? PrepareUsbUnavailableReason =>
+        !HasMediaBuilderRole ? "Prepare USB Device requires the Technician or Administrator role." : null;
 
     /// <summary>The view currently hosted in the shell's content area.</summary>
     public object? CurrentContent
@@ -198,7 +220,8 @@ public sealed class ShellViewModel : INotifyPropertyChanged
             },
             isAdkInstalled: () => AdkAvailable,
             isAdministrator: IsAdministrator,
-            isCertificateConfigured: _certificateConfigured);
+            certificateStatus: _certificateStatus,
+            hasMediaBuilderRole: HasMediaBuilderRole);
         var view = new OperationSelectionView { DataContext = operationSelectionViewModel };
         CurrentContent = view;
         CurrentSection = ShellSection.Home;
@@ -237,31 +260,31 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// </summary>
     private async Task RefreshCertificateStatusAsync()
     {
-        var configured = false;
+        var status = BootMediaCertificateStatus.CheckFailed;
         try
         {
             var token = await _authService.GetAccessTokenAsync();
             if (token is not null)
             {
                 _operatorApiClient.SetAccessToken(token);
-                configured = await _certCheckService!.IsCertificateConfiguredAsync();
+                status = await _certCheckService!.CheckAsync();
             }
         }
         catch
         {
-            configured = false;
+            status = BootMediaCertificateStatus.CheckFailed;
         }
 
-        if (_certificateConfigured == configured)
+        if (_certificateStatus == status)
             return;
 
-        _certificateConfigured = configured;
+        _certificateStatus = status;
         OnPropertyChanged(nameof(IsGenerateBootImageAvailable));
         OnPropertyChanged(nameof(GenerateBootImageUnavailableReason));
         CommandManager.InvalidateRequerySuggested();
 
         if (CurrentContent is OperationSelectionView { DataContext: OperationSelectionViewModel vm })
-            vm.SetCertificateConfigured(configured);
+            vm.SetCertificateStatus(status);
     }
 
     /// <summary>

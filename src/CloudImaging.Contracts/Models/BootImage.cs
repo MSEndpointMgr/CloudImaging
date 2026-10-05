@@ -17,10 +17,25 @@ public sealed class BootImage
     public required string Sha256Hash { get; init; }
 
     /// <summary>
-    /// True for exactly the most recently published active entry.
-    /// Pre-selected by default in PrepareStorageDeviceView but all active entries are selectable (FR-053).
+    /// True for the one promoted production entry per architecture that devices self-update to
+    /// and Media Builder preselects (FR-053).
     /// </summary>
     public bool IsLatestPublished { get; init; }
 
     public bool IsActive { get; init; }
+
+    /// <summary>
+    /// False while a new upload is in pre-production testing: visible only to Administrators in
+    /// Media Builder and never offered to devices. Set by an explicit promote.
+    /// </summary>
+    public bool IsProduction { get; init; }
+
+    /// <summary>When the image was last promoted; used to restore the previous latest on demote.</summary>
+    public DateTimeOffset? PromotedAt { get; init; }
+
+    /// <summary>
+    /// Target processor architecture (todo/arm64-support.md). Defaults to <see cref="MachineArchitecture.X64"/>
+    /// so existing callers/tests that predate architecture tracking keep compiling and behaving as x64.
+    /// </summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 }

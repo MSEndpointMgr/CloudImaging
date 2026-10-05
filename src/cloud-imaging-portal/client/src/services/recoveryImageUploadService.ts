@@ -6,6 +6,7 @@
  */
 
 import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
+import type { ImageArchitecture } from '../lib/wimMetadata.ts';
 import { waitForUploadJob, type UploadJob } from './uploadJobService.ts';
 
 export interface RecoveryUploadSession {
@@ -76,6 +77,7 @@ export async function publishRecoveryImageUpload(
   session: RecoveryUploadSession,
   sizeBytes: number,
   version: string,
+  architecture: ImageArchitecture,
   description?: string,
   options?: { onStatus?: (job: UploadJob) => void; signal?: AbortSignal },
 ): Promise<UploadJob> {
@@ -88,6 +90,7 @@ export async function publishRecoveryImageUpload(
       sha256Hash: session.sha256Hash,
       version,
       sizeBytes,
+      architecture,
       description: description?.trim() || undefined,
     }),
   });

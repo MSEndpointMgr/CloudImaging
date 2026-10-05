@@ -177,4 +177,39 @@ public sealed class ElevatedGenerationTests
         capturedParamsJson.Should().NotBeNull();
         capturedParamsJson.Should().Contain("\"EnableCommandPromptAccess\":true");
     }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_ThreadsToolsRootPath_IntoElevatedWorkerParams()
+    {
+        // FR-051d: the support-tools folder path must reach the elevated worker via the same
+        // params.json IPC file used for driverRootPath/pfx/logo/deviceGatewayBaseUrl.
+        string? capturedParamsJson = null;
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: (_, args) =>
+            {
+                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
+                var paramsFile = files[0];
+                var resultFile = files[2];
+                capturedParamsJson = File.ReadAllText(paramsFile);
+                File.WriteAllText(resultFile,
+                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
+
+                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0")
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow  = true,
+                })!;
+            });
+
+        await svc.GenerateElevatedAsync(
+            clientBinariesPath: @"C:\DoesNotExist",
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath(),
+            toolsRootPath: @"C:\tools");
+
+        capturedParamsJson.Should().NotBeNull();
+        capturedParamsJson.Should().Contain(@"""ToolsRootPath"":""C:\\tools""");
+    }
 }

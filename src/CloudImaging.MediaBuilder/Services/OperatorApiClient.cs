@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -119,6 +120,12 @@ public sealed class BootImageDto
     public string Sha256Hash        { get; init; } = string.Empty;
     public bool   IsLatestPublished { get; init; }
     public bool   IsActive          { get; init; }
+
+    /// <summary>False while in pre-production testing. Missing from older APIs, which only had production images.</summary>
+    public bool   IsProduction      { get; init; } = true;
+
+    /// <summary>Defaults to x64 for catalog entries that predate architecture tracking (todo/arm64-support.md).</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 }
 
 public sealed class BootImageSasDto

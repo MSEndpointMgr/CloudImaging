@@ -15,12 +15,55 @@ namespace CloudImaging.MediaBuilder.Services;
 /// </summary>
 internal static class ElevationHelper
 {
+    private const string OwnerMarkerFileName = "owner.pid";
+
     /// <summary>True when the current process is running with Administrator privileges.</summary>
     public static bool IsElevated()
     {
         using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
         var principal = new System.Security.Principal.WindowsPrincipal(identity);
         return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    /// <summary>
+    /// Marks a temp IPC/working folder as owned by this process, so another Media Builder
+    /// instance's orphan sweep never deletes it while a (possibly parentless) worker still uses it.
+    /// </summary>
+    public static void WriteOwnerMarker(string dir)
+    {
+        try
+        {
+            using var current = Process.GetCurrentProcess();
+            File.WriteAllText(Path.Combine(dir, OwnerMarkerFileName),
+                $"{current.Id}|{current.ProcessName}|{current.StartTime.Ticks}");
+        }
+        catch { /* best effort: without a marker the folder is simply unprotected */ }
+    }
+
+    /// <summary>
+    /// True when the folder's owner marker names a still-running process. PID, name, and start
+    /// time must all match so a reused PID is not mistaken for the owner.
+    /// </summary>
+    public static bool IsOwnedByLiveProcess(string dir)
+    {
+        try
+        {
+            var markerFile = Path.Combine(dir, OwnerMarkerFileName);
+            if (!File.Exists(markerFile))
+                return false;
+
+            var parts = File.ReadAllText(markerFile).Split('|');
+            if (parts.Length != 3 || !int.TryParse(parts[0], out var pid) || !long.TryParse(parts[2], out var startTicks))
+                return false;
+
+            using var owner = Process.GetProcessById(pid);
+            return owner.ProcessName == parts[1] && owner.StartTime.Ticks == startTicks;
+        }
+        catch
+        {
+            // Owner gone (GetProcessById throws) or marker unreadable: sweep rather than leak.
+            return false;
+        }
     }
 
     /// <summary>
@@ -55,14 +98,19 @@ internal static class ElevationHelper
     /// actually removed so callers can tell an orphaned-folder count is genuinely growing rather
     /// than silently swallowing that.
     /// </summary>
-    public static bool TryDeleteDirectoryRecursive(string path)
+    public static bool TryDeleteDirectoryRecursive(string path) => TryDeleteDirectoryRecursive(path, out _);
+
+    /// <summary>Same as <see cref="TryDeleteDirectoryRecursive(string)"/>, also returning why deletion failed.</summary>
+    public static bool TryDeleteDirectoryRecursive(string path, out string? failureReason)
     {
         const int maxAttempts        = 4;
         const int retryDelayMs       = 250;
 
+        failureReason = null;
         if (!Directory.Exists(path))
             return true;
 
+        Exception? lastError = null;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
@@ -81,16 +129,18 @@ internal static class ElevationHelper
                 Directory.Delete(path, recursive: true);
                 return true;
             }
-            catch when (attempt < maxAttempts)
+            catch (Exception ex) when (attempt < maxAttempts)
             {
+                lastError = ex;
                 Thread.Sleep(retryDelayMs);
             }
-            catch
+            catch (Exception ex)
             {
-                return false;
+                lastError = ex;
             }
         }
 
+        failureReason = lastError?.Message;
         return false;
     }
 }

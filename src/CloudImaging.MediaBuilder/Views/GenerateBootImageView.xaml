@@ -58,10 +58,20 @@
                     <StackPanel>
                         <TextBlock Text="Client Binaries Source"
                                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Where the Cloud Imaging Client binaries embedded into the boot image come from. These are what actually runs when a device boots from the finished USB media."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
                                    Margin="0,0,0,12" />
                         <RadioButton Content="Auto-download latest from GitHub Releases"
                                      IsChecked="{Binding UseGitHubSource}"
                                      GroupName="SourceType" Margin="0,4,0,4" />
+                        <TextBlock Text="Recommended. Downloads the latest published Cloud Imaging Client release and verifies it against its published checksum before use."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="20,0,0,4" />
                         <StackPanel Orientation="Horizontal" Margin="20,0,0,8"
                                     Visibility="{Binding UseGitHubSource, Converter={StaticResource BoolToVisibility}}">
                             <TextBlock Text="Status: " Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
@@ -73,6 +83,11 @@
                         <RadioButton Content="Use local path (pre-downloaded binaries)"
                                      IsChecked="{Binding UseLocalSource}"
                                      GroupName="SourceType" Margin="0,4,0,4" />
+                        <TextBlock Text="Use a self-contained Cloud Imaging Client build already on disk instead of downloading one, for example a build shared by someone else, or a specific version you want to pin to."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="20,0,0,4" />
                         <Grid Margin="0,4,0,4"
                               Visibility="{Binding UseLocalSource, Converter={StaticResource BoolToVisibility}}">
                             <Grid.ColumnDefinitions>
@@ -87,6 +102,28 @@
                                        Style="{StaticResource AppButtonStyle}"
                                        Margin="8,0,0,0" Command="{Binding BrowseCommand}" />
                         </Grid>
+                    </StackPanel>
+                </ui:Card>
+
+                <!-- Target architecture (todo/arm64-support.md, Milestone 1) -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Target Architecture"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Choose the processor architecture of the machines this boot media will run on. The Client binaries source above must match: an x64 Client cannot run inside an ARM64 boot image, and vice versa."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <StackPanel Orientation="Horizontal">
+                            <RadioButton Content="x64"
+                                         IsChecked="{Binding IsX64Selected}"
+                                         GroupName="TargetArchitecture" Margin="0,4,12,4" />
+                            <RadioButton Content="ARM64"
+                                         IsChecked="{Binding IsArm64Selected}"
+                                         GroupName="TargetArchitecture" Margin="0,4,0,4" />
+                        </StackPanel>
                     </StackPanel>
                 </ui:Card>
 
@@ -139,10 +176,10 @@
                     </StackPanel>
                 </ui:Card>
 
-                <!-- Support tools (opt-in, FR-051d) -->
+                <!-- Command support (opt-in, FR-051d) -->
                 <ui:Card Margin="0,0,0,16" Padding="20">
                     <StackPanel>
-                        <TextBlock Text="Support Tools (optional)"
+                        <TextBlock Text="Command Support (optional)"
                                    Style="{StaticResource BodyStrongTextBlockStyle}"
                                    Margin="0,0,0,4" />
                         <TextBlock Text="Adds a Command Prompt button to the Operation Selection screen, granting full unrestricted WinPE shell access for advanced troubleshooting. This bypasses the guided imaging workflow entirely, so it is off by default — only enable it for boot media you trust technicians with full shell access on."
@@ -152,6 +189,33 @@
                                    Margin="0,0,0,12" />
                         <CheckBox Content="Enable command prompt access"
                                   IsChecked="{Binding EnableCommandPromptAccess}" />
+                    </StackPanel>
+                </ui:Card>
+
+                <!-- Support tools (optional), FR-051d -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Support Tools (optional)"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Point to a folder of extra troubleshooting utilities to copy into the boot image, at X:\Tools, for manual use from the command prompt above. Leave empty to skip."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Grid.Column="0"
+                                        Text="{Binding ToolsRootPath, UpdateSourceTrigger=PropertyChanged}"
+                                        HorizontalAlignment="Stretch"
+                                        PlaceholderText="Tools folder (optional)" />
+                            <ui:Button Grid.Column="1" Content="Browse…"
+                                       Style="{StaticResource AppButtonStyle}"
+                                       Margin="8,0,0,0" Command="{Binding BrowseToolsRootCommand}" />
+                        </Grid>
                     </StackPanel>
                 </ui:Card>
 
@@ -177,7 +241,7 @@
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Column="0"
-                               Text="Downloads (or uses) the client binaries, mounts a fresh WinPE image, embeds the client and any drivers, then unmounts and saves the finished WIM to the output folder."
+                               Text="Downloads (or uses) the Cloud Imaging Client binaries, mounts a fresh WinPE image, embeds the Client, any drivers, and any support tools, then unmounts and saves the finished WIM to the output folder."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap"
@@ -402,6 +466,10 @@
                                                 <DataTrigger Binding="{Binding State}" Value="Active">
                                                     <Setter Property="Stroke" Value="{DynamicResource SystemAccentColorBrush}" />
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Failed">
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding State}" Value="Skipped">
                                                     <Setter Property="StrokeDashArray" Value="2,2" />
                                                 </DataTrigger>
@@ -420,6 +488,10 @@
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding State}" Value="Active">
                                                         <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Failed">
+                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                         <Setter Property="FontWeight" Value="SemiBold" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding State}" Value="Skipped">

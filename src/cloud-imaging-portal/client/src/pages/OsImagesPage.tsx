@@ -4,6 +4,7 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
+import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
 import { Button } from '../components/ui/button.tsx';
 import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
@@ -23,15 +24,17 @@ interface OsImage {
   description?: string;
   sizeBytes: number;
   sha256Hash: string;
+  architecture?: ImageArchitecture;
   uploadedAt: string;
   isInUse: boolean;
 }
 
-type OsImageSortKey = 'name' | 'version' | 'size' | 'sha256' | 'uploaded' | 'status';
+type OsImageSortKey = 'name' | 'version' | 'architecture' | 'size' | 'sha256' | 'uploaded' | 'status';
 
 const OS_IMAGE_SORT_ACCESSORS: Record<OsImageSortKey, (row: OsImage) => string | number> = {
   name:     row => row.name,
   version:  row => row.version,
+  architecture: row => row.architecture ?? 'x64',
   size:     row => row.sizeBytes,
   sha256:   row => row.sha256Hash,
   uploaded: row => row.uploadedAt,
@@ -115,7 +118,7 @@ export default function OsImagesPage(): React.ReactElement {
     }
   };
 
-  const columnCount = isAdministrator ? 8 : 7;
+  const columnCount = isAdministrator ? 9 : 8;
   const selectedCount = checked.size;
   const atCapacity = images.length >= MAX_OS_IMAGES;
 
@@ -171,11 +174,12 @@ export default function OsImagesPage(): React.ReactElement {
                   />
                 </TableHead>
               )}
-              <SortableHead label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[30%]" />
-              <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} className="w-[13%]" />
+              <SortableHead label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[26%]" />
+              <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} className="w-[12%]" />
+              <SortableHead label="Architecture" sortKey="architecture" sort={sort} onSort={toggleSort} className="w-[10%]" />
               <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} className="w-[9%]" />
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} className="w-[13%]" />
-              <SortableHead label="Uploaded" sortKey="uploaded" sort={sort} onSort={toggleSort} className="w-[14%]" />
+              <SortableHead label="Uploaded" sortKey="uploaded" sort={sort} onSort={toggleSort} className="w-[12%]" />
               <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="w-[10%]" />
               <TableHead className="w-[90px]">Actions</TableHead>
             </TableRow>
@@ -219,6 +223,9 @@ export default function OsImagesPage(): React.ReactElement {
                 )}
                 <TableCell className="max-w-0 truncate" title={img.name}>{img.name}</TableCell>
                 <TableCell className="truncate">{img.version}</TableCell>
+                <TableCell>
+                  <Badge variant="outline">{architectureLabel(img.architecture)}</Badge>
+                </TableCell>
                 <TableCell className="truncate">{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="truncate">
                   <CopyableId

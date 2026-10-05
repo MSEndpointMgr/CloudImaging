@@ -254,12 +254,40 @@ Retention differs sharply by asset type, and it is enforced in the repository la
 | Asset | Max active entries | Behaviour at the limit |
 |---|---|---|
 | OS images | **500** | Publish is **rejected**. Checked twice: before block-list commit, and again in the worker. |
-| Boot images | **5** | Publish **succeeds**; the oldest active entry is demoted to inactive. |
-| Recovery images | **5** | Same rotation as boot images. |
+| Boot images | **5 per architecture** (x64, ARM64) | Publish **succeeds**; the oldest active entry of the same architecture is demoted to inactive. |
+| Recovery images | **5 per architecture** | Same rotation as boot images. |
 
-For boot and recovery images, the newest entry becomes `IsLatestPublished = true` and the previous
-holder is demoted. That flag is what the Media Builder's Prepare USB workflow resolves when it
-offers "the latest published boot image".
+For recovery images, the newest entry becomes `IsLatestPublished = true` and the previous
+holder of the same architecture is demoted, so publishing an ARM64 image never changes the x64
+latest image.
+
+Boot images are not made latest on upload. A verified upload lands in **pre-production**
+(`IsProduction = false`): only Administrators see it in Media Builder, and devices never receive
+it. An Administrator tests it on a USB device, then promotes it in the Portal
+(`POST /api/boot-images/{id}/promote`), which sets `IsProduction` and makes it the latest for its
+architecture. Promoting an older production image is how you roll back. The latest image is never
+demoted by the capacity rotation. Rows written before this stage existed read as production.
+
+Demote (`POST /api/boot-images/{id}/demote`) reverts a promote: the image goes back to
+pre-production, and if it was the latest, the most recently promoted other production image of the
+same architecture becomes latest again (if there is none, that architecture has no latest until
+another is promoted). USB devices that self-updated to the demoted image go back to the restored
+image on their next boot. Only sticks an Administrator prepared with a pre-production image
+(`UsbPreparationManifest.PreparedForTesting`) are held on their image.
+
+The Device Gateway returns the latest boot image of the Client's own architecture, and answers
+204 when a test stick reports (via `currentBootImageId`) an image that is still pre-production, so
+it is not updated back to production.
+
+Every image's architecture is read from the WIM's own XML metadata (`IMAGE/WINDOWS/ARCH`): in the
+Portal before upload, and again by Imaging Core at publish (inline for WIM/ESD, after extraction
+for an ISO's install image). A selection that contradicts the image, or an x86 image, is rejected.
+Media Builder checks the same metadata before partitioning a USB device or building an ISO.
+
+OS image assignment is architecture-checked in Imaging Core for single and bulk assignment and on
+SAS refresh (409 `architecture-mismatch`, no SAS issued), and again by the Client before it touches
+the disk. A bulk request with any incompatible device assigns nothing; the Portal only sends the
+devices that match the chosen image.
 
 Catalog entities live in Azure Table Storage, all under partition key `catalog`:
 

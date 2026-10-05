@@ -45,6 +45,9 @@ public sealed record DeviceSession
     /// </summary>
     public string? LocationName { get; init; }
 
+    /// <summary>Device processor architecture reported at registration; x64 for sessions that predate it.</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
+
     // Pre-flight result
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 

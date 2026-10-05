@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using Azure;
 using Azure.Storage.Blobs.Specialized;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.ImagingCoreApi.Services;
@@ -121,6 +122,39 @@ public sealed partial class BootImageValidationService
         }
 
         return new ValidationResult(true, null, null);
+    }
+
+    /// <summary>
+    /// Reads image 1's raw PROCESSOR_ARCHITECTURE from the WIM's XML metadata using two small
+    /// ranged reads (header, then the XML resource). Null when it can't be determined.
+    /// </summary>
+    public async Task<int?> ReadWimProcessorArchitectureAsync(BlobBaseClient blobClient, CancellationToken ct = default)
+    {
+        try
+        {
+            var header = await DownloadRangeAsync(blobClient, 0, WimMetadataReader.HeaderSize, ct);
+            if (!WimMetadataReader.TryGetXmlDataRange(header, out var offset, out var length))
+            {
+                return null;
+            }
+
+            var xml = await DownloadRangeAsync(blobClient, offset, length, ct);
+            return xml.Length == length ? WimMetadataReader.ParseProcessorArchitecture(xml) : null;
+        }
+        catch (Exception ex)
+        {
+            LogArchitectureReadFailed(_logger, ex);
+            return null;
+        }
+    }
+
+    private static async Task<byte[]> DownloadRangeAsync(BlobBaseClient blobClient, long offset, long length, CancellationToken ct)
+    {
+        var options = new Azure.Storage.Blobs.Models.BlobDownloadOptions { Range = new HttpRange(offset, length) };
+        var result = await blobClient.DownloadStreamingAsync(options, ct);
+        using var ms = new MemoryStream();
+        await result.Value.Content.CopyToAsync(ms, ct);
+        return ms.ToArray();
     }
 
     /// <summary>
@@ -288,6 +322,9 @@ public sealed partial class BootImageValidationService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to read blob header for file signature validation.")]
     private static partial void LogSignatureReadFailed(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read WIM architecture metadata; falling back to the operator-selected architecture.")]
+    private static partial void LogArchitectureReadFailed(ILogger logger, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Failed to open blob stream for checksum validation.")]
     private static partial void LogStreamOpenFailed(ILogger logger, Exception ex);

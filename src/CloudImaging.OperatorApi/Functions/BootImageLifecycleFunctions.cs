@@ -11,7 +11,9 @@ namespace CloudImaging.OperatorApi.Functions;
 /// Portal-role boot image lifecycle CRUD proxy endpoints (T116, FR-063).
 /// Requires CloudImaging.Administrator role (enforced by AppRoleAuthorizationMiddleware).
 ///
-/// DELETE /api/boot-images/{id}       → ImagingCore DELETE /api/internal/boot-images/{id}
+/// DELETE /api/boot-images/{id}         → ImagingCore DELETE /api/internal/boot-images/{id}
+/// POST   /api/boot-images/{id}/promote → ImagingCore POST /api/internal/boot-images/{id}/promote
+/// POST   /api/boot-images/{id}/demote  → ImagingCore POST /api/internal/boot-images/{id}/demote
 ///
 /// Publishing is not here: it happens through the staged upload pipeline
 /// (BootImageUploadFunctions), which verifies the blob before it reaches the catalog.
@@ -51,6 +53,44 @@ public sealed partial class BootImageLifecycleFunctions
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
+    // ── POST /api/boot-images/{id}/promote ─────────────────────────────────────
+
+    // Not in the MediaBuilderAccess allowlist: only the Portal (Administrator-gated) can promote.
+    [Function("PromoteBootImage")]
+    public async Task<HttpResponseData> PromoteBootImage(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/{id}/promote")] HttpRequestData req,
+        string id,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(id, out var bootImageId))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var coreResponse = await _coreClient.PromoteBootImageAsync(bootImageId, context.CancellationToken);
+        LogPromoteProxied(_logger, bootImageId, (int)coreResponse.StatusCode);
+        return await ProxyAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    // ── POST /api/boot-images/{id}/demote ──────────────────────────────────────
+
+    // Like promote, not in the MediaBuilderAccess allowlist.
+    [Function("DemoteBootImage")]
+    public async Task<HttpResponseData> DemoteBootImage(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/{id}/demote")] HttpRequestData req,
+        string id,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(id, out var bootImageId))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var coreResponse = await _coreClient.DemoteBootImageAsync(bootImageId, context.CancellationToken);
+        LogDemoteProxied(_logger, bootImageId, (int)coreResponse.StatusCode);
+        return await ProxyAsync(req, coreResponse, context.CancellationToken);
+    }
+
     // ── Helper ────────────────────────────────────────────────────────────────
 
     private static async Task<HttpResponseData> ProxyAsync(
@@ -74,4 +114,12 @@ public sealed partial class BootImageLifecycleFunctions
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Boot image delete proxied for {BootImageId} — ImagingCore HTTP {StatusCode}.")]
     private static partial void LogDeleteProxied(ILogger logger, Guid bootImageId, int statusCode);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Boot image promote proxied for {BootImageId}: ImagingCore HTTP {StatusCode}.")]
+    private static partial void LogPromoteProxied(ILogger logger, Guid bootImageId, int statusCode);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Boot image demote proxied for {BootImageId}: ImagingCore HTTP {StatusCode}.")]
+    private static partial void LogDemoteProxied(ILogger logger, Guid bootImageId, int statusCode);
 }
