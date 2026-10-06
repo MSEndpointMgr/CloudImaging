@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Azure;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -97,7 +98,7 @@ public sealed partial class SessionLogFunctions
 
         try
         {
-            await foreach (var blob in container.GetBlobsAsync(prefix: prefix, cancellationToken: context.CancellationToken))
+            await foreach (var blob in container.GetBlobsAsync(traits: BlobTraits.None, states: BlobStates.None, prefix: prefix, cancellationToken: context.CancellationToken))
             {
                 items.Add(new
                 {
