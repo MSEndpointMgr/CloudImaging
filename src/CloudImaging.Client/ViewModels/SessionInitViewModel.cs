@@ -25,6 +25,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     private readonly string? _deviceSerialNumber;
     private readonly Action<ResultsViewModel.Outcome, string?, string?, string?> _navigateToResults;
     private readonly Action<SessionStatusResponse, string?> _navigateToProgress;
+    private readonly Action<SessionStatusResponse, string?>? _navigateToBlocked;
     private readonly CancellationTokenSource _cts = new();
 
     private bool _isPolling = true;
@@ -57,7 +58,8 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         string passcode,
         string? deviceSerialNumber,
         Action<ResultsViewModel.Outcome, string?, string?, string?> navigateToResults,
-        Action<SessionStatusResponse, string?> navigateToProgress)
+        Action<SessionStatusResponse, string?> navigateToProgress,
+        Action<SessionStatusResponse, string?>? navigateToBlocked = null)
     {
         _gatewayClient      = gatewayClient;
         _sessionId          = sessionId;
@@ -65,6 +67,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         _deviceSerialNumber = deviceSerialNumber;
         _navigateToResults  = navigateToResults;
         _navigateToProgress = navigateToProgress;
+        _navigateToBlocked  = navigateToBlocked;
 
         RefreshCommand = new RelayCommand(async _ => await PollOnceAsync());
 
@@ -157,6 +160,12 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                 case SessionState.SessionNotAuthorized:
                     if (!TryClaimTerminalTransition()) break;
                     IsPolling = false;
+                    if (_navigateToBlocked is not null)
+                    {
+                        _navigateToBlocked(session, _deviceSerialNumber);
+                        break;
+                    }
+
                     _navigateToResults(
                         ResultsViewModel.Outcome.NotAuthorized,
                         _deviceSerialNumber,
@@ -202,7 +211,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                 // causing the Client to jump into the Format Disk step immediately on coupling,
                 // before an operator ever pressed Start Imaging).
                 case SessionState.SessionAssigned:
-                    StatusMessage = "Device coupled — waiting for the operator to select an OS image and start imaging…";
+                    StatusMessage = "Device coupled. Waiting for the operator to select an OS image and start imaging…";
                     break;
 
                 case SessionState.SessionStarted:
@@ -213,7 +222,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
                     break;
 
                 default:
-                    StatusMessage = $"Status: {session.State} — awaiting coupling…";
+                    StatusMessage = $"Status: {session.State}. Awaiting coupling…";
                     break;
             }
         }

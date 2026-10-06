@@ -30,4 +30,20 @@ public static class DevicePayloadSignature
 
         return Encoding.UTF8.GetBytes($"{serialNumber}\n{timestampUtc}\n{nonce}");
     }
+
+    /// <summary>
+    /// Builds the challenge for an Autopilot hardware hash submission.
+    /// Format: <c>autopilot \n serialNumber \n sha256(hardwareHash) \n timestampUtc \n nonce</c>.
+    /// The purpose prefix keeps it from ever verifying as a session registration challenge.
+    /// </summary>
+    public static byte[] BuildAutopilotChallenge(string serialNumber, string hardwareHash, string timestampUtc, string nonce)
+    {
+        ArgumentNullException.ThrowIfNull(serialNumber);
+        ArgumentNullException.ThrowIfNull(hardwareHash);
+        ArgumentNullException.ThrowIfNull(timestampUtc);
+        ArgumentNullException.ThrowIfNull(nonce);
+
+        var hashDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(hardwareHash)));
+        return Encoding.UTF8.GetBytes($"autopilot\n{serialNumber}\n{hashDigest}\n{timestampUtc}\n{nonce}");
+    }
 }

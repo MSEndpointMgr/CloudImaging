@@ -100,6 +100,6 @@ public sealed partial class ImageCacheMaintenanceService
     private static partial void LogMaintenanceCompleted(ILogger logger, int purged, long freeBytes);
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Cache entry {ImageId} purged (cached {CachedAt:yyyy-MM-dd} — TTL expired).")]
+        Message = "Cache entry {ImageId} purged (cached {CachedAt:yyyy-MM-dd}, TTL expired).")]
     private static partial void LogEntryPurged(ILogger logger, string imageId, DateTimeOffset cachedAt);
 }

@@ -54,12 +54,20 @@ public sealed partial class PortalConfigurationRepository
         var entity = new TableEntity(PartitionKey, RowKey)
         {
             [nameof(PortalConfiguration.DevicePreFlightAuthorizationEnabled)] = config.DevicePreFlightAuthorizationEnabled,
+            [nameof(PortalConfiguration.PreFlightRequireAutopilotPresence)] = config.PreFlightRequireAutopilotPresence,
+            [nameof(PortalConfiguration.PreFlightRequireUefiFirmware)] = config.PreFlightRequireUefiFirmware,
+            [nameof(PortalConfiguration.PreFlightRequireSecureBoot)] = config.PreFlightRequireSecureBoot,
+            [nameof(PortalConfiguration.PreFlightRequireTpm20)] = config.PreFlightRequireTpm20,
             [nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)] = config.SasTokenUrlExpiryMinutes,
             [nameof(PortalConfiguration.BootImageSasExpiryMinutes)] = config.BootImageSasExpiryMinutes,
             [nameof(PortalConfiguration.CertValidityPeriodDays)] = config.CertValidityPeriodDays,
             [nameof(PortalConfiguration.ClockSkewToleranceSeconds)] = config.ClockSkewToleranceSeconds,
             [nameof(PortalConfiguration.SessionHistoryRetentionDays)] = config.SessionHistoryRetentionDays,
             [nameof(PortalConfiguration.UpdateCheckEnabled)] = config.UpdateCheckEnabled,
+            [nameof(PortalConfiguration.AutopilotRegistrationEnabled)] = config.AutopilotRegistrationEnabled,
+            [nameof(PortalConfiguration.AutopilotGroupTagRequired)] = config.AutopilotGroupTagRequired,
+            [nameof(PortalConfiguration.AutopilotPendingExpiryDays)] = config.AutopilotPendingExpiryDays,
+            [nameof(PortalConfiguration.AutopilotRetentionDays)] = config.AutopilotRetentionDays,
         };
 
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -68,17 +76,31 @@ public sealed partial class PortalConfigurationRepository
 
     // ------------------------------------------------------------------ helpers
 
-    private static PortalConfiguration MapFromEntity(TableEntity e) =>
-        new()
+    internal static PortalConfiguration MapFromEntity(TableEntity e)
+    {
+        var preFlightEnabled = e.GetBoolean(nameof(PortalConfiguration.DevicePreFlightAuthorizationEnabled)) ?? false;
+        return new()
         {
-            DevicePreFlightAuthorizationEnabled = e.GetBoolean(nameof(PortalConfiguration.DevicePreFlightAuthorizationEnabled)) ?? false,
+            DevicePreFlightAuthorizationEnabled = preFlightEnabled,
+
+            // Rows saved before the requirement switches existed only had the enrollment check, so a
+            // deployment that had pre-flight on keeps enforcing it after the upgrade.
+            PreFlightRequireAutopilotPresence = e.GetBoolean(nameof(PortalConfiguration.PreFlightRequireAutopilotPresence)) ?? preFlightEnabled,
+            PreFlightRequireUefiFirmware = e.GetBoolean(nameof(PortalConfiguration.PreFlightRequireUefiFirmware)) ?? false,
+            PreFlightRequireSecureBoot = e.GetBoolean(nameof(PortalConfiguration.PreFlightRequireSecureBoot)) ?? false,
+            PreFlightRequireTpm20 = e.GetBoolean(nameof(PortalConfiguration.PreFlightRequireTpm20)) ?? false,
             SasTokenUrlExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.SasTokenUrlExpiryMinutes)) ?? 240,
             BootImageSasExpiryMinutes = e.GetInt32(nameof(PortalConfiguration.BootImageSasExpiryMinutes)) ?? 120,
             CertValidityPeriodDays = e.GetInt32(nameof(PortalConfiguration.CertValidityPeriodDays)) ?? 365,
             ClockSkewToleranceSeconds = e.GetInt32(nameof(PortalConfiguration.ClockSkewToleranceSeconds)) ?? 30,
             SessionHistoryRetentionDays = e.GetInt32(nameof(PortalConfiguration.SessionHistoryRetentionDays)) ?? 90,
             UpdateCheckEnabled = e.GetBoolean(nameof(PortalConfiguration.UpdateCheckEnabled)) ?? false,
+            AutopilotRegistrationEnabled = e.GetBoolean(nameof(PortalConfiguration.AutopilotRegistrationEnabled)) ?? false,
+            AutopilotGroupTagRequired = e.GetBoolean(nameof(PortalConfiguration.AutopilotGroupTagRequired)) ?? false,
+            AutopilotPendingExpiryDays = e.GetInt32(nameof(PortalConfiguration.AutopilotPendingExpiryDays)) ?? 7,
+            AutopilotRetentionDays = e.GetInt32(nameof(PortalConfiguration.AutopilotRetentionDays)) ?? 365,
         };
+    }
 
     private static PortalConfiguration PortalConfigurationDefaults() =>
         new()
@@ -90,6 +112,10 @@ public sealed partial class PortalConfigurationRepository
             ClockSkewToleranceSeconds = 30,
             SessionHistoryRetentionDays = 90,
             UpdateCheckEnabled = false,
+            AutopilotRegistrationEnabled = false,
+            AutopilotGroupTagRequired = false,
+            AutopilotPendingExpiryDays = 7,
+            AutopilotRetentionDays = 365,
         };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "No PortalConfiguration row found — returning defaults.")]

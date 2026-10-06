@@ -5,7 +5,8 @@ const AVAILABLE_STATES = ['SessionInit', 'SessionAllowed'];
 const COUPLED_STATES = ['SessionAssigned'];
 const MONITOR_STATES = ['SessionStarted', 'SessionInProgress'];
 const SUCCESS_STATES = ['SessionCompleted'];
-const FAILED_STATES = ['SessionFailed', 'SessionNotAuthorized'];
+const FAILED_STATES = ['SessionFailed'];
+const BLOCKED_STATES = ['SessionNotAuthorized'];
 
 describe('Devices page tab partitioning', () => {
   it('keeps Monitor to sessions with active imaging work', () => {
@@ -23,13 +24,18 @@ describe('Devices page tab partitioning', () => {
     }
   });
 
+  it('routes pre-flight blocks to Blocked, not Failed', () => {
+    expect(BLOCKED_STATES).toEqual(['SessionNotAuthorized']);
+    expect(FAILED_STATES).not.toContain('SessionNotAuthorized');
+  });
+
   it('never places a session in two tabs at once', () => {
-    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...SUCCESS_STATES, ...FAILED_STATES];
+    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...SUCCESS_STATES, ...FAILED_STATES, ...BLOCKED_STATES];
     expect(new Set(all).size).toBe(all.length);
   });
 
   it('excludes SessionExpired everywhere: a benign timeout is not a failure', () => {
-    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...SUCCESS_STATES, ...FAILED_STATES];
+    const all = [...AVAILABLE_STATES, ...COUPLED_STATES, ...MONITOR_STATES, ...SUCCESS_STATES, ...FAILED_STATES, ...BLOCKED_STATES];
     expect(all).not.toContain('SessionExpired');
   });
 });

@@ -42,9 +42,12 @@ var host = new HostBuilder()
         services.AddSingleton<RecoveryImageRepository>();
         services.AddSingleton<BootMediaCertificateRepository>();
         services.AddSingleton<SessionHistoryRepository>();
+        services.AddSingleton<PreFlightOverrideRepository>();
         services.AddSingleton<LocationRepository>();
         services.AddSingleton<UserLocationPreferenceRepository>();
         services.AddSingleton<UploadJobRepository>();
+        services.AddSingleton<AutopilotRegistrationRepository>();
+        services.AddSingleton<AutopilotGroupTagRepository>();
 
         // Key Vault certificate service (FR-068)
         services.AddSingleton<KeyVaultCertificateService>();
@@ -75,6 +78,11 @@ var host = new HostBuilder()
         services.AddSingleton<IsoExtractionService>();
         services.AddSingleton<UploadPublishService>();
         services.AddSingleton<DeviceSessionLifecycleService>();
+
+        // Autopilot hash registration: needs DeviceManagementServiceConfig.ReadWrite.All on the managed identity to import
+        services.AddHttpClient<AutopilotGraphClient>(client =>
+            client.BaseAddress = new Uri("https://graph.microsoft.com/"));
+        services.AddSingleton<AutopilotRegistrationService>();
 
         // Azure Blob Storage (SAS token URL generation, FR-025)
         services.AddSingleton(sp =>
@@ -115,9 +123,12 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<RecoveryImageRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<BootMediaCertificateRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<SessionHistoryRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<PreFlightOverrideRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<LocationRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<UserLocationPreferenceRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<UploadJobRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<AutopilotRegistrationRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<AutopilotGroupTagRepository>().EnsureTableExistsAsync(ct);
 }
 
 host.Run();

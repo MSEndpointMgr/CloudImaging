@@ -51,6 +51,12 @@ public sealed record DeviceSession
     // Pre-flight result
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 
+    /// <summary>Firmware security state the Client reported; null for Clients that predate it.</summary>
+    public DeviceSecurityPosture? SecurityPosture { get; init; }
+
+    /// <summary>Every pre-flight check as evaluated at creation. Never re-evaluated afterwards.</summary>
+    public IReadOnlyList<PreFlightCheckResult> PreFlightChecks { get; init; } = [];
+
     // Passcode — stored as hash at rest; returned only at SessionInit
     public string? Passcode { get; init; }
     public DateTimeOffset? PasscodeExpiresAt { get; init; }

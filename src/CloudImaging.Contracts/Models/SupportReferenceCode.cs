@@ -18,7 +18,7 @@ public sealed class SupportReferenceCode
 
     /// <summary>
     /// Abbreviated step identifier.
-    /// Client: REG, FMT, DWN, APL.
+    /// Client: REG, ARC, FWM (firmware mode undetectable), FMT, DWN, APL.
     /// Media Builder: DVI, PRT, BID, BCF.
     /// </summary>
     public required string StageCode { get; init; }

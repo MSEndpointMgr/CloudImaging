@@ -4,6 +4,7 @@ import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizati
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
 import { UpdateCheckPanel } from '../components/UpdateCheckPanel.tsx';
+import { AutopilotConfigPanel } from '../components/AutopilotConfigPanel.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
@@ -17,15 +18,24 @@ import type { ToastContextValue } from '../context/toastContext.tsx';
 import { rolesFromAccount } from '../context/authContext.tsx';
 import { getMsalInstance } from '../lib/msal.ts';
 import { getCertExpiryWarning, hasCertExpiryWarningBeenShown, markCertExpiryWarningShown } from '../lib/certExpiry.ts';
+import { isPreFlightSettingsValid } from '../lib/preflight.ts';
 
 interface PortalConfig {
   devicePreFlightAuthorizationEnabled: boolean;
+  preFlightRequireAutopilotPresence: boolean;
+  preFlightRequireUefiFirmware: boolean;
+  preFlightRequireSecureBoot: boolean;
+  preFlightRequireTpm20: boolean;
   sasTokenUrlExpiryMinutes: number;
   bootImageSasExpiryMinutes: number;
   certValidityPeriodDays: number;
   clockSkewToleranceSeconds: number;
   sessionHistoryRetentionDays: number;
   updateCheckEnabled: boolean;
+  autopilotRegistrationEnabled: boolean;
+  autopilotGroupTagRequired: boolean;
+  autopilotPendingExpiryDays: number;
+  autopilotRetentionDays: number;
 }
 
 interface CertMeta {
@@ -35,12 +45,13 @@ interface CertMeta {
   isActive?: boolean;
 }
 
-type TabKey = 'certificates' | 'security' | 'preflight' | 'partitioning' | 'misc';
+type TabKey = 'certificates' | 'security' | 'preflight' | 'autopilot' | 'partitioning' | 'misc';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'certificates', label: 'Certificates' },
   { key: 'security',     label: 'Security' },
   { key: 'preflight',    label: 'Preflight' },
+  { key: 'autopilot',    label: 'Autopilot' },
   { key: 'partitioning', label: 'Partitioning' },
   { key: 'misc',         label: 'Miscellaneous' },
 ];
@@ -48,12 +59,20 @@ const TABS: { key: TabKey; label: string }[] = [
 /** True when the two configs have identical persisted field values (no unsaved changes). */
 function portalConfigEquals(a: PortalConfig, b: PortalConfig): boolean {
   return a.devicePreFlightAuthorizationEnabled === b.devicePreFlightAuthorizationEnabled
+    && a.preFlightRequireAutopilotPresence === b.preFlightRequireAutopilotPresence
+    && a.preFlightRequireUefiFirmware === b.preFlightRequireUefiFirmware
+    && a.preFlightRequireSecureBoot === b.preFlightRequireSecureBoot
+    && a.preFlightRequireTpm20 === b.preFlightRequireTpm20
     && a.sasTokenUrlExpiryMinutes === b.sasTokenUrlExpiryMinutes
     && a.bootImageSasExpiryMinutes === b.bootImageSasExpiryMinutes
     && a.certValidityPeriodDays === b.certValidityPeriodDays
     && a.clockSkewToleranceSeconds === b.clockSkewToleranceSeconds
     && a.sessionHistoryRetentionDays === b.sessionHistoryRetentionDays
-    && a.updateCheckEnabled === b.updateCheckEnabled;
+    && a.updateCheckEnabled === b.updateCheckEnabled
+    && a.autopilotRegistrationEnabled === b.autopilotRegistrationEnabled
+    && a.autopilotGroupTagRequired === b.autopilotGroupTagRequired
+    && a.autopilotPendingExpiryDays === b.autopilotPendingExpiryDays
+    && a.autopilotRetentionDays === b.autopilotRetentionDays;
 }
 
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
@@ -99,12 +118,20 @@ export default function DeploymentConfigPage(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<TabKey>('certificates');
   const DEFAULT_CONFIG: PortalConfig = {
     devicePreFlightAuthorizationEnabled: false,
+    preFlightRequireAutopilotPresence: false,
+    preFlightRequireUefiFirmware: false,
+    preFlightRequireSecureBoot: false,
+    preFlightRequireTpm20: false,
     sasTokenUrlExpiryMinutes:  240,
     bootImageSasExpiryMinutes: 120,
     certValidityPeriodDays:    365,
     clockSkewToleranceSeconds: 30,
     sessionHistoryRetentionDays: 90,
     updateCheckEnabled: false,
+    autopilotRegistrationEnabled: false,
+    autopilotGroupTagRequired: false,
+    autopilotPendingExpiryDays: 7,
+    autopilotRetentionDays: 365,
   };
   const [config, setConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
   /** Snapshot of the config as last loaded/saved. Used to detect unsaved changes. */
@@ -122,7 +149,8 @@ export default function DeploymentConfigPage(): React.ReactElement {
         apiFetchWithRetry('/api/cert/active',   { credentials: 'include' }),
       ]);
       if (cfgRes.ok) {
-        const data = await cfgRes.json() as PortalConfig;
+        // Spread over defaults so settings added after this deployment's last save still have values.
+        const data = { ...DEFAULT_CONFIG, ...(await cfgRes.json() as Partial<PortalConfig>) };
         setConfig(data);
         setSavedConfig(data);
       }
@@ -144,6 +172,21 @@ export default function DeploymentConfigPage(): React.ReactElement {
   }, [certMeta, notify]);
 
   const save = async () => {
+    if (!isPreFlightSettingsValid(config)) {
+      setActiveTab('preflight');
+      notify({ status: 'error', title: 'Could not save configuration', description: 'Select at least one pre-flight requirement, or turn pre-flight authorization off.' });
+      return;
+    }
+    if (!Number.isInteger(config.autopilotPendingExpiryDays) || config.autopilotPendingExpiryDays < 1 || config.autopilotPendingExpiryDays > 90) {
+      setActiveTab('autopilot');
+      notify({ status: 'error', title: 'Could not save configuration', description: 'Autopilot pending requests must expire after 1 to 90 days.' });
+      return;
+    }
+    if (!Number.isInteger(config.autopilotRetentionDays) || config.autopilotRetentionDays < 30 || config.autopilotRetentionDays > 3650) {
+      setActiveTab('autopilot');
+      notify({ status: 'error', title: 'Could not save configuration', description: 'Handled Autopilot requests must be kept for 30 to 3650 days.' });
+      return;
+    }
     setSaveStatus('loading');
     const toastId = notify({ status: 'loading', title: 'Saving configuration…' });
     try {
@@ -214,7 +257,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
             disabled={(config[key] as number) === defaultValue}
             aria-label={`Reset ${label} to default`}
           >
-            <RotateCcw className="h-4 w-4" />
+            <RotateCcw />
           </Button>
         </Tooltip>
       </div>
@@ -276,8 +319,29 @@ export default function DeploymentConfigPage(): React.ReactElement {
       {/* Preflight */}
       {activeTab === 'preflight' && (
         <PreFlightAuthorizationToggle
-          enabled={config.devicePreFlightAuthorizationEnabled}
-          onChange={v => setConfig(c => ({ ...c, devicePreFlightAuthorizationEnabled: v }))}
+          settings={config}
+          onChange={next => setConfig(c => ({
+            ...c,
+            devicePreFlightAuthorizationEnabled: next.devicePreFlightAuthorizationEnabled,
+            preFlightRequireAutopilotPresence: next.preFlightRequireAutopilotPresence,
+            preFlightRequireUefiFirmware: next.preFlightRequireUefiFirmware,
+            preFlightRequireSecureBoot: next.preFlightRequireSecureBoot,
+            preFlightRequireTpm20: next.preFlightRequireTpm20,
+          }))}
+        />
+      )}
+
+      {/* Autopilot: switches are PortalConfig (Save Configuration); group tags save immediately. */}
+      {activeTab === 'autopilot' && (
+        <AutopilotConfigPanel
+          enabled={config.autopilotRegistrationEnabled}
+          groupTagRequired={config.autopilotGroupTagRequired}
+          expiryDays={config.autopilotPendingExpiryDays}
+          retentionDays={config.autopilotRetentionDays}
+          onEnabledChange={v => setConfig(c => ({ ...c, autopilotRegistrationEnabled: v }))}
+          onGroupTagRequiredChange={v => setConfig(c => ({ ...c, autopilotGroupTagRequired: v }))}
+          onExpiryDaysChange={v => setConfig(c => ({ ...c, autopilotPendingExpiryDays: v }))}
+          onRetentionDaysChange={v => setConfig(c => ({ ...c, autopilotRetentionDays: v }))}
         />
       )}
 

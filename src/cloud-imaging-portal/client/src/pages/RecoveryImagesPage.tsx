@@ -132,14 +132,14 @@ export default function RecoveryImagesPage(): React.ReactElement {
         </div>
         {isAdministrator && (
           <Button onClick={() => setUploadOpen(true)}>
-            <Upload className="h-4 w-4" />
+            <Upload />
             Upload recovery image
           </Button>
         )}
       </div>
 
       {/* Capacity indicator */}
-      <ArchitectureCapacityCard counts={activeCounts} max={MAX_RECOVERY_IMAGES} icon={ShieldCheck} />
+      <ArchitectureCapacityCard counts={activeCounts} max={MAX_RECOVERY_IMAGES} />
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>
@@ -151,7 +151,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
               <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
-              {isAdministrator && <TableHead>Actions</TableHead>}
+                {isAdministrator && <TableHead className="w-px whitespace-nowrap">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -166,7 +166,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                     description="Upload a recovery image here, or publish one directly from the Media Builder app."
                     action={isAdministrator ? (
                       <Button onClick={() => setUploadOpen(true)}>
-                        <Upload className="h-4 w-4" />
+                        <Upload />
                         Upload recovery image
                       </Button>
                     ) : undefined}
@@ -200,7 +200,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                     : <Badge variant="muted" dot>Active</Badge>}
                 </TableCell>
                 {isAdministrator && (
-                  <TableCell>
+                  <TableCell className="w-px whitespace-nowrap">
                     <Tooltip content={img.isLatestPublished ? `Publish a newer ${architectureLabel(img.architecture)} recovery image before deleting` : 'Delete'}>
                       <Button
                         variant="ghost"
@@ -210,7 +210,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                         className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                         onClick={() => void handleDelete(img.recoveryImageId)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 />
                       </Button>
                     </Tooltip>
                   </TableCell>
@@ -319,7 +319,7 @@ function UploadRecoveryImageDialog({ activeCounts, existingVersions, onClose, on
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Upload recovery image</h2>
             <Button variant="ghost" size="icon" onClick={onClose} disabled={busy} aria-label="Close">
-              <X className="h-4 w-4" />
+                <X />
             </Button>
           </div>
 

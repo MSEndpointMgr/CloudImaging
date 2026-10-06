@@ -192,6 +192,29 @@
                     </StackPanel>
                 </ui:Card>
 
+                <!-- Autopilot hardware hash capture (x64 only) -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Autopilot Registration"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Adds OA3Tool and the TPM components from the Windows ADK, so technicians can send the device's Windows Autopilot hardware hash for approval from the Operation Selection screen. The option only appears on devices when Autopilot registration is turned on in the portal."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <CheckBox Content="Include Autopilot hardware hash tooling"
+                                  IsChecked="{Binding IncludeAutopilotTooling}"
+                                  IsEnabled="{Binding IsAutopilotToolingAvailable}" />
+                        <TextBlock Text="{Binding AutopilotToolingUnavailableReason}"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"
+                                   Visibility="{Binding HasAutopilotToolingUnavailableReason, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </ui:Card>
+
                 <!-- Support tools (optional), FR-051d -->
                 <ui:Card Margin="0,0,0,16" Padding="20">
                     <StackPanel>

@@ -19,10 +19,10 @@ export interface SelectOption {
 }
 
 /**
- * Trigger geometry deliberately mirrors `Button`'s size vocabulary (`sm` = h-8, `default` = h-9)
- * rather than inventing a third scale, because selects are almost always laid out beside a button
- * (the OS image picker sits next to "Start Imaging") and a 4px height difference between two
- * adjacent controls reads as a rendering bug.
+ * Trigger geometry deliberately mirrors `Button` rather than inventing a second scale: 32px, the
+ * portal's one control height. Selects are almost always laid out beside a button (the OS image
+ * picker sits next to "Start Imaging") and a 4px height difference between two adjacent controls
+ * reads as a rendering bug, which is what shipped while this defaulted to 36px.
  */
 const selectTriggerVariants = cva(
   cn(
@@ -34,11 +34,10 @@ const selectTriggerVariants = cva(
   {
     variants: {
       size: {
-        default: 'h-9 pl-3 pr-2.5',
-        sm: 'h-8 pl-2.5 pr-2',
+        sm: 'h-8 pl-3 pr-2',
       },
     },
-    defaultVariants: { size: 'default' },
+    defaultVariants: { size: 'sm' },
   },
 );
 

@@ -30,6 +30,9 @@ public sealed class DeviceRegistrationPayload
     /// <summary>Processor architecture the Client is running on. Null from Clients that predate it (x64).</summary>
     public MachineArchitecture? Architecture { get; init; }
 
+    /// <summary>Firmware security state read in WinPE. Null from Clients that predate it.</summary>
+    public DeviceSecurityPosture? SecurityPosture { get; init; }
+
     /// <summary>
     /// Application-layer proof-of-possession of the boot-media certificate's private key (FR-069).
     /// Required by the Device Gateway API for session bootstrap; the client signs a fresh challenge

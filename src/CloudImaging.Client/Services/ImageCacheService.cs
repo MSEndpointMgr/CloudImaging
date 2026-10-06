@@ -198,7 +198,7 @@ public sealed partial class ImageCacheService
     [LoggerMessage(Level = LogLevel.Debug, Message = "Cache miss for image {ImageId}.")]
     private static partial void LogCacheMiss(ILogger logger, string imageId);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Cache hash mismatch for image {ImageId} — entry evicted.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Cache hash mismatch for image {ImageId}. Entry evicted.")]
     private static partial void LogCacheHashMismatch(ILogger logger, string imageId);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Cache hit for image {ImageId} (hash prefix={HashPrefix}).")]

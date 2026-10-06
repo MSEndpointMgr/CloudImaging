@@ -1,3 +1,4 @@
+import type { CSSProperties, ReactNode } from 'react';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { TableHead } from './table.tsx';
 import type { SortState } from '../../lib/tableSort.ts';
@@ -8,14 +9,17 @@ interface SortableHeadProps<K extends string> {
   sort: SortState<K>;
   onSort: (key: K) => void;
   className?: string;
+  style?: CSSProperties;
+  /** Extra header content, e.g. a `ColumnResizeHandle` (pass `relative` in `className`). */
+  children?: ReactNode;
 }
 
 /** Clickable `<TableHead>` showing an up/down/neutral arrow for the currently active sort column. */
-export function SortableHead<K extends string>({ label, sortKey, sort, onSort, className }: SortableHeadProps<K>): React.ReactElement {
+export function SortableHead<K extends string>({ label, sortKey, sort, onSort, className, style, children }: SortableHeadProps<K>): React.ReactElement {
   const active = sort.key === sortKey;
   const Icon = active ? (sort.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
-    <TableHead className={className}>
+    <TableHead className={className} style={style}>
       <button
         type="button"
         onClick={() => onSort(sortKey)}
@@ -27,6 +31,7 @@ export function SortableHead<K extends string>({ label, sortKey, sort, onSort, c
         {label}
         <Icon size={12} className={active ? '' : 'opacity-30'} />
       </button>
+      {children}
     </TableHead>
   );
 }

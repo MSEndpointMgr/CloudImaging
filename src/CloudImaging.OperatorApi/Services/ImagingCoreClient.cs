@@ -207,6 +207,9 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> CreateLocationAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/locations", payload, JsonOptions, ct);
 
+    public Task<HttpResponseMessage> UpdateLocationAsync(Guid locationId, object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/locations/{locationId}", payload, JsonOptions, ct);
+
     public Task<HttpResponseMessage> DeleteLocationAsync(Guid locationId, CancellationToken ct = default) =>
         _http.DeleteAsync($"/api/internal/locations/{locationId}", ct);
 
@@ -217,4 +220,52 @@ public sealed class ImagingCoreClient
 
     public Task<HttpResponseMessage> PutUserLocationPreferenceAsync(string userId, object payload, CancellationToken ct = default) =>
         _http.PutAsJsonAsync($"/api/internal/user-preferences/{Uri.EscapeDataString(userId)}", payload, JsonOptions, ct);
+
+    // ── Autopilot registration ─────────────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> ListAutopilotRegistrationsAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/autopilot/registrations", ct);
+
+    public Task<HttpResponseMessage> ListHandledAutopilotRegistrationsAsync(string? from, string? to, CancellationToken ct = default)
+    {
+        var query = string.Join('&', new[]
+        {
+            "view=history",
+            from is not null ? $"from={Uri.EscapeDataString(from)}" : null,
+            to is not null ? $"to={Uri.EscapeDataString(to)}" : null,
+        }.Where(p => p is not null));
+        return _http.GetAsync($"/api/internal/autopilot/registrations?{query}", ct);
+    }
+
+    public Task<HttpResponseMessage> GetAutopilotRegistrationAsync(Guid requestId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/autopilot/registrations/{requestId}", ct);
+
+    /// <summary>Forwards an approve, reject or retry decision (<paramref name="action"/>).</summary>
+    public Task<HttpResponseMessage> DecideAutopilotRegistrationAsync(Guid requestId, string action, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/autopilot/registrations/{requestId}/{action}", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> ListAutopilotGroupTagsAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/autopilot/group-tags", ct);
+
+    public Task<HttpResponseMessage> CreateAutopilotGroupTagAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/autopilot/group-tags", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> UpdateAutopilotGroupTagAsync(Guid id, object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/autopilot/group-tags/{id}", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> DeleteAutopilotGroupTagAsync(Guid id, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/autopilot/group-tags/{id}", ct);
+
+    // ── Pre-flight overrides ───────────────────────────────────────────────────────
+
+    public Task<HttpResponseMessage> ListPreFlightOverridesAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/preflight-overrides", ct);
+
+    public Task<HttpResponseMessage> ApprovePreFlightOverrideAsync(Guid sessionId, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/sessions/{sessionId}/preflight-override", payload, JsonOptions, ct);
+
+    public Task<HttpResponseMessage> RevokePreFlightOverrideAsync(string serialNumber, string revokedBy, CancellationToken ct = default) =>
+        _http.DeleteAsync(
+            $"/api/internal/preflight-overrides?serialNumber={Uri.EscapeDataString(serialNumber)}&revokedBy={Uri.EscapeDataString(revokedBy)}",
+            ct);
 }

@@ -4,6 +4,7 @@ import {
   HardDrive,
   Disc,
   LifeBuoy,
+  BadgeCheck,
   BarChart3,
   MapPin,
   Palette,
@@ -37,6 +38,7 @@ const NAV_SECTIONS = [
       { label: 'OS Images', icon: <HardDrive size={18} /> },
       { label: 'Boot Images', icon: <Disc size={18} /> },
       { label: 'Recovery Images', icon: <LifeBuoy size={18} /> },
+      { label: 'Autopilot', icon: <BadgeCheck size={18} /> },
     ],
   },
   {

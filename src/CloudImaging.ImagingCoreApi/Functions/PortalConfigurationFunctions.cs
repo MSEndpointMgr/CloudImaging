@@ -69,6 +69,27 @@ public sealed partial class PortalConfigurationFunctions
             return bad;
         }
 
+        if (!config.IsPreFlightConfigurationValid())
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Select at least one pre-flight requirement, or turn pre-flight authorization off.", context.CancellationToken);
+            return bad;
+        }
+
+        if (config.AutopilotPendingExpiryDays is < 1 or > 90)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("AutopilotPendingExpiryDays must be between 1 and 90.", context.CancellationToken);
+            return bad;
+        }
+
+        if (config.AutopilotRetentionDays is < 30 or > 3650)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("AutopilotRetentionDays must be between 30 and 3650.", context.CancellationToken);
+            return bad;
+        }
+
         await _repo.UpsertAsync(config, context.CancellationToken);
         return req.CreateResponse(HttpStatusCode.NoContent);
     }

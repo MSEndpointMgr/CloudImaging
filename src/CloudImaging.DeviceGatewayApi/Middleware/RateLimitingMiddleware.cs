@@ -8,8 +8,9 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.DeviceGatewayApi.Middleware;
 
 /// <summary>
-/// Per-session rate limiting middleware: 10 calls per 30-second sliding window per device-session token.
-/// The public session bootstrap endpoint is exempt (FR-018).
+/// Per-token rate limiting middleware: 10 calls per 30-second window per device-session token (or
+/// Autopilot status token). Endpoints called without a token (session bootstrap, Autopilot
+/// availability and submission) are not limited here (FR-018).
 /// Returns HTTP 429 with Retry-After header when limit is exceeded.
 /// </summary>
 public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware

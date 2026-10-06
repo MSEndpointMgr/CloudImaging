@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -26,6 +26,9 @@ import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgre
 import { cn, formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
+import { useAuth } from '../context/authContext.tsx';
+import { PreFlightCheckStrip } from '../components/PreFlightChecks.tsx';
+import { blockedSessions, formatExpiresIn, overrideChecks, type PreFlightCheckResult, type PreFlightOverride, type PreFlightOverrideList } from '../lib/preflight.ts';
 import { useUserPreferences } from '../context/userPreferencesContext.tsx';
 import {
   Table,
@@ -36,6 +39,7 @@ import {
   TableCell,
 } from '../components/ui/table.tsx';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
+import { useColumnWidths } from '../lib/useColumnWidths.tsx';
 
 interface Session {
   sessionId: string;
@@ -52,6 +56,7 @@ interface Session {
   // Already present on the Operator API's session summary; the portal simply was not reading
   // them. Optional so a cached/older response cannot blank the table.
   preFlightAuthorizationResult?: string | null;
+  preFlightChecks?: PreFlightCheckResult[] | null;
   assignedOsImageId?: string | null;
   lastHeartbeatAt?: string | null;
   terminalAt?: string | null;
@@ -75,9 +80,9 @@ interface OsImage {
 
 // States for which the Client may have uploaded a diagnostic log on failure. These get their own
 // tab rather than sitting alongside healthy sessions in Monitor.
-const FAILED_STATES = new Set(['SessionFailed', 'SessionNotAuthorized']);
+const FAILED_STATES = new Set(['SessionFailed']);
 
-type DeviceView = 'pending' | 'monitor' | 'success' | 'failed';
+type DeviceView = 'pending' | 'monitor' | 'success' | 'failed' | 'blocked' | 'overrides';
 
 // Available: newly-registered sessions awaiting a technician to enter the device's passcode.
 const AVAILABLE_STATES = new Set(['SessionInit', 'SessionAllowed']);
@@ -87,12 +92,14 @@ const COUPLED_STATES = new Set(['SessionAssigned']);
 const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress']);
 const SUCCESS_STATES = new Set(['SessionCompleted']);
 
-function deriveCounts(sessions: Session[]) {
+function deriveCounts(sessions: Session[], overrides: readonly PreFlightOverride[]) {
   return {
     pending: sessions.filter(s => AVAILABLE_STATES.has(s.state) || COUPLED_STATES.has(s.state)).length,
     monitor: sessions.filter(s => MONITOR_STATES.has(s.state)).length,
     success: sessions.filter(s => SUCCESS_STATES.has(s.state)).length,
     failed:  sessions.filter(s => FAILED_STATES.has(s.state)).length,
+    blocked: blockedSessions(sessions, overrides).length,
+    overrides: overrides.length,
   };
 }
 
@@ -196,8 +203,16 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
 
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
+  const { isAdministrator } = useAuth();
   const { preferredLocationId, preferredLocationName } = useUserPreferences();
   const [sessions, setSessions]         = useState<Session[]>([]);
+  // Active pre-flight overrides, and whether pre-flight authorization is on at all. Both come from
+  // one call so the Overrides tab and the Approve action hide together when it is switched off.
+  const [overrides, setOverrides]       = useState<PreFlightOverride[]>([]);
+  const [preFlightEnabled, setPreFlightEnabled] = useState(false);
+  const [pendingApprove, setPendingApprove] = useState<Session | null>(null);
+  const [pendingRevoke, setPendingRevoke]   = useState<PreFlightOverride | null>(null);
+  const [overrideBusy, setOverrideBusy]     = useState(false);
   const [view, setView]                 = useState<DeviceView>('pending');
   // Hard filter to the signed-in user's preferred location (FR: technicians at a 50+ site
   // customer should not see, and cannot accidentally couple, devices registered elsewhere).
@@ -239,6 +254,16 @@ function SessionsPageImpl(): React.ReactElement {
   const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'registered' | 'state' | 'progress' | 'step'>({ key: 'registered', dir: 'desc' });
   const [successSort, toggleSuccessSort]     = useSort<'serial' | 'device' | 'location' | 'finished'>({ key: 'finished', dir: 'desc' });
   const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>({ key: 'registered', dir: 'asc' });
+  const [blockedSort, toggleBlockedSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'desc' });
+  const [overrideSort, toggleOverrideSort]   = useSort<'serial' | 'device' | 'location' | 'approvedBy' | 'expires'>({ key: 'expires', dir: 'asc' });
+
+  const availableCols = useColumnWidths({ serial: 18, device: 24, location: 16, state: 12, passcode: 13, registered: 13 });
+  const coupledCols = useColumnWidths({ serial: 22, device: 28, location: 18, registered: 20 });
+  const monitorCols = useColumnWidths({ serial: 14, device: 17, location: 10, registered: 15, state: 9, progress: 15, step: 16 });
+  const successCols = useColumnWidths({ serial: 15, device: 25, location: 15, progress: 20, finished: 20 });
+  const failedCols = useColumnWidths({ serial: 12, device: 17, location: 11, state: 10, step: 14, registered: 11, actions: 20 });
+  const blockedCols = useColumnWidths({ serial: 15, device: 22, location: 14, checks: 18, registered: 13, actions: 13 });
+  const overrideCols = useColumnWidths({ serial: 14, device: 18, location: 12, checks: 16, approvedBy: 18, expires: 11, actions: 11 });
 
   // Uploaded diagnostic logs per failed session, looked up once the Failed tab is opened. A
   // session only has a log if the Client managed a best-effort upload before reboot, so the
@@ -283,8 +308,20 @@ function SessionsPageImpl(): React.ReactElement {
     }
   }, [notify, sessionLogs]);
 
+  const fetchOverrides = useCallback(async () => {
+    try {
+      const res = await apiFetchWithRetry('/api/preflight-overrides', { credentials: 'include' });
+      if (!res.ok) return;
+      const data = await res.json() as PreFlightOverrideList;
+      setOverrides(data.overrides);
+      setPreFlightEnabled(data.preFlightEnabled);
+    } catch { /* keep the previous list; the next poll retries */ }
+  }, []);
+
   const fetchSessions = useCallback(async (data?: Session[]) => {
     setLoading(true);
+    // Overrides change when a device uses its pass, which the sessions poll is what notices.
+    void fetchOverrides();
     try {
       const res = await apiFetchWithRetry('/api/sessions', { credentials: 'include' });
       if (res.ok) {
@@ -297,7 +334,7 @@ function SessionsPageImpl(): React.ReactElement {
     } catch { consecutiveFailuresRef.current += 1; /* retain previous */ }
     finally { setLoading(false); }
     return data ?? [];
-  }, []);
+  }, [fetchOverrides]);
 
   const scheduleNextPoll = useCallback((data: Session[]) => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -325,7 +362,7 @@ function SessionsPageImpl(): React.ReactElement {
       ? sessions
       : sessions.filter(s => s.locationId === preferredLocationId)
   ), [sessions, preferredLocationId, showAllLocations]);
-  const counts    = deriveCounts(locationFiltered);
+  const counts    = deriveCounts(locationFiltered, overrides);
   const available = useMemo(() => sortRows(
     locationFiltered.filter(s => AVAILABLE_STATES.has(s.state)),
     availableSort,
@@ -388,6 +425,34 @@ function SessionsPageImpl(): React.ReactElement {
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
   ), [locationFiltered, failedSort]);
+  const blocked = useMemo(() => sortRows(
+    blockedSessions(locationFiltered, overrides),
+    blockedSort,
+    {
+      serial:     (s: Session) => s.deviceSerialNumber,
+      device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      location:   (s: Session) => s.locationName ?? '',
+      registered: (s: Session) => new Date(s.createdAt).getTime(),
+    },
+  ), [locationFiltered, overrides, blockedSort]);
+  const overrideRows = useMemo(() => sortRows(
+    overrides,
+    overrideSort,
+    {
+      serial:     (o: PreFlightOverride) => o.serialNumber,
+      device:     (o: PreFlightOverride) => `${o.deviceManufacturer} ${o.deviceModel}`,
+      location:   (o: PreFlightOverride) => o.locationName ?? '',
+      approvedBy: (o: PreFlightOverride) => o.approvedBy,
+      expires:    (o: PreFlightOverride) => new Date(o.expiresAt).getTime(),
+    },
+  ), [overrides, overrideSort]);
+  const showOverrides = preFlightEnabled;
+  const canApprove = isAdministrator && preFlightEnabled;
+
+  // Switching pre-flight authorization off hides the Overrides tab; do not strand the view on it.
+  useEffect(() => {
+    if (!showOverrides && view === 'overrides') setView('blocked');
+  }, [showOverrides, view]);
 
   // Look up log availability only for the failed sessions currently on screen, and only once per
   // session, so opening the tab costs one request per failed device rather than one per poll.
@@ -440,6 +505,47 @@ function SessionsPageImpl(): React.ReactElement {
       notify({ status: 'error', title: 'Network error. Please try again.' });
     } finally {
       setRemovingSessionId(null);
+    }
+  };
+
+  const handleApprove = async (session: Session) => {
+    setOverrideBusy(true);
+    try {
+      const res = await apiFetch(`/api/sessions/${session.sessionId}/preflight-override`, { method: 'POST', credentials: 'include' });
+      if (res.ok) {
+        notify({ status: 'success', title: `${session.deviceSerialNumber} approved for its next session.` });
+        setPendingApprove(null);
+        handleRefresh();
+      } else {
+        notify({ status: 'error', title: 'Could not approve the device.', description: await extractErrorDetail(res, 'Please try again.') });
+        if (res.status === 409) { setPendingApprove(null); handleRefresh(); }
+      }
+    } catch {
+      notify({ status: 'error', title: 'Network error. Please try again.' });
+    } finally {
+      setOverrideBusy(false);
+    }
+  };
+
+  const handleRevoke = async (override: PreFlightOverride) => {
+    setOverrideBusy(true);
+    try {
+      const res = await apiFetch(`/api/preflight-overrides?serialNumber=${encodeURIComponent(override.serialNumber)}`, { method: 'DELETE', credentials: 'include' });
+      if (res.ok) {
+        notify({ status: 'success', title: `Override for ${override.serialNumber} revoked.` });
+        setPendingRevoke(null);
+        handleRefresh();
+      } else if (res.status === 404) {
+        notify({ status: 'info', title: `The override for ${override.serialNumber} was already used or has expired.` });
+        setPendingRevoke(null);
+        handleRefresh();
+      } else {
+        notify({ status: 'error', title: 'Could not revoke the override.', description: await extractErrorDetail(res, 'Please try again.') });
+      }
+    } catch {
+      notify({ status: 'error', title: 'Network error. Please try again.' });
+    } finally {
+      setOverrideBusy(false);
     }
   };
 
@@ -516,7 +622,9 @@ function SessionsPageImpl(): React.ReactElement {
             { key: 'monitor', label: 'Monitor', count: counts.monitor },
             { key: 'success', label: 'Success', count: counts.success },
             { key: 'failed',  label: 'Failed',  count: counts.failed },
-          ] as const).map((tab) => {
+            { key: 'blocked', label: 'Blocked', count: counts.blocked },
+            ...(showOverrides ? [{ key: 'overrides', label: 'Overrides', count: counts.overrides }] : []),
+          ] as { key: DeviceView; label: string; count: number }[]).map((tab) => {
             const isActive = tab.key === view;
             return (
               <button
@@ -557,7 +665,7 @@ function SessionsPageImpl(): React.ReactElement {
               )}
             </label>
           )}
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <Button variant="outline" onClick={handleRefresh}>
             <RefreshCw className={loading ? 'animate-spin' : ''} /> Refresh
           </Button>
         </div>
@@ -570,7 +678,11 @@ function SessionsPageImpl(): React.ReactElement {
             ? 'Deployment progress and status for devices currently imaging, updated in real time.'
             : view === 'success'
               ? 'Devices that completed imaging successfully.'
-              : 'Devices whose imaging failed or that were never authorized. Download the diagnostic log where the Client managed to upload one.'}
+              : view === 'failed'
+                ? 'Devices whose imaging failed. Download the diagnostic log where the Client managed to upload one.'
+                : view === 'blocked'
+                  ? 'Devices that did not meet the pre-flight requirements when they started a session. Fix the device and restart it, or approve its next session.'
+                  : 'Blocked devices an administrator approved. Each can start one session within 7 days that skips the approved checks. Once it does, the device moves to Pending.'}
       </p>
 
       {view === 'pending' ? (
@@ -600,12 +712,12 @@ function SessionsPageImpl(): React.ReactElement {
                   {/* The remaining widths already summed to 96%, leaving exactly this much for the
                       toggle without redistributing the existing columns. */}
                   <TableHead className="w-[4%]"><span className="sr-only">Expand device details</span></TableHead>
-                  <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="w-[18%]" />
-                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="w-[24%]" />
-                  <SortableHead label="Location" sortKey="location" sort={availableSort} onSort={toggleAvailableSort} className="w-[16%]" />
-                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="w-[12%]" />
-                  <TableHead className="w-[13%]">Passcode</TableHead>
-                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} className="w-[13%]" />
+                  <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('serial')}>{availableCols.handle('serial', 'Serial')}</SortableHead>
+                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('device')}>{availableCols.handle('device', 'Device')}</SortableHead>
+                  <SortableHead label="Location" sortKey="location" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('location')}>{availableCols.handle('location', 'Location')}</SortableHead>
+                  <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('state')}>{availableCols.handle('state', 'State')}</SortableHead>
+                  <TableHead className="relative" style={availableCols.style('passcode')}>Passcode{availableCols.handle('passcode', 'Passcode')}</TableHead>
+                  <SortableHead label="Registered" sortKey="registered" sort={availableSort} onSort={toggleAvailableSort} style={availableCols.style('registered')} />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -683,7 +795,6 @@ function SessionsPageImpl(): React.ReactElement {
               {/* Reserve width from the image options even while the placeholder is shown. The cap
                   keeps exceptionally long catalog labels within the available toolbar width. */}
               <Select
-                size="sm"
                 sizeToOptions
                 wrapperClassName="min-w-[10rem] max-w-full sm:max-w-xl"
                 aria-label="OS image to assign"
@@ -695,7 +806,6 @@ function SessionsPageImpl(): React.ReactElement {
                 title={!hasOsImages ? 'Upload an OS image before assigning one to coupled devices.' : undefined}
               />
               <Button
-                size="sm"
                 className="ml-auto shrink-0"
                 onClick={() => setPendingBulkAssign(true)}
                 disabled={!selectedImageId || targetSessions.length === 0 || startingImages}
@@ -712,10 +822,10 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="w-[22%]" />
-                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="w-[28%]" />
-                  <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="w-[18%]" />
-                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} className="w-[20%]" />
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('serial')}>{coupledCols.handle('serial', 'Serial')}</SortableHead>
+                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('device')}>{coupledCols.handle('device', 'Device')}</SortableHead>
+                  <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('location')}>{coupledCols.handle('location', 'Location')}</SortableHead>
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} style={coupledCols.style('registered')} />
                   {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
                       The other columns above intentionally leave headroom (don't sum to 100%) so this
                       fixed column doesn't push the table wider than its container. */}
@@ -754,7 +864,7 @@ function SessionsPageImpl(): React.ReactElement {
                           className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           onClick={() => void handleRemoveCoupledSession(s.sessionId)}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 />
                         </Button>
                       </Tooltip>
                     </TableCell>
@@ -774,13 +884,13 @@ function SessionsPageImpl(): React.ReactElement {
                     fixed px column (State was a flat 140px) made the row wider than its
                     container on anything above ~1750px and forced a horizontal scrollbar. */}
                 <TableHead className="w-[4%]"><span className="sr-only">Details</span></TableHead>
-                <SortableHead label="Serial / Session" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="w-[14%]" />
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="w-[17%]" />
-                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="w-[10%]" />
-                <SortableHead label="Registered" sortKey="registered" sort={monitorSort} onSort={toggleMonitorSort} className="w-[15%]" />
-                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="w-[9%]" />
-                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="w-[15%]" />
-                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} className="w-[16%]" />
+                <SortableHead label="Serial / Session" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('serial')}>{monitorCols.handle('serial', 'Serial / Session')}</SortableHead>
+                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('device')}>{monitorCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('location')}>{monitorCols.handle('location', 'Location')}</SortableHead>
+                <SortableHead label="Registered" sortKey="registered" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('registered')}>{monitorCols.handle('registered', 'Registered')}</SortableHead>
+                <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('state')}>{monitorCols.handle('state', 'State')}</SortableHead>
+                <SortableHead label="Progress" sortKey="progress" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('progress')}>{monitorCols.handle('progress', 'Progress')}</SortableHead>
+                <SortableHead label="Step" sortKey="step" sort={monitorSort} onSort={toggleMonitorSort} style={monitorCols.style('step')} />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -825,11 +935,10 @@ function SessionsPageImpl(): React.ReactElement {
                     </Tooltip>
                   </TableCell>
                   <TableCell>
-                    <div className="space-y-1">
+                    <div className="min-w-0 space-y-1">
                       <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                       <CopyableId
                         value={s.sessionId}
-                        display={s.sessionId.slice(0, 8)}
                         label="session ID"
                         className="font-mono text-xs text-muted-foreground"
                       />
@@ -873,11 +982,11 @@ function SessionsPageImpl(): React.ReactElement {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
-                <SortableHead label="Serial" sortKey="serial" sort={successSort} onSort={toggleSuccessSort} className="w-[15%]" />
-                <SortableHead label="Device" sortKey="device" sort={successSort} onSort={toggleSuccessSort} className="w-[25%]" />
-                <SortableHead label="Location" sortKey="location" sort={successSort} onSort={toggleSuccessSort} className="w-[15%]" />
-                <TableHead className="w-[20%]">Progress</TableHead>
-                <SortableHead label="Finished" sortKey="finished" sort={successSort} onSort={toggleSuccessSort} className="w-[20%]" />
+                <SortableHead label="Serial" sortKey="serial" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('serial')}>{successCols.handle('serial', 'Serial')}</SortableHead>
+                <SortableHead label="Device" sortKey="device" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('device')}>{successCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Location" sortKey="location" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('location')}>{successCols.handle('location', 'Location')}</SortableHead>
+                <TableHead className="relative" style={successCols.style('progress')}>Progress{successCols.handle('progress', 'Progress')}</TableHead>
+                <SortableHead label="Finished" sortKey="finished" sort={successSort} onSort={toggleSuccessSort} style={successCols.style('finished')} />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -954,7 +1063,7 @@ function SessionsPageImpl(): React.ReactElement {
             </TableBody>
           </Table>
         </div>
-      ) : (
+      ) : view === 'failed' ? (
         <div className="rounded-md border border-border overflow-hidden">
           <Table className="table-fixed">
             <TableHeader>
@@ -964,13 +1073,13 @@ function SessionsPageImpl(): React.ReactElement {
                     140px/150px) can't be mixed in here without pushing the row past the
                     container width. */}
                 <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
-                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="w-[12%]" />
-                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="w-[17%]" />
-                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="w-[11%]" />
-                <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="w-[10%]" />
-                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="w-[14%]" />
-                <SortableHead label="Registered" sortKey="registered" sort={failedSort} onSort={toggleFailedSort} className="w-[11%]" />
-                <TableHead className="w-[20%]">Actions</TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('serial')}>{failedCols.handle('serial', 'Serial')}</SortableHead>
+                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('device')}>{failedCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('location')}>{failedCols.handle('location', 'Location')}</SortableHead>
+                <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('state')}>{failedCols.handle('state', 'State')}</SortableHead>
+                <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('step')}>{failedCols.handle('step', 'Last step')}</SortableHead>
+                <SortableHead label="Registered" sortKey="registered" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('registered')}>{failedCols.handle('registered', 'Registered')}</SortableHead>
+                <TableHead style={failedCols.style('actions')}>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -993,7 +1102,7 @@ function SessionsPageImpl(): React.ReactElement {
                     <EmptyState
                       icon={CheckCircle2}
                       title="No failed devices"
-                      description="Devices that fail imaging or are denied authorization appear here."
+                      description="Devices that fail imaging appear here."
                     />
                   </TableCell>
                 </TableRow>
@@ -1031,7 +1140,6 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell>
                       <Button
                         variant="outline"
-                        size="sm"
                         disabled={!hasLog || downloadingLog === s.sessionId}
                         title={
                           logsUnknown ? 'Checking for an uploaded diagnostic log…'
@@ -1061,6 +1169,171 @@ function SessionsPageImpl(): React.ReactElement {
             </TableBody>
           </Table>
         </div>
+      ) : view === 'blocked' ? (
+        <div className="rounded-md border border-border overflow-hidden">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <SortableHead label="Serial" sortKey="serial" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('serial')}>{blockedCols.handle('serial', 'Serial')}</SortableHead>
+                <SortableHead label="Device" sortKey="device" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('device')}>{blockedCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Location" sortKey="location" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('location')}>{blockedCols.handle('location', 'Location')}</SortableHead>
+                <TableHead className="relative" style={blockedCols.style('checks')}>Checks{blockedCols.handle('checks', 'Checks')}</TableHead>
+                <SortableHead label="Registered" sortKey="registered" sort={blockedSort} onSort={toggleBlockedSort} className={canApprove ? 'relative' : undefined} style={blockedCols.style('registered')}>{canApprove ? blockedCols.handle('registered', 'Registered') : null}</SortableHead>
+                {canApprove && <TableHead style={blockedCols.style('actions')}>Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && sessions.length === 0 ? (
+                Array.from({ length: 3 }).map((_, i) => (
+                  <TableRow key={`blocked-skeleton-${i}`} className="hover:bg-transparent">
+                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-7 w-32" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    {canApprove && <TableCell><Skeleton className="h-8 w-24" /></TableCell>}
+                  </TableRow>
+                ))
+              ) : blocked.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={canApprove ? 7 : 6} className="p-0">
+                    <EmptyState
+                      icon={ShieldCheck}
+                      title="No blocked devices"
+                      description="Devices that do not meet the pre-flight requirements appear here."
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : blocked.map(s => (
+                <Fragment key={s.sessionId}>
+                  <TableRow>
+                    <TableCell>
+                      <Tooltip content={isExpanded(s.sessionId) ? 'Hide details' : 'Show details'}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleExpanded(s.sessionId)}
+                          aria-expanded={isExpanded(s.sessionId)}
+                          aria-controls={`${detailsId}-${s.sessionId}`}
+                          aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} details for ${s.deviceSerialNumber}`}
+                        >
+                          {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
+                        </Button>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                    </TableCell>
+                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.locationName ?? '-'}</TableCell>
+                    <TableCell><PreFlightCheckStrip checks={s.preFlightChecks} /></TableCell>
+                    <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
+                    {canApprove && (
+                      <TableCell>
+                        <Button variant="outline" onClick={() => setPendingApprove(s)}>
+                          <ShieldCheck /> Approve
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                  {isExpanded(s.sessionId) && (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={canApprove ? 7 : 6} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                        <SessionDetailsPanel session={s} />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border overflow-hidden">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <SortableHead label="Serial" sortKey="serial" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('serial')}>{overrideCols.handle('serial', 'Serial')}</SortableHead>
+                <SortableHead label="Device" sortKey="device" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('device')}>{overrideCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Location" sortKey="location" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('location')}>{overrideCols.handle('location', 'Location')}</SortableHead>
+                <TableHead className="relative" style={overrideCols.style('checks')}>Checks{overrideCols.handle('checks', 'Checks')}</TableHead>
+                <SortableHead label="Approved by" sortKey="approvedBy" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('approvedBy')}>{overrideCols.handle('approvedBy', 'Approved by')}</SortableHead>
+                <SortableHead label="Expires" sortKey="expires" sort={overrideSort} onSort={toggleOverrideSort} className={isAdministrator ? 'relative' : undefined} style={overrideCols.style('expires')}>{isAdministrator ? overrideCols.handle('expires', 'Expires') : null}</SortableHead>
+                {isAdministrator && <TableHead style={overrideCols.style('actions')}>Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {overrideRows.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={isAdministrator ? 7 : 6} className="p-0">
+                    <EmptyState
+                      icon={ShieldOff}
+                      title="No active overrides"
+                      description="Blocked devices you approve appear here until they start their next session or the approval expires."
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : overrideRows.map(o => (
+                <TableRow key={o.serialNumber}>
+                  <TableCell>
+                    <CopyableId value={o.serialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                  </TableCell>
+                  <TableCell>{o.deviceManufacturer} {o.deviceModel}</TableCell>
+                  <TableCell className="text-muted-foreground">{o.locationName ?? '-'}</TableCell>
+                  <TableCell><PreFlightCheckStrip checks={overrideChecks(o)} /></TableCell>
+                  <TableCell>
+                    <span className="block truncate">{o.approvedBy}</span>
+                    <RelativeTime value={o.approvedAt} className="block text-xs text-muted-foreground" />
+                  </TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    <Tooltip content={formatDateTime(o.expiresAt)}>
+                      <time dateTime={o.expiresAt}>{formatExpiresIn(o.expiresAt)}</time>
+                    </Tooltip>
+                  </TableCell>
+                  {isAdministrator && (
+                    <TableCell>
+                      <Button variant="outline" onClick={() => setPendingRevoke(o)}>
+                        <Ban /> Revoke
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {pendingApprove && (
+        <ConfirmImpactDialog
+          copy={{
+            confirmTitle: `Approve ${pendingApprove.deviceSerialNumber} for its next session?`,
+            impact: 'The next session this device starts within 7 days skips the checks that failed on this session. The pass works once, and any other failed check still blocks the device. Your approval is recorded on the session.',
+            confirmLabel: 'Approve',
+            destructive: false,
+          }}
+          busy={overrideBusy}
+          onCancel={() => setPendingApprove(null)}
+          onConfirm={() => { void handleApprove(pendingApprove); }}
+          titleId="preflight-approve-confirm-title"
+        />
+      )}
+
+      {pendingRevoke && (
+        <ConfirmImpactDialog
+          copy={{
+            confirmTitle: `Revoke the override for ${pendingRevoke.serialNumber}?`,
+            impact: 'The device loses its approved pass, so the checks block its next session again. Its blocked session returns to the Blocked tab, where it can be approved again.',
+            confirmLabel: 'Revoke',
+            destructive: true,
+          }}
+          busy={overrideBusy}
+          onCancel={() => setPendingRevoke(null)}
+          onConfirm={() => { void handleRevoke(pendingRevoke); }}
+          titleId="preflight-revoke-confirm-title"
+        />
       )}
 
       {pendingBulkAssign && (

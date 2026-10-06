@@ -54,7 +54,7 @@ A state from which a session cannot continue:
 |---|---|
 | `SessionCompleted` | All imaging stages completed successfully |
 | `SessionFailed` | A stage failed or an active/coupled session timed out |
-| `SessionNotAuthorized` | Enabled pre-flight authorization denied the device |
+| `SessionNotAuthorized` | The device failed a required pre-flight check and is listed under **Devices › Blocked** |
 | `SessionExpired` | An uncoupled session timed out; this is a benign expiry, not an imaging failure |
 
 Terminal live-session records are retained for 24 hours before lifecycle cleanup. Reporting history is stored separately for the configured retention period.

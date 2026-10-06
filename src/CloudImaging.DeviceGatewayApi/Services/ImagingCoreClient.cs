@@ -63,4 +63,16 @@ public sealed class ImagingCoreClient
     /// </summary>
     public Task<HttpResponseMessage> GetActiveCertificateMetadataAsync(CancellationToken ct = default) =>
         _http.GetAsync("/api/internal/cert/active", ct);
+
+    /// <summary>Whether Autopilot registration is enabled in the portal.</summary>
+    public Task<HttpResponseMessage> GetAutopilotAvailabilityAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/autopilot/availability", ct);
+
+    /// <summary>Forward a verified Autopilot hardware hash submission.</summary>
+    public Task<HttpResponseMessage> SubmitAutopilotRegistrationAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/autopilot/registrations", payload, JsonOptions, ct);
+
+    /// <summary>Read an Autopilot request's device-facing status; Core checks the status token.</summary>
+    public Task<HttpResponseMessage> GetAutopilotDeviceStatusAsync(Guid requestId, string statusToken, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/autopilot/registrations/{requestId}/device-status", new { statusToken }, JsonOptions, ct);
 }

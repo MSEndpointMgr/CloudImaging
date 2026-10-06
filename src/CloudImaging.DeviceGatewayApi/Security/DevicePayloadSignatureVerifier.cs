@@ -48,7 +48,42 @@ public static class DevicePayloadSignatureVerifier
         ArgumentNullException.ThrowIfNull(clientCertificate);
         ArgumentNullException.ThrowIfNull(payload);
 
-        var pop = payload.ProofOfPossession;
+        return Verify(
+            clientCertificate,
+            payload.ProofOfPossession,
+            pop => DevicePayloadSignature.BuildChallenge(payload.SerialNumber, pop.TimestampUtc, pop.Nonce),
+            maxSkew,
+            now);
+    }
+
+    /// <summary>
+    /// Verifies the proof-of-possession on an Autopilot hardware hash submission. The challenge
+    /// covers the hash itself, so the signed request cannot be replayed with different content.
+    /// </summary>
+    public static Result VerifyAutopilot(
+        X509Certificate2 clientCertificate,
+        AutopilotHashSubmission submission,
+        TimeSpan maxSkew,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(clientCertificate);
+        ArgumentNullException.ThrowIfNull(submission);
+
+        return Verify(
+            clientCertificate,
+            submission.ProofOfPossession,
+            pop => DevicePayloadSignature.BuildAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, pop.TimestampUtc, pop.Nonce),
+            maxSkew,
+            now);
+    }
+
+    private static Result Verify(
+        X509Certificate2 clientCertificate,
+        DeviceProofOfPossession? pop,
+        Func<DeviceProofOfPossession, byte[]> buildChallenge,
+        TimeSpan maxSkew,
+        DateTimeOffset now)
+    {
         if (pop is null
             || string.IsNullOrWhiteSpace(pop.Nonce)
             || string.IsNullOrWhiteSpace(pop.TimestampUtc)
@@ -81,10 +116,7 @@ public static class DevicePayloadSignatureVerifier
             return Result.MalformedSignature;
         }
 
-        byte[] challenge = DevicePayloadSignature.BuildChallenge(
-            payload.SerialNumber,
-            pop.TimestampUtc,
-            pop.Nonce);
+        byte[] challenge = buildChallenge(pop);
 
         using var rsa = clientCertificate.GetRSAPublicKey();
         if (rsa is null)

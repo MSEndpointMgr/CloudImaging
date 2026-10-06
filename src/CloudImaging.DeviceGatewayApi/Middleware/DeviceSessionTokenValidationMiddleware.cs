@@ -19,8 +19,16 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
     public const string SessionIdKey = "DeviceSessionId";
 
     /// <summary>Function names exempt from token validation (public/mTLS-only endpoints).</summary>
+    /// <remarks>Autopilot availability and submission run before, and independently of, any imaging session.</remarks>
     public static readonly IReadOnlySet<string> ExemptFunctionNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage", "GetAutopilotAvailability", "SubmitAutopilotRegistration" };
+
+    /// <summary>
+    /// Functions authenticated by a per-request Autopilot status token instead of a session token.
+    /// The token is only extracted here (so rate limiting can key on it); Imaging Core verifies it.
+    /// </summary>
+    public static readonly IReadOnlySet<string> StatusTokenFunctionNames =
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GetAutopilotRegistrationStatus" };
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
@@ -57,6 +65,13 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
         if (string.IsNullOrWhiteSpace(token))
         {
             await WriteUnauthorizedAsync(context, request, "Bearer token is empty.");
+            return;
+        }
+
+        if (StatusTokenFunctionNames.Contains(functionName))
+        {
+            context.Items["BearerToken"] = token;
+            await next(context);
             return;
         }
 

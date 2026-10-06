@@ -95,8 +95,9 @@ public sealed partial class OfflineDriveLetterService
         }
 
         // mountmgr wrote this when diskpart assigned the partition its temporary letter. It is the
-        // opaque identity ("DMIO:ID:" + the GPT partition GUID) that a MountedDevices value must
-        // contain for a letter to bind to this exact partition.
+        // opaque identity (on GPT "DMIO:ID:" + the partition GUID, on MBR the disk signature +
+        // partition offset) that a MountedDevices value must contain for a letter to bind to this
+        // exact partition.
         var volumeId = ReadLiveVolumeIdentity(letter);
         if (volumeId is null or { Length: 0 })
         {
@@ -206,7 +207,7 @@ public sealed partial class OfflineDriveLetterService
     private static partial void LogLoadingOfflineHive(ILogger logger, string hivePath);
 
     [LoggerMessage(Level = LogLevel.Warning,
-        Message = "No mount-manager identity was found for volume {Letter}: — inherited drive-letter mappings will be cleared, but C: cannot be pinned explicitly.")]
+        Message = "No mount-manager identity was found for volume {Letter}:. Inherited drive-letter mappings will be cleared, but C: cannot be pinned explicitly.")]
     private static partial void LogVolumeIdentityUnavailable(ILogger logger, char letter);
 
     [LoggerMessage(Level = LogLevel.Information,

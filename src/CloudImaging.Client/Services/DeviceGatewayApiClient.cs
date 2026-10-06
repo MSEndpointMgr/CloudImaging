@@ -104,6 +104,8 @@ public sealed partial class DeviceGatewayApiClient
             Hardware     = payload.Hardware,
             LocationId   = payload.LocationId,
             LocationName = payload.LocationName,
+            Architecture = payload.Architecture,
+            SecurityPosture = payload.SecurityPosture,
             ProofOfPossession = new DeviceProofOfPossession
             {
                 Nonce        = nonce,
@@ -297,6 +299,107 @@ public sealed partial class DeviceGatewayApiClient
         return result;
     }
 
+    // ── Autopilot hardware hash registration (independent of imaging sessions) ────────────────────
+
+    /// <summary>
+    /// GET /api/v1/autopilot/availability: whether the portal allows Autopilot registration.
+    /// mTLS only. Returns null when the answer could not be obtained (offline, older backend).
+    /// </summary>
+    public async Task<bool?> GetAutopilotAvailabilityAsync(CancellationToken ct = default)
+    {
+        const string path = "/api/v1/autopilot/availability";
+        LogHttpRequest(_logger, "GET", path);
+        var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            return null;
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<AutopilotAvailability>(JsonOptions, ct);
+        return result?.Enabled;
+    }
+
+    /// <summary>
+    /// POST /api/v1/autopilot/registrations: submits the hardware hash for approval, signed with
+    /// the boot-media private key over a challenge that includes the hash itself.
+    /// </summary>
+    public async Task<AutopilotSubmissionResponse> SubmitAutopilotHashAsync(AutopilotHashSubmission submission, CancellationToken ct = default)
+    {
+        const string path = "/api/v1/autopilot/registrations";
+        LogAutopilotSubmitRequest(_logger, submission.SerialNumber, submission.Manufacturer, submission.Model);
+        var response = await _http.PostAsJsonAsync(path, SignAutopilotSubmission(submission), JsonOptions, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "POST", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            throw failure;
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<AutopilotSubmissionResponse>(JsonOptions, ct)
+            ?? throw new InvalidOperationException("The Device Gateway returned an empty Autopilot submission response.");
+        LogAutopilotSubmitResponse(_logger, result.RequestId, result.ReferenceCode, result.State);
+        return result;
+    }
+
+    /// <summary>
+    /// GET /api/v1/autopilot/registrations/{id}: reads the request's status with its own status
+    /// token, sent per request so it never replaces a device-session token set on the client.
+    /// </summary>
+    public async Task<AutopilotRegistrationStatus> GetAutopilotStatusAsync(Guid requestId, string statusToken, CancellationToken ct = default)
+    {
+        var path = $"/api/v1/autopilot/registrations/{requestId}";
+        LogHttpRequest(_logger, "GET", path);
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", statusToken);
+        var response = await _http.SendAsync(request, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            throw failure;
+        }
+
+        return await response.Content.ReadFromJsonAsync<AutopilotRegistrationStatus>(JsonOptions, ct)
+            ?? throw new InvalidOperationException("The Device Gateway returned an empty Autopilot status response.");
+    }
+
+    private AutopilotHashSubmission SignAutopilotSubmission(AutopilotHashSubmission submission)
+    {
+        if (_signingCertificate is null)
+            return submission;
+
+        using var rsa = _signingCertificate.GetRSAPrivateKey()
+            ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
+
+        var timestampUtc = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var challenge = DevicePayloadSignature.BuildAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, timestampUtc, nonce);
+        var signature = rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+
+        return new AutopilotHashSubmission
+        {
+            SerialNumber = submission.SerialNumber,
+            Manufacturer = submission.Manufacturer,
+            Model = submission.Model,
+            HardwareHash = submission.HardwareHash,
+            Architecture = submission.Architecture,
+            LocationId = submission.LocationId,
+            LocationName = submission.LocationName,
+            ClientVersion = submission.ClientVersion,
+            ProofOfPossession = new DeviceProofOfPossession
+            {
+                Nonce = nonce,
+                TimestampUtc = timestampUtc,
+                Signature = Convert.ToBase64String(signature),
+            },
+        };
+    }
+
     // ── Logging (FR-066: every request/step/payload — secrets are always redacted) ──────────────────
 
     /// <summary>
@@ -350,6 +453,14 @@ public sealed partial class DeviceGatewayApiClient
     [LoggerMessage(Level = LogLevel.Debug,
         Message = "Log upload URL issued for session {SessionId}: fileName={FileName} (upload URL signature omitted).")]
     private static partial void LogLogUploadUrlIssued(ILogger logger, Guid sessionId, string fileName);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Autopilot submission: serial={SerialNumber} manufacturer={Manufacturer} model={Model} (hardware hash and signature omitted).")]
+    private static partial void LogAutopilotSubmitRequest(ILogger logger, string serialNumber, string manufacturer, string model);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Autopilot submission accepted: requestId={RequestId} reference={ReferenceCode} state={State} (status token omitted).")]
+    private static partial void LogAutopilotSubmitResponse(ILogger logger, Guid requestId, string referenceCode, CloudImaging.Contracts.Enums.AutopilotRegistrationState state);
 }
 
 /// <summary>
@@ -385,6 +496,9 @@ public sealed class SessionStatusResponse
     /// backend has not been upgraded yet (defensive — the server always populates this today).
     /// </summary>
     public PartitioningScheme? PartitioningScheme { get; init; }
+
+    /// <summary>Pre-flight checks evaluated when the session was created; null from backends that predate them.</summary>
+    public IReadOnlyList<PreFlightCheckResult>? PreFlightChecks { get; init; }
 }
 
 /// <summary>Result of a SAS token refresh call — see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>

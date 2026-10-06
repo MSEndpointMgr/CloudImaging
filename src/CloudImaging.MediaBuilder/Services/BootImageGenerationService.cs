@@ -149,7 +149,7 @@ public sealed partial class BootImageGenerationService
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     private sealed record ElevatedGenerationParams(
-        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? ToolsRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess, MachineArchitecture Architecture);
+        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? ToolsRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess, MachineArchitecture Architecture, bool IncludeAutopilotTooling = false);
 
     private sealed record ElevatedGenerationResult(
         bool Success, string? WimPath, string? Sha256Hash, string? Error);
@@ -176,6 +176,7 @@ public sealed partial class BootImageGenerationService
         string? toolsRootPath = null,
         bool enableCommandPromptAccess = false,
         MachineArchitecture architecture = MachineArchitecture.X64,
+        bool includeAutopilotTooling = false,
         CancellationToken ct = default)
     {
         // Resolve the boot media certificate, branding logo, and Device Gateway URL HERE, in
@@ -198,9 +199,9 @@ public sealed partial class BootImageGenerationService
             : null;
 
         if (_isElevated())
-            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, ct);
+            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, ct);
 
-        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, ct);
+        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, ct);
     }
 
     /// <summary>
@@ -266,7 +267,7 @@ public sealed partial class BootImageGenerationService
     }
 
     private async Task<GenerationResult> RunElevatedChildProcessAsync(
-        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, CancellationToken ct)
+        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, bool includeAutopilotTooling, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
@@ -299,7 +300,7 @@ public sealed partial class BootImageGenerationService
                 await File.WriteAllBytesAsync(logoFilePath, logoBytes, ct);
             }
 
-            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, toolsRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture);
+            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, toolsRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -490,7 +491,7 @@ public sealed partial class BootImageGenerationService
             svc.LogMessage      += (_, line) => Append($"L\t{line}");
             svc.LogHeartbeat    += (_, line) => Append($"H\t{line}");
 
-            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, p.ToolsRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, p.Architecture, cts.Token);
+            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, p.ToolsRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, p.Architecture, p.IncludeAutopilotTooling, cts.Token);
 
             await WriteResultAsync(resultFile, new ElevatedGenerationResult(true, result.WimPath, result.Sha256Hash, null));
         }
@@ -587,6 +588,10 @@ public sealed partial class BootImageGenerationService
     /// payload, optional components, and Oscdimg boot files instead of the previously hardcoded
     /// x64 ("amd64") ADK folder name. Defaults to x64.
     /// </param>
+    /// <param name="includeAutopilotTooling">
+    /// Stages OA3Tool plus the WinPE-SecureStartup and WinPE-PlatformId optional components so the
+    /// Client can capture a Windows Autopilot hardware hash (see <see cref="AutopilotTooling"/>).
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<GenerationResult> GenerateAsync(
         string clientBinariesPath,
@@ -598,6 +603,7 @@ public sealed partial class BootImageGenerationService
         string? deviceGatewayBaseUrl = null,
         bool enableCommandPromptAccess = false,
         MachineArchitecture architecture = MachineArchitecture.X64,
+        bool includeAutopilotTooling = false,
         CancellationToken ct = default)
     {
         // Sweep up whatever a previous run left behind if the process was killed/crashed
@@ -633,6 +639,13 @@ public sealed partial class BootImageGenerationService
                 throw new InvalidOperationException(
                     "Windows ADK with WinPE add-on is not installed. " +
                     "Download both from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
+
+            // Checked before any copying so an unusable option fails in seconds, not after copype and the DISM mount.
+            if (includeAutopilotTooling
+                && AutopilotTooling.GetUnavailableReason(adkPath, architecture) is { } toolingError)
+            {
+                throw new InvalidOperationException(toolingError);
+            }
 
             // The boot media certificate is resolved by GenerateElevatedAsync before this method
             // runs (possibly in a separate elevated process) — see ResolveBootMediaCertificateAsync.
@@ -686,6 +699,12 @@ public sealed partial class BootImageGenerationService
                 var clientDestDir = Path.Combine(mountDir, "CloudImaging");
                 Directory.CreateDirectory(clientDestDir);
                 CopyDirectory(clientBinariesPath, clientDestDir, ct);
+
+                if (includeAutopilotTooling)
+                {
+                    ReportProgress("Adding Autopilot hash tooling", 52);
+                    await InjectAutopilotToolingAsync(adkPath, mountDir, clientDestDir, architecture, ct);
+                }
 
                 // Embed the portal-configured branding logo, if one was resolved — otherwise the
                 // Client falls back to its default logo at runtime (FR-002a).
@@ -743,7 +762,8 @@ public sealed partial class BootImageGenerationService
                     commandPromptEnabled: enableCommandPromptAccess,
                     toolsInjectedCount: toolsInjected,
                     toolsRootPath: toolsRootPath,
-                    architecture: architecture);
+                    architecture: architecture,
+                    autopilotToolingIncluded: includeAutopilotTooling);
                 await BootImageManifestService.EmbedAsync(mountDir, manifest, ct);
                 LogManifestEmbedded(_logger, timestamp, driversInjected);
 
@@ -1075,6 +1095,24 @@ public sealed partial class BootImageGenerationService
 
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+    }
+
+    /// <summary>
+    /// Stages what the Client needs to capture a Windows Autopilot hardware hash: WinPE-SecureStartup
+    /// and WinPE-PlatformId (in that order, after WinPE-WMI) for TPM access, and OA3Tool next to the
+    /// Client. See <see cref="AutopilotTooling"/>.
+    /// </summary>
+    private async Task InjectAutopilotToolingAsync(string adkPath, string mountDir, string clientDestDir, MachineArchitecture architecture, CancellationToken ct)
+    {
+        var (baseCab, langCab) = AutopilotTooling.SecureStartupPackagePaths(adkPath, architecture);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{AutopilotTooling.PlatformIdPackagePath(adkPath, architecture)}\"", ct);
+
+        var toolDir = Path.Combine(clientDestDir, AutopilotTooling.ClientRelativeDirectory);
+        Directory.CreateDirectory(toolDir);
+        File.Copy(AutopilotTooling.Oa3ToolSourcePath(adkPath, architecture), Path.Combine(toolDir, AutopilotTooling.Oa3ToolFileName), overwrite: true);
+        RaiseLog($"Autopilot hash tooling staged: {AutopilotTooling.SecureStartupPackage}, {AutopilotTooling.PlatformIdPackage}, and {AutopilotTooling.Oa3ToolFileName} in \\CloudImaging\\{AutopilotTooling.ClientRelativeDirectory}.");
     }
 
     /// <summary>

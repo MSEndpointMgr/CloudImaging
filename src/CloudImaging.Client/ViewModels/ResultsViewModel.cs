@@ -2,14 +2,20 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using System.Windows.Threading;
+using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
+using Microsoft.Extensions.Logging;
+using Wpf.Ui.Controls;
 
 namespace CloudImaging.Client.ViewModels;
+
+/// <summary>One enabled pre-flight requirement on the blocked screen.</summary>
+public sealed record PreFlightRequirementRow(string Name, string Value, bool Met, SymbolRegular Icon);
 
 /// <summary>
 /// View model for the ResultsView displaying all four terminal outcomes (T135, FR-021, FR-025, FR-026).
 /// </summary>
-public sealed class ResultsViewModel : INotifyPropertyChanged
+public sealed partial class ResultsViewModel : INotifyPropertyChanged
 {
     public enum Outcome { Success, Failure, NotAuthorized, Expired }
 
@@ -30,13 +36,44 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
         string? errorDetail,
         Action navigateToStart,
         string? explicitSupportReferenceCode = null,
-        Action? restartSystem = null)
+        Action? restartSystem = null,
+        Guid? sessionId = null,
+        IReadOnlyList<PreFlightCheckResult>? preFlightChecks = null,
+        Action? tryAgain = null,
+        ILogger? logger = null)
     {
         _outcome            = outcome;
         _deviceSerialNumber = deviceSerialNumber;
         _errorDetail        = errorDetail;
         _navigateToStart    = navigateToStart;
         _restartSystem      = restartSystem;
+        SessionId           = sessionId;
+
+        // Only requirements that were switched on are shown; a switched-off check blocks nothing.
+        var required = (preFlightChecks ?? [])
+            .Where(c => c.Outcome != PreFlightCheckOutcome.NotRequired)
+            .ToList();
+        BlockedRequirements = required
+            .Select(c => new PreFlightRequirementRow(
+                PreFlightCheckText.Name(c.Check),
+                PreFlightCheckText.Value(c.Check, c.Observed),
+                c.Outcome != PreFlightCheckOutcome.Failed,
+                IconFor(c.Check)))
+            .ToList();
+        var failedCount = required.Count(c => c.Outcome == PreFlightCheckOutcome.Failed);
+        BlockedSummary = required.Count == 1
+            ? $"{failedCount} of 1 pre-flight requirement is not met. Fix it, then restart the device."
+            : $"{failedCount} of {required.Count} pre-flight requirements are not met. Fix them, then restart the device.";
+
+        // Fix hints are only in the log; the screen keeps to one line per requirement.
+        if (outcome == Outcome.NotAuthorized && logger is not null)
+        {
+            foreach (var failed in required.Where(c => c.Outcome == PreFlightCheckOutcome.Failed))
+            {
+                LogCheckFailed(logger, PreFlightCheckText.Name(failed.Check), PreFlightCheckText.Value(failed.Check, failed.Observed),
+                    PreFlightCheckText.FixHint(failed.Check, failed.Observed));
+            }
+        }
 
         // Support reference code: prefer the code the failing stage actually generated
         // (e.g. FMT/DWN/APL from ImagingWorkflowViewModel); fall back to a REG-stage code with a
@@ -51,6 +88,7 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
 
         RetryCommand = new RelayCommand(_ => _navigateToStart());
         ExitCommand  = new RelayCommand(_ => System.Windows.Application.Current?.Shutdown());
+        TryAgainCommand = new RelayCommand(_ => (tryAgain ?? _navigateToStart)());
 
         // FR-025: on success, count down and restart the device automatically instead of
         // leaving it sitting on a terminal screen indefinitely — no restartSystem callback is
@@ -77,6 +115,31 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     public string? DeviceSerialNumber => _deviceSerialNumber;
     public string? SupportReferenceCode { get; }
     public string? ErrorDetail  => _errorDetail;
+
+    public Guid? SessionId { get; }
+
+    /// <summary>Every switched-on pre-flight requirement for the blocked outcome, in check order.</summary>
+    public IReadOnlyList<PreFlightRequirementRow> BlockedRequirements { get; }
+
+    /// <summary>False for sessions from a backend without per-check results: the enrollment-only message is shown instead.</summary>
+    public bool HasBlockedRequirements => BlockedRequirements.Count > 0;
+    public bool HasNoBlockedRequirements => !HasBlockedRequirements;
+
+    public string BlockedSummary { get; }
+
+    /// <summary>Starts a new session without a reboot, so a fixed or approved device can continue.</summary>
+    public ICommand TryAgainCommand { get; }
+
+    private static SymbolRegular IconFor(PreFlightCheck check) => check switch
+    {
+        PreFlightCheck.AutopilotPresence => SymbolRegular.Fingerprint24,
+        PreFlightCheck.FirmwareMode => SymbolRegular.DeveloperBoard24,
+        PreFlightCheck.SecureBoot => SymbolRegular.ShieldCheckmark24,
+        _ => SymbolRegular.Key24,
+    };
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Pre-flight check failed: {Check}: {Value}. {FixHint}")]
+    private static partial void LogCheckFailed(ILogger logger, string check, string value, string fixHint);
 
     /// <summary>Seconds remaining before an automatic restart (Success outcome only).</summary>
     public int RestartCountdownSecondsRemaining
@@ -111,8 +174,8 @@ public sealed class ResultsViewModel : INotifyPropertyChanged
     public ICommand RetryCommand { get; }
 
     /// <summary>
-    /// Closes the application. This is the only available action on the NotAuthorized outcome
-    /// (FR-007b/FR-026) — there is no automatic retry, since the device must first be enrolled.
+    /// Closes the application. On the NotAuthorized outcome it sits beside Try again, since a
+    /// blocked device usually needs a firmware change or an administrator approval first.
     /// </summary>
     public ICommand ExitCommand { get; }
 

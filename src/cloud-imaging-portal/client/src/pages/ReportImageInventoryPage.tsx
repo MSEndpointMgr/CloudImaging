@@ -143,7 +143,7 @@ export default function ReportImageInventoryPage(): React.ReactElement {
         <div className="text-sm text-muted-foreground">
           {totals ? `${totals.count} images, ${fmtSize(totals.totalSize)} total` : <Skeleton className="h-4 w-48" />}
         </div>
-        <Button variant="secondary" onClick={handleExport} disabled={!rows || rows.length === 0}>
+          <Button variant="outline" onClick={handleExport} disabled={!rows || rows.length === 0}>
           <FileDown /> Export CSV
         </Button>
       </div>

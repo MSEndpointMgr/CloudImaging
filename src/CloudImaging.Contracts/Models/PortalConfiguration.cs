@@ -12,6 +12,25 @@ public sealed class PortalConfiguration
     /// </summary>
     public bool DevicePreFlightAuthorizationEnabled { get; init; }
 
+    // Requirements evaluated only while DevicePreFlightAuthorizationEnabled is on; saved values are kept while it is off.
+
+    /// <summary>Device must be in Windows Autopilot or imported as a Corporate Identifier.</summary>
+    public bool PreFlightRequireAutopilotPresence { get; init; }
+
+    /// <summary>Blocks devices booted in Legacy BIOS (CSM) mode.</summary>
+    public bool PreFlightRequireUefiFirmware { get; init; }
+
+    /// <summary>Blocks devices where Secure Boot is disabled, in setup mode, or unavailable.</summary>
+    public bool PreFlightRequireSecureBoot { get; init; }
+
+    /// <summary>Blocks devices whose firmware does not expose a TPM 2.0.</summary>
+    public bool PreFlightRequireTpm20 { get; init; }
+
+    /// <summary>False when pre-flight is on but no requirement is selected, which would block nothing.</summary>
+    public bool IsPreFlightConfigurationValid() =>
+        !DevicePreFlightAuthorizationEnabled
+        || PreFlightRequireAutopilotPresence || PreFlightRequireUefiFirmware || PreFlightRequireSecureBoot || PreFlightRequireTpm20;
+
     /// <summary>
     /// OS image SAS token URL expiry in minutes (FR-022).
     /// Default: 240 (4 hours). Administrator-settable at runtime.
@@ -52,6 +71,22 @@ public sealed class PortalConfiguration
     /// request to github.com is issued.
     /// </summary>
     public bool UpdateCheckEnabled { get; init; }
+
+    /// <summary>
+    /// Allows devices to submit Windows Autopilot hardware hashes from the boot media for approval.
+    /// Default: false. Importing needs the Graph DeviceManagementServiceConfig.ReadWrite.All
+    /// permission on Imaging Core's identity, which an administrator grants deliberately.
+    /// </summary>
+    public bool AutopilotRegistrationEnabled { get; init; }
+
+    /// <summary>When true, approvers cannot approve an Autopilot request without choosing a group tag.</summary>
+    public bool AutopilotGroupTagRequired { get; init; }
+
+    /// <summary>Days an undecided Autopilot request stays pending before it expires and its hash is purged. Default: 7.</summary>
+    public int AutopilotPendingExpiryDays { get; init; } = 7;
+
+    /// <summary>Days a handled Autopilot request (imported, already registered, rejected or expired) is kept for audit before it is deleted. Default: 365.</summary>
+    public int AutopilotRetentionDays { get; init; } = 365;
 
     public DateTimeOffset LastModifiedAt { get; init; }
 }

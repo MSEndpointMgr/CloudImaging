@@ -3,6 +3,8 @@ import { CopyableId } from './ui/copyable-id.tsx';
 import { RelativeTime } from './ui/relative-time.tsx';
 import { formatDateTime } from '../lib/utils.ts';
 import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
+import type { PreFlightCheckResult } from '../lib/preflight.ts';
+import { PreFlightCheckTiles } from './PreFlightChecks.tsx';
 
 export interface SessionHardware {
   motherboardManufacturer?: string | null;
@@ -24,6 +26,7 @@ export interface SessionDetails {
   hardware?: SessionHardware | null;
   locationName: string | null;
   preFlightAuthorizationResult?: string | null;
+  preFlightChecks?: PreFlightCheckResult[] | null;
   createdAt: string;
   lastHeartbeatAt?: string | null;
   terminalAt?: string | null;
@@ -38,8 +41,8 @@ export interface SessionDetails {
  */
 const PRE_FLIGHT_LABELS: Record<string, string> = {
   Skipped: 'Not required (check disabled)',
-  MatchedAutopilotV1: 'Authorized \u2014 matched Autopilot device',
-  MatchedCorporateIdentifier: 'Authorized \u2014 matched corporate identifier',
+  MatchedAutopilotV1: 'Authorized: matched Autopilot device',
+  MatchedCorporateIdentifier: 'Authorized: matched corporate identifier',
   NotAuthorized: 'Not authorized',
 };
 
@@ -115,6 +118,7 @@ function InventoryList({
  */
 export function SessionDetailsPanel({ session }: { session: SessionDetails }): React.ReactElement {
   const preFlight = session.preFlightAuthorizationResult;
+  const preFlightChecks = session.preFlightChecks ?? [];
   const hardware = session.hardware;
   const motherboard = [hardware?.motherboardManufacturer, hardware?.motherboardModel]
     .filter(Boolean)
@@ -176,9 +180,12 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
         <Maybe value={session.locationName} />
       </DetailField>
 
-      <DetailField label="Pre-flight authorization">
-        <Maybe value={preFlight ? PRE_FLIGHT_LABELS[preFlight] ?? preFlight : null} />
-      </DetailField>
+      {/* Sessions created before per-check results existed only carry the overall outcome. */}
+      {preFlightChecks.length === 0 && (
+        <DetailField label="Pre-flight authorization">
+          <Maybe value={preFlight ? PRE_FLIGHT_LABELS[preFlight] ?? preFlight : null} />
+        </DetailField>
+      )}
 
       {/* The row itself shows this as a relative time, which answers "is this waiting on me?".
           The absolute instant is what you need when correlating against a device-side log. */}
@@ -211,6 +218,15 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
         </DetailField>
       )}
       </dl>
+
+      {preFlightChecks.length > 0 && (
+        <section className="space-y-2 border-t border-border pt-4" aria-label="Pre-flight checks">
+          <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Pre-flight checks <span className="normal-case tracking-normal">&middot; evaluated when the session started</span>
+          </h4>
+          <PreFlightCheckTiles checks={preFlightChecks} />
+        </section>
+      )}
 
       {/* Separated from the scalar fields because these are variable-length lists that need the
           full width. Hidden entirely when WMI returned nothing, rather than showing empty lists. */}

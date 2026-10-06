@@ -34,6 +34,7 @@ public sealed partial class CreateSessionFunction
     private readonly PortalConfigurationRepository _configRepo;
     private readonly PartitioningSchemeRepository _partitioningSchemeRepo;
     private readonly SessionHistoryRepository _historyRepo;
+    private readonly PreFlightOverrideRepository _overrideRepo;
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
@@ -43,6 +44,7 @@ public sealed partial class CreateSessionFunction
         PortalConfigurationRepository configRepo,
         PartitioningSchemeRepository partitioningSchemeRepo,
         SessionHistoryRepository historyRepo,
+        PreFlightOverrideRepository overrideRepo,
         IConfiguration config,
         ILogger<CreateSessionFunction> logger)
     {
@@ -51,6 +53,7 @@ public sealed partial class CreateSessionFunction
         _configRepo = configRepo;
         _partitioningSchemeRepo = partitioningSchemeRepo;
         _historyRepo = historyRepo;
+        _overrideRepo = overrideRepo;
         _config = config;
         _logger = logger;
     }
@@ -102,11 +105,20 @@ public sealed partial class CreateSessionFunction
         var (session, plainPasscode) = DeviceSessionFactory.CreateNew(
             payload, passcodeTtl, sessionInactivityTimeout);
 
-        // Run device pre-flight authorization
-        var preFlightResult = await _preFlight.EvaluateAsync(payload, context.CancellationToken);
+        // Run device pre-flight checks. Evaluated once here and stored; later policy changes never touch this session.
+        var portalConfig = await _configRepo.GetAsync(context.CancellationToken);
+        var preFlightResult = await _preFlight.EvaluateAsync(payload, portalConfig, context.CancellationToken);
+        var preFlightChecks = PreFlightCheckEvaluator.Evaluate(portalConfig, payload.SecurityPosture, preFlightResult);
+        if (PreFlightCheckEvaluator.FailedChecks(preFlightChecks).Count > 0
+            && await TryUseOverrideAsync(payload.SerialNumber, preFlightChecks, context.CancellationToken) is { } approvedChecks)
+        {
+            preFlightChecks = approvedChecks;
+        }
+
+        var failedChecks = PreFlightCheckEvaluator.FailedChecks(preFlightChecks);
 
         // Determine target state
-        var targetState = preFlightResult == PreFlightAuthorizationResult.NotAuthorized
+        var targetState = failedChecks.Count > 0
             ? SessionState.SessionNotAuthorized
             : SessionState.SessionAllowed;
 
@@ -125,6 +137,7 @@ public sealed partial class CreateSessionFunction
         {
             State = targetState,
             PreFlightAuthorizationResult = preFlightResult,
+            PreFlightChecks = preFlightChecks,
             PasscodeConsumed = false,
             OverallProgressPercent = 0,
             PartitioningSchemeSnapshotJson = partitioningSchemeSnapshotJson,
@@ -134,10 +147,13 @@ public sealed partial class CreateSessionFunction
 
         await _sessionRepo.CreateAsync(finalSession, context.CancellationToken);
         LogSessionCreated(_logger, finalSession.SessionId, targetState, preFlightResult);
+        if (failedChecks.Count > 0)
+        {
+            LogSessionBlocked(_logger, finalSession.SessionId, finalSession.DeviceSerialNumber, string.Join(", ", failedChecks));
+        }
 
         if (targetState == SessionState.SessionNotAuthorized)
         {
-            var portalConfig = await _configRepo.GetAsync(context.CancellationToken);
             var history = new SessionHistoryRecord
             {
                 SessionId = finalSession.SessionId,
@@ -148,6 +164,7 @@ public sealed partial class CreateSessionFunction
                 LocationId = finalSession.LocationId,
                 LocationName = finalSession.LocationName,
                 PreFlightAuthorizationResult = finalSession.PreFlightAuthorizationResult,
+                PreFlightChecks = finalSession.PreFlightChecks,
                 Architecture = finalSession.Architecture,
                 AssignedOsImageId = finalSession.AssignedOsImageId,
                 CreatedAt = finalSession.CreatedAt,
@@ -171,8 +188,44 @@ public sealed partial class CreateSessionFunction
         return response;
     }
 
+    /// <summary>
+    /// Uses the device's administrator override when it covers every failed check. Returns the checks
+    /// with those failures marked approved, or null when there is no usable override.
+    /// </summary>
+    private async Task<IReadOnlyList<PreFlightCheckResult>?> TryUseOverrideAsync(
+        string serialNumber, IReadOnlyList<PreFlightCheckResult> checks, CancellationToken ct)
+    {
+        if (await _overrideRepo.GetAsync(serialNumber, ct) is not { } stored)
+        {
+            return null;
+        }
+
+        var approved = PreFlightCheckEvaluator.ApplyOverride(checks, stored.Override, DateTimeOffset.UtcNow);
+        if (approved is null)
+        {
+            return null;
+        }
+
+        // ETag-guarded delete: a concurrent session from the same serial cannot use the same override.
+        if (!await _overrideRepo.TryConsumeAsync(serialNumber, stored.ETag, ct))
+        {
+            return null;
+        }
+
+        LogOverrideUsed(_logger, serialNumber, stored.Override.ApprovedBy, stored.Override.SourceSessionId);
+        return approved;
+    }
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid device registration payload.")]
     private static partial void LogInvalidPayload(ILogger logger, Exception ex);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Session {SessionId} for device {SerialNumber} blocked by pre-flight checks: {FailedChecks}.")]
+    private static partial void LogSessionBlocked(ILogger logger, Guid sessionId, string serialNumber, string failedChecks);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Device {SerialNumber} used the pre-flight override approved by {ApprovedBy} from session {SourceSessionId}.")]
+    private static partial void LogOverrideUsed(ILogger logger, string serialNumber, string approvedBy, Guid sourceSessionId);
 
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Session {SessionId} created with state {State} (pre-flight: {PreFlightResult}).")]

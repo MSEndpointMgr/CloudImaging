@@ -7,7 +7,7 @@ import { operatorApiClient } from '../services/operatorApiClient.js';
  * Locations router (Location Labels feature). Proxies the admin-managed location catalog to
  * the Operator API. Reading the catalog is available to any signed-in portal user (needed to
  * populate the Sessions page filter and the Header account menu's "my location" picker);
- * creating/deleting entries is Administrator-only.
+ * creating, editing and deleting entries is Administrator-only.
  */
 const router = Router();
 
@@ -24,6 +24,15 @@ router.post('/', requireRole('CloudImaging.Administrator'), async (req: Request,
   try {
     const data = await operatorApiClient.createLocation(req.body);
     res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put('/:locationId', requireRole('CloudImaging.Administrator'), requireGuidParams('locationId'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await operatorApiClient.updateLocation(req.params['locationId'] as string, req.body);
+    res.json(data);
   } catch (err) {
     next(err);
   }

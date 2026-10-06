@@ -164,7 +164,7 @@ export default function ReportLocationStatisticsPage(): React.ReactElement {
             <Input id="to" type="date" value={to} min={from} onChange={event => setTo(event.target.value)} className="w-40" />
           </div>
         </div>
-        <Button variant="secondary" onClick={handleExport} disabled={detailRecords.length === 0}>
+          <Button variant="outline" onClick={handleExport} disabled={detailRecords.length === 0}>
           <FileDown /> Export CSV
         </Button>
       </div>
@@ -172,7 +172,7 @@ export default function ReportLocationStatisticsPage(): React.ReactElement {
       {loadError && (
         <div className="flex items-center justify-between gap-4 border-y border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <span>Location statistics could not be loaded.</span>
-          <Button variant="outline" size="sm" onClick={() => setReload(value => value + 1)}>Retry</Button>
+            <Button variant="outline" onClick={() => setReload(value => value + 1)}>Retry</Button>
         </div>
       )}
 

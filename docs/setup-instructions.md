@@ -137,6 +137,12 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
      - Allowed member types: Users/Groups
      - Description: `Read-only access to the Dashboard and Reports.`
      - Read-only, limited to the Dashboard and Reports; see [roles-and-access.md](roles-and-access.md).
+   - *(Optional)* **`CloudImaging.AutopilotApprover`**: add only if people who are not
+     administrators will approve Autopilot registrations (see
+     [Autopilot registration](#optional-autopilot-registration)).
+     - Value: `CloudImaging.AutopilotApprover`
+     - Allowed member types: Users/Groups
+     - Description: `Approve or reject Windows Autopilot registrations submitted from boot media.`
 9. *(Optional)* Under **API permissions**, grant admin consent for the **Microsoft Graph →
    User.Read** delegated permission; Entra adds it to every new registration by default, so
    there's nothing to add, only consent to grant. It's used only to show the signed-in user's
@@ -406,6 +412,13 @@ The two grants are:
 Both are idempotent and verified, so the script is safe to rerun. Microsoft Entra takes time to
 replicate permission changes; wait several minutes before testing pre-flight authorization.
 
+If you plan to turn on [Autopilot registration](#optional-autopilot-registration), add
+`-EnableAutopilotRegistration`. The script then also grants
+**`DeviceManagementServiceConfig.ReadWrite.All`** to the Imaging Core API's managed identity, which
+importing approved hardware hashes into Intune requires. Leave it off otherwise. You can rerun the
+script with the switch later; it restarts the Imaging Core Function App after a new grant so the
+permission takes effect straight away.
+
 The **user-level** roles below, including `CloudImaging.MediaBuilderAccess`, still need to be
 assigned manually in Step 2.
 
@@ -460,6 +473,8 @@ Points worth understanding before you skip a row:
   API rows apply to whoever builds boot media.
 - **Do not assign `CloudImaging.PortalAccess`** to anyone here. It belongs to the portal backend's
   managed identity and is granted by `post-install.ps1` in Step 1.
+- **Autopilot approvers** who are not administrators need `CloudImaging.AutopilotApprover` on the
+  **Cloud Imaging Portal** application only. Administrators can already approve.
 
 #### 3. Have each person sign out and back in
 
@@ -504,9 +519,12 @@ without them; the rest are optional and can be revisited any time from **Configu
    - Before enabling it, confirm the Microsoft Graph permission script above ended with `[OK]`.
    - Add at least one test device to Windows Autopilot, or add its exact manufacturer, model, and
      serial-number tuple under **Intune → Devices → Enrollment → Corporate device identifiers**.
-   - Under **Configuration** → **Preflight**, enable the requirement, then boot that device and
-     verify its session reaches `SessionAllowed`.
-   - Test an unknown device too, and verify that it reaches `SessionNotAuthorized`.
+   - Under **Configuration** → **Preflight**, turn on **Require pre-flight authorization**, select
+     **Require Autopilot presence**, save, then boot that device and verify its session reaches
+     `SessionAllowed`.
+   - Test an unknown device too, and verify that it appears under **Devices › Blocked**.
+   - Add **Require UEFI firmware mode**, **Require Secure Boot** or **Require TPM 2.0** as needed.
+     These read the device firmware and do not need Microsoft Graph.
    - Disable the setting again if either result is unexpected. When disabled, registration skips
      Microsoft Graph and proceeds.
 6. **Review Security and Miscellaneous settings** *(optional)*.
@@ -776,6 +794,63 @@ the always-on-top Cloud Imaging Client window:
 4. In the **Sessions** section, click **Couple Device** and enter the passcode
 5. Click **Assign Image**, select an OS image, confirm
 6. The device downloads and applies the image automatically
+
+---
+
+### (Optional) Autopilot Registration
+
+Technicians can send a device's Windows Autopilot hardware hash from the boot media. An approver
+reviews it in the portal, picks a group tag, and Cloud Imaging imports the device into Intune.
+Imaging is never blocked by a pending request. The feature is off by default.
+
+**One-time setup**
+
+1. Rerun `post-install.ps1` with `-EnableAutopilotRegistration` (see
+   [Phase 3, Step 1](#step-1-complete-the-microsoft-entra-grants)).
+2. *(Optional)* Create the `CloudImaging.AutopilotApprover` app role on the Portal registration and
+   assign it to your approvers.
+3. Portal → **Configuration** → **Autopilot**: turn on **Allow Autopilot registration**, decide
+   whether a group tag is required, set how many days a pending request stays open (default 7),
+   and how long handled requests are kept for auditing (default 365 days).
+4. On the same tab, define the group tags approvers can choose. A tag is either static text or a
+   template built from `{LocationName}`, `{Region}` and `{CountryCode}`, for example
+   `{Region}-{CountryCode}-STD`. Group tags may contain letters, digits, spaces, hyphens,
+   underscores and periods, up to 128 characters. Microsoft does not document a limit; this set is
+   safe in Intune CSV imports, Microsoft Graph and Entra dynamic group rules.
+5. If you use templates, fill in **Region** and **Country** on each location under **Locations**.
+
+**Boot media**
+
+In the Media Builder, check **Include Autopilot hardware hash tooling** under **Autopilot
+Registration** when generating the boot image. It adds OA3Tool and the `WinPE-SecureStartup` and
+`WinPE-PlatformId` optional components, which give OA3Tool access to the TPM. x64 and ARM64 boot
+images are both supported. The ADK needs the **Deployment Tools** feature (for OA3Tool) and the
+WinPE add-on. The checkbox is disabled, with the reason shown, when either is missing.
+
+> **About hashes captured in WinPE.** Microsoft documents hash capture from full Windows only.
+> OA3Tool in WinPE is a widely used community method: the hash is accepted by Intune, but it
+> records WinPE as its source and can lack components that need drivers WinPE does not load.
+> Autopilot only uses the hash to identify the device, so this rarely matters in practice.
+
+**Registering a device**
+
+1. Boot the device from the media, choose **Register with Autopilot**, then **Continue**.
+   For pre-provisioning or self-deploying, TPM 2.0 must be turned on in the firmware first: the
+   hash then carries the TPM endorsement key those modes attest against. A hash without it is
+   flagged on the device and marked **No TPM data** in the portal; submitting again after turning
+   the TPM on replaces it.
+2. The Client captures the hash and submits it. It shows a reference code such as `AP-7K3Q9`.
+3. Either return to the menu and image the device, or wait on the screen for the decision.
+4. The approver opens **Autopilot** in the portal, reviews the request, picks a group tag and
+   approves. Import usually completes within a few minutes.
+
+A device that is already registered in Autopilot is reported as **Already registered** and is
+not imported again.
+
+Handled requests (imported, already registered, rejected or expired) leave the approval queue
+straight away. **Reports** → **Autopilot Registration History** lists them with the approver,
+group tag and outcome, and exports them to CSV. Approvers open it from the Autopilot page with
+**Handled requests**. Requests are deleted once they are older than the retention period.
 
 ---
 

@@ -5,7 +5,11 @@ import { getApiScope } from '../lib/msal.ts';
 import { ensureSessionFresh } from '../lib/apiClient.ts';
 
 /** Portal application roles carried in a signed-in user's token. */
-export type PortalRole = 'CloudImaging.Administrator' | 'CloudImaging.Technician' | 'CloudImaging.Reader';
+export type PortalRole =
+  | 'CloudImaging.Administrator'
+  | 'CloudImaging.Technician'
+  | 'CloudImaging.Reader'
+  | 'CloudImaging.AutopilotApprover';
 
 /**
  * Delegated Microsoft Graph scope needed to read the signed-in user's own profile photo
@@ -28,7 +32,17 @@ interface AuthContextValue {
   isTechnician: boolean;
   /** True when the user holds the CloudImaging.Reader role (Dashboard + Reports only). */
   isReader: boolean;
-  /** True when the user holds any portal role (Administrator, Technician, or Reader). */
+  /** True when the user holds the CloudImaging.AutopilotApprover role. */
+  isAutopilotApprover: boolean;
+  /** Can open the Autopilot registrations page (Approver, Administrator, or read-only Technician). */
+  canViewAutopilot: boolean;
+  /** Can approve, reject or retry Autopilot registrations (Approver or Administrator). */
+  canDecideAutopilot: boolean;
+  /** Can open the handled Autopilot registrations audit report (Approver, Administrator, or Reader). */
+  canViewAutopilotReport: boolean;
+  /** Can see the Dashboard. An Approver-only user lands on the Autopilot page instead. */
+  hasDashboardAccess: boolean;
+  /** True when the user holds any portal role (Administrator, Technician, Reader, or Autopilot Approver). */
   hasPortalAccess: boolean;
   /**
    * Object URL for the signed-in user's Entra ID profile photo, or null when one isn't
@@ -61,7 +75,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const isAdministrator = roles.includes('CloudImaging.Administrator');
   const isTechnician = roles.includes('CloudImaging.Technician');
   const isReader = roles.includes('CloudImaging.Reader');
-  const hasPortalAccess = isAdministrator || isTechnician || isReader;
+  const isAutopilotApprover = roles.includes('CloudImaging.AutopilotApprover');
+  const canViewAutopilot = isAdministrator || isTechnician || isAutopilotApprover;
+  const canDecideAutopilot = isAdministrator || isAutopilotApprover;
+  const canViewAutopilotReport = isAdministrator || isReader || isAutopilotApprover;
+  const hasDashboardAccess = isAdministrator || isTechnician || isReader;
+  const hasPortalAccess = hasDashboardAccess || isAutopilotApprover;
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const avatarUrlRef = useRef<string | null>(null);
@@ -152,7 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   };
 
   return (
-    <AuthContext.Provider value={{ account, isAuthenticated, roles, isAdministrator, isTechnician, isReader, hasPortalAccess, avatarUrl, getAccessToken, signOut }}>
+    <AuthContext.Provider value={{ account, isAuthenticated, roles, isAdministrator, isTechnician, isReader, isAutopilotApprover, canViewAutopilot, canDecideAutopilot, canViewAutopilotReport, hasDashboardAccess, hasPortalAccess, avatarUrl, getAccessToken, signOut }}>
       {children}
     </AuthContext.Provider>
   );

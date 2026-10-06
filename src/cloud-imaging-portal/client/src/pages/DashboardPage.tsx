@@ -6,6 +6,7 @@ import {
   HardDrive,
   Disc,
   LifeBuoy,
+  BadgeCheck,
   BarChart3,
   MapPin,
   Palette,
@@ -142,7 +143,7 @@ interface NavCard {
   description: string;
   icon: React.ReactNode;
   /** Undefined = visible to any signed-in portal role. */
-  access?: 'operations' | 'reports' | 'admin';
+  access?: 'operations' | 'autopilot' | 'reports' | 'admin';
 }
 
 const NAV_CARDS: NavCard[] = [
@@ -175,9 +176,16 @@ const NAV_CARDS: NavCard[] = [
     access: 'operations',
   },
   {
+    to: '/autopilot',
+    title: 'Autopilot',
+    description: 'Review hardware hashes submitted from boot media and import approved devices into Windows Autopilot.',
+    icon: <BadgeCheck size={18} />,
+    access: 'autopilot',
+  },
+  {
     to: '/reports',
     title: 'Reports',
-    description: 'Device outcomes, location statistics, failure details, and image inventory across the fleet.',
+    description: 'Device outcomes, location statistics, failure details, image inventory, and Autopilot registration history.',
     icon: <BarChart3 size={18} />,
     access: 'reports',
   },
@@ -209,7 +217,7 @@ const NAV_CARDS: NavCard[] = [
  * into each section. Stat counts load asynchronously with skeleton placeholders.
  */
 export default function DashboardPage(): React.ReactElement {
-  const { isAdministrator, isTechnician, isReader } = useAuth();
+  const { isAdministrator, isTechnician, isReader, canViewAutopilot } = useAuth();
   const canOperations = isAdministrator || isTechnician;
   const canReports = isAdministrator || isReader;
   const { branding } = useBranding();
@@ -270,6 +278,7 @@ export default function DashboardPage(): React.ReactElement {
   const visibleNavCards = NAV_CARDS.filter(c => {
     switch (c.access) {
       case 'operations': return canOperations;
+      case 'autopilot':  return canViewAutopilot;
       case 'reports':    return canReports;
       case 'admin':      return isAdministrator;
       default:           return true;

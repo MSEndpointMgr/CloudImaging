@@ -7,18 +7,19 @@ This page is the single reference for **who can do what** in Cloud Imaging. For 
 
 ---
 
-## 1. The five app roles
+## 1. The six app roles
 
-Cloud Imaging defines five Entra ID app roles across its three app registrations
+Cloud Imaging defines six Entra ID app roles across its three app registrations
 (see [setup-instructions.md, Phase 1, Step 1](setup-instructions.md#step-1-create-three-app-registrations)).
-Three are **user-facing** (you assign them to people); two are **service-facing** (assigned to an
-app/identity, not a person).
+Four are **user-facing** (you assign them to people); two are **service-facing** (assigned to an
+app/identity, not a person). `CloudImaging.AutopilotApprover` is optional.
 
 | Role | Defined on | Assigned to | Purpose |
 |---|---|---|---|
 | `CloudImaging.Administrator` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Full access: catalog writes, branding, configuration, boot-media certificate, plus everything Technician can do |
 | `CloudImaging.Technician` | **Cloud Imaging Portal** *and* **Cloud Imaging Media Builder** registrations | Users / groups | Day-to-day imaging operations: sessions, coupling, assignment, read-only catalogs |
 | `CloudImaging.Reader` | **Cloud Imaging Portal** registration only | Users / groups | Read-only visibility: Dashboard summary and Reports, nothing else. No Media Builder equivalent. |
+| `CloudImaging.AutopilotApprover` *(optional)* | **Cloud Imaging Portal** registration only | Users / groups | Approve or reject Autopilot registrations and view the history report. Nothing else; an approver without another role sees only the Autopilot page and its report. Administrators can approve without it. |
 | `CloudImaging.PortalAccess` | **Cloud Imaging Operator API** registration | The Portal backend's **managed identity** only (never a person) | Lets the Portal backend call the Operator API on the signed-in user's behalf. Assigned automatically by `post-install.ps1`; nothing to do manually. |
 | `CloudImaging.MediaBuilderAccess` | **Cloud Imaging Operator API** registration | Users / groups | Lets a signed-in technician's Media Builder client actually call the Operator API. Required **in addition to** `CloudImaging.Administrator`/`Technician`; see [Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians). |
 
@@ -78,6 +79,19 @@ Portal backend's managed identity.
 | **Branding**: view / edit logo | ❌ | ❌ | ❌ | ✅ |
 | **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view) | ❌ | ❌ | ❌ | ✅ |
 
+**Autopilot** registrations are a separate lane:
+
+| Area | Reader | Technician | Autopilot Approver | Administrator |
+|---|---|---|---|---|
+| **Autopilot**: view the approval queue | ❌ | ✅ (read-only) | ✅ | ✅ |
+| **Autopilot**: approve, reject, retry a failed import | ❌ | ❌ | ✅ | ✅ |
+| **Reports** → **Autopilot Registration History**: handled requests, CSV export | ✅ | ❌ | ✅ | ✅ |
+| **Configuration** → **Autopilot**: turn the feature on, manage group tags, set retention | ❌ | ❌ | ❌ | ✅ |
+
+`CloudImaging.AutopilotApprover` sits outside the role hierarchy, like Reader. A user who holds only
+that role lands on the Autopilot page and sees no other part of the Portal except the history
+report, which they open from the Autopilot page.
+
 The Technician role's read access to Sessions/Images is what makes day-to-day imaging operations
 possible without granting catalog or configuration changes. Administrator is a superset of
 Technician: there is no capability a Technician has that Administrator lacks. Reader is **not**
@@ -130,7 +144,7 @@ Two independent gates control whether **Generate Boot Image** is available, and 
 always shows the specific reason that applies:
 
 1. **Role gate**: signed-in user must hold `CloudImaging.Administrator` (Portal role naming reused
-   on the Media Builder registration, same role names, separate assignment; see [§1](#1-the-five-app-roles)).
+   on the Media Builder registration, same role names, separate assignment; see [§1](#1-the-six-app-roles)).
 2. **ADK gate**: the Windows ADK + WinPE add-on must be installed on the workstation (see
    [setup-instructions.md](setup-instructions.md#installing-the-windows-adk-on-technician-workstations)).
 
@@ -150,7 +164,8 @@ reading the location catalog to optionally tag the USB with a site label.
 
 | Symptom | Likely cause |
 |---|---|
-| Portal shows "Access denied" after sign-in | No `Administrator`/`Technician`/`Reader` role assigned on the **Cloud Imaging Portal** enterprise application |
+| Portal shows "Access denied" after sign-in | No `Administrator`/`Technician`/`Reader`/`AutopilotApprover` role assigned on the **Cloud Imaging Portal** enterprise application |
+| Approver sees requests but **Approve** is missing | Signed in as Technician, who can only view; assign `CloudImaging.AutopilotApprover` |
 | Portal loads, but Branding/Configuration pages are missing or writes return 403 | Signed in as Technician or Reader, not Administrator |
 | Reader signed in but Sessions/OS Images/Boot Images/Locations are missing from the nav and Dashboard | Expected: Reader is scoped to Dashboard + Reports only, by design |
 | Technician can't reach the Locations page (redirected to Dashboard) | Expected: managing the Locations catalog is Administrator-only; the Header account menu's "My location" picker still works for Technician |

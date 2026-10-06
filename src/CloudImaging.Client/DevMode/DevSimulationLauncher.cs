@@ -67,9 +67,9 @@ internal sealed class DevSimulationLauncher : Window
         panel.Children.Add(NavButton("1 · Operation Selection", onOperationSelectionView));
         panel.Children.Add(NavButton("2 · Session Init (awaiting operator)", onSessionInitView));
         panel.Children.Add(NavButton("3 · Imaging Progress", onProgressView));
-        panel.Children.Add(NavButton("4 · Results — Success", onResultsSuccessView));
-        panel.Children.Add(NavButton("5 · Results — Failure", onResultsFailureView));
-        panel.Children.Add(NavButton("6 · Results — Not Authorized", onResultsNotAuthorizedView));
+        panel.Children.Add(NavButton("4 · Results: Success", onResultsSuccessView));
+        panel.Children.Add(NavButton("5 · Results: Failure", onResultsFailureView));
+        panel.Children.Add(NavButton("6 · Results: Not Authorized", onResultsNotAuthorizedView));
 
         Content = panel;
     }

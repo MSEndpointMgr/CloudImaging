@@ -28,6 +28,9 @@ public sealed class SessionHistoryRecord
 
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 
+    /// <summary>Pre-flight checks as evaluated at session creation, including administrator approvals.</summary>
+    public IReadOnlyList<PreFlightCheckResult> PreFlightChecks { get; init; } = [];
+
     /// <summary>Device processor architecture; x64 for records that predate it.</summary>
     public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 

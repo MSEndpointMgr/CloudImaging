@@ -40,7 +40,8 @@ public static class BootImageManifestService
         bool commandPromptEnabled = false,
         int toolsInjectedCount = 0,
         string? toolsRootPath = null,
-        MachineArchitecture architecture = MachineArchitecture.X64)
+        MachineArchitecture architecture = MachineArchitecture.X64,
+        bool autopilotToolingIncluded = false)
     {
         var componentChecksums = new Dictionary<string, string>();
         string? clientVersion = null;
@@ -75,6 +76,7 @@ public static class BootImageManifestService
                 ["toolsRootPath"] = toolsRootPath ?? string.Empty,
             },
             SupportToolsEnabled = commandPromptEnabled,
+            AutopilotToolingIncluded = autopilotToolingIncluded,
         };
     }
 

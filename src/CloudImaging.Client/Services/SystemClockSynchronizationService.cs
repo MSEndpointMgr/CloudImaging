@@ -229,7 +229,7 @@ public sealed partial class SystemClockSynchronizationService
     private static partial void LogClockCorrected(ILogger logger, string server, TimeSpan drift);
 
     [LoggerMessage(Level = LogLevel.Warning,
-        Message = "Clock drift of {Drift} detected against {Server} but not running under WinPE — leaving system clock untouched.")]
+        Message = "Clock drift of {Drift} detected against {Server} but not running under WinPE. Leaving the system clock untouched.")]
     private static partial void LogCorrectionSkippedNotWinPe(ILogger logger, string server, TimeSpan drift);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not obtain SeSystemtimePrivilege to correct the system clock (server {Server}).")]
@@ -241,7 +241,7 @@ public sealed partial class SystemClockSynchronizationService
     [LoggerMessage(Level = LogLevel.Debug, Message = "NTP server {Server} query failed.")]
     private static partial void LogNtpServerFailed(ILogger logger, string server, Exception ex);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "All configured NTP servers failed — proceeding with the current (uncorrected) system clock.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "All configured NTP servers failed. Proceeding with the current (uncorrected) system clock.")]
     private static partial void LogAllServersFailed(ILogger logger);
 
     // ── Win32 interop for SetSystemTime + SeSystemtimePrivilege ─────────────────────────────

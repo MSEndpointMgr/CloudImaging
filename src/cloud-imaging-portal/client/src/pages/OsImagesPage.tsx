@@ -4,7 +4,7 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
-import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
+import { architectureLabel, countByArchitecture, type ImageArchitecture } from '../lib/wimMetadata.ts';
 import { Button } from '../components/ui/button.tsx';
 import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
@@ -16,6 +16,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '.
 import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { ChunkedUploadDialog } from '../components/ChunkedUploadDialog.tsx';
 import { ImageEditorDialog } from '../components/ImageEditorDialog.tsx';
+import { OsImageCatalogCards } from '../components/OsImageCatalogCards.tsx';
 
 interface OsImage {
   imageId: string;
@@ -121,20 +122,23 @@ export default function OsImagesPage(): React.ReactElement {
   const columnCount = isAdministrator ? 9 : 8;
   const selectedCount = checked.size;
   const atCapacity = images.length >= MAX_OS_IMAGES;
+  const activeCounts = countByArchitecture(images);
 
   return (
     <>
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground">
-          {images.length} / {MAX_OS_IMAGES} active images
-        </span>
+        <p className="text-sm text-muted-foreground">
+          Windows images deployed to devices during imaging.
+        </p>
         {isAdministrator && (
           <Button onClick={() => setUploadOpen(true)} disabled={atCapacity} title={atCapacity ? 'Catalog is at capacity' : undefined}>
             <Plus /> Upload Image
           </Button>
         )}
       </div>
+
+      <OsImageCatalogCards counts={activeCounts} total={images.length} max={MAX_OS_IMAGES} />
 
       {isAdministrator && atCapacity && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
@@ -146,7 +150,6 @@ export default function OsImagesPage(): React.ReactElement {
         <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
           <span className="font-medium">{selectedCount} image{selectedCount !== 1 ? 's' : ''} selected</span>
           <Button
-            size="sm"
             variant="destructive"
             onClick={() => void handleRemoveSelected()}
             disabled={removing}
@@ -257,7 +260,7 @@ export default function OsImagesPage(): React.ReactElement {
                             className="text-muted-foreground hover:text-primary"
                             onClick={() => setEditingImage(img)}
                           >
-                            <Pencil className="h-4 w-4" />
+                          <Pencil />
                           </Button>
                         </Tooltip>
                         {!img.isInUse && (
@@ -269,7 +272,7 @@ export default function OsImagesPage(): React.ReactElement {
                               className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                               onClick={() => void handleDelete(img.imageId)}
                             >
-                              <Trash2 className="h-4 w-4" />
+                                <Trash2 />
                             </Button>
                           </Tooltip>
                         )}

@@ -27,10 +27,23 @@ public sealed class LocationRepository
         {
             LocationId = location.LocationId,
             Name = location.Name,
+            Region = location.Region,
+            CountryCode = location.CountryCode,
             CreatedAt = location.CreatedAt == default ? DateTimeOffset.UtcNow : location.CreatedAt,
         };
         await _table.AddEntityAsync(ToEntity(newLocation), ct);
         return newLocation;
+    }
+
+    /// <summary>Replaces an existing location. Returns false when it does not exist.</summary>
+    public async Task<bool> UpdateAsync(Location location, CancellationToken ct = default)
+    {
+        try
+        {
+            await _table.UpdateEntityAsync(ToEntity(location), ETag.All, TableUpdateMode.Replace, ct);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404) { return false; }
     }
 
     public async Task<Location?> GetByIdAsync(Guid locationId, CancellationToken ct = default)
@@ -64,6 +77,8 @@ public sealed class LocationRepository
     private static TableEntity ToEntity(Location l) => new(Partition, l.LocationId.ToString())
     {
         ["Name"] = l.Name,
+        ["Region"] = l.Region,
+        ["CountryCode"] = l.CountryCode,
         ["CreatedAt"] = l.CreatedAt,
     };
 
@@ -71,6 +86,8 @@ public sealed class LocationRepository
     {
         LocationId = Guid.Parse(e.RowKey),
         Name = e.GetString("Name") ?? string.Empty,
+        Region = e.GetString("Region"),
+        CountryCode = e.GetString("CountryCode"),
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
     };
 }

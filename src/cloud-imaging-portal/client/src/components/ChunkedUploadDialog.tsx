@@ -222,7 +222,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Upload OS image</h2>
             <Button variant="ghost" size="icon" onClick={handleClose} disabled={busy} aria-label="Close">
-              <X className="h-4 w-4" />
+                <X />
             </Button>
           </div>
 
@@ -238,13 +238,9 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
                 A previous upload of <span className="font-medium break-all">{resumable.fileName}</span> ({resumable.version}) was
                 interrupted. Re-select the same file to resume it, or discard the partial upload.
               </p>
-              <button
-                type="button"
-                onClick={handleDiscardResumable}
-                className="rounded-sm text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
+              <Button variant="link" type="button" onClick={handleDiscardResumable}>
                 Discard partial upload
-              </button>
+              </Button>
             </div>
           )}
 
@@ -332,9 +328,9 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
           {state === 'error' && (
             <div className="space-y-1">
               <p className="text-sm text-destructive">{error}</p>
-              <button onClick={() => setState('idle')} className="text-sm text-primary hover:underline">
+              <Button variant="link" type="button" onClick={() => setState('idle')}>
                 Retry
-              </button>
+              </Button>
             </div>
           )}
 

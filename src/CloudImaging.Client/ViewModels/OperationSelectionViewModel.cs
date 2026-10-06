@@ -27,6 +27,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private readonly Action<CreateSessionResponse, string> _navigate;
     private readonly Action<bool>? _setMainWindowTopmost;
     private readonly CommandPromptLauncherService _commandPromptLauncher;
+    private readonly DevicePostureDetector _postureDetector;
+    private readonly Action? _navigateToAutopilot;
+    private AutopilotAvailabilityState _autopilotAvailability = AutopilotAvailabilityState.Checking;
     // Decommissioning card is hidden (not implemented for the first release), so Imaging is
     // pre-selected rather than requiring an operator click before Continue is enabled.
     private string? _selectedOperation = "Imaging";
@@ -48,13 +51,21 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// construction — required in practice whenever <paramref name="commandPromptEnabled"/> is true.
     /// </param>
     /// <param name="commandPromptLauncher">Optional override; defaults to a real launcher.</param>
+    /// <param name="autopilotToolingPresent">Whether this boot image carries the Autopilot hash tooling.</param>
+    /// <param name="navigateToAutopilot">Opens the Autopilot registration view. Null hides the option.</param>
+    /// <param name="postureDetector">Optional override; defaults to a detector without logging.</param>
+    /// <param name="startImagingImmediately">Starts a new imaging session at once, as if Continue was pressed (blocked screen's Try again).</param>
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
         Action<CreateSessionResponse, string> navigate,
         SystemClockSynchronizationService? clockSync = null,
         bool commandPromptEnabled = false,
         Action<bool>? setMainWindowTopmost = null,
-        CommandPromptLauncherService? commandPromptLauncher = null)
+        CommandPromptLauncherService? commandPromptLauncher = null,
+        bool autopilotToolingPresent = false,
+        Action? navigateToAutopilot = null,
+        DevicePostureDetector? postureDetector = null,
+        bool startImagingImmediately = false)
     {
         _gatewayClient          = gatewayClient;
         _navigate               = navigate;
@@ -62,10 +73,84 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         IsCommandPromptAvailable = commandPromptEnabled;
         _setMainWindowTopmost   = setMainWindowTopmost;
         _commandPromptLauncher  = commandPromptLauncher ?? new CommandPromptLauncherService();
+        _postureDetector        = postureDetector ?? new DevicePostureDetector();
+        _navigateToAutopilot = navigateToAutopilot;
+        IsAutopilotOptionVisible = autopilotToolingPresent && navigateToAutopilot is not null;
 
-        SelectOperationCommand   = new RelayCommand(op => SelectedOperation = op?.ToString());
+        SelectOperationCommand   = new RelayCommand(op => SelectOperation(op?.ToString()));
         ContinueCommand          = new RelayCommand(async _ => await ContinueAsync(), _ => CanContinue);
         LaunchCommandPromptCommand = new RelayCommand(_ => LaunchCommandPrompt(), _ => IsCommandPromptAvailable);
+
+        if (IsAutopilotOptionVisible)
+        {
+            _ = LoadAutopilotAvailabilityAsync();
+        }
+
+        if (startImagingImmediately)
+        {
+            SelectedOperation = "Imaging";
+            _ = ContinueAsync();
+        }
+    }
+
+    /// <summary>The Autopilot card is shown only on boot media built with the hash tooling.</summary>
+    public bool IsAutopilotOptionVisible { get; }
+
+    public AutopilotAvailabilityState AutopilotAvailability
+    {
+        get => _autopilotAvailability;
+        private set
+        {
+            _autopilotAvailability = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsAutopilotSelectable));
+            OnPropertyChanged(nameof(AutopilotCardDescription));
+        }
+    }
+
+    /// <summary>Selectable unless the portal has it turned off; an unreachable service gets its error on the next screen.</summary>
+    public bool IsAutopilotSelectable => IsAutopilotOptionVisible
+        && _autopilotAvailability is AutopilotAvailabilityState.Enabled or AutopilotAvailabilityState.Unreachable;
+
+    public string AutopilotCardDescription => _autopilotAvailability switch
+    {
+        AutopilotAvailabilityState.Checking => "Checking whether registration is available…",
+        AutopilotAvailabilityState.Disabled => "Turned off in the Cloud Imaging portal.",
+        AutopilotAvailabilityState.Unreachable => "Send the hardware hash for approval. The imaging service could not be reached yet.",
+        _ => "Send this device's hardware hash for approval. The disk is not changed.",
+    };
+
+    private void SelectOperation(string? operation)
+    {
+        if (operation == "Autopilot" && !IsAutopilotSelectable)
+            return;
+        SelectedOperation = operation;
+    }
+
+    private async Task LoadAutopilotAvailabilityAsync()
+    {
+        // Runs at startup, so give the NIC the same grace period registration gets, without the waiting banner.
+        var deadline = DateTime.UtcNow + NetworkWaitTimeout;
+        while (!IsNetworkReady() && DateTime.UtcNow < deadline)
+            await Task.Delay(NetworkWaitPollInterval);
+
+        try
+        {
+            var enabled = await _gatewayClient.GetAutopilotAvailabilityAsync();
+            AutopilotAvailability = enabled switch
+            {
+                true => AutopilotAvailabilityState.Enabled,
+                false => AutopilotAvailabilityState.Disabled,
+                null => AutopilotAvailabilityState.Unreachable,
+            };
+        }
+        catch
+        {
+            AutopilotAvailability = AutopilotAvailabilityState.Unreachable;
+        }
+
+        if (SelectedOperation == "Autopilot" && !IsAutopilotSelectable)
+            SelectedOperation = "Imaging";
     }
 
     public string? SelectedOperation
@@ -134,6 +219,15 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private async Task ContinueAsync()
     {
         if (SelectedOperation is null) return;
+
+        // Autopilot registration is its own flow and never creates an imaging session.
+        if (SelectedOperation == "Autopilot")
+        {
+            if (IsAutopilotSelectable)
+                _navigateToAutopilot?.Invoke();
+            return;
+        }
+
         IsBusy = true;
         StatusMessage = null;
 
@@ -156,7 +250,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // Model ran directly on the UI thread right after, which blocked the dispatcher (and
             // froze the just-shown spinner's indeterminate animation) for as long as those WMI
             // round-trips took (FR-001a).
-            var (serialNumber, manufacturer, model, macAddress, hardware, locationId, locationName) = await Task.Run(() =>
+            var (serialNumber, manufacturer, model, macAddress, hardware, locationId, locationName, posture) = await Task.Run(() =>
             {
                 var serial = GetSerialNumber();
                 var mfr    = GetManufacturer();
@@ -170,7 +264,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
                 // feature. Read here (not on the UI thread) since it does blocking WMI + file I/O,
                 // same reasoning as the other calls in this batch.
                 var (locId, locName) = ReadLocationFromManifest();
-                return (serial, mfr, mdl, mac, hw, locId, locName);
+                var securityPosture = _postureDetector.Detect();
+                return (serial, mfr, mdl, mac, hw, locId, locName, securityPosture);
             });
 
             var payload = new DeviceRegistrationPayload
@@ -183,6 +278,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
                 LocationId   = locationId,
                 LocationName = locationName,
                 Architecture = MachineArchitecturePlatform.HostArchitecture(),
+                SecurityPosture = posture,
             };
 
             var sessionResponse = await _gatewayClient.CreateSessionAsync(payload);
@@ -330,6 +426,16 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     private static string GetModel() =>
         GetWmiValue("Win32_ComputerSystem", "Model") ?? "UNKNOWN";
+
+    /// <summary>
+    /// Serial, manufacturer, model and USB-manifest location, read the same way registration does.
+    /// Blocking WMI and file I/O: call off the UI thread.
+    /// </summary>
+    internal static DeviceIdentity ReadDeviceIdentity()
+    {
+        var (locationId, locationName) = ReadLocationFromManifest();
+        return new DeviceIdentity(GetSerialNumber(), GetManufacturer(), GetModel(), locationId, locationName);
+    }
 
     private static string? GetMacAddress()
     {

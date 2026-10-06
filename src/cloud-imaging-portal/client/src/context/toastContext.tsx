@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { Loader2, CheckCircle2, XCircle, Info, X } from 'lucide-react';
+import { Button } from '../components/ui/button.tsx';
 import { cn } from '../lib/utils';
 
 /** Visual/semantic state of a notification (mirrors the Azure/Intune portal toasts). */
@@ -224,14 +225,16 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
             <p className="mt-0.5 text-sm text-muted-foreground">{toast.description}</p>
           )}
         </div>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           type="button"
           onClick={() => onDismiss(toast.id)}
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="shrink-0 text-muted-foreground"
           aria-label="Dismiss notification"
         >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+          <X aria-hidden="true" />
+        </Button>
       </div>
       {showProgress && (
         <div className="h-1 w-full bg-muted">

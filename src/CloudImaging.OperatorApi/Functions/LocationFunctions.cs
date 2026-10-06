@@ -10,10 +10,11 @@ namespace CloudImaging.OperatorApi.Functions;
 /// <summary>
 /// Location catalog proxy endpoints (Location Labels feature).
 ///
-/// GET    /api/locations      — lists all locations; also allowed for CloudImaging.MediaBuilderAccess
-///                               so Media Builder can populate the location picker
-/// POST   /api/locations      — creates a location (PortalAccess only — portal server gates Administrator)
-/// DELETE /api/locations/{id} — deletes a location (PortalAccess only)
+/// GET    /api/locations: lists all locations; also allowed for CloudImaging.MediaBuilderAccess
+///        so Media Builder can populate the location picker
+/// POST   /api/locations: creates a location (PortalAccess only; portal server gates Administrator)
+/// PUT    /api/locations/{id}: updates a location's name, region and country (PortalAccess only)
+/// DELETE /api/locations/{id}: deletes a location (PortalAccess only)
 /// </summary>
 public sealed partial class LocationFunctions
 {
@@ -47,6 +48,23 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    [Function("UpdateLocation")]
+    public async Task<HttpResponseData> UpdateLocation(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "locations/{id}")] HttpRequestData req,
+        string id,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(id, out var locationId))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var coreResponse = await _coreClient.UpdateLocationAsync(locationId, payload!, context.CancellationToken);
+        return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
+    }
+
     [Function("DeleteLocation")]
     public async Task<HttpResponseData> DeleteLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "locations/{id}")] HttpRequestData req,
@@ -68,10 +86,12 @@ public sealed partial class LocationFunctions
         CancellationToken ct)
     {
         var response = req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
-        if (coreResponse.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true)
+        var content = await coreResponse.Content.ReadAsStringAsync(ct);
+        if (!string.IsNullOrEmpty(content))
         {
-            response.Headers.Add("Content-Type", "application/json");
-            var content = await coreResponse.Content.ReadAsStringAsync(ct);
+            // Core reports validation failures (e.g. an invalid country code) as plain text; keep them for the portal.
+            var isJson = coreResponse.Content.Headers.ContentType?.MediaType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true;
+            response.Headers.Add("Content-Type", isJson ? "application/json" : "text/plain");
             await response.WriteStringAsync(content, ct);
         }
         return response;

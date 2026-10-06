@@ -218,6 +218,8 @@ public sealed class DeviceSessionRepository
         ["LocationName"] = s.LocationName,
         ["Architecture"] = MachineArchitecturePlatform.Slug(s.Architecture),
         ["PreFlightAuthorizationResult"] = s.PreFlightAuthorizationResult.ToString(),
+        ["SecurityPostureJson"] = s.SecurityPosture is null ? null : JsonSerializer.Serialize(s.SecurityPosture, HardwareJsonOptions),
+        ["PreFlightChecksJson"] = PreFlightOverrideRepository.SerializeChecks(s.PreFlightChecks),
         ["PasscodeHash"] = s.Passcode,
         ["PasscodeExpiresAt"] = s.PasscodeExpiresAt,
         ["PasscodeConsumed"] = s.PasscodeConsumed,
@@ -257,6 +259,8 @@ public sealed class DeviceSessionRepository
         LocationName = e.GetString("LocationName"),
         Architecture = MachineArchitecturePlatform.ParseSlugOrDefault(e.GetString("Architecture")),
         PreFlightAuthorizationResult = Enum.Parse<PreFlightAuthorizationResult>(e.GetString("PreFlightAuthorizationResult") ?? nameof(PreFlightAuthorizationResult.Skipped)),
+        SecurityPosture = DeserializePosture(e.GetString("SecurityPostureJson")),
+        PreFlightChecks = PreFlightOverrideRepository.DeserializeChecks(e.GetString("PreFlightChecksJson")),
         Passcode = e.GetString("PasscodeHash"),
         PasscodeExpiresAt = e.GetDateTimeOffset("PasscodeExpiresAt"),
         PasscodeConsumed = e.GetBoolean("PasscodeConsumed") ?? false,
@@ -276,6 +280,23 @@ public sealed class DeviceSessionRepository
 
     private static string? SerializeHardware(DeviceHardwareMetadata? hardware) =>
         hardware is null ? null : JsonSerializer.Serialize(hardware, HardwareJsonOptions);
+
+    private static DeviceSecurityPosture? DeserializePosture(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<DeviceSecurityPosture>(json, HardwareJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// Never throws: sessions written before this column existed have no value, and a malformed

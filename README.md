@@ -171,9 +171,10 @@ flowchart TB
   Decommissioning is reserved for a future release and is currently hidden)
 - Registers a device session and displays a **6-character alphanumeric passcode**
   for coupling in the portal, without requiring Entra ID sign-in on the device
-- Performs device pre-flight authorization against Autopilot and Intune Corporate
-  Identifier records via Microsoft Graph; unauthorized devices are immediately shown
-  a Not Authorized result with enrollment guidance
+- Runs optional device pre-flight checks: Autopilot or Corporate Identifier presence
+  (via Microsoft Graph), UEFI firmware mode, Secure Boot and TPM 2.0. A blocked device
+  shows which requirement failed; an administrator can approve its next session
+- Detects UEFI or Legacy BIOS (CSM) boot and formats the disk as GPT or MBR to match
 - Executes three visible imaging steps with real-time progress reporting:
   **Format**, **Download**, and **Apply**
 - Downloads the OS image (.wim) directly from Azure Blob Storage via a time-limited

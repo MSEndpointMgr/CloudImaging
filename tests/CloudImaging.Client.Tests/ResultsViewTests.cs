@@ -1,4 +1,6 @@
 using CloudImaging.Client.ViewModels;
+using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models;
 using FluentAssertions;
 using Xunit;
 
@@ -175,6 +177,72 @@ public sealed class ResultsViewModelTests
         vm.RetryCommand.CanExecute(null).Should().BeTrue();
         vm.RetryCommand.Execute(null);
         navigateCalled.Should().BeTrue("Retry must invoke the navigateToStart callback");
+    }
+
+    // ── Blocked by pre-flight checks ──────────────────────────────────────────
+
+    private static PreFlightCheckResult Check(PreFlightCheck check, PreFlightCheckOutcome outcome, string observed) =>
+        new() { Check = check, Outcome = outcome, Observed = observed };
+
+    [Fact]
+    public void NotAuthorized_ListsOnlyRequiredChecksAndCountsFailures()
+    {
+        var vm = new ResultsViewModel(
+            ResultsViewModel.Outcome.NotAuthorized,
+            "SN1", null,
+            navigateToStart: () => { },
+            sessionId: Guid.NewGuid(),
+            preFlightChecks:
+            [
+                Check(PreFlightCheck.AutopilotPresence, PreFlightCheckOutcome.Passed, PreFlightObserved.Autopilot),
+                Check(PreFlightCheck.FirmwareMode, PreFlightCheckOutcome.Failed, nameof(FirmwareMode.LegacyBios)),
+                Check(PreFlightCheck.SecureBoot, PreFlightCheckOutcome.Failed, nameof(SecureBootState.Disabled)),
+                Check(PreFlightCheck.TpmVersion, PreFlightCheckOutcome.NotRequired, nameof(TpmPresence.Tpm20)),
+            ]);
+
+        vm.HasBlockedRequirements.Should().BeTrue();
+        vm.BlockedRequirements.Select(r => r.Name).Should().Equal("Autopilot presence", "Firmware mode", "Secure Boot");
+        vm.BlockedRequirements.Select(r => r.Met).Should().Equal(true, false, false);
+        vm.BlockedRequirements[1].Value.Should().Be("Legacy BIOS (CSM)");
+        vm.BlockedSummary.Should().Be("2 of 3 pre-flight requirements are not met. Fix them, then restart the device.");
+    }
+
+    [Fact]
+    public void NotAuthorized_SingleRequirement_UsesSingularSummary()
+    {
+        var vm = new ResultsViewModel(
+            ResultsViewModel.Outcome.NotAuthorized,
+            "SN1", null,
+            navigateToStart: () => { },
+            preFlightChecks: [Check(PreFlightCheck.SecureBoot, PreFlightCheckOutcome.Failed, nameof(SecureBootState.Unsupported))]);
+
+        vm.BlockedSummary.Should().Be("1 of 1 pre-flight requirement is not met. Fix it, then restart the device.");
+    }
+
+    [Fact]
+    public void NotAuthorized_WithoutChecks_FallsBackToEnrollmentMessage()
+    {
+        var vm = Build(ResultsViewModel.Outcome.NotAuthorized, deviceSerialNumber: "SN1");
+
+        vm.HasBlockedRequirements.Should().BeFalse();
+        vm.HasNoBlockedRequirements.Should().BeTrue();
+    }
+
+    [Fact]
+    public void NotAuthorized_TryAgainStartsNewSession()
+    {
+        var triedAgain = false;
+        var navigatedToStart = false;
+        var vm = new ResultsViewModel(
+            ResultsViewModel.Outcome.NotAuthorized,
+            "SN1", null,
+            navigateToStart: () => navigatedToStart = true,
+            tryAgain: () => triedAgain = true);
+
+        vm.TryAgainCommand.Execute(null);
+
+        triedAgain.Should().BeTrue();
+        navigatedToStart.Should().BeFalse();
     }
 
     // ── Mutual exclusivity ────────────────────────────────────────────────────

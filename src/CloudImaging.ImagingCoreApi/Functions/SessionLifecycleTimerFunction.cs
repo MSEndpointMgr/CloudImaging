@@ -29,10 +29,11 @@ public sealed partial class SessionLifecycleTimerFunction
         var expired = await _lifecycle.ExpireInactiveSessionsAsync(context.CancellationToken);
         var purged = await _lifecycle.PurgeTerminalSessionsAsync(context.CancellationToken);
         var historyPurged = await _lifecycle.PurgeSessionHistoryAsync(context.CancellationToken);
-        LogLifecycleTick(_logger, expired, purged, historyPurged);
+        var overridesPurged = await _lifecycle.PurgeExpiredOverridesAsync(context.CancellationToken);
+        LogLifecycleTick(_logger, expired, purged, historyPurged, overridesPurged);
     }
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Session lifecycle timer: {Expired} expired, {Purged} purged, {HistoryPurged} history records purged.")]
-    private static partial void LogLifecycleTick(ILogger logger, int expired, int purged, int historyPurged);
+        Message = "Session lifecycle timer: {Expired} expired, {Purged} purged, {HistoryPurged} history records purged, {OverridesPurged} expired overrides removed.")]
+    private static partial void LogLifecycleTick(ILogger logger, int expired, int purged, int historyPurged, int overridesPurged);
 }
