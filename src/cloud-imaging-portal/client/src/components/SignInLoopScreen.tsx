@@ -97,10 +97,10 @@ export function SignInLoopScreen(): React.ReactElement {
         </ul>
 
         <div className="mt-6 flex items-center gap-3">
-          <Button size="sm" onClick={retry}>
+          <Button onClick={retry}>
             <RefreshCw aria-hidden="true" /> Try again
           </Button>
-          <Button size="sm" variant="outline" onClick={signOut}>
+          <Button variant="outline" onClick={signOut}>
             <LogOut aria-hidden="true" /> Sign out
           </Button>
         </div>

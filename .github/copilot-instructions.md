@@ -115,6 +115,12 @@ At the end, provide a concise summary of:
 * The validation performed
 * Any remaining assumptions, risks, or unresolved limitations
 
+## Design Mockups
+
+- UI mockups are standalone HTML files under `docs/design/` (inline CSS, real portal tokens), modelled on `docs/design/capacity-meter-options.html`.
+- Always open a mockup inside VS Code's integrated browser. Never launch it in the external default browser (e.g. via `Start-Process`).
+- Buttons in portal mockups must replicate the `Button` primitive (`src/cloud-imaging-portal/client/src/components/ui/button.tsx`) exactly: size `sm` (32px high, 12px horizontal padding, 14px/500 label, 8px icon gap, 16px icons, 6px radius) and the matching variant (`outline` for row actions, `default` for primary, `ghost` for low-emphasis). Never hand-tune a single button with inline styles.
+
 ## General PowerShell Practices
 
 These rules apply to **all `.ps1` files** in this repository.

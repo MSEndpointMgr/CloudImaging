@@ -62,6 +62,36 @@ export interface SessionRegistrationPayload {
   model: string;
   macAddress?: string;
   hardware?: DeviceHardwareMetadata;
+  securityPosture?: DeviceSecurityPosture;
+}
+
+export interface DeviceSecurityPosture {
+  firmwareMode: 'Unknown' | 'Uefi' | 'LegacyBios';
+  secureBoot: 'Unknown' | 'Enabled' | 'Disabled' | 'Unsupported';
+  tpm: 'Unknown' | 'NotDetected' | 'Tpm12' | 'Tpm20';
+}
+
+export type PreFlightCheck = 'AutopilotPresence' | 'FirmwareMode' | 'SecureBoot' | 'TpmVersion';
+
+export interface PreFlightCheckResult {
+  check: PreFlightCheck;
+  outcome: 'Passed' | 'Failed' | 'NotRequired' | 'Approved';
+  observed: string;
+  approvedBy?: string | null;
+}
+
+export interface PreFlightOverride {
+  serialNumber: string;
+  coveredChecks: PreFlightCheck[];
+  sourceSessionId: string;
+  deviceManufacturer: string;
+  deviceModel: string;
+  locationName?: string | null;
+  sourceChecks: PreFlightCheckResult[];
+  approvedBy: string;
+  approvedByObjectId?: string | null;
+  approvedAt: string;
+  expiresAt: string;
 }
 
 export interface DeviceHardwareMetadata {
@@ -86,6 +116,7 @@ export interface SessionStatusResponse {
   overallProgressPercent: number;
   sasTokenUrl: string | null;
   sha256Hash: string | null;
+  preFlightChecks: PreFlightCheckResult[] | null;
 }
 
 export interface OsImage {
@@ -112,6 +143,10 @@ export interface BootImage {
 
 export interface PortalConfiguration {
   devicePreFlightAuthorizationEnabled: boolean;
+  preFlightRequireAutopilotPresence: boolean;
+  preFlightRequireUefiFirmware: boolean;
+  preFlightRequireSecureBoot: boolean;
+  preFlightRequireTpm20: boolean;
   sasTokenUrlExpiryMinutes: number;
   bootImageSasExpiryMinutes: number;
   certValidityPeriodDays: number;

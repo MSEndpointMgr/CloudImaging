@@ -29,7 +29,7 @@ public enum WifiAuthKind
 public sealed record WifiNetwork(string Ssid, int SignalPercent, WifiAuthKind AuthKind, bool IsSupported)
 {
     /// <summary>Empty when supported; a short explanatory suffix otherwise (bound directly in the UI, no converter needed).</summary>
-    public string NotSupportedLabel => IsSupported ? string.Empty : " — Not supported (Enterprise/802.1X)";
+    public string NotSupportedLabel => IsSupported ? string.Empty : " (Not supported: Enterprise/802.1X)";
 
     /// <summary>True for any network that requires a passphrase/certificate (i.e. not Open) — drives the lock glyph shown next to the network name in the list.</summary>
     public bool IsSecured => AuthKind != WifiAuthKind.Open;

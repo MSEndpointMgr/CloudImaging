@@ -149,6 +149,11 @@ if ($portalApp) {
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."
     }
+    # Optional: only needed when Autopilot registration is turned on and approvers are not Administrators.
+    $approverRole = $portalApp.AppRoles | Where-Object { $_.Value -eq 'CloudImaging.AutopilotApprover' }
+    if (-not ($approverRole -and $approverRole.AllowedMemberTypes -contains 'User')) {
+        Write-Note "Optional app role 'CloudImaging.AutopilotApprover' (Users/Groups) is not defined. Add it only if non-administrators will approve Autopilot registrations."
+    }
 }
 
 # ── Registration 2: Cloud Imaging Operator API ────────────────────────────────

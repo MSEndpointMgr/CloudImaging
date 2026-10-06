@@ -112,7 +112,6 @@ export function Header(): React.ReactElement {
                 </label>
                 <Select
                   id="header-location-select"
-                  size="sm"
                   allowEmpty
                   placeholder="No location set"
                   value={preferredLocationId ?? ''}

@@ -47,6 +47,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private string _driverRootPath = string.Empty;
     private string _toolsRootPath = string.Empty;
     private bool _enableCommandPromptAccess;
+    private bool _includeAutopilotTooling = true;
+    private string? _autopilotToolingUnavailableReason;
+    private readonly Func<MachineArchitecture, string?> _autopilotToolingCheck;
     private bool _isArm64Selected;
     private bool _isGenerating;
     private bool _isCancelling;
@@ -62,12 +65,15 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         BootImageGenerationService genService,
         EntraAuthenticationService authService,
         GitHubReleasesClient gitHubReleasesClient,
-        Action navigateBack)
+        Action navigateBack,
+        Func<MachineArchitecture, string?>? autopilotToolingCheck = null)
     {
         _genService           = genService;
         _authService          = authService;
         _gitHubReleasesClient = gitHubReleasesClient;
         _navigateBack         = navigateBack;
+        _autopilotToolingCheck = autopilotToolingCheck ?? AutopilotTooling.GetUnavailableReason;
+        RefreshAutopilotToolingAvailability();
 
         Steps = new ObservableCollection<GenerationStep>(CreateSteps());
 
@@ -171,6 +177,32 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     }
 
     /// <summary>
+    /// Stage OA3Tool and the TPM provider so the Client can capture a Windows Autopilot hardware
+    /// hash. On by default where possible: the Client only offers it when the portal enables it.
+    /// </summary>
+    public bool IncludeAutopilotTooling
+    {
+        get => _includeAutopilotTooling && IsAutopilotToolingAvailable;
+        set { _includeAutopilotTooling = value; OnPropertyChanged(); }
+    }
+
+    public bool IsAutopilotToolingAvailable => _autopilotToolingUnavailableReason is null;
+
+    /// <summary>Why the tooling cannot be included for the selected architecture on this machine.</summary>
+    public string? AutopilotToolingUnavailableReason => _autopilotToolingUnavailableReason;
+
+    public bool HasAutopilotToolingUnavailableReason => _autopilotToolingUnavailableReason is not null;
+
+    private void RefreshAutopilotToolingAvailability()
+    {
+        _autopilotToolingUnavailableReason = _autopilotToolingCheck(SelectedArchitecture);
+        OnPropertyChanged(nameof(IsAutopilotToolingAvailable));
+        OnPropertyChanged(nameof(AutopilotToolingUnavailableReason));
+        OnPropertyChanged(nameof(HasAutopilotToolingUnavailableReason));
+        OnPropertyChanged(nameof(IncludeAutopilotTooling));
+    }
+
+    /// <summary>
     /// Target processor architecture for the generated boot image (todo/arm64-support.md,
     /// Milestone 1). No implicit default toward either radio button is rendered in the view
     /// (both are explicit) but the backing field defaults to x64 so an untouched view model
@@ -185,6 +217,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsArm64Selected));
             OnPropertyChanged(nameof(SelectedArchitecture));
+            RefreshAutopilotToolingAvailability();
         }
     }
 
@@ -197,6 +230,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsX64Selected));
             OnPropertyChanged(nameof(SelectedArchitecture));
+            RefreshAutopilotToolingAvailability();
         }
     }
 
@@ -455,6 +489,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 toolsRootPath: string.IsNullOrWhiteSpace(_toolsRootPath) ? null : _toolsRootPath,
                 enableCommandPromptAccess: _enableCommandPromptAccess,
                 architecture: SelectedArchitecture,
+                includeAutopilotTooling: IncludeAutopilotTooling,
                 ct: _cts.Token);
 
             OutputWimPath = result.WimPath;

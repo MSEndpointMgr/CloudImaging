@@ -2,6 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireRole } from '../middleware/roleGuard.js';
 import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
+import { decidingUser } from './autopilot.js';
+import type { AuthenticatedRequest } from '../middleware/auth.js';
 
 /**
  * Sessions router. Proxies all session-related operations to the Operator API (T041, T041a).
@@ -94,6 +96,23 @@ router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req
     const { sessionIds, osImageId } = req.body as { sessionIds: string[]; osImageId: string };
     const data = await operatorApiClient.bulkAssign(sessionIds, osImageId);
     res.status(202).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/sessions/:sessionId/preflight-override: approve a blocked ──
+// device's next session (Administrator). The approver comes from the token. ─
+
+router.post('/:sessionId/preflight-override', requireRole('CloudImaging.Administrator'), requireGuidParams('sessionId'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = decidingUser(req);
+    if (!user) { res.status(401).json({ title: 'Unauthorized', status: 401, detail: 'Missing user identity claim.' }); return; }
+    const data = await operatorApiClient.approvePreFlightOverride(req.params['sessionId'] as string, {
+      approvedBy: user.decidedByUpn,
+      approvedByObjectId: user.decidedByObjectId,
+    });
+    res.json(data);
   } catch (err) {
     next(err);
   }

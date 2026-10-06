@@ -188,7 +188,7 @@ export function PartitioningSchemePanel(): React.ReactElement {
                   onClick={() => move(index, -1)}
                   aria-label={`Move ${PARTITION_LABELS[p.partitionType]} up`}
                 >
-                  <ArrowUp className="h-4 w-4" />
+                 <ArrowUp />
                 </Button>
                 <Button
                   type="button"
@@ -198,7 +198,7 @@ export function PartitioningSchemePanel(): React.ReactElement {
                   onClick={() => move(index, 1)}
                   aria-label={`Move ${PARTITION_LABELS[p.partitionType]} down`}
                 >
-                  <ArrowDown className="h-4 w-4" />
+                 <ArrowDown />
                 </Button>
               </div>
               <div className="flex-1 space-y-1">
@@ -225,13 +225,14 @@ export function PartitioningSchemePanel(): React.ReactElement {
                       <p className="text-xs text-muted-foreground">
                         Recommended: {PARTITION_RECOMMENDED_MB[p.partitionType]} MB.{' '}
                         {p.sizeMb !== PARTITION_RECOMMENDED_MB[p.partitionType] && (
-                          <button
+                          <Button
+                            variant="link"
                             type="button"
                             className="underline underline-offset-2 hover:text-foreground"
                             onClick={() => updateSize(p.partitionType, PARTITION_RECOMMENDED_MB[p.partitionType]!)}
                           >
                             Use recommended
-                          </button>
+                          </Button>
                         )}
                       </p>
                     )}

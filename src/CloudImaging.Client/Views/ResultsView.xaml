@@ -13,12 +13,22 @@
         can still select/copy failure details and support reference codes straight off screen.
     -->
     <Grid>
-        <Border MaxWidth="640"
-                CornerRadius="8"
+        <Border CornerRadius="8"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1"
                 HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- The blocked card is wider so a requirement name and value fit on one line. -->
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="MaxWidth" Value="640" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsNotAuthorized}" Value="True">
+                            <Setter Property="MaxWidth" Value="680" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="6" />
@@ -39,7 +49,19 @@
                         Background="{DynamicResource SystemFillColorCautionBrush}"
                         Visibility="{Binding IsExpired, Converter={StaticResource BoolToVisibility}}" />
 
-                <StackPanel Grid.Row="1" Width="560" Margin="48,36,48,40">
+                <StackPanel Grid.Row="1">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Width" Value="560" />
+                            <Setter Property="Margin" Value="48,36,48,40" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNotAuthorized}" Value="True">
+                                    <Setter Property="Width" Value="606" />
+                                    <Setter Property="Margin" Value="36,28,36,28" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
 
                     <!-- SUCCESS -->
                     <StackPanel Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}"
@@ -124,33 +146,121 @@
                                    HorizontalAlignment="Center" Margin="0,24,0,0" />
                     </StackPanel>
 
-                    <!-- NOT AUTHORIZED -->
-                    <StackPanel Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}"
-                                HorizontalAlignment="Center">
-                        <ui:SymbolIcon Symbol="Warning24" FontSize="48"
-                                       Foreground="{DynamicResource SystemFillColorCautionBrush}"
-                                       HorizontalAlignment="Center" />
-                        <TextBlock Text="Device Not Authorized"
-                                   Style="{StaticResource TitleTextBlockStyle}"
-                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
-                        <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
-                                   Style="{StaticResource BodyStrongTextBlockStyle}"
-                                   FontFamily="Consolas"
-                                   HorizontalAlignment="Center" Margin="0,12,0,0" />
-                        <TextBlock Text="Enrollment required"
-                                   Style="{StaticResource BodyStrongTextBlockStyle}"
-                                   HorizontalAlignment="Center" Margin="0,16,0,0" />
+                    <!-- NOT AUTHORIZED: blocked by pre-flight checks. One line per switched-on
+                         requirement; fix hints are written to the log, opened with View Log. -->
+                    <StackPanel Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="Warning24" FontSize="36"
+                                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,14,0" />
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Device Blocked" Style="{StaticResource TitleTextBlockStyle}" />
+                                <WrapPanel>
+                                    <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
+                                               FontFamily="Consolas" FontSize="13"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               Margin="0,0,20,0" />
+                                    <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
+                                               FontFamily="Consolas" FontSize="13"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Per-check results -->
+                        <StackPanel Visibility="{Binding HasBlockedRequirements, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding BlockedSummary}"
+                                       Style="{StaticResource BodyTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       TextWrapping="Wrap" Margin="0,14,0,0" />
+                            <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1" CornerRadius="6" Margin="0,16,0,0" ClipToBounds="True">
+                                <ItemsControl ItemsSource="{Binding BlockedRequirements}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="14,8">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                                                        <Setter Property="BorderThickness" Value="0,1,0,0" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding RelativeSource={RelativeSource PreviousData}}" Value="{x:Null}">
+                                                                <Setter Property="BorderThickness" Value="0" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Met}" Value="False">
+                                                                <Setter Property="Background" Value="#12FF99A4" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="18" />
+                                                        <ColumnDefinition Width="202" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:SymbolIcon FontSize="16" VerticalAlignment="Center">
+                                                        <ui:SymbolIcon.Style>
+                                                            <Style TargetType="ui:SymbolIcon">
+                                                                <Setter Property="Symbol" Value="CheckmarkCircle24" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Met}" Value="False">
+                                                                        <Setter Property="Symbol" Value="DismissCircle24" />
+                                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:SymbolIcon.Style>
+                                                    </ui:SymbolIcon>
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
+                                                        <ui:SymbolIcon Symbol="{Binding Icon}" FontSize="16"
+                                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                       VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                                   VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Value}"
+                                                               Style="{StaticResource BodyTextBlockStyle}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center" Margin="12,0,0,0" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Backends without per-check results only ever blocked on enrollment. -->
                         <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                 Visibility="{Binding HasNoBlockedRequirements, Converter={StaticResource BoolToVisibility}}"
                                  Text="This device is not enrolled in Windows Autopilot or the Intune Corporate Device Identifiers list. Enroll the device in your organization's device management system before imaging."
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                 TextAlignment="Center"
-                                 Margin="0,8,0,0" />
-                        <!-- FR-007b/FR-026: Exit/Close is the only available action on this outcome (no Retry). -->
-                        <ui:Button Content="Exit"
-                                   Appearance="Secondary"
-                                   Width="160"
-                                   Command="{Binding ExitCommand}"
-                                   HorizontalAlignment="Center" Margin="0,24,0,0" />
+                                 Margin="0,14,0,0" />
+
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                            <ui:Button Content="View Log"
+                                       Appearance="Secondary"
+                                       MinWidth="120"
+                                       Icon="{ui:SymbolIcon DocumentText24}"
+                                       Click="ViewLogButton_Click" />
+                            <ui:Button Content="Try again"
+                                       Appearance="Secondary"
+                                       MinWidth="120" Margin="8,0,0,0"
+                                       Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                       Command="{Binding TryAgainCommand}" />
+                            <ui:Button Content="Exit"
+                                       Appearance="Secondary"
+                                       MinWidth="120" Margin="8,0,0,0"
+                                       Command="{Binding ExitCommand}" />
+                        </StackPanel>
                     </StackPanel>
 
                 </StackPanel>

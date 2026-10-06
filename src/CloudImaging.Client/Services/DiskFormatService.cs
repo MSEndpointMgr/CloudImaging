@@ -12,15 +12,18 @@ namespace CloudImaging.Client.Services;
 
 /// <summary>
 /// The drive letters assigned to each formatted partition, for use by later pipeline steps
-/// (DISM apply target, boot configuration, recovery image apply).
+/// (DISM apply target, boot configuration, recovery image apply). <see cref="SystemVolume"/> is
+/// the EFI System Partition on UEFI devices and the active NTFS system partition on Legacy BIOS.
 /// </summary>
-public sealed record DiskFormatResult(string EfiSystemVolume, string WindowsVolume, string RecoveryVolume);
+public sealed record DiskFormatResult(string SystemVolume, string WindowsVolume, string RecoveryVolume);
 
 /// <summary>
 /// Formats the target disk before the OS image is applied — the "Format" step of the imaging
-/// pipeline (FR-007). Builds a full UEFI-bootable GPT layout (EFI System Partition, MSR,
-/// Windows, Recovery) from the admin-configured <see cref="PartitioningScheme"/> snapshotted
-/// onto the session, rather than a single non-bootable partition.
+/// pipeline (FR-007). Builds a full bootable layout from the admin-configured
+/// <see cref="PartitioningScheme"/> snapshotted onto the session, rather than a single
+/// non-bootable partition. UEFI devices get GPT (EFI System Partition, MSR, Windows, Recovery);
+/// devices booted in Legacy BIOS (CSM) mode get the same scheme on MBR, with the EFI entry
+/// becoming the active NTFS system partition and the MSR dropped (MBR has no MSR).
 ///
 /// Target disk selection: the single non-removable (non-USB-interface) disk attached to the
 /// device is selected automatically. If zero or more than one such disk is found, formatting
@@ -36,21 +39,31 @@ public sealed partial class DiskFormatService
     /// <summary>Safety margin subtracted from the disk's reported size to allow for GPT/alignment overhead.</summary>
     private const long SafetyMarginMb = 8;
 
+    /// <summary>MBR addresses at most 2 TiB (2^32 sectors of 512 bytes); space beyond it is left unused.</summary>
+    internal const long MbrMaxDiskMb = 2L * 1024 * 1024;
+
     private readonly ILogger<DiskFormatService> _logger;
 
     public DiskFormatService(ILogger<DiskFormatService> logger) => _logger = logger;
 
     /// <summary>
     /// Cleans, partitions, and formats the sole eligible fixed disk according to
-    /// <paramref name="scheme"/>, returning the drive letters assigned to each partition.
+    /// <paramref name="scheme"/> in the layout <paramref name="firmwareMode"/> boots from,
+    /// returning the drive letters assigned to each partition.
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Zero or multiple eligible fixed disks were found, the scheme is missing a required
-    /// partition type, the disk is too small for the configured sizes, or diskpart failed.
+    /// partition type, the disk is too small for the configured sizes, the firmware mode is
+    /// unknown, or diskpart failed.
     /// </exception>
-    public async Task<DiskFormatResult> FormatTargetDiskAsync(PartitioningScheme scheme, CancellationToken ct = default)
+    public async Task<DiskFormatResult> FormatTargetDiskAsync(PartitioningScheme scheme, FirmwareMode firmwareMode, CancellationToken ct = default)
     {
         WinPeEnvironmentGuard.EnsureRunningInWinPe("Formatting the target disk");
+
+        if (firmwareMode == FirmwareMode.Unknown)
+        {
+            throw new InvalidOperationException("The firmware mode could not be detected, so the disk layout cannot be chosen. Formatting was refused.");
+        }
 
         var ordered = ValidateAndOrder(scheme);
 
@@ -58,8 +71,13 @@ public sealed partial class DiskFormatService
         LogTargetDiskSelected(_logger, diskIndex);
 
         var diskSizeMb = GetDiskSizeMb(diskIndex);
-        var reservedMb = ordered.Where(p => p.PartitionType != PartitionType.Windows).Sum(p => (long)p.SizeMb);
-        var windowsMb = diskSizeMb - reservedMb - SafetyMarginMb;
+        if (firmwareMode == FirmwareMode.LegacyBios && diskSizeMb > MbrMaxDiskMb)
+        {
+            LogMbrCapacityCapped(_logger, diskIndex, diskSizeMb, MbrMaxDiskMb);
+            diskSizeMb = MbrMaxDiskMb;
+        }
+
+        var windowsMb = diskSizeMb - ReservedSizeMb(ordered, firmwareMode) - SafetyMarginMb;
 
         if (windowsMb < MinWindowsPartitionMb)
         {
@@ -70,11 +88,11 @@ public sealed partial class DiskFormatService
         }
 
         var letters = AllocateDriveLetters(3);
-        var espLetter = letters[0];
+        var systemLetter = letters[0];
         var windowsLetter = letters[1];
         var recoveryLetter = letters[2];
 
-        var script = BuildDiskpartScript(diskIndex, ordered, windowsMb, espLetter, windowsLetter, recoveryLetter);
+        var script = BuildDiskpartScript(diskIndex, ordered, firmwareMode, windowsMb, systemLetter, windowsLetter, recoveryLetter);
 
         var scriptPath = Path.Combine(Path.GetTempPath(), $"ci-diskpart-{Guid.NewGuid():N}.txt");
         await File.WriteAllTextAsync(scriptPath, script, ct);
@@ -89,14 +107,21 @@ public sealed partial class DiskFormatService
         }
 
         LogFormatCompleted(_logger, diskIndex, windowsLetter);
-        return new DiskFormatResult($"{espLetter}:", $"{windowsLetter}:", $"{recoveryLetter}:");
+        return new DiskFormatResult($"{systemLetter}:", $"{windowsLetter}:", $"{recoveryLetter}:");
     }
+
+    /// <summary>Space taken by every partition except Windows. The MSR exists only on GPT.</summary>
+    internal static long ReservedSizeMb(IEnumerable<PartitionDefinition> ordered, FirmwareMode firmwareMode) =>
+        ordered
+            .Where(p => p.PartitionType != PartitionType.Windows)
+            .Where(p => firmwareMode != FirmwareMode.LegacyBios || p.PartitionType != PartitionType.Msr)
+            .Sum(p => (long)p.SizeMb);
 
     /// <summary>
     /// Validates that the scheme defines exactly one of each required, fixed partition type
     /// and returns the partitions ordered per their configured <see cref="PartitionDefinition.Order"/>.
     /// </summary>
-    private static List<PartitionDefinition> ValidateAndOrder(PartitioningScheme scheme)
+    internal static List<PartitionDefinition> ValidateAndOrder(PartitioningScheme scheme)
     {
         var ordered = scheme.Partitions.OrderBy(p => p.Order).ToList();
         var types = ordered.Select(p => p.PartitionType).ToHashSet();
@@ -112,26 +137,29 @@ public sealed partial class DiskFormatService
     }
 
     /// <summary>
-    /// Builds the diskpart script for the full UEFI-bootable layout. The Windows partition
+    /// Builds the diskpart script for the full bootable layout. The Windows partition
     /// always receives <paramref name="windowsSizeMb"/> (computed as the disk's remaining
-    /// space after the other three fixed-size partitions) regardless of its position in
+    /// space after the other fixed-size partitions) regardless of its position in
     /// <paramref name="ordered"/>, so the configured order never leaves a partition without
-    /// its intended space. The Recovery partition is marked hidden/required via the GPT
-    /// attribute bits (0x8000000000000001) but keeps a temporary drive letter so
-    /// <see cref="RecoveryImageService"/> can write the WinRE image to it later in the pipeline.
+    /// its intended space. On GPT the Recovery partition is marked hidden/required via the GPT
+    /// attribute bits (0x8000000000000001); on MBR it gets partition type 0x27. Either way it
+    /// keeps a temporary drive letter so <see cref="RecoveryImageService"/> can write the WinRE
+    /// image to it later in the pipeline.
     /// </summary>
-    private static string BuildDiskpartScript(
+    internal static string BuildDiskpartScript(
         int diskIndex,
         IReadOnlyList<PartitionDefinition> ordered,
+        FirmwareMode firmwareMode,
         long windowsSizeMb,
-        string espLetter,
+        string systemLetter,
         string windowsLetter,
         string recoveryLetter)
     {
+        var mbr = firmwareMode == FirmwareMode.LegacyBios;
         var sb = new StringBuilder();
         sb.AppendLine(CultureInfo.InvariantCulture, $"select disk {diskIndex}");
         sb.AppendLine("clean");
-        sb.AppendLine("convert gpt");
+        sb.AppendLine(mbr ? "convert mbr" : "convert gpt");
 
         // WinPE's volume manager does not always finish re-enumerating the disk before diskpart
         // moves on to its next scripted command immediately after "clean"/"convert gpt" rewrite
@@ -153,10 +181,19 @@ public sealed partial class DiskFormatService
         {
             switch (partition.PartitionType)
             {
+                case PartitionType.EfiSystem when mbr:
+                    // BIOS boots from the active primary partition; bcdboot /f BIOS writes bootmgr there.
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"create partition primary size={partition.SizeMb}");
+                    sb.AppendLine("format fs=ntfs quick label=\"System\"");
+                    sb.AppendLine("active");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={systemLetter}");
+                    break;
                 case PartitionType.EfiSystem:
                     sb.AppendLine(CultureInfo.InvariantCulture, $"create partition efi size={partition.SizeMb}");
                     sb.AppendLine("format fs=fat32 quick label=\"System\"");
-                    sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={espLetter}");
+                    sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={systemLetter}");
+                    break;
+                case PartitionType.Msr when mbr:
                     break;
                 case PartitionType.Msr:
                     sb.AppendLine(CultureInfo.InvariantCulture, $"create partition msr size={partition.SizeMb}");
@@ -170,7 +207,7 @@ public sealed partial class DiskFormatService
                     sb.AppendLine(CultureInfo.InvariantCulture, $"create partition primary size={partition.SizeMb}");
                     sb.AppendLine("format fs=ntfs quick label=\"Recovery\"");
                     sb.AppendLine(CultureInfo.InvariantCulture, $"assign letter={recoveryLetter}");
-                    sb.AppendLine("gpt attributes=0x8000000000000001");
+                    sb.AppendLine(mbr ? "set id=27" : "gpt attributes=0x8000000000000001");
                     break;
             }
         }
@@ -316,4 +353,7 @@ public sealed partial class DiskFormatService
 
     [LoggerMessage(Level = LogLevel.Error, Message = "diskpart failed with exit code {ExitCode}. Output: {Output}")]
     private static partial void LogDiskpartFailed(ILogger logger, int exitCode, string output);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Disk {DiskIndex} is {DiskSizeMb} MB, but MBR can only use the first {MaxMb} MB. The rest stays unallocated.")]
+    private static partial void LogMbrCapacityCapped(ILogger logger, int diskIndex, long diskSizeMb, long maxMb);
 }

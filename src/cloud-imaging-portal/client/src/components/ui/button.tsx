@@ -16,25 +16,27 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        // `sm` is the standard portal button size (see defaultVariants). Every button
-        // should use this size unless there is a specific reason not to. It deliberately
-        // inherits the base `text-sm`: a 32px control with a 14px label matches the `sm`
-        // variant of `Select` and keeps button labels readable next to body copy.
-        default: 'h-9 px-4 py-2',
+        // `sm` is the portal's only standard size (see defaultVariants). 32px with a 14px label.
+        // There is deliberately no 36px step: a second near-identical height is impossible to pick
+        // between and produced buttons 4px taller than their neighbours wherever it was used.
         sm: 'h-8 rounded-md px-3',
         lg: 'h-10 rounded-md px-6',
         icon: 'h-8 w-8',
       },
     },
+    // A text link has no box: it sits inline in a sentence, so the size's height and padding are
+    // wrong for it. compoundVariants emit last, so twMerge in `cn` lets these win.
+    compoundVariants: [{ variant: 'link', className: 'h-auto p-0' }],
     defaultVariants: { variant: 'default', size: 'sm' },
   },
 );
 
 /**
  * Transient interaction feedback rendered inside the button:
- * - `loading`  → the label is replaced by a spinner (operation in progress).
+ * - `loading`  → a spinner replaces the button's own icon (operation in progress).
  * - `success`  → a green check "pops" in (operation completed).
  * - `error`    → a red cross "pops" in (operation failed).
+ * The label stays visible throughout, so the button never becomes an unlabelled box mid-action.
  * Pages typically drive this through a short-lived state machine
  * (idle → loading → success | error → idle).
  */
@@ -54,6 +56,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const state: ButtonStatus = loading ? 'loading' : status;
     const isBusy = state === 'loading';
 
+    const statusIcon =
+      state === 'loading' ? <Loader2 className="animate-spin" aria-hidden="true" />
+      : state === 'success' ? <Check className="animate-pop text-emerald-500" aria-hidden="true" />
+      : state === 'error' ? <X className="animate-pop text-destructive" aria-hidden="true" />
+      : null;
+
     return (
       <button
         ref={ref}
@@ -62,15 +70,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         aria-busy={isBusy || undefined}
         {...props}
       >
-        {state === 'loading' ? (
-          <Loader2 className="animate-spin" aria-hidden="true" />
-        ) : state === 'success' ? (
-          <Check className="animate-pop text-emerald-500" aria-hidden="true" />
-        ) : state === 'error' ? (
-          <X className="animate-pop text-destructive" aria-hidden="true" />
-        ) : (
-          children
-        )}
+        {statusIcon}
+        {/* `contents` keeps the flex gap; hiding the leading icon lets the status icon take its
+            place rather than sitting next to it. */}
+        <span className={cn('contents', statusIcon && '[&>svg]:hidden')}>{children}</span>
       </button>
     );
   },

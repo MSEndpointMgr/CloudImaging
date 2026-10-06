@@ -209,17 +209,20 @@ export default function BootImagesPage(): React.ReactElement {
   return (
     <>
     <div className="space-y-4">
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          WinPE images written to USB boot media and ISO files by the Media Builder.
+        </p>
         {isAdministrator && (
           <Button onClick={() => setUploadOpen(true)}>
-            <Upload className="h-4 w-4" />
+            <Upload />
             Upload boot image
           </Button>
         )}
       </div>
 
       {/* Capacity indicator (FR-063) */}
-      <ArchitectureCapacityCard counts={activeCounts} max={MAX_BOOT_IMAGES} icon={HardDrive} />
+      <ArchitectureCapacityCard counts={activeCounts} max={MAX_BOOT_IMAGES} />
 
       <div className="rounded-md border border-border overflow-hidden">
         <Table>
@@ -231,7 +234,7 @@ export default function BootImagesPage(): React.ReactElement {
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
               <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
-              {isAdministrator && <TableHead>Actions</TableHead>}
+                {isAdministrator && <TableHead className="w-px whitespace-nowrap">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -246,7 +249,7 @@ export default function BootImagesPage(): React.ReactElement {
                     description="Generate a boot image in the Media Builder app, then upload the WIM file here. It starts in pre-production so you can test it before promoting it."
                     action={isAdministrator ? (
                       <Button onClick={() => setUploadOpen(true)}>
-                        <Upload className="h-4 w-4" />
+                        <Upload />
                         Upload boot image
                       </Button>
                     ) : undefined}
@@ -273,7 +276,7 @@ export default function BootImagesPage(): React.ReactElement {
                   <Badge variant={STAGE_BADGE[bootImageStage(img)]} dot>{BOOT_IMAGE_STAGE_LABELS[bootImageStage(img)]}</Badge>
                 </TableCell>
                 {isAdministrator && (
-                  <TableCell>
+                  <TableCell className="w-px whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       {!img.isLatestPublished && (
                         <Tooltip content={bootImageStage(img) === 'preProduction' ? 'Promote to production' : `Make latest ${archLabel(img.architecture)} image`}>
@@ -284,7 +287,7 @@ export default function BootImagesPage(): React.ReactElement {
                             className="text-muted-foreground hover:text-primary"
                             onClick={() => setStageChange({ action: 'promote', image: img })}
                           >
-                            <Rocket className="h-4 w-4" />
+                            <Rocket />
                           </Button>
                         </Tooltip>
                       )}
@@ -297,7 +300,7 @@ export default function BootImagesPage(): React.ReactElement {
                             className="text-muted-foreground hover:text-primary"
                             onClick={() => setStageChange({ action: 'demote', image: img })}
                           >
-                            <Undo2 className="h-4 w-4" />
+                            <Undo2 />
                           </Button>
                         </Tooltip>
                       )}
@@ -311,7 +314,7 @@ export default function BootImagesPage(): React.ReactElement {
                           className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           onClick={() => void handleDelete(img.bootImageId)}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 />
                         </Button>
                       </Tooltip>
                     </div>
@@ -447,7 +450,7 @@ function UploadBootImageDialog({ activeCounts, existingVersions, onClose, onPubl
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Upload boot image</h2>
             <Button variant="ghost" size="icon" onClick={onClose} disabled={busy} aria-label="Close">
-              <X className="h-4 w-4" />
+                <X />
             </Button>
           </div>
 

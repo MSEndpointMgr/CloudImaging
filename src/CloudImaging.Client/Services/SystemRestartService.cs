@@ -47,7 +47,7 @@ public sealed partial class SystemRestartService
         CreateNoWindow = true,
     };
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Imaging succeeded — restarting the system now.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Imaging succeeded. Restarting the system now.")]
     private static partial void LogRestarting(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "DEV SIMULATION: system restart suppressed (would run wpeutil Reboot).")]

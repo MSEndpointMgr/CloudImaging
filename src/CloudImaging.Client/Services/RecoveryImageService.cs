@@ -269,6 +269,6 @@ public sealed partial class RecoveryImageService
     [LoggerMessage(Level = LogLevel.Warning, Message = "No published recovery image and no embedded WinRE found at {WimPath}.")]
     private static partial void LogEmbeddedImageNotFound(ILogger logger, string wimPath);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "No published recovery image — falling back to the OS image's embedded WinRE at {WimPath}.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "No published recovery image. Falling back to the OS image's embedded WinRE at {WimPath}.")]
     private static partial void LogUsingEmbeddedFallback(ILogger logger, string wimPath);
 }

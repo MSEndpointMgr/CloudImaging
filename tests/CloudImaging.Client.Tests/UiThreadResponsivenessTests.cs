@@ -57,6 +57,7 @@ public sealed class UiThreadResponsivenessTests
     [InlineData("OperationSelectionView.xaml")]
     [InlineData("SessionInitView.xaml")]
     [InlineData("ResultsView.xaml")]
+    [InlineData("AutopilotRegistrationView.xaml")]
     public void View_ContainsNoScrollViewer(string viewFileName)
     {
         // FR-002b: all views must fit within the minimum window size without scrolling.

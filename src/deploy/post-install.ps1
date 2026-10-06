@@ -10,7 +10,9 @@
         1. Grants the Microsoft Graph application permission
            DeviceManagementServiceConfig.Read.All to the Imaging Core API managed identity,
            which the device pre-flight authorization check needs in order to read Windows
-           Autopilot and Intune corporate identifiers.
+           Autopilot and Intune corporate identifiers. With -EnableAutopilotRegistration it
+           also grants DeviceManagementServiceConfig.ReadWrite.All, which importing approved
+           Autopilot hardware hashes into Intune requires.
 
         2. Assigns the CloudImaging.PortalAccess app role on the Operator API app registration
            to the portal backend's managed identity, so the portal backend can call the
@@ -38,21 +40,33 @@
 .PARAMETER OperatorApiClientId
     Application (client) ID of the Cloud Imaging Operator API app registration.
 
+.PARAMETER EnableAutopilotRegistration
+    Also grants DeviceManagementServiceConfig.ReadWrite.All to the Imaging Core API managed
+    identity, so approved Autopilot registrations can be imported. Omit it unless the Autopilot
+    registration feature will be turned on in the portal. Removing the switch later does not
+    revoke a grant that is already in place.
+
 .EXAMPLE
     .\post-install.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>" -OperatorApiClientId "<client-id>"
+
+.EXAMPLE
+    .\post-install.ps1 -ResourceGroupName "corp-prod-rg" -SubscriptionId "<subscription-id>" -OperatorApiClientId "<client-id>" -EnableAutopilotRegistration
 
 .NOTES
     FileName:    post-install.ps1
     Author:      MSEndpointMgr
     Contact:     @MSEndpointMgr
     Created:     2026-09-13
-    Updated:     2026-09-13
+    Updated:     2026-10-06
 
     Version history:
     1.0.0 - (2026-09-13) Initial release, replacing grant-graph-permissions.ps1 and
                          assign-service-roles.ps1
     1.1.0 - (2026-09-14) Restarts the portal backend after assigning the Operator API app role,
                          so its cached token (issued without the role) is discarded
+    1.2.0 - (2026-09-20) Added -EnableAutopilotRegistration, which also grants
+                         DeviceManagementServiceConfig.ReadWrite.All for Autopilot imports
+    1.3.0 - (2026-10-06) Restarts the Imaging Core Function App after a new Microsoft Graph grant
 #>
 #Requires -Modules Az.Accounts, Az.ManagedServiceIdentity, Az.Resources, Az.Websites, Microsoft.Graph.Authentication, Microsoft.Graph.Applications
 [CmdletBinding(SupportsShouldProcess)]
@@ -65,7 +79,9 @@ param (
     [string] $SubscriptionId,
     [Parameter(Mandatory = $true, HelpMessage = "Client ID of the Operator API app registration.")]
     [ValidateNotNullOrEmpty()]
-    [string] $OperatorApiClientId
+    [string] $OperatorApiClientId,
+    [Parameter(Mandatory = $false, HelpMessage = "Also grant the Graph permission that importing approved Autopilot registrations requires.")]
+    [switch] $EnableAutopilotRegistration
 )
 Begin {
     $ErrorActionPreference = "Stop"
@@ -76,14 +92,22 @@ Begin {
     Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process | Out-Null
 
     $GraphAppId = "00000003-0000-0000-c000-000000000000"
-    $GraphPermission = "DeviceManagementServiceConfig.Read.All"
     $OperatorApiRole = "CloudImaging.PortalAccess"
     $RequiredScopes = @("AppRoleAssignment.ReadWrite.All", "Application.Read.All")
+
+    # ReadWrite.All is opt-in because it lets the identity change Autopilot registrations, which
+    # tenants that never turn the feature on should not have to grant.
+    $GraphPermissions = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
+    $GraphPermissions.Add("DeviceManagementServiceConfig.Read.All")
+    if ($EnableAutopilotRegistration) {
+        $GraphPermissions.Add("DeviceManagementServiceConfig.ReadWrite.All")
+    }
 
     $GrantResults = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
     $CurrentStepCount = 0
     $FailureCount = 0
-    $TotalStepCount = 2
+    $CoreRestartNeeded = $false
+    $TotalStepCount = $GraphPermissions.Count + 1
 
     function Add-GrantResult {
         param (
@@ -199,48 +223,68 @@ Process {
         Write-Output ""
         Write-Output "Applying grants"
 
-        # Grant 1: Microsoft Graph application permission for the device pre-flight check.
-        $CurrentStepCount++
-        Write-Progress -Activity "Completing Cloud Imaging setup" -Status $GraphPermission -PercentComplete (($CurrentStepCount / $TotalStepCount) * 100)
+        # Grant 1: Microsoft Graph application permissions for the device pre-flight check and,
+        # when requested, Autopilot imports.
+        $GraphServicePrincipal = $null
+        foreach ($GraphPermission in $GraphPermissions) {
+            $CurrentStepCount++
+            Write-Progress -Activity "Completing Cloud Imaging setup" -Status $GraphPermission -PercentComplete (($CurrentStepCount / $TotalStepCount) * 100)
 
-        try {
-            $GraphServicePrincipal = Get-MgServicePrincipal -Filter "appId eq '$($GraphAppId)'" -Property @("id", "appRoles") | Select-Object -First 1
-            if ($null -eq $GraphServicePrincipal) {
-                throw "The Microsoft Graph service principal was not found in this tenant."
-            }
-
-            # Application rather than delegated, because the Imaging Core API calls Graph as
-            # itself with no user present.
-            $GraphAppRole = $GraphServicePrincipal.AppRoles | Where-Object { $PSItem.Value -eq $GraphPermission -and $PSItem.AllowedMemberTypes -contains "Application" } | Select-Object -First 1
-            if ($null -eq $GraphAppRole) {
-                throw "The Microsoft Graph application role $($GraphPermission) was not found."
-            }
-
-            $ExistingAssignment = Get-AppRoleAssignmentMatch -PrincipalId $ImagingCoreIdentity.PrincipalId -ResourceId $GraphServicePrincipal.Id -AppRoleId $GraphAppRole.Id
-            if ($null -ne $ExistingAssignment) {
-                Add-GrantResult -Grant $GraphPermission -Identity $ImagingCoreIdentity.Name -Status "Already present"
-            }
-            elseif ($PSCmdlet.ShouldProcess($ImagingCoreIdentity.Name, "Grant $($GraphPermission)")) {
-                $AssignmentBody = @{
-                    principalId = $ImagingCoreIdentity.PrincipalId
-                    resourceId = $GraphServicePrincipal.Id
-                    appRoleId = $GraphAppRole.Id
-                }
-                New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $ImagingCoreIdentity.PrincipalId -BodyParameter $AssignmentBody | Out-Null
-
-                # Read back rather than trusting the create call, because a silently failed grant
-                # only surfaces later as a pre-flight authorization failure.
-                if ($null -eq (Get-AppRoleAssignmentMatch -PrincipalId $ImagingCoreIdentity.PrincipalId -ResourceId $GraphServicePrincipal.Id -AppRoleId $GraphAppRole.Id)) {
-                    throw "The assignment was created but could not be verified."
+            try {
+                if ($null -eq $GraphServicePrincipal) {
+                    $GraphServicePrincipal = Get-MgServicePrincipal -Filter "appId eq '$($GraphAppId)'" -Property @("id", "appRoles") | Select-Object -First 1
+                    if ($null -eq $GraphServicePrincipal) {
+                        throw "The Microsoft Graph service principal was not found in this tenant."
+                    }
                 }
 
-                Add-GrantResult -Grant $GraphPermission -Identity $ImagingCoreIdentity.Name -Status "Granted"
+                # Application rather than delegated, because the Imaging Core API calls Graph as
+                # itself with no user present.
+                $GraphAppRole = $GraphServicePrincipal.AppRoles | Where-Object { $PSItem.Value -eq $GraphPermission -and $PSItem.AllowedMemberTypes -contains "Application" } | Select-Object -First 1
+                if ($null -eq $GraphAppRole) {
+                    throw "The Microsoft Graph application role $($GraphPermission) was not found."
+                }
+
+                $ExistingAssignment = Get-AppRoleAssignmentMatch -PrincipalId $ImagingCoreIdentity.PrincipalId -ResourceId $GraphServicePrincipal.Id -AppRoleId $GraphAppRole.Id
+                if ($null -ne $ExistingAssignment) {
+                    Add-GrantResult -Grant $GraphPermission -Identity $ImagingCoreIdentity.Name -Status "Already present"
+                }
+                elseif ($PSCmdlet.ShouldProcess($ImagingCoreIdentity.Name, "Grant $($GraphPermission)")) {
+                    $AssignmentBody = @{
+                        principalId = $ImagingCoreIdentity.PrincipalId
+                        resourceId = $GraphServicePrincipal.Id
+                        appRoleId = $GraphAppRole.Id
+                    }
+                    New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $ImagingCoreIdentity.PrincipalId -BodyParameter $AssignmentBody | Out-Null
+
+                    # Read back rather than trusting the create call, because a silently failed
+                    # grant only surfaces later as a pre-flight or import failure.
+                    if ($null -eq (Get-AppRoleAssignmentMatch -PrincipalId $ImagingCoreIdentity.PrincipalId -ResourceId $GraphServicePrincipal.Id -AppRoleId $GraphAppRole.Id)) {
+                        throw "The assignment was created but could not be verified."
+                    }
+
+                    Add-GrantResult -Grant $GraphPermission -Identity $ImagingCoreIdentity.Name -Status "Granted"
+                    $CoreRestartNeeded = $true
+                }
+            }
+            catch [System.Exception] {
+                $FailureCount++
+                Write-Warning -Message "Could not grant $($GraphPermission): $($_.Exception.Message)"
+                Add-GrantResult -Grant $GraphPermission -Identity $ImagingCoreIdentity.Name -Status "Failed" -Detail $_.Exception.Message
             }
         }
-        catch [System.Exception] {
-            $FailureCount++
-            Write-Warning -Message "Could not grant $($GraphPermission): $($_.Exception.Message)"
-            Add-GrantResult -Grant $GraphPermission -Identity $ImagingCoreIdentity.Name -Status "Failed" -Detail $_.Exception.Message
+
+        # Imaging Core caches its Graph token in process; one issued before a new grant lacks the new role
+        # until the token expires, so Autopilot imports would keep failing with 403 after the grant is in place.
+        if ($CoreRestartNeeded) {
+            $CoreFunctionApp = @(Get-AzWebApp -ResourceGroupName $ResourceGroupName | Where-Object { $PSItem.Name -like "*-func-core" })
+            if ($CoreFunctionApp.Count -eq 1) {
+                Write-Output "Restarting $($CoreFunctionApp[0].Name) to discard its cached Microsoft Graph token"
+                Restart-AzWebApp -ResourceGroupName $ResourceGroupName -Name $CoreFunctionApp[0].Name | Out-Null
+            }
+            else {
+                Write-Warning -Message "Could not identify the Imaging Core Function App in '$($ResourceGroupName)'. Restart it manually, otherwise it keeps using a Microsoft Graph token issued before this grant."
+            }
         }
 
         # Grant 2: Operator API service to service app role for the portal backend.
@@ -320,6 +364,6 @@ End {
         Write-Warning -Message "$($FailureCount) grant(s) did not complete. Resolve the errors above and run this script again, it is safe to re-run."
     }
     else {
-        Write-Output "Both grants are in place. Allow several minutes for Microsoft Entra to replicate them."
+        Write-Output "All grants are in place. Allow several minutes for Microsoft Entra to replicate them."
     }
 }

@@ -95,7 +95,7 @@ public sealed partial class LogUploadService
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "No local log file found at {LogFilePath} — skipping log upload.")]
+    [LoggerMessage(Level = LogLevel.Debug, Message = "No local log file found at {LogFilePath}. Skipping log upload.")]
     private static partial void LogNoFileToUpload(ILogger logger, string logFilePath);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not obtain a log upload URL for session {SessionId}.")]

@@ -1,0 +1,141 @@
+<Page x:Class="CloudImaging.Client.Views.AutopilotRegistrationView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+      Title="Register with Autopilot">
+    <!--
+        Register with Autopilot: capture the hardware hash, submit it for approval, optionally
+        wait for the decision. Fixed layout, no ScrollViewer (FR-002b, enforced by
+        UiThreadResponsivenessTests.View_ContainsNoScrollViewer).
+    -->
+    <Grid>
+        <Border Width="600"
+                CornerRadius="8"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="6" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorSuccessBrush}"
+                        Visibility="{Binding IsPositiveOutcome, Converter={StaticResource BoolToVisibility}}" />
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorCautionBrush}"
+                        Visibility="{Binding IsNegativeOutcome, Converter={StaticResource BoolToVisibility}}" />
+                <Border Grid.Row="0" CornerRadius="8,8,0,0"
+                        Background="{DynamicResource SystemFillColorCriticalBrush}"
+                        Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
+
+                <StackPanel Grid.Row="1" Margin="40,32,40,32">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="32"
+                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                       Margin="0,0,12,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Title}"
+                                   Style="{StaticResource TitleTextBlockStyle}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <TextBlock Text="{Binding Subtitle}"
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Margin="0,12,0,0" />
+
+                    <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36"
+                                     Margin="0,20,0,0" HorizontalAlignment="Center"
+                                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:ProgressRing IsIndeterminate="True" Width="24" Height="24"
+                                     Margin="0,16,0,0" HorizontalAlignment="Center"
+                                     Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVisibility}}" />
+
+                    <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                             Text="{Binding ErrorMessage, Mode=OneWay}"
+                             Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                             TextAlignment="Center"
+                             Margin="0,16,0,0"
+                             Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
+
+                    <!-- Reference + device details, shown once the request exists -->
+                    <Border Margin="0,24,0,0" Padding="20,16" CornerRadius="6"
+                            Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                            Visibility="{Binding ShowDetails, Converter={StaticResource BoolToVisibility}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Reference" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="0" Grid.Column="1" Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                     Text="{Binding ReferenceCode, Mode=OneWay}" FontFamily="Consolas" FontSize="20" FontWeight="SemiBold" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Serial number" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                     Text="{Binding SerialNumber, Mode=OneWay}" FontFamily="Consolas" Margin="0,8,0,0" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Device" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DeviceDescription}"
+                                       Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Location" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LocationDisplay}"
+                                       Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
+                        </Grid>
+                    </Border>
+
+                    <Border Margin="0,16,0,0" Padding="12,8" CornerRadius="6"
+                            Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                            Visibility="{Binding HasTpmWarning, Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Warning24" FontSize="16" VerticalAlignment="Top" Margin="0,2,8,0"
+                                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            <TextBlock Text="{Binding TpmWarning}" Style="{StaticResource CaptionTextBlockStyle}"
+                                       TextWrapping="Wrap" Width="480" />
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="{Binding Detail}"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxHeight="40"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="0,12,0,0"
+                               Visibility="{Binding HasDetail, Converter={StaticResource BoolToVisibility}}" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,28,0,0">
+                        <ui:Button Content="Wait for decision"
+                                   Appearance="Primary"
+                                   Width="180" Height="40" Margin="0,0,12,0"
+                                   Command="{Binding WaitForDecisionCommand}"
+                                   Visibility="{Binding IsSubmitted, Converter={StaticResource BoolToVisibility}}" />
+                        <ui:Button Content="Try again"
+                                   Appearance="Primary"
+                                   Width="160" Height="40" Margin="0,0,12,0"
+                                   Command="{Binding RetryCommand}"
+                                   Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
+                        <ui:Button Content="Back to start"
+                                   Appearance="Secondary"
+                                   Width="160" Height="40"
+                                   Command="{Binding BackCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Page>

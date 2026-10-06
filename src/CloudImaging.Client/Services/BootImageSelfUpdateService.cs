@@ -200,7 +200,7 @@ public sealed partial class BootImageSelfUpdateService
     [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: no latest boot image info available from Device Gateway API.")]
     private static partial void LogNoLatestBootImageAvailable(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: architecture mismatch (current {CurrentArchitecture}, latest {LatestArchitecture}) — aborting, keeping the current boot.wim.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: architecture mismatch (current {CurrentArchitecture}, latest {LatestArchitecture}). Aborting and keeping the current boot.wim.")]
     private static partial void LogArchitectureMismatch(ILogger logger, MachineArchitecture currentArchitecture, MachineArchitecture latestArchitecture);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image self-update: already running the latest version {Version}.")]
@@ -209,12 +209,12 @@ public sealed partial class BootImageSelfUpdateService
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image self-update: newer version available ({CurrentVersion} -> {LatestVersion}). Downloading.")]
     private static partial void LogNewerVersionFound(ILogger logger, string currentVersion, string latestVersion);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: downloaded WIM hash did not match the expected hash for version {Version} — aborting, keeping the current boot.wim.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: downloaded WIM hash did not match the expected hash for version {Version}. Aborting and keeping the current boot.wim.")]
     private static partial void LogHashMismatch(ILogger logger, string version);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image self-update: boot.wim replaced with version {Version}. Effective on next boot.")]
     private static partial void LogUpdateComplete(ILogger logger, string version);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update check failed — continuing with the current boot.wim.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update check failed. Continuing with the current boot.wim.")]
     private static partial void LogSelfUpdateFailed(ILogger logger, Exception ex);
 }

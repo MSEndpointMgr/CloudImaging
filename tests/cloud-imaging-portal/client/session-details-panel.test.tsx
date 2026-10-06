@@ -75,6 +75,34 @@ describe('Portal frontend: session details panel', () => {
     expect(screen.getByText('A4B1C2D3E4F5')).toBeTruthy();
   });
 
+  it('replaces the overall pre-flight field with one tile per check when checks exist', () => {
+    render(
+      <SessionDetailsPanel
+        session={{
+          ...base,
+          preFlightChecks: [
+            { check: 'TpmVersion', outcome: 'NotRequired', observed: 'Tpm20' },
+            { check: 'AutopilotPresence', outcome: 'Passed', observed: 'Autopilot' },
+            { check: 'FirmwareMode', outcome: 'Approved', observed: 'LegacyBios', approvedBy: 'j.doe@contoso.com' },
+            { check: 'SecureBoot', outcome: 'Failed', observed: 'Disabled' },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText('Pre-flight authorization')).toBeNull();
+    expect(screen.getByText('Present in Autopilot')).toBeTruthy();
+    expect(screen.getByText('Legacy BIOS (CSM)')).toBeTruthy();
+    expect(screen.getByText('Approved by j.doe@contoso.com')).toBeTruthy();
+    expect(screen.getByText('Not enabled')).toBeTruthy();
+    expect(screen.getByText('Enable Secure Boot in firmware settings.')).toBeTruthy();
+    expect(screen.getByLabelText('Not required')).toBeTruthy();
+
+    // Tiles follow the fixed check order, whatever order the API used.
+    const names = screen.getAllByText(/^(Autopilot presence|Firmware mode|Secure Boot|TPM version)$/).map(e => e.textContent);
+    expect(names).toEqual(['Autopilot presence', 'Firmware mode', 'Secure Boot', 'TPM version']);
+  });
+
   it('joins motherboard manufacturer and model into one field', () => {
     render(
       <SessionDetailsPanel

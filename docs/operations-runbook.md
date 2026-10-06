@@ -28,22 +28,27 @@
 
 ---
 
-### Symptom: Device shows Not Authorized after registration
+### Symptom: Device shows Device Blocked after registration
 
-**Cause**: Device pre-flight authorization is enabled and Imaging Core did not find the device in
-Windows Autopilot or Intune Corporate Identifiers through Microsoft Graph.
+**Cause**: Device pre-flight authorization is enabled and the device failed at least one selected
+requirement. The device screen and **Devices › Blocked** show which check failed and what the
+device reported.
 
 **Resolution**:
-1. Confirm whether **Configuration → Device pre-flight authorization** is enabled.
-2. Confirm the serial number shown by the Client matches the device record in Autopilot or
-   Corporate Identifiers.
-3. Confirm the Imaging Core managed identity has the required Microsoft Graph application
-   permission by rerunning `post-install.ps1` from the deployment package.
-4. Review Imaging Core Application Insights traces for the session ID to distinguish a genuine
-   no-match result from a Microsoft Graph request failure.
+1. Open **View Log** on the device. Each failed check has a log line with its fix, for example
+   `Pre-flight check failed: Secure Boot: Not enabled. Enable Secure Boot in firmware settings.`
+2. **Autopilot presence**: confirm the serial number shown by the Client matches the device record in
+   Autopilot or Corporate Identifiers, and that the Imaging Core managed identity has the Microsoft
+   Graph permission (rerun `post-install.ps1`). Application Insights traces for the session ID
+   distinguish a genuine no-match from a Graph request failure.
+3. **Firmware mode, Secure Boot, TPM version**: change the setting in the device firmware.
+4. **Not reported**: the boot media predates posture reporting. Rebuild it with the current Client.
+5. **Could not be detected**: the Client log has the Win32 error from reading the value.
+6. If the device must be imaged as it is, an Administrator can approve it under **Devices › Blocked**.
+   The approval lets its next session within 7 days skip the checks that failed.
 
-`SessionNotAuthorized` is terminal. After correcting the device record or permission, restart the
-Client to register a new session; the denied session cannot be resumed.
+`SessionNotAuthorized` is terminal. After fixing the device or approving it, select **Try again** on
+the device (or restart it) to register a new session; the blocked session cannot be resumed.
 
 ---
 
@@ -132,6 +137,54 @@ default, per boot image).
 Boot Image → Support Tools) and re-prepare the USB drive. See
 [setup-instructions.md](setup-instructions.md#client-support-tools) for the security
 considerations before enabling it broadly.
+
+---
+
+### Symptom: Register with Autopilot is missing or disabled on the device
+
+**Cause**: The card only appears when the boot image was built with **Include Autopilot hardware
+hash tooling**. It is shown but disabled with "Turned off in the Cloud Imaging portal" when the
+feature is off.
+
+**Resolution**: Turn on **Allow Autopilot registration** under Configuration → Autopilot, or
+regenerate the boot image with the tooling included. See
+[Autopilot registration](setup-instructions.md#optional-autopilot-registration).
+
+---
+
+### Symptom: Hash capture fails on the device
+
+**Cause**: OA3Tool could not read the hardware or the TPM. The Client shows OA3Tool's exit code and
+output. Common causes are a disabled or uninitialised TPM, and virtual machines without a virtual
+TPM.
+
+**Resolution**: Enable the TPM in firmware and retry. A device without a TPM can still be
+registered, but the hash lacks TPM data, which self-deploying and pre-provisioning modes need.
+
+---
+
+### Symptom: Autopilot import fails with "Microsoft Graph denied the request"
+
+**Cause**: The Imaging Core API's managed identity lacks
+`DeviceManagementServiceConfig.ReadWrite.All`.
+
+**Resolution**: Rerun `post-install.ps1` with `-EnableAutopilotRegistration`, wait several minutes
+for replication, then click **Retry import** on the request.
+
+---
+
+### Symptom: Autopilot import fails with an Intune error such as `ZtdDeviceAssignedToOtherTenant`
+
+**Cause**: Intune rejected the import and the request shows its error. `ZtdDeviceAssignedToOtherTenant`
+means another tenant, or an OEM or reseller on its behalf, already registered the device. Other
+errors, such as a malformed hash or an invalid group tag, are shown the same way. A device already
+registered in this tenant (`ZtdDeviceAlreadyAssigned`) is not a failure: the request is recorded as
+**Already registered**.
+
+**Resolution**: For devices assigned to another tenant, ask the previous owner or the reseller to
+deregister the device. For other errors, correct the cause and click **Retry import**, or reject
+the request and have the technician submit the device again. Requests that are not decided expire
+after the configured number of days.
 
 ---
 

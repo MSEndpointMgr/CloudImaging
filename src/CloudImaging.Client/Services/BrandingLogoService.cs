@@ -68,6 +68,6 @@ public sealed partial class BrandingLogoService
     [LoggerMessage(Level = LogLevel.Information, Message = "Custom branding logo found: {Path}")]
     private static partial void LogLogoFound(ILogger logger, string path);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "No custom branding logo at '{Path}' — using default MSEndpointMgr logo.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "No custom branding logo at '{Path}'. Using the default MSEndpointMgr logo.")]
     private static partial void LogLogoFallback(ILogger logger, string path);
 }

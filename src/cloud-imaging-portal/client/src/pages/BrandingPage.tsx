@@ -125,7 +125,7 @@ function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFi
           type="color"
           value={HEX_COLOR_PATTERN.test(value) ? value : defaultValue}
           onChange={e => onChange(e.target.value)}
-          className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-transparent"
+          className="h-8 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-transparent"
         />
         <Input
           type="text"
@@ -143,7 +143,7 @@ function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFi
             disabled={value.toLowerCase() === defaultValue.toLowerCase()}
             aria-label={`Reset ${label} to default`}
           >
-            <RotateCcw className="h-4 w-4" />
+            <RotateCcw />
           </Button>
         </Tooltip>
       </div>
@@ -422,7 +422,7 @@ export default function BrandingPage(): React.ReactElement {
               loading={uploadingKind === 'portal'}
               onClick={() => portalInputRef.current?.click()}
             >
-              <Upload className="h-4 w-4" />
+              <Upload />
               {logoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
             {logoUrl && (
@@ -432,7 +432,7 @@ export default function BrandingPage(): React.ReactElement {
                 loading={resettingKind === 'portal'}
                 onClick={() => setPendingReset('portal')}
               >
-                <RotateCcw className="h-4 w-4" />
+                <RotateCcw />
                 Reset to default
               </Button>
             )}
@@ -469,7 +469,7 @@ export default function BrandingPage(): React.ReactElement {
               loading={uploadingKind === 'boot'}
               onClick={() => bootInputRef.current?.click()}
             >
-              <Upload className="h-4 w-4" />
+              <Upload />
               {bootLogoUrl ? 'Replace logo' : 'Upload logo'}
             </Button>
             {bootLogoUrl && (
@@ -479,7 +479,7 @@ export default function BrandingPage(): React.ReactElement {
                 loading={resettingKind === 'boot'}
                 onClick={() => setPendingReset('boot')}
               >
-                <RotateCcw className="h-4 w-4" />
+                <RotateCcw />
                 Reset to default
               </Button>
             )}

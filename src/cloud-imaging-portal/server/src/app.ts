@@ -92,6 +92,8 @@ import { locationsRouter } from './routes/locations.js';
 import { userPreferencesRouter } from './routes/user-preferences.js';
 import { uploadJobsRouter } from './routes/upload-jobs.js';
 import { updateCheckRouter } from './routes/update-check.js';
+import { autopilotRouter } from './routes/autopilot.js';
+import { preFlightOverridesRouter } from './routes/preflight-overrides.js';
 
 // Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
@@ -112,6 +114,8 @@ app.use('/api/locations',           locationsRouter);
 app.use('/api/user-preferences',    userPreferencesRouter);
 app.use('/api/upload-jobs',         uploadJobsRouter);
 app.use('/api/update-check',        updateCheckRouter);
+app.use('/api/autopilot',           autopilotRouter);
+app.use('/api/preflight-overrides', preFlightOverridesRouter);
 
 /** Longest upstream message relayed to the browser. Operator API messages are one sentence. */
 const MAX_FORWARDED_DETAIL_CHARS = 500;

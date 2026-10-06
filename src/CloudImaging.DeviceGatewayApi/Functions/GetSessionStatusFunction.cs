@@ -85,6 +85,9 @@ public sealed partial class GetSessionStatusFunction
             partitioningScheme = root.TryGetProperty("partitioningScheme", out var ps) && ps.ValueKind != JsonValueKind.Null
                 ? ps
                 : (JsonElement?)null,
+            preFlightChecks = root.TryGetProperty("preFlightChecks", out var pf) && pf.ValueKind == JsonValueKind.Array
+                ? pf
+                : (JsonElement?)null,
         };
 
         var response = req.CreateResponse(HttpStatusCode.OK);

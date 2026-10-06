@@ -15,38 +15,35 @@ namespace CloudImaging.ImagingCoreApi.Services;
 ///   Autopilot V1 match  → <see cref="PreFlightAuthorizationResult.MatchedAutopilotV1"/>
 ///   Corporate ID match  → <see cref="PreFlightAuthorizationResult.MatchedCorporateIdentifier"/>
 ///   Neither match       → <see cref="PreFlightAuthorizationResult.NotAuthorized"/>
-///   Pre-flight disabled → <see cref="PreFlightAuthorizationResult.Skipped"/>
+///   Requirement off     → <see cref="PreFlightAuthorizationResult.Skipped"/>
 /// </summary>
 public sealed partial class DevicePreFlightAuthorizationService
 {
     private readonly GraphServiceClient _graphClient;
     private readonly CorporateIdentifierGraphClient _corporateIdentifierClient;
-    private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<DevicePreFlightAuthorizationService> _logger;
 
     public DevicePreFlightAuthorizationService(
         GraphServiceClient graphClient,
         CorporateIdentifierGraphClient corporateIdentifierClient,
-        PortalConfigurationRepository configRepo,
         ILogger<DevicePreFlightAuthorizationService> logger)
     {
         _graphClient = graphClient;
         _corporateIdentifierClient = corporateIdentifierClient;
-        _configRepo = configRepo;
         _logger = logger;
     }
 
     /// <summary>
-    /// Evaluates whether the device identified by <paramref name="registration"/> is authorized
-    /// to begin an imaging session.  Returns immediately with <see cref="PreFlightAuthorizationResult.Skipped"/>
-    /// when pre-flight authorization is disabled in <see cref="PortalConfiguration"/>.
+    /// Looks the device up in Autopilot and Corporate Identifiers. Returns
+    /// <see cref="PreFlightAuthorizationResult.Skipped"/> without calling Graph when pre-flight or
+    /// its Autopilot presence requirement is off.
     /// </summary>
     public async Task<PreFlightAuthorizationResult> EvaluateAsync(
         DeviceRegistrationPayload registration,
+        PortalConfiguration config,
         CancellationToken ct = default)
     {
-        var config = await _configRepo.GetAsync(ct);
-        if (!config.DevicePreFlightAuthorizationEnabled)
+        if (!config.DevicePreFlightAuthorizationEnabled || !config.PreFlightRequireAutopilotPresence)
         {
             LogPreFlightDisabled(_logger, registration.SerialNumber);
             return PreFlightAuthorizationResult.Skipped;
@@ -120,7 +117,7 @@ public sealed partial class DevicePreFlightAuthorizationService
 
     // ── Structured logging ────────────────────────────────────────────────────
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Pre-flight authorization disabled — skipping for device {SerialNumber}.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot presence requirement off: skipping lookup for device {SerialNumber}.")]
     private static partial void LogPreFlightDisabled(ILogger logger, string serialNumber);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting pre-flight authorization for device {SerialNumber}.")]

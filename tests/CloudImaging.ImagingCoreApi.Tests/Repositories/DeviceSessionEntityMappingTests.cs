@@ -36,6 +36,19 @@ public sealed class DeviceSessionEntityMappingTests
         LocationName = "Copenhagen HQ",
         Architecture = MachineArchitecture.Arm64,
         PreFlightAuthorizationResult = PreFlightAuthorizationResult.MatchedAutopilotV1,
+        SecurityPosture = new DeviceSecurityPosture
+        {
+            FirmwareMode = FirmwareMode.LegacyBios,
+            SecureBoot = SecureBootState.Unsupported,
+            Tpm = TpmPresence.Tpm20,
+        },
+        PreFlightChecks =
+        [
+            new PreFlightCheckResult { Check = PreFlightCheck.AutopilotPresence, Outcome = PreFlightCheckOutcome.Passed, Observed = PreFlightObserved.Autopilot },
+            new PreFlightCheckResult { Check = PreFlightCheck.FirmwareMode, Outcome = PreFlightCheckOutcome.Approved, Observed = nameof(FirmwareMode.LegacyBios), ApprovedBy = "admin@contoso.com" },
+            new PreFlightCheckResult { Check = PreFlightCheck.SecureBoot, Outcome = PreFlightCheckOutcome.NotRequired, Observed = nameof(SecureBootState.Unsupported) },
+            new PreFlightCheckResult { Check = PreFlightCheck.TpmVersion, Outcome = PreFlightCheckOutcome.Passed, Observed = nameof(TpmPresence.Tpm20) },
+        ],
         Passcode = "hashed-passcode",
         PasscodeExpiresAt = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.Zero),
         PasscodeConsumed = true,

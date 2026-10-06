@@ -72,6 +72,28 @@ public sealed partial class PortalConfigurationFunctions
             return bad;
         }
 
+        // Checked here too: Core rejects it as well, but its 400 would surface through the typed client as a masked 500.
+        if (!config.IsPreFlightConfigurationValid())
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Select at least one pre-flight requirement, or turn pre-flight authorization off.", context.CancellationToken);
+            return bad;
+        }
+
+        if (config.AutopilotPendingExpiryDays is < 1 or > 90)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Autopilot pending requests must expire after 1 to 90 days.", context.CancellationToken);
+            return bad;
+        }
+
+        if (config.AutopilotRetentionDays is < 30 or > 3650)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Handled Autopilot requests must be kept for 30 to 3650 days.", context.CancellationToken);
+            return bad;
+        }
+
         await _coreClient.UpsertPortalConfigurationAsync(config, context.CancellationToken);
         return req.CreateResponse(HttpStatusCode.NoContent);
     }

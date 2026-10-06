@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { PieChart, HardDrive, AlertOctagon, ArrowRight, BarChart3, MapPin } from 'lucide-react';
+import { PieChart, HardDrive, AlertOctagon, ArrowRight, BarChart3, MapPin, BadgeCheck } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card.tsx';
 
 interface ReportCard {
@@ -33,6 +33,12 @@ const REPORT_CARDS: ReportCard[] = [
     title: 'Failure Detail',
     description: 'Drill into every failed, expired, or not-authorized session with its error detail and failed step.',
     icon: <AlertOctagon size={18} />,
+  },
+  {
+    to: '/reports/autopilot-registrations',
+    title: 'Autopilot Registration History',
+    description: 'Every handled Autopilot request: outcome, approver, group tag and when it was closed.',
+    icon: <BadgeCheck size={18} />,
   },
 ];
 

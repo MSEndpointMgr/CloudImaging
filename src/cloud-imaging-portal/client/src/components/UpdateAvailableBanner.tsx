@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowUpCircle, X, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/authContext.tsx';
 import { fetchUpdateStatus, displayVersion, hasDismissedUpdate, dismissUpdate } from '../lib/updateCheck.ts';
+import { Button } from './ui/button.tsx';
 
 /**
  * Notifies Administrators that a newer Cloud Imaging release is available.
@@ -73,13 +74,15 @@ export function UpdateAvailableBanner(): React.ReactElement | null {
           </a>
         )}
       </div>
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={onDismiss}
         aria-label="Dismiss this update notification"
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        className="shrink-0 text-muted-foreground"
       >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </button>
+        <X aria-hidden="true" />
+      </Button>
     </div>
   );
 }

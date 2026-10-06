@@ -170,6 +170,23 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             var hash = _status.Sha256Hash ?? string.Empty;
             var scheme = _status.PartitioningScheme ?? PartitioningScheme.Default;
 
+            // The disk layout and boot files must match how the firmware booted WinPE: a GPT disk
+            // never boots in Legacy BIOS mode, and an MBR disk never boots in UEFI mode.
+            var firmwareMode = new Services.DevicePostureDetector(_loggerFactory.CreateLogger<Services.DevicePostureDetector>()).DetectFirmwareMode();
+            var activityLogger = pipelineLoggerFactory.CreateLogger<ImagingWorkflowViewModel>();
+            switch (firmwareMode)
+            {
+                case FirmwareMode.Uefi:
+                    LogFirmwareModeUefi(activityLogger);
+                    break;
+                case FirmwareMode.LegacyBios:
+                    LogFirmwareModeLegacy(activityLogger);
+                    break;
+                default:
+                    await FailAsync(reporter, ImagingStepName.FormatDisk, "FWM", "The firmware mode (UEFI or Legacy BIOS) could not be detected, so the disk layout cannot be chosen. The disk was not changed.", ct);
+                    return;
+            }
+
             // ── Format ──────────────────────────────────────────────────────────
             _progress.StatusMessage = "Preparing the target disk…";
             _progress.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress);
@@ -179,7 +196,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             try
             {
                 var formatService = new Services.DiskFormatService(pipelineLoggerFactory.CreateLogger<Services.DiskFormatService>());
-                diskFormat = await formatService.FormatTargetDiskAsync(scheme, ct);
+                diskFormat = await formatService.FormatTargetDiskAsync(scheme, firmwareMode, ct);
             }
             catch (Exception ex)
             {
@@ -300,7 +317,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 // OfflineDriveLetterService for why this is not automatic.
                 await driveLetterService.EnsureWindowsVolumeBootsAsCAsync(diskFormat.WindowsVolume, ct);
 
-                await bootConfigService.ConfigureAsync(diskFormat.WindowsVolume, diskFormat.EfiSystemVolume, ct);
+                await bootConfigService.ConfigureAsync(diskFormat.WindowsVolume, diskFormat.SystemVolume, firmwareMode, ct);
             }
             catch (Exception ex)
             {
@@ -328,7 +345,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 // No custom Recovery Image has been published to the Portal catalog — fall back
                 // to the WinRE that the OS image already carries at
                 // Windows\System32\Recovery\Winre.wim rather than failing the whole session.
-                _progress.StatusMessage = "No published recovery image — reusing the OS image's embedded recovery environment…";
+                _progress.StatusMessage = "No published recovery image. Reusing the OS image's embedded recovery environment…";
                 try
                 {
                     var reusedEmbeddedImage = await recoveryService.ApplyFromEmbeddedImageAsync(
@@ -584,4 +601,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "==== Starting imaging pipeline for session {SessionId} ====")]
     private static partial void LogPipelineStarting(ILogger logger, Guid sessionId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Firmware mode detected: UEFI. Using GPT layout with UEFI boot files.")]
+    private static partial void LogFirmwareModeUefi(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Firmware mode detected: Legacy BIOS (CSM). Using MBR layout with BIOS boot files.")]
+    private static partial void LogFirmwareModeLegacy(ILogger logger);
 }

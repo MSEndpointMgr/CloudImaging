@@ -149,6 +149,7 @@ public sealed partial class SessionQueryFunctions
             sha256Hash,
             osImageArchitecture,
             partitioningScheme,
+            preFlightChecks = session.PreFlightChecks,
         };
 
         var response = req.CreateResponse(HttpStatusCode.OK);
@@ -174,6 +175,8 @@ public sealed partial class SessionQueryFunctions
             s.LocationName,
             s.Architecture,
             s.PreFlightAuthorizationResult.ToString(),
+            s.SecurityPosture,
+            s.PreFlightChecks,
             s.AssignedOsImageId,
             s.OverallProgressPercent,
             s.CurrentStep,
@@ -217,6 +220,8 @@ public sealed partial class SessionQueryFunctions
         string? LocationName,
         MachineArchitecture Architecture,
         string PreFlightAuthorizationResult,
+        DeviceSecurityPosture? SecurityPosture,
+        IReadOnlyList<PreFlightCheckResult> PreFlightChecks,
         Guid? AssignedOsImageId,
         int OverallProgressPercent,
         string? CurrentStep,

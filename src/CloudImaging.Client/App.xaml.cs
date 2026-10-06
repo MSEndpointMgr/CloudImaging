@@ -7,6 +7,10 @@ using CloudImaging.Client.Services;
 using CloudImaging.Client.ViewModels;
 using CloudImaging.Client.Views;
 using Microsoft.Extensions.Logging;
+#if DEV_SIMULATION
+using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models;
+#endif
 
 namespace CloudImaging.Client;
 
@@ -135,7 +139,18 @@ public partial class App : Application
             onProgressView:             () => window.NavigateTo(BuildSampleProgressView()),
             onResultsSuccessView:       () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.Success, "1234-5678-90", null)),
             onResultsFailureView:       () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.Failure, "1234-5678-90", "Disk format failed: no writable target volume found.")),
-            onResultsNotAuthorizedView: () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.NotAuthorized, null, null)));
+            onResultsNotAuthorizedView: () => window.NavigateTo(BuildBlockedResultsView(window, gateway, lf, new SessionStatusResponse
+            {
+                SessionId = Guid.NewGuid(),
+                State = "SessionNotAuthorized",
+                PreFlightChecks =
+                [
+                    new PreFlightCheckResult { Check = PreFlightCheck.AutopilotPresence, Outcome = PreFlightCheckOutcome.Passed, Observed = PreFlightObserved.Autopilot },
+                    new PreFlightCheckResult { Check = PreFlightCheck.FirmwareMode, Outcome = PreFlightCheckOutcome.Passed, Observed = nameof(FirmwareMode.Uefi) },
+                    new PreFlightCheckResult { Check = PreFlightCheck.SecureBoot, Outcome = PreFlightCheckOutcome.Failed, Observed = nameof(SecureBootState.Disabled) },
+                    new PreFlightCheckResult { Check = PreFlightCheck.TpmVersion, Outcome = PreFlightCheckOutcome.NotRequired, Observed = nameof(TpmPresence.Tpm20) },
+                ],
+            }, "DEV-SIM-0001")));
         launcher.Show();
     }
 
@@ -170,10 +185,12 @@ public partial class App : Application
     private static OperationSelectionView BuildOperationSelectionView(
         MainWindow window,
         DeviceGatewayApiClient gateway,
-        ILoggerFactory lf)
+        ILoggerFactory lf,
+        bool startImagingImmediately = false)
     {
         var config = LoadConfiguration();
         var view = new OperationSelectionView();
+        var autopilotCapture = new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
         view.DataContext = new OperationSelectionViewModel(
             gateway,
             (sessionResponse, serialNumber) =>
@@ -181,7 +198,29 @@ public partial class App : Application
             new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()),
             commandPromptEnabled: config.CommandPromptEnabled ?? false,
             setMainWindowTopmost: window.SetTopmost,
-            commandPromptLauncher: new CommandPromptLauncherService(lf.CreateLogger<CommandPromptLauncherService>()));
+            commandPromptLauncher: new CommandPromptLauncherService(lf.CreateLogger<CommandPromptLauncherService>()),
+            autopilotToolingPresent: autopilotCapture.IsToolingPresent,
+            navigateToAutopilot: () => window.NavigateTo(BuildAutopilotRegistrationView(window, gateway, lf, autopilotCapture)),
+            postureDetector: new DevicePostureDetector(lf.CreateLogger<DevicePostureDetector>()),
+            startImagingImmediately: startImagingImmediately);
+        return view;
+    }
+
+    private static AutopilotRegistrationView BuildAutopilotRegistrationView(
+        MainWindow window,
+        DeviceGatewayApiClient gateway,
+        ILoggerFactory lf,
+        AutopilotHashCaptureService capture)
+    {
+        var viewModel = new AutopilotRegistrationViewModel(
+            gateway,
+            capture,
+            navigateBack: () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
+            new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()),
+            logger: lf.CreateLogger<AutopilotRegistrationViewModel>());
+        var view = new AutopilotRegistrationView { DataContext = viewModel };
+        view.Unloaded += (_, _) => viewModel.Dispose();
+        viewModel.Start();
         return view;
     }
 
@@ -201,7 +240,9 @@ public partial class App : Application
             navigateToResults: (outcome, serialNumber, errorDetail, supportReferenceCode) =>
                 window.NavigateTo(BuildResultsView(window, gateway, lf, outcome, serialNumber, errorDetail, supportReferenceCode)),
             navigateToProgress: (status, serialNumber) =>
-                window.NavigateTo(BuildProgressView(window, gateway, lf, session.SessionId, serialNumber, status)));
+                window.NavigateTo(BuildProgressView(window, gateway, lf, session.SessionId, serialNumber, status)),
+            navigateToBlocked: (status, serialNumber) =>
+                window.NavigateTo(BuildBlockedResultsView(window, gateway, lf, status, serialNumber)));
         return view;
     }
 
@@ -249,6 +290,27 @@ public partial class App : Application
             () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
             explicitSupportReferenceCode,
             restartSystem: restartService.Restart);
+        return view;
+    }
+
+    /// <summary>Blocked outcome: lists the pre-flight checks and lets the device start a new session in place.</summary>
+    private static ResultsView BuildBlockedResultsView(
+        MainWindow window,
+        DeviceGatewayApiClient gateway,
+        ILoggerFactory lf,
+        SessionStatusResponse status,
+        string? serialNumber)
+    {
+        var view = new ResultsView();
+        view.DataContext = new ResultsViewModel(
+            ResultsViewModel.Outcome.NotAuthorized,
+            serialNumber,
+            null,
+            () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
+            sessionId: status.SessionId,
+            preFlightChecks: status.PreFlightChecks,
+            tryAgain: () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf, startImagingImmediately: true)),
+            logger: lf.CreateLogger<ResultsViewModel>());
         return view;
     }
 

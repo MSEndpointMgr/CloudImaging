@@ -61,9 +61,12 @@ public partial class MainWindow : FluentWindow
         NavigationFrame.Navigate(page);
 
         // ProgressView hosts its own "View Log" button at the bottom of its step sidebar (it
-        // sits closer to hand and doesn't overlap the hero panel's progress bar/error area), so
-        // the floating global button is hidden while it's the active page.
-        ViewLogButton.Visibility = page is ProgressView ? Visibility.Collapsed : Visibility.Visible;
+        // sits closer to hand and doesn't overlap the hero panel's progress bar/error area), and
+        // the blocked results card has one beside Try again, so the floating global button is
+        // hidden while either is the active page.
+        var hasOwnLogButton = page is ProgressView
+            || page.DataContext is ViewModels.ResultsViewModel { IsNotAuthorized: true };
+        ViewLogButton.Visibility = hasOwnLogButton ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>

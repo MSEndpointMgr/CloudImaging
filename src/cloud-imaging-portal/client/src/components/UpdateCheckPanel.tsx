@@ -62,13 +62,12 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
           <Button
             type="button"
             variant="outline"
-            size="sm"
             status={checkStatus}
             onClick={() => void checkNow()}
             disabled={disabled || loading || status?.status === 'disabled'}
             title={status?.status === 'disabled' ? 'Enable version checking below to check now' : 'Check GitHub now'}
           >
-            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            <RefreshCw aria-hidden="true" />
             Check now
           </Button>
         </div>

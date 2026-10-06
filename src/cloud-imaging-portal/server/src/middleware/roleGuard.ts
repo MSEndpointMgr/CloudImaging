@@ -12,7 +12,8 @@ export type PortalRole =
   | 'CloudImaging.Administrator'
   | 'CloudImaging.Technician'
   | 'CloudImaging.PortalAccess'
-  | 'CloudImaging.Reader';
+  | 'CloudImaging.Reader'
+  | 'CloudImaging.AutopilotApprover';
 
 /**
  * Implied-role hierarchy. Portal SPA user tokens only ever carry
@@ -24,6 +25,9 @@ export type PortalRole =
  * `CloudImaging.Reader` is deliberately NOT part of this chain — it's a standalone,
  * narrowly-scoped role (Dashboard + Reports only) allowlisted explicitly on the handful of
  * routes those pages need, so it never gains the broad read access PortalAccess implies.
+ * `CloudImaging.AutopilotApprover` is standalone for the same reason: it is allowlisted only
+ * on the Autopilot registration routes, and Administrator is named alongside it there
+ * explicitly rather than implying it here.
  */
 const ROLE_IMPLICATIONS: Record<string, readonly PortalRole[]> = {
   'CloudImaging.Administrator': ['CloudImaging.Technician', 'CloudImaging.PortalAccess'],

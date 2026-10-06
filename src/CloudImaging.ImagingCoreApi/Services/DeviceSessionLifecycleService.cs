@@ -68,17 +68,20 @@ public sealed partial class DeviceSessionLifecycleService
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly SessionHistoryRepository _historyRepo;
     private readonly PortalConfigurationRepository _configRepo;
+    private readonly PreFlightOverrideRepository _overrideRepo;
     private readonly ILogger<DeviceSessionLifecycleService> _logger;
 
     public DeviceSessionLifecycleService(
         DeviceSessionRepository sessionRepo,
         SessionHistoryRepository historyRepo,
         PortalConfigurationRepository configRepo,
+        PreFlightOverrideRepository overrideRepo,
         ILogger<DeviceSessionLifecycleService> logger)
     {
         _sessionRepo = sessionRepo;
         _historyRepo = historyRepo;
         _configRepo = configRepo;
+        _overrideRepo = overrideRepo;
         _logger = logger;
     }
 
@@ -161,6 +164,27 @@ public sealed partial class DeviceSessionLifecycleService
         return purged;
     }
 
+    /// <summary>Deletes administrator pre-flight overrides that expired unused. Returns the number deleted.</summary>
+    public async Task<int> PurgeExpiredOverridesAsync(CancellationToken ct = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var expired = new List<string>();
+        await foreach (var o in _overrideRepo.ListAsync(ct))
+        {
+            if (o.ExpiresAt <= now)
+            {
+                expired.Add(o.SerialNumber);
+            }
+        }
+
+        foreach (var serialNumber in expired)
+        {
+            await _overrideRepo.DeleteAsync(serialNumber, ct);
+        }
+
+        return expired.Count;
+    }
+
     /// <summary>
     /// Records a SessionHistory (Reports audit) entry for an inactivity-driven terminal
     /// transition. FailedStepName is intentionally left unset here — unlike
@@ -181,6 +205,7 @@ public sealed partial class DeviceSessionLifecycleService
             LocationId = s.LocationId,
             LocationName = s.LocationName,
             PreFlightAuthorizationResult = s.PreFlightAuthorizationResult,
+            PreFlightChecks = s.PreFlightChecks,
             Architecture = s.Architecture,
             AssignedOsImageId = s.AssignedOsImageId,
             ErrorDetail = s.State == SessionState.SessionFailed

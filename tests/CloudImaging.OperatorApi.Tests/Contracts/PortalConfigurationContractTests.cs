@@ -8,6 +8,8 @@ namespace CloudImaging.OperatorApi.Tests.Contracts;
 /// </summary>
 public sealed class PortalConfigurationContractTests
 {
+    private static readonly System.Text.Json.JsonSerializerOptions WebJson = new(System.Text.Json.JsonSerializerDefaults.Web);
+
     [Fact]
     public void GetConfiguration_RequiresPortalAccessRole()
     {
@@ -41,6 +43,26 @@ public sealed class PortalConfigurationContractTests
     public void PutConfiguration_Returns204_OnSuccess()
     {
         204.Should().Be(204, "successful configuration update returns HTTP 204 No Content");
+    }
+
+    [Fact]
+    public void Configuration_SerializesPreFlightRequirementsUnderThePortalFieldNames()
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(
+            new CloudImaging.Contracts.Models.PortalConfiguration { DevicePreFlightAuthorizationEnabled = true, PreFlightRequireSecureBoot = true },
+            WebJson);
+
+        json.Should().Contain("\"preFlightRequireAutopilotPresence\":false")
+            .And.Contain("\"preFlightRequireUefiFirmware\":false")
+            .And.Contain("\"preFlightRequireSecureBoot\":true")
+            .And.Contain("\"preFlightRequireTpm20\":false");
+    }
+
+    [Fact]
+    public void Configuration_MainSwitchOnWithoutRequirement_IsRejected()
+    {
+        new CloudImaging.Contracts.Models.PortalConfiguration { DevicePreFlightAuthorizationEnabled = true }
+            .IsPreFlightConfigurationValid().Should().BeFalse();
     }
 
     [Fact]

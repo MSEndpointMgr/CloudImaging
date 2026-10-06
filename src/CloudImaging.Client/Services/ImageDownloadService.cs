@@ -202,6 +202,6 @@ public sealed partial class ImageDownloadService
     [LoggerMessage(Level = LogLevel.Warning, Message = "Download attempt {Attempt} failed.")]
     private static partial void LogAttemptFailed(ILogger logger, int attempt, Exception ex);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Cache write failed for image {ImageId} — hash mismatch.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Cache write failed for image {ImageId}: hash mismatch.")]
     private static partial void LogCacheWriteFailed(ILogger logger, Exception ex, string imageId);
 }

@@ -102,6 +102,48 @@
                 </StackPanel>
             </Border>
 
+            <!-- Register with Autopilot: only on boot media built with the hash tooling; never touches the disk -->
+            <Border Width="340" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand"
+                    Visibility="{Binding IsAutopilotOptionVisible, Converter={StaticResource BoolToVisibility}}"
+                    IsEnabled="{Binding IsAutopilotSelectable}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                        <Setter Property="BorderThickness" Value="1" />
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                                <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                                <Setter Property="Cursor" Value="Arrow" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding SelectedOperation}" Value="Autopilot">
+                                <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
+                                <Setter Property="BorderThickness" Value="2" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Border.InputBindings>
+                    <MouseBinding MouseAction="LeftClick"
+                                  Command="{Binding SelectOperationCommand}"
+                                  CommandParameter="Autopilot" />
+                </Border.InputBindings>
+                <StackPanel>
+                    <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                    <TextBlock Text="Register with Autopilot"
+                               Style="{StaticResource SubtitleTextBlockStyle}"
+                               HorizontalAlignment="Center" Margin="0,0,0,8" />
+                    <TextBlock Text="{Binding AutopilotCardDescription}"
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               TextWrapping="Wrap" TextAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </Border>
+
             <!-- Decommissioning card: not implemented, hidden until a future release -->
             <Border Visibility="Collapsed" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>

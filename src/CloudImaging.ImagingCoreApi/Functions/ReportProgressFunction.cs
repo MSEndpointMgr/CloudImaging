@@ -148,6 +148,7 @@ public sealed partial class ReportProgressFunction
                 LocationId = updated.LocationId,
                 LocationName = updated.LocationName,
                 PreFlightAuthorizationResult = updated.PreFlightAuthorizationResult,
+                PreFlightChecks = updated.PreFlightChecks,
                 Architecture = updated.Architecture,
                 AssignedOsImageId = updated.AssignedOsImageId,
                 FailedStepName = failedStep?.StepName,

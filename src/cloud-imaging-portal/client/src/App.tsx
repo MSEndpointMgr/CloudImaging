@@ -26,7 +26,9 @@ const ReportDeviceOutcomesPage = lazyWithReload(() => import('./pages/ReportSess
 const ReportLocationStatisticsPage = lazyWithReload(() => import('./pages/ReportLocationStatisticsPage.tsx'));
 const ReportImageInventoryPage = lazyWithReload(() => import('./pages/ReportImageInventoryPage.tsx'));
 const ReportFailureDetailPage = lazyWithReload(() => import('./pages/ReportFailureDetailPage.tsx'));
+const ReportAutopilotRegistrationsPage = lazyWithReload(() => import('./pages/ReportAutopilotRegistrationsPage.tsx'));
 const LocationsPage = lazyWithReload(() => import('./pages/LocationsPage.tsx'));
+const AutopilotRegistrationsPage = lazyWithReload(() => import('./pages/AutopilotRegistrationsPage.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
@@ -50,6 +52,24 @@ function RequireReportsAccess({ children }: { children: React.ReactElement }): R
   return isAdministrator || isReader ? children : <Navigate to="/" replace />;
 }
 
+/** Route guard for the Autopilot registrations page (Approver, Administrator, read-only Technician). */
+function RequireAutopilotAccess({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { canViewAutopilot } = useAuth();
+  return canViewAutopilot ? children : <Navigate to="/" replace />;
+}
+
+/** Route guard for the Autopilot audit report. Approvers reach it from the Autopilot page, not from Reports. */
+function RequireAutopilotReportAccess({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { canViewAutopilotReport } = useAuth();
+  return canViewAutopilotReport ? children : <Navigate to="/" replace />;
+}
+
+/** The Dashboard, or the Autopilot page for an Approver-only user, who has no Dashboard data to see. */
+function HomeRoute(): React.ReactElement {
+  const { hasDashboardAccess } = useAuth();
+  return hasDashboardAccess ? <DashboardPage /> : <Navigate to="/autopilot" replace />;
+}
+
 export default function App(): React.ReactElement {
   return (
     <ThemeProvider>
@@ -65,11 +85,12 @@ export default function App(): React.ReactElement {
                   <Suspense fallback={<LoadingScreen />}>
                     <Routes>
                       <Route element={<AppShell />}>
-                        <Route index                   element={<DashboardPage />} />
+                        <Route index                   element={<HomeRoute />} />
                         <Route path="sessions"         element={<RequireOperationsAccess><SessionsPage /></RequireOperationsAccess>} />
                         <Route path="os-images"        element={<RequireOperationsAccess><OsImagesPage /></RequireOperationsAccess>} />
                         <Route path="boot-images"      element={<RequireOperationsAccess><BootImagesPage /></RequireOperationsAccess>} />
                         <Route path="recovery-images"  element={<RequireOperationsAccess><RecoveryImagesPage /></RequireOperationsAccess>} />
+                        <Route path="autopilot"        element={<RequireAutopilotAccess><AutopilotRegistrationsPage /></RequireAutopilotAccess>} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
                         <Route path="locations"                   element={<RequireAdmin><LocationsPage /></RequireAdmin>} />
@@ -79,6 +100,7 @@ export default function App(): React.ReactElement {
                         <Route path="reports/session-outcomes"    element={<Navigate to="/reports/device-outcomes" replace />} />
                         <Route path="reports/image-inventory"     element={<RequireReportsAccess><ReportImageInventoryPage /></RequireReportsAccess>} />
                         <Route path="reports/failures"            element={<RequireReportsAccess><ReportFailureDetailPage /></RequireReportsAccess>} />
+                        <Route path="reports/autopilot-registrations" element={<RequireAutopilotReportAccess><ReportAutopilotRegistrationsPage /></RequireAutopilotReportAccess>} />
                         <Route path="*"                element={<Navigate to="/" replace />} />
                       </Route>
                     </Routes>

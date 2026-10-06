@@ -111,7 +111,7 @@ export default function ReportFailureDetailPage(): React.ReactElement {
             <Input id="to" type="date" value={to} min={from} onChange={e => setTo(e.target.value)} className="w-40" />
           </div>
         </div>
-        <Button variant="secondary" onClick={handleExport} disabled={!records || records.length === 0}>
+          <Button variant="outline" onClick={handleExport} disabled={!records || records.length === 0}>
           <FileDown /> Export CSV
         </Button>
       </div>

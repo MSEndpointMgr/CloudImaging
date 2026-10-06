@@ -85,7 +85,7 @@ public sealed partial class SasRefreshCoordinator : IDisposable
     }
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "SAS token for session {SessionId} expires in {MinutesLeft} min — refreshing.")]
+        Message = "SAS token for session {SessionId} expires in {MinutesLeft} min. Refreshing.")]
     private static partial void LogRefreshing(ILogger logger, Guid sessionId, int minutesLeft);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "SAS token refreshed for session {SessionId}.")]

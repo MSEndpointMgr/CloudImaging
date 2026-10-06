@@ -88,6 +88,22 @@ export class OperatorApiClient {
     await this.http.delete<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}`);
   }
 
+  // ── Pre-flight overrides ─────────────────────────────────────────────────────
+
+  async listPreFlightOverrides(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/preflight-overrides');
+    return data;
+  }
+
+  async approvePreFlightOverride(sessionId: string, payload: { approvedBy: string; approvedByObjectId?: string }): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}/preflight-override`, payload);
+    return data;
+  }
+
+  async revokePreFlightOverride(serialNumber: string, revokedBy: string): Promise<void> {
+    await this.http.delete<unknown>('/api/preflight-overrides', { params: { serialNumber, revokedBy } });
+  }
+
   // ── OS image operations ────────────────────────────────────────────────────
 
   async getImages(): Promise<unknown> {
@@ -305,6 +321,11 @@ export class OperatorApiClient {
     return data;
   }
 
+  async updateLocation(locationId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>(`/api/locations/${encodeURIComponent(locationId)}`, payload);
+    return data;
+  }
+
   async deleteLocation(locationId: string): Promise<void> {
     await this.http.delete<unknown>(`/api/locations/${encodeURIComponent(locationId)}`);
   }
@@ -319,6 +340,50 @@ export class OperatorApiClient {
   async putUserLocationPreference(userId: string, payload: unknown): Promise<unknown> {
     const { data } = await this.http.put<unknown>(`/api/user-preferences/${encodeURIComponent(userId)}`, payload);
     return data;
+  }
+
+  // ── Autopilot registration ───────────────────────────────────────────────
+
+  async listAutopilotRegistrations(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/autopilot/registrations');
+    return data;
+  }
+
+  async listHandledAutopilotRegistrations(from?: string, to?: string): Promise<unknown> {
+    const params: Record<string, string> = { view: 'history' };
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    const { data } = await this.http.get<unknown>('/api/autopilot/registrations', { params });
+    return data;
+  }
+
+  async getAutopilotRegistration(requestId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/autopilot/registrations/${encodeURIComponent(requestId)}`);
+    return data;
+  }
+
+  async decideAutopilotRegistration(requestId: string, action: 'approve' | 'reject' | 'retry', payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/autopilot/registrations/${encodeURIComponent(requestId)}/${action}`, payload);
+    return data;
+  }
+
+  async listAutopilotGroupTags(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/autopilot/group-tags');
+    return data;
+  }
+
+  async createAutopilotGroupTag(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/autopilot/group-tags', payload);
+    return data;
+  }
+
+  async updateAutopilotGroupTag(id: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>(`/api/autopilot/group-tags/${encodeURIComponent(id)}`, payload);
+    return data;
+  }
+
+  async deleteAutopilotGroupTag(id: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/autopilot/group-tags/${encodeURIComponent(id)}`);
   }
 }
 
