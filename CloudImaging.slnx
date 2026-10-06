@@ -1,0 +1,13 @@
+<Solution>
+  <Project Path="src/CloudImaging.Client/CloudImaging.Client.csproj" />
+  <Project Path="src/CloudImaging.Contracts/CloudImaging.Contracts.csproj" />
+  <Project Path="src/CloudImaging.DeviceGatewayApi/CloudImaging.DeviceGatewayApi.csproj" />
+  <Project Path="src/CloudImaging.ImagingCoreApi/CloudImaging.ImagingCoreApi.csproj" />
+  <Project Path="src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj" />
+  <Project Path="src/CloudImaging.OperatorApi/CloudImaging.OperatorApi.csproj" />
+  <Project Path="tests/CloudImaging.Client.Tests/CloudImaging.Client.Tests.csproj" />
+  <Project Path="tests/CloudImaging.DeviceGatewayApi.Tests/CloudImaging.DeviceGatewayApi.Tests.csproj" />
+  <Project Path="tests/CloudImaging.ImagingCoreApi.Tests/CloudImaging.ImagingCoreApi.Tests.csproj" />
+  <Project Path="tests/CloudImaging.MediaBuilder.Tests/CloudImaging.MediaBuilder.Tests.csproj" />
+  <Project Path="tests/CloudImaging.OperatorApi.Tests/CloudImaging.OperatorApi.Tests.csproj" />
+</Solution>
