@@ -9,7 +9,7 @@ namespace CloudImaging.DeviceGatewayApi.Functions;
 /// <summary>
 /// POST /api/v1/sessions/{sessionId}/logs/upload-url — Device-facing request for a short-lived
 /// write SAS URL the Client can PUT its current local diagnostic log to. Called best-effort by
-/// <see cref="ViewModels.ImagingWorkflowViewModel"/>-equivalent client logic on any terminal
+/// the client's <c>ImagingWorkflowViewModel</c>-equivalent logic on any terminal
 /// imaging failure, so support can inspect the full log without depending on the technician
 /// retrieving it from WinPE before reboot. Requires a valid device-session Bearer token
 /// (DeviceSessionTokenValidationMiddleware).
@@ -26,12 +26,15 @@ public sealed partial class RequestSessionLogUploadUrlFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<RequestSessionLogUploadUrlFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client used to issue the upload SAS URL.</param>
+    /// <param name="logger">Logger for this function.</param>
     public RequestSessionLogUploadUrlFunction(ImagingCoreClient coreClient, ILogger<RequestSessionLogUploadUrlFunction> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>POST v1/sessions/{sessionId}/logs/upload-url. Issues a short-lived write SAS URL for the client's diagnostic log.</summary>
     [Function("RequestSessionLogUploadUrl")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/logs/upload-url")] HttpRequestData req,

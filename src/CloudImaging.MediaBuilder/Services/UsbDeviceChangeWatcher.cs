@@ -26,6 +26,7 @@ public sealed partial class UsbDeviceChangeWatcher : IDisposable
     private Timer? _debounceTimer;
     private bool _disposed;
 
+    /// <summary>Builds the watcher over the given logger. Call <see cref="Start"/> to begin watching.</summary>
     public UsbDeviceChangeWatcher(ILogger<UsbDeviceChangeWatcher> logger) => _logger = logger;
 
     /// <summary>
@@ -78,6 +79,7 @@ public sealed partial class UsbDeviceChangeWatcher : IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         lock (_gate)

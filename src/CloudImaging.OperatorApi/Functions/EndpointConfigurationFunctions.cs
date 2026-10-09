@@ -25,6 +25,8 @@ public sealed partial class EndpointConfigurationFunctions
     private readonly string _deviceGatewayApiBaseUrl;
     private readonly ILogger<EndpointConfigurationFunctions> _logger;
 
+    /// <param name="configuration">Used to resolve the Device Gateway API base URL from app settings.</param>
+    /// <param name="logger">Logger for this function.</param>
     public EndpointConfigurationFunctions(IConfiguration configuration, ILogger<EndpointConfigurationFunctions> logger)
     {
         _deviceGatewayApiBaseUrl = configuration["DeviceGatewayApi:BaseUrl"]
@@ -33,6 +35,7 @@ public sealed partial class EndpointConfigurationFunctions
         _logger = logger;
     }
 
+    /// <summary>GET configuration/endpoints. Returns the live Device Gateway API base URL for boot media generation.</summary>
     [Function(nameof(GetEndpointConfiguration))]
     public async Task<HttpResponseData> GetEndpointConfiguration(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "configuration/endpoints")] HttpRequestData req,

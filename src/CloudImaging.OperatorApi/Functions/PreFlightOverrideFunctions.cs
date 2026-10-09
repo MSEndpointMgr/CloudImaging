@@ -20,12 +20,15 @@ public sealed partial class PreFlightOverrideFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<PreFlightOverrideFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the pre-flight override requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public PreFlightOverrideFunctions(ImagingCoreClient coreClient, ILogger<PreFlightOverrideFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>GET preflight-overrides. Lists active pre-flight overrides.</summary>
     [Function("ListPreFlightOverrides")]
     public async Task<HttpResponseData> List(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "preflight-overrides")] HttpRequestData req,
@@ -35,6 +38,7 @@ public sealed partial class PreFlightOverrideFunctions
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>POST sessions/{id}/preflight-override. Approves a pre-flight override for a session (Administrator only).</summary>
     [Function("ApprovePreFlightOverride")]
     public async Task<HttpResponseData> Approve(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sessions/{id}/preflight-override")] HttpRequestData req,
@@ -67,6 +71,7 @@ public sealed partial class PreFlightOverrideFunctions
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>DELETE preflight-overrides. Revokes a serial number's active pre-flight override (Administrator only).</summary>
     [Function("RevokePreFlightOverride")]
     public async Task<HttpResponseData> Revoke(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "preflight-overrides")] HttpRequestData req,

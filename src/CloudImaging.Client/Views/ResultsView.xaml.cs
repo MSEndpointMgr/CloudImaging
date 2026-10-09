@@ -8,6 +8,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class ResultsView : Page
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public ResultsView()
     {
         InitializeComponent();

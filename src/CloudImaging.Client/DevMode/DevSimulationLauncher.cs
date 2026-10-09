@@ -30,7 +30,8 @@ internal sealed class DevSimulationLauncher : Window
         Action onProgressView,
         Action onResultsSuccessView,
         Action onResultsFailureView,
-        Action onResultsNotAuthorizedView)
+        Action onResultsNotAuthorizedView,
+        IReadOnlyList<(string Label, Action OnClick)> autopilotViews)
     {
         Owner                 = owner;
         Title                 = "DEV SIMULATION";
@@ -70,6 +71,8 @@ internal sealed class DevSimulationLauncher : Window
         panel.Children.Add(NavButton("4 · Results: Success", onResultsSuccessView));
         panel.Children.Add(NavButton("5 · Results: Failure", onResultsFailureView));
         panel.Children.Add(NavButton("6 · Results: Not Authorized", onResultsNotAuthorizedView));
+        foreach (var (label, onClick) in autopilotViews)
+            panel.Children.Add(NavButton(label, onClick));
 
         Content = panel;
     }

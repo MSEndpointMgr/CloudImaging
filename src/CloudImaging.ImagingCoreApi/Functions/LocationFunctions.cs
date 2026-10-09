@@ -24,6 +24,8 @@ public sealed partial class LocationFunctions
     private readonly LocationRepository _repo;
     private readonly ILogger<LocationFunctions> _logger;
 
+    /// <param name="repo">Location repository.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public LocationFunctions(LocationRepository repo, ILogger<LocationFunctions> logger)
     {
         _repo = repo;
@@ -32,6 +34,7 @@ public sealed partial class LocationFunctions
 
     // ── GET /api/internal/locations ────────────────────────────────────────────
 
+    /// <summary>GET internal/locations. Lists all locations.</summary>
     [Function("GetLocations")]
     public async Task<HttpResponseData> GetLocations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/locations")] HttpRequestData req,
@@ -52,6 +55,7 @@ public sealed partial class LocationFunctions
 
     // ── POST /api/internal/locations ───────────────────────────────────────────
 
+    /// <summary>POST internal/locations. Creates a new location.</summary>
     [Function("CreateLocation")]
     public async Task<HttpResponseData> CreateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/locations")] HttpRequestData req,
@@ -103,6 +107,7 @@ public sealed partial class LocationFunctions
 
     // ── PUT /api/internal/locations/{id} ───────────────────────────────────────
 
+    /// <summary>PUT internal/locations/{id}. Updates a location's name, region and country.</summary>
     [Function("UpdateLocation")]
     public async Task<HttpResponseData> UpdateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/locations/{id}")] HttpRequestData req,
@@ -157,6 +162,7 @@ public sealed partial class LocationFunctions
 
     // ── DELETE /api/internal/locations/{id} ────────────────────────────────────
 
+    /// <summary>DELETE internal/locations/{id}. Deletes a location.</summary>
     [Function("DeleteLocation")]
     public async Task<HttpResponseData> DeleteLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/locations/{id}")] HttpRequestData req,

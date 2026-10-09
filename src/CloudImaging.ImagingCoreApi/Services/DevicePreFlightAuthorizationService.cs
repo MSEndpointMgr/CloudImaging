@@ -23,6 +23,9 @@ public sealed partial class DevicePreFlightAuthorizationService
     private readonly CorporateIdentifierGraphClient _corporateIdentifierClient;
     private readonly ILogger<DevicePreFlightAuthorizationService> _logger;
 
+    /// <param name="graphClient">Microsoft Graph client used for Autopilot V1 lookups.</param>
+    /// <param name="corporateIdentifierClient">Graph client used for Intune Corporate Identifier lookups.</param>
+    /// <param name="logger">Logger for this service.</param>
     public DevicePreFlightAuthorizationService(
         GraphServiceClient graphClient,
         CorporateIdentifierGraphClient corporateIdentifierClient,

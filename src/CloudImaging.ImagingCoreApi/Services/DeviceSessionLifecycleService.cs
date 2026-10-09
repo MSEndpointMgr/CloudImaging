@@ -71,6 +71,11 @@ public sealed partial class DeviceSessionLifecycleService
     private readonly PreFlightOverrideRepository _overrideRepo;
     private readonly ILogger<DeviceSessionLifecycleService> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="historyRepo">Session history repository.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="overrideRepo">Pre-flight override repository.</param>
+    /// <param name="logger">Logger for this service.</param>
     public DeviceSessionLifecycleService(
         DeviceSessionRepository sessionRepo,
         SessionHistoryRepository historyRepo,

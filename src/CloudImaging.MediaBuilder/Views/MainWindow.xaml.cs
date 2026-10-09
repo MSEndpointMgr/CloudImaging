@@ -5,6 +5,7 @@ namespace CloudImaging.MediaBuilder.Views;
 
 public partial class MainWindow : FluentWindow
 {
+    /// <summary>Builds the window and loads its XAML.</summary>
     public MainWindow()
     {
         InitializeComponent();

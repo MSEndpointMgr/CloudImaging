@@ -27,6 +27,7 @@ public sealed partial class ImageDownloadService
     private readonly ImageCacheService? _cache;
     private readonly ILogger<ImageDownloadService> _logger;
 
+    /// <summary>Builds the downloader over an mTLS-configured HTTP client, with an optional local cache.</summary>
     public ImageDownloadService(
         HttpClient httpClient,
         ILogger<ImageDownloadService> logger,
@@ -45,9 +46,13 @@ public sealed partial class ImageDownloadService
     /// </summary>
     /// <param name="imageId">Catalog image ID used as the cache key.</param>
     /// <param name="expectedHash">Expected SHA-256 hex hash for integrity verification.</param>
+    /// <param name="sasUrl">SAS URL to download the image from on a cache miss.</param>
+    /// <param name="destinationPath">Path to write the downloaded WIM to on a cache miss.</param>
+    /// <param name="onProgress">Optional overall percentage callback, 0-100.</param>
     /// <param name="onBytesProgress">Optional live byte counter, called as
     /// (transferredBytes, totalBytes). <c>totalBytes</c> is -1 when the response carried no
     /// Content-Length. Throttled to <see cref="BytesProgressInterval"/>.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<string> EnsureLocalWimAsync(
         string imageId,
         string expectedHash,
@@ -101,6 +106,8 @@ public sealed partial class ImageDownloadService
 
         return destinationPath;
     }
+
+    /// <summary>Downloads the SAS URL to <paramref name="destinationPath"/>, retrying transient failures up to <see cref="MaxAttempts"/> times.</summary>
     public async Task DownloadAsync(
         string sasUrl,
         string destinationPath,

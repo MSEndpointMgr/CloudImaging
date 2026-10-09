@@ -9,15 +9,19 @@ namespace CloudImaging.ImagingCoreApi.Services;
 public sealed class ArchitectureMismatchException(MachineArchitecture imageArchitecture, IReadOnlyList<(Guid SessionId, MachineArchitecture Architecture)> sessions)
     : InvalidOperationException(ArchitectureCompatibility.Describe(imageArchitecture, sessions))
 {
+    /// <summary>Architecture of the OS image that was attempted to be assigned.</summary>
     public MachineArchitecture ImageArchitecture { get; } = imageArchitecture;
+    /// <summary>The sessions whose device architecture does not match <see cref="ImageArchitecture"/>.</summary>
     public IReadOnlyList<(Guid SessionId, MachineArchitecture Architecture)> Sessions { get; } = sessions;
 }
 
 /// <summary>Assignment-time OS image / device architecture enforcement (todo/arm64-support.md, Milestone 2).</summary>
 public static class ArchitectureCompatibility
 {
+    /// <summary>Problem-details <c>type</c> URI for an architecture-mismatch 409 response.</summary>
     public const string ProblemType = "https://cloudimaging.io/errors/architecture-mismatch";
 
+    /// <summary>Builds a human-readable message describing the mismatch between an image's architecture and the given sessions' device architectures.</summary>
     public static string Describe(MachineArchitecture imageArchitecture, IReadOnlyCollection<(Guid SessionId, MachineArchitecture Architecture)> sessions)
     {
         var deviceArchitectures = string.Join(" and ", sessions.Select(s => Display(s.Architecture)).Distinct());

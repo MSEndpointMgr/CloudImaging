@@ -23,9 +23,11 @@ public sealed partial class DevicePostureDetector
 
     private readonly ILogger<DevicePostureDetector> _logger;
 
+    /// <summary>Builds the detector. Defaults to a no-op logger.</summary>
     public DevicePostureDetector(ILogger<DevicePostureDetector>? logger = null) =>
         _logger = logger ?? NullLogger<DevicePostureDetector>.Instance;
 
+    /// <summary>Reads the device's firmware mode, Secure Boot state and TPM presence.</summary>
     public DeviceSecurityPosture Detect()
     {
         var firmwareMode = DetectFirmwareMode();
@@ -39,6 +41,7 @@ public sealed partial class DevicePostureDetector
         return posture;
     }
 
+    /// <summary>Reads whether the device booted UEFI or legacy BIOS.</summary>
     public FirmwareMode DetectFirmwareMode()
     {
         try

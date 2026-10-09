@@ -8,6 +8,7 @@ namespace CloudImaging.MediaBuilder.Views;
 /// </summary>
 public partial class SignInView : UserControl
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public SignInView()
     {
         InitializeComponent();

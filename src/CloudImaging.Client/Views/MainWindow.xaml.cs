@@ -7,8 +7,14 @@ using Wpf.Ui.Controls;
 
 namespace CloudImaging.Client.Views;
 
+/// <summary>
+/// The Client's single top-level window: a fixed chrome (branding logo, View Log/dim overlay)
+/// hosting each screen as a <see cref="Page"/> navigated into <c>NavigationFrame</c> via
+/// <see cref="NavigateTo"/>.
+/// </summary>
 public partial class MainWindow : FluentWindow
 {
+    /// <summary>Builds the window, applies the Dark theme, and strips WinPE's unsupported native chrome.</summary>
     public MainWindow()
     {
         InitializeComponent();
@@ -56,6 +62,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    /// <summary>Navigates to the given page, showing or hiding the floating View Log button as appropriate.</summary>
     public void NavigateTo(Page page)
     {
         NavigationFrame.Navigate(page);

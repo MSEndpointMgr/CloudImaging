@@ -12,6 +12,7 @@ public static class PreFlightCheckEvaluator
     /// <summary>Unused overrides drop off after this long.</summary>
     public static readonly TimeSpan OverrideLifetime = TimeSpan.FromDays(7);
 
+    /// <summary>Evaluates each configured pre-flight check against the reported security posture and enrollment result.</summary>
     public static IReadOnlyList<PreFlightCheckResult> Evaluate(
         PortalConfiguration config,
         DeviceSecurityPosture? posture,
@@ -34,6 +35,7 @@ public static class PreFlightCheckEvaluator
         ];
     }
 
+    /// <summary>Returns the checks that failed.</summary>
     public static IReadOnlyList<PreFlightCheck> FailedChecks(IEnumerable<PreFlightCheckResult> checks) =>
         checks.Where(c => c.Outcome == PreFlightCheckOutcome.Failed).Select(c => c.Check).ToList();
 

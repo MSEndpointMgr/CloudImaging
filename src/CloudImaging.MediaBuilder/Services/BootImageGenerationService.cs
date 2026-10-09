@@ -90,6 +90,7 @@ public sealed partial class BootImageGenerationService
     private readonly Func<bool> _isElevated;
     private readonly Func<string, string, System.Diagnostics.Process> _startElevatedProcess;
 
+    /// <summary>Raised as generation progresses, with a status message and overall percent.</summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
     /// <summary>
@@ -108,6 +109,7 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public event EventHandler<string>? LogHeartbeat;
 
+    /// <param name="logger">Logger for this service's diagnostic output.</param>
     /// <param name="operatorApiClient">
     /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the active
     /// boot media certificate PFX from the Operator API before generation starts, and
@@ -146,6 +148,9 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     public void SetOperatorApiAccessToken(string token) => _operatorApiClient?.SetAccessToken(token);
 
+    /// <summary>Outcome of a successful boot image generation.</summary>
+    /// <param name="WimPath">Full path of the generated WIM.</param>
+    /// <param name="Sha256Hash">SHA-256 hash of the generated WIM.</param>
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     private sealed record ElevatedGenerationParams(

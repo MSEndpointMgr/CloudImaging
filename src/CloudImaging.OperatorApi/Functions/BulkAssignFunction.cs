@@ -17,6 +17,8 @@ public sealed partial class BulkAssignFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BulkAssignFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the bulk-assign request is forwarded to.</param>
+    /// <param name="logger">Logger for this function.</param>
     public BulkAssignFunction(
         ImagingCoreClient coreClient,
         ILogger<BulkAssignFunction> logger)
@@ -25,6 +27,7 @@ public sealed partial class BulkAssignFunction
         _logger = logger;
     }
 
+    /// <summary>POST sessions/bulk-assign. Assigns an OS image to multiple coupled sessions in one call.</summary>
     [Function(nameof(BulkAssignFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sessions/bulk-assign")] HttpRequestData req,

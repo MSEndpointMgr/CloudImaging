@@ -17,8 +17,10 @@ public sealed partial class BootImageDeploymentService
 
     private readonly ILogger<BootImageDeploymentService> _logger;
 
+    /// <summary>Raised as deployment progresses, with a status message and overall percent.</summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public BootImageDeploymentService(ILogger<BootImageDeploymentService> logger) => _logger = logger;
 
     /// <summary>
@@ -45,9 +47,8 @@ public sealed partial class BootImageDeploymentService
         File.Copy(wimPath, destWim, overwrite: true);
         ReportProgress("Boot WIM copied.", 50);
 
-        // Step 2: Make the partition actually bootable (BIOS + UEFI) via bcdboot, sourced
-        // directly from the boot.wim we just copied — see ConfigureBootFilesAsync for details.
-        ReportProgress("Configuring boot files (bcdboot)…", 70);
+        // Step 2: Make the partition bootable from the boot.wim just copied (see ConfigureBootFilesAsync).
+        ReportProgress("Configuring boot files…", 70);
         await ConfigureBootFilesAsync(destWim, mediaRoot, architecture, ct);
         ReportProgress("USB boot partition activated.", 100);
 
@@ -73,28 +74,15 @@ public sealed partial class BootImageDeploymentService
     }
 
     /// <summary>
-    /// Makes the FAT32 boot partition actually bootable for both BIOS and UEFI firmware by
-    /// running <c>bcdboot</c> against the boot.wim just copied to <paramref name="mediaRoot"/>
-    /// — the same mechanism Windows Setup itself uses to build bootable media.
+    /// Makes the FAT32 boot partition bootable (BIOS + UEFI for x64, UEFI only for ARM64) from the
+    /// boot.wim itself, so no ADK or extra published files are needed on this machine.
     /// <para/>
-    /// WinPE auto-start (winpeshl.ini/startnet.cmd launching CloudImaging.Client.exe) is
-    /// configured inside boot.wim itself, while it's mounted during boot image generation
-    /// (see <c>BootImageGenerationService.ConfigureWinPeAutoStartAsync</c>) — not here.
-    /// <para/>
-    /// This method only needs to place <c>bootmgr</c>, <c>\Boot\BCD</c>, <c>\efi\boot\bootx64.efi</c>
-    /// and <c>\efi\microsoft\boot\BCD</c> on the boot partition and point the BCD's ramdisk
-    /// entry at <c>\sources\boot.wim</c>. Rather than hand-copying those files from a separately
-    /// packaged bundle (which would require repackaging the published artifact, and re-plumbing
-    /// upload/download/hash verification for it), <c>bcdboot</c> derives everything it needs
-    /// directly from the boot.wim's own embedded <c>\Windows\Boot\PCAT</c> and
-    /// <c>\Windows\Boot\EFI</c> folders — every WinPE image already contains these since it's
-    /// itself a small Windows OS. That keeps the published artifact a single hash-verified
-    /// boot.wim (FR-056) with nothing extra to package, cache, or verify — the true "bare
-    /// minimum" is zero additional files.
-    /// <para/>
-    /// Both <c>dism.exe</c> and <c>bcdboot.exe</c> ship with every Windows 10/11 installation
-    /// (<c>%windir%\System32</c>) — unlike <c>bootsect.exe</c>, no Windows ADK is required on
-    /// the machine running "Prepare USB Storage Device".
+    /// <c>bcdboot</c> lays down the boot manager files, but the BCD it writes describes the
+    /// Windows directory it was pointed at: the temporary mount on THIS machine. Booting that
+    /// fails with 0xc000000e on <c>\Users\...\ci-deploy-mount-*\Windows\system32\winload.efi</c>.
+    /// Both BCD stores are therefore replaced with the WinPE media templates
+    /// (<c>\Windows\Boot\DVD\{EFI,PCAT}\BCD</c>), which RAM-disk boot <c>[boot]\sources\boot.wim</c>
+    /// via <c>\boot\boot.sdi</c>, exactly like the ADK's MakeWinPEMedia output.
     /// </summary>
     private static async Task ConfigureBootFilesAsync(string wimPath, string mediaRoot, MachineArchitecture architecture, CancellationToken ct)
     {
@@ -112,7 +100,7 @@ public sealed partial class BootImageDeploymentService
             var windowsDir = Path.Combine(mountDir, "Windows");
             if (!Directory.Exists(windowsDir))
                 throw new InvalidOperationException(
-                    $"The boot image does not contain a \\Windows directory at \"{windowsDir}\" — cannot configure boot files with bcdboot.");
+                    $"The boot image does not contain a \\Windows directory at \"{windowsDir}\". Cannot configure boot files.");
 
             // x64: /f ALL writes BIOS (bootmgr, \Boot\BCD) and UEFI (\efi\boot\bootx64.efi,
             // \efi\microsoft\boot\BCD) files. ARM64 is UEFI-only and its WinPE has no PCAT
@@ -122,6 +110,12 @@ public sealed partial class BootImageDeploymentService
 
             if (architecture == MachineArchitecture.Arm64)
                 EnsureUefiFallbackLoader(windowsDir, mediaRoot, architecture);
+
+            var includeBios = architecture != MachineArchitecture.Arm64;
+            InstallRamdiskBcdTemplates(windowsDir, mediaRoot, includeBios);
+            await VerifyRamdiskBcdAsync(Path.Combine(mediaRoot + "\\", "EFI", "Microsoft", "Boot", "BCD"), ct);
+            if (includeBios)
+                await VerifyRamdiskBcdAsync(Path.Combine(mediaRoot + "\\", "Boot", "BCD"), ct);
         }
         finally
         {
@@ -139,6 +133,52 @@ public sealed partial class BootImageDeploymentService
             }
             ElevationHelper.TryDeleteDirectoryRecursive(mountDir);
         }
+    }
+
+    /// <summary>
+    /// Overwrites the BCD stores with the WinPE ramdisk templates and adds <c>\Boot\boot.sdi</c>.
+    /// The image's own templates are preferred; this machine's are an equivalent fallback, since
+    /// BCD hives and boot.sdi are architecture-neutral data.
+    /// </summary>
+    private static void InstallRamdiskBcdTemplates(string windowsDir, string mediaRoot, bool includeBios)
+    {
+        var root = mediaRoot + "\\";
+        CopyBootFile(FindBootTemplate(windowsDir, "EFI", "BCD"), Path.Combine(root, "EFI", "Microsoft", "Boot", "BCD"));
+        CopyBootFile(FindBootTemplate(windowsDir, "EFI", "boot.sdi"), Path.Combine(root, "Boot", "boot.sdi"));
+        if (includeBios)
+            CopyBootFile(FindBootTemplate(windowsDir, "PCAT", "BCD"), Path.Combine(root, "Boot", "BCD"));
+    }
+
+    private static string FindBootTemplate(string windowsDir, string firmware, string fileName)
+    {
+        string[] candidates =
+        [
+            Path.Combine(windowsDir, "Boot", "DVD", firmware, fileName),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Boot", "DVD", firmware, fileName),
+        ];
+        return candidates.FirstOrDefault(File.Exists)
+            ?? throw new InvalidOperationException(
+                $"Could not find the WinPE boot template \\Windows\\Boot\\DVD\\{firmware}\\{fileName} in the boot image or on this computer. The USB device would not boot.");
+    }
+
+    /// <summary>Copies over files bcdboot may have left read-only/hidden/system, and leaves the copy writable for bootmgr.</summary>
+    private static void CopyBootFile(string source, string destination)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        if (File.Exists(destination))
+            File.SetAttributes(destination, FileAttributes.Normal);
+        File.Copy(source, destination, overwrite: true);
+        File.SetAttributes(destination, FileAttributes.Normal);
+    }
+
+    /// <summary>Fails preparation unless the store RAM-disk boots \sources\boot.wim from the USB device itself.</summary>
+    private static async Task VerifyRamdiskBcdAsync(string bcdPath, CancellationToken ct)
+    {
+        var output = await RunExternalAsync("bcdedit.exe", $"/store \"{bcdPath}\" /enum all", ct);
+        if (!output.Contains(@"\sources\boot.wim", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("ci-deploy-mount", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"The boot configuration at \"{bcdPath}\" does not boot \\sources\\boot.wim from the USB device. The USB device would not boot.");
     }
 
     /// <summary>
@@ -169,7 +209,7 @@ public sealed partial class BootImageDeploymentService
     /// Runs an external process to completion, capturing combined stdout/stderr for inclusion
     /// in the thrown exception on a non-zero exit code (FR-058 clear failure diagnostics).
     /// </summary>
-    private static async Task RunExternalAsync(string fileName, string arguments, CancellationToken ct)
+    private static async Task<string> RunExternalAsync(string fileName, string arguments, CancellationToken ct)
     {
         using var process = new System.Diagnostics.Process
         {
@@ -197,9 +237,13 @@ public sealed partial class BootImageDeploymentService
         using var ctReg = ct.Register(() => { try { process.Kill(entireProcessTree: true); } catch { /* best effort */ } });
 
         var exitCode = await tcs.Task;
+
+        // Exited can fire before the redirected streams are drained; wait for EOF so callers see all output.
+        await process.WaitForExitAsync(CancellationToken.None);
         if (exitCode != 0)
             throw new InvalidOperationException(
                 $"{fileName} exited with code {exitCode}.{(output.Length > 0 ? $" Output: {output}" : string.Empty)}");
+        return output.ToString();
     }
 
     private void ReportProgress(string message, int percent)

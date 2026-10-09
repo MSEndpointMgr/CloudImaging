@@ -17,6 +17,8 @@ public sealed partial class CoupleSessionFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<CoupleSessionFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the coupling request is forwarded to.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CoupleSessionFunction(
         ImagingCoreClient coreClient,
         ILogger<CoupleSessionFunction> logger)
@@ -25,6 +27,7 @@ public sealed partial class CoupleSessionFunction
         _logger = logger;
     }
 
+    /// <summary>POST sessions/couple. Couples an operator to a session via its passcode.</summary>
     [Function(nameof(CoupleSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "sessions/couple")] HttpRequestData req,

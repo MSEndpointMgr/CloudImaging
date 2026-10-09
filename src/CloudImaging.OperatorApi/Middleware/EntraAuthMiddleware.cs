@@ -15,12 +15,15 @@ namespace CloudImaging.OperatorApi.Middleware;
 /// </summary>
 public sealed class EntraAuthMiddleware : IFunctionsWorkerMiddleware
 {
+    /// <summary><see cref="FunctionContext.Items"/> key under which the validated <see cref="System.Security.Claims.ClaimsPrincipal"/> is stored for downstream handlers.</summary>
     public const string ClaimsPrincipalKey = "ClaimsPrincipal";
 
     private readonly EntraTokenValidator _tokenValidator;
 
+    /// <param name="tokenValidator">Validates the bearer token's signature, issuer, audience and lifetime.</param>
     public EntraAuthMiddleware(EntraTokenValidator tokenValidator) => _tokenValidator = tokenValidator;
 
+    /// <summary>Validates the Authorization bearer token and attaches the principal to <see cref="FunctionContext.Items"/>, or short-circuits with 401.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var request = await context.GetHttpRequestDataAsync();

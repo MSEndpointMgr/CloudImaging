@@ -8,9 +8,16 @@ namespace CloudImaging.MediaBuilder.Services;
 /// from "none configured", since the two need completely different remediation.</summary>
 public enum BootMediaCertificateStatus
 {
+    /// <summary>An active boot media certificate is configured.</summary>
     Configured,
+
+    /// <summary>No boot media certificate is configured.</summary>
     NotConfigured,
+
+    /// <summary>The Operator API denied the certificate check request.</summary>
     AccessDenied,
+
+    /// <summary>The certificate check could not be completed (network or service error).</summary>
     CheckFailed,
 }
 
@@ -26,6 +33,7 @@ public sealed partial class BootMediaCertificateCheckService
     private readonly OperatorApiClient _operatorApiClient;
     private readonly ILogger<BootMediaCertificateCheckService> _logger;
 
+    /// <summary>Builds the service over the Operator API client and logger.</summary>
     public BootMediaCertificateCheckService(OperatorApiClient operatorApiClient, ILogger<BootMediaCertificateCheckService> logger)
     {
         _operatorApiClient = operatorApiClient;

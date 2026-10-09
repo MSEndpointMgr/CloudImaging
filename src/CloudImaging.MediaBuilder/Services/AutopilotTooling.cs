@@ -14,6 +14,7 @@ public static class AutopilotTooling
 {
     /// <summary>Folder under the Client's install directory (X:\CloudImaging) that holds OA3Tool.</summary>
     public const string ClientRelativeDirectory = @"Tools\Autopilot";
+    /// <summary>File name of the ADK's OA3Tool executable.</summary>
     public const string Oa3ToolFileName = "oa3tool.exe";
 
     /// <summary>TPM driver and TPM Base Services. Requires WinPE-WMI, which every boot image already gets.</summary>
@@ -22,15 +23,18 @@ public static class AutopilotTooling
     /// <summary>Supplies PCPKsp.dll. Requires WinPE-WMI and WinPE-SecureStartup; has no language pack.</summary>
     public const string PlatformIdPackage = "WinPE-PlatformId";
 
+    /// <summary>Path to OA3Tool.exe under the given ADK installation, for the given architecture.</summary>
     public static string Oa3ToolSourcePath(string adkPath, MachineArchitecture architecture) =>
         Path.Combine(adkPath, "Deployment Tools", MachineArchitecturePlatform.AdkArchitectureName(architecture), "Licensing", "OA30", Oa3ToolFileName);
 
+    /// <summary>Paths to the WinPE-SecureStartup base and language cabs, for the given architecture.</summary>
     public static (string BaseCab, string LanguageCab) SecureStartupPackagePaths(string adkPath, MachineArchitecture architecture)
     {
         var ocsDir = OptionalComponentsDirectory(adkPath, architecture);
         return (Path.Combine(ocsDir, $"{SecureStartupPackage}.cab"), Path.Combine(ocsDir, "en-us", $"{SecureStartupPackage}_en-us.cab"));
     }
 
+    /// <summary>Path to the WinPE-PlatformId cab, for the given architecture.</summary>
     public static string PlatformIdPackagePath(string adkPath, MachineArchitecture architecture) =>
         Path.Combine(OptionalComponentsDirectory(adkPath, architecture), $"{PlatformIdPackage}.cab");
 

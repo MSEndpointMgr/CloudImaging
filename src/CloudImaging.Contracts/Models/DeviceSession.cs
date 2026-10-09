@@ -15,12 +15,20 @@ namespace CloudImaging.Contracts.Models;
 /// </remarks>
 public sealed record DeviceSession
 {
+    /// <summary>Identifier for this session.</summary>
     public required Guid SessionId { get; init; }
+
+    /// <summary>Current lifecycle state of the session.</summary>
     public required SessionState State { get; init; }
 
     // Device identity (captured at registration)
+    /// <summary>Device serial number.</summary>
     public required string DeviceSerialNumber { get; init; }
+
+    /// <summary>Device manufacturer, as reported by firmware.</summary>
     public required string DeviceManufacturer { get; init; }
+
+    /// <summary>Device model, as reported by firmware.</summary>
     public required string DeviceModel { get; init; }
 
     /// <summary>
@@ -31,6 +39,7 @@ public sealed record DeviceSession
     /// </summary>
     public string? MacAddress { get; init; }
 
+    /// <summary>Hardware metadata the Client reported at registration.</summary>
     public DeviceHardwareMetadata? HardwareMetadata { get; init; }
 
     /// <summary>
@@ -49,6 +58,7 @@ public sealed record DeviceSession
     public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
 
     // Pre-flight result
+    /// <summary>Outcome of pre-flight authorization for this session.</summary>
     public PreFlightAuthorizationResult PreFlightAuthorizationResult { get; init; }
 
     /// <summary>Firmware security state the Client reported; null for Clients that predate it.</summary>
@@ -58,17 +68,30 @@ public sealed record DeviceSession
     public IReadOnlyList<PreFlightCheckResult> PreFlightChecks { get; init; } = [];
 
     // Passcode — stored as hash at rest; returned only at SessionInit
+    /// <summary>The coupling passcode, returned to the device only at <see cref="SessionState.SessionInit"/>.</summary>
     public string? Passcode { get; init; }
+
+    /// <summary>When the passcode expires if not consumed.</summary>
     public DateTimeOffset? PasscodeExpiresAt { get; init; }
+
+    /// <summary>True once a technician has coupled the session with this passcode.</summary>
     public bool PasscodeConsumed { get; init; }
 
     // Device-session token
+    /// <summary>Bearer token the device uses to authenticate subsequent session calls.</summary>
     public string? DeviceSessionToken { get; init; }
+
+    /// <summary>When <see cref="DeviceSessionToken"/> expires.</summary>
     public DateTimeOffset? DeviceSessionTokenExpiresAt { get; init; }
 
     // Assignment
+    /// <summary>OS image assigned to this session, if any.</summary>
     public Guid? AssignedOsImageId { get; init; }
+
+    /// <summary>SAS URL the device downloads the assigned OS image from.</summary>
     public string? SasTokenUrl { get; init; }
+
+    /// <summary>When <see cref="SasTokenUrl"/> expires.</summary>
     public DateTimeOffset? SasTokenUrlExpiresAt { get; init; }
 
     /// <summary>
@@ -79,13 +102,25 @@ public sealed record DeviceSession
     public string? PartitioningSchemeSnapshotJson { get; init; }
 
     // Progress
+    /// <summary>Overall imaging progress, 0-100.</summary>
     public int OverallProgressPercent { get; init; }
+
+    /// <summary>Name of the imaging step currently in progress, or null when none has started.</summary>
     public string? CurrentStep { get; init; }
+
+    /// <summary>Status of every imaging step.</summary>
     public IReadOnlyList<ImagingStep> Steps { get; init; } = [];
 
     // Timestamps
+    /// <summary>When the session was created.</summary>
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>When the device last reported a heartbeat.</summary>
     public DateTimeOffset? LastHeartbeatAt { get; init; }
+
+    /// <summary>When the session reached a terminal state.</summary>
     public DateTimeOffset? TerminalAt { get; init; }
+
+    /// <summary>When the session record is eligible for lifecycle cleanup.</summary>
     public DateTimeOffset? PurgeAt { get; init; }
 }

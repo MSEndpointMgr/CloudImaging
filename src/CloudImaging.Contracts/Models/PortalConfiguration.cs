@@ -88,5 +88,6 @@ public sealed class PortalConfiguration
     /// <summary>Days a handled Autopilot request (imported, already registered, rejected or expired) is kept for audit before it is deleted. Default: 365.</summary>
     public int AutopilotRetentionDays { get; init; } = 365;
 
+    /// <summary>When the configuration was last modified.</summary>
     public DateTimeOffset LastModifiedAt { get; init; }
 }

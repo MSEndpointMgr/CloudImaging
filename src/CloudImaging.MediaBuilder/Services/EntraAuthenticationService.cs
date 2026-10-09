@@ -62,6 +62,7 @@ public sealed partial class EntraAuthenticationService
         _lastResult?.ClaimsPrincipal?.Claims.Any(c =>
             c.Type == "roles" && string.Equals(c.Value, role, StringComparison.Ordinal)) ?? false;
 
+    /// <summary>Builds the service for the given Entra app registration and Operator API scope.</summary>
     public EntraAuthenticationService(
         string clientId,
         string tenantId,

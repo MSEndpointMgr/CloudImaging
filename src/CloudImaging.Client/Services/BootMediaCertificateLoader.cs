@@ -15,6 +15,7 @@ public sealed class BootMediaCertificateLoader
     private readonly SessionStartupCoordinator _coordinator;
     private readonly ILogger<BootMediaCertificateLoader> _logger;
 
+    /// <summary>Builds the loader over the session startup coordinator and a logger.</summary>
     public BootMediaCertificateLoader(
         SessionStartupCoordinator coordinator,
         ILogger<BootMediaCertificateLoader> logger)

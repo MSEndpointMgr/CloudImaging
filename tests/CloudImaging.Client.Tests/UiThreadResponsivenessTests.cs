@@ -58,6 +58,7 @@ public sealed class UiThreadResponsivenessTests
     [InlineData("SessionInitView.xaml")]
     [InlineData("ResultsView.xaml")]
     [InlineData("AutopilotRegistrationView.xaml")]
+    [InlineData("StartupView.xaml")]
     public void View_ContainsNoScrollViewer(string viewFileName)
     {
         // FR-002b: all views must fit within the minimum window size without scrolling.
@@ -69,6 +70,18 @@ public sealed class UiThreadResponsivenessTests
         var doc = XDocument.Load(path);
         doc.Descendants(Presentation + "ScrollViewer").Should().BeEmpty(
             $"{viewFileName} must fit within the minimum window size without scrolling (FR-002b)");
+    }
+
+    [Fact]
+    public void OperationSelection_CardsKeepOneFixedRow_SoAnExtraCardNeverMovesTheLayout()
+    {
+        // Without Rows, UniformGrid goes square: a second visible card made it 2x2 and pushed Continue off screen.
+        var doc = XDocument.Load(Path.Combine(GetViewsDirectory(), "OperationSelectionView.xaml"));
+        var grid = doc.Descendants(Presentation + "UniformGrid").Single();
+
+        grid.Attribute("Rows")?.Value.Should().Be("1");
+        var cardHeights = grid.Elements(Presentation + "Border").Select(card => card.Attribute("Height")?.Value).ToList();
+        cardHeights.Should().NotBeEmpty().And.OnlyContain(h => h == cardHeights[0] && h != null, "every card needs the same fixed height");
     }
 
     [Fact]

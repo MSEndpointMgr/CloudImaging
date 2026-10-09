@@ -28,6 +28,10 @@ public sealed partial class BootImageUploadFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BootImageUploadFunctions> _logger;
 
+    /// <param name="jobRepo">Upload job repository used to track staged upload progress.</param>
+    /// <param name="validator">Boot/recovery image validation service.</param>
+    /// <param name="blobClient">Blob service client used for direct-to-blob upload staging.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BootImageUploadFunctions(
         UploadJobRepository jobRepo,
         BootImageValidationService validator,
@@ -42,6 +46,7 @@ public sealed partial class BootImageUploadFunctions
 
     // ── POST /api/internal/boot-images/upload/start ───────────────────────────
 
+    /// <summary>POST internal/boot-images/upload/start. Starts a staged upload session and returns the blob upload URL.</summary>
     [Function("StartBootImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/upload/start")] HttpRequestData req,
@@ -99,6 +104,7 @@ public sealed partial class BootImageUploadFunctions
 
     // ── POST /api/internal/boot-images/upload/{token}/publish ─────────────────
 
+    /// <summary>POST internal/boot-images/upload/{token}/publish. Validates SHA-256 and publishes the staged boot image.</summary>
     [Function("PublishBootImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/upload/{token}/publish")] HttpRequestData req,

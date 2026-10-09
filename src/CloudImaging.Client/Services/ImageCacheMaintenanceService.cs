@@ -32,6 +32,7 @@ public sealed partial class ImageCacheMaintenanceService
     /// </summary>
     public bool CacheWriteEnabled { get; private set; } = true;
 
+    /// <summary>Builds the service over the image cache and a logger.</summary>
     public ImageCacheMaintenanceService(
         ImageCacheService cache,
         ILogger<ImageCacheMaintenanceService> logger)

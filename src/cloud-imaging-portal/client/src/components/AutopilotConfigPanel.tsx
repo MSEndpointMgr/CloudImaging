@@ -59,17 +59,17 @@ export function AutopilotConfigPanel(props: Props): React.ReactElement {
         <CardContent className="space-y-4">
           <SettingRow
             title="Allow Autopilot registration"
-            description={props.enabled ? 'On. Boot media offers Register with Autopilot.' : 'Off. Devices cannot submit hardware hashes.'}
+            description="When enabled, boot media offers Register with Autopilot so technicians can submit a device's hardware hash for approval."
           >
             <Switch checked={props.enabled} onCheckedChange={props.onEnabledChange} label="Allow Autopilot registration" />
           </SettingRow>
           <SettingRow
             title="Require a group tag"
-            description={props.groupTagRequired ? 'Approvers must choose a group tag before approving.' : 'Approvers may approve without a group tag.'}
+            description="When enabled, approvers must select a group tag before a device can be imported."
           >
             <Switch checked={props.groupTagRequired} onCheckedChange={props.onGroupTagRequiredChange} label="Require a group tag" />
           </SettingRow>
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
             <Label htmlFor="autopilotPendingExpiryDays">Pending requests expire after (days)</Label>
             <p className="text-sm text-muted-foreground">Undecided requests expire and their hardware hash is deleted. 1 to 90 days.</p>
             <Input
@@ -82,7 +82,7 @@ export function AutopilotConfigPanel(props: Props): React.ReactElement {
               className="w-40"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
             <Label htmlFor="autopilotRetentionDays">Keep handled requests for (days)</Label>
             <p className="text-sm text-muted-foreground">
               Imported, rejected and expired requests stay in the Autopilot registration history report for auditing, then are deleted. 30 to 3650 days.

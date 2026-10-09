@@ -19,6 +19,8 @@ public sealed partial class PartitioningSchemeFunctions
     private readonly PartitioningSchemeRepository _repo;
     private readonly ILogger<PartitioningSchemeFunctions> _logger;
 
+    /// <param name="repo">Partitioning scheme repository.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public PartitioningSchemeFunctions(
         PartitioningSchemeRepository repo,
         ILogger<PartitioningSchemeFunctions> logger)

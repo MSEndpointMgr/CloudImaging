@@ -56,6 +56,14 @@ public sealed partial class UploadPublishService
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<UploadPublishService> _logger;
 
+    /// <param name="jobRepo">Upload job repository.</param>
+    /// <param name="osImageRepo">OS image catalog repository.</param>
+    /// <param name="bootImageRepo">Boot image catalog repository.</param>
+    /// <param name="recoveryImageRepo">Recovery image catalog repository.</param>
+    /// <param name="validator">Boot image validation service.</param>
+    /// <param name="isoExtractor">ISO to WIM/ESD extraction service.</param>
+    /// <param name="blobClient">Blob service client for the staging/published containers.</param>
+    /// <param name="logger">Logger for this service.</param>
     public UploadPublishService(
         UploadJobRepository jobRepo,
         OsImageRepository osImageRepo,

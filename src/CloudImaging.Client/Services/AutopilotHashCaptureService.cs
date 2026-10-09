@@ -15,8 +15,13 @@ namespace CloudImaging.Client.Services;
 /// </summary>
 public sealed partial class AutopilotHashCaptureService
 {
+    /// <summary>Folder under the Client's install directory holding the staged Autopilot tooling.</summary>
     public const string ToolRelativeDirectory = @"Tools\Autopilot";
+
+    /// <summary>File name of the staged OA3Tool executable.</summary>
     public const string Oa3ToolFileName = "oa3tool.exe";
+
+    /// <summary>File name of the staged Platform Crypto Provider, needed for OA3Tool to include TPM data.</summary>
     public const string TpmProviderFileName = "PCPKsp.dll";
 
     private static readonly TimeSpan ToolTimeout = TimeSpan.FromMinutes(3);

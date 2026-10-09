@@ -8,21 +8,35 @@ using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.ImagingCoreApi.Services;
 
+/// <summary>Result of an Autopilot registration operation, used to distinguish success from the various failure modes.</summary>
 public enum AutopilotOutcome
 {
+    /// <summary>The operation completed successfully.</summary>
     Ok,
+    /// <summary>The requested registration request does not exist.</summary>
     NotFound,
+    /// <summary>The request was changed concurrently (ETag mismatch) or is in the wrong state for the requested action.</summary>
     Conflict,
+    /// <summary>The supplied input failed validation.</summary>
     Invalid,
+    /// <summary>Autopilot self-registration is turned off in the portal configuration.</summary>
     Disabled,
+    /// <summary>The call to Microsoft Graph failed.</summary>
     GraphFailed,
 }
 
+/// <summary>Outcome wrapper for an Autopilot registration operation, carrying either a value or an error message.</summary>
+/// <param name="Outcome">Which outcome occurred.</param>
+/// <param name="Value">The resulting value when <paramref name="Outcome"/> is <see cref="AutopilotOutcome.Ok"/>.</param>
+/// <param name="Error">A human-readable error message when <paramref name="Outcome"/> is not <see cref="AutopilotOutcome.Ok"/>.</param>
 public sealed record AutopilotResult<T>(AutopilotOutcome Outcome, T? Value = default, string? Error = null);
 
+/// <summary>Factory helpers for constructing <see cref="AutopilotResult{T}"/> instances.</summary>
 public static class AutopilotResult
 {
+    /// <summary>Creates a successful result carrying <paramref name="value"/>.</summary>
     public static AutopilotResult<T> Ok<T>(T value) => new(AutopilotOutcome.Ok, value);
+    /// <summary>Creates a failed result with the given <paramref name="outcome"/> and <paramref name="error"/> message.</summary>
     public static AutopilotResult<T> Fail<T>(AutopilotOutcome outcome, string error) => new(outcome, default, error);
 }
 
@@ -47,6 +61,13 @@ public sealed partial class AutopilotRegistrationService
     private readonly TimeProvider _time;
     private readonly ILogger<AutopilotRegistrationService> _logger;
 
+    /// <param name="requests">Autopilot registration request repository.</param>
+    /// <param name="groupTags">Autopilot group tag definition repository.</param>
+    /// <param name="locations">Location catalog repository, used to resolve region/country for group tag options.</param>
+    /// <param name="config">Portal configuration repository, used to check whether registration is enabled and retention settings.</param>
+    /// <param name="graph">Microsoft Graph client used to import approved devices into Autopilot.</param>
+    /// <param name="logger">Logger for this service.</param>
+    /// <param name="time">Optional time provider override for deterministic testing; defaults to <see cref="TimeProvider.System"/>.</param>
     public AutopilotRegistrationService(
         AutopilotRegistrationRepository requests,
         AutopilotGroupTagRepository groupTags,
@@ -65,11 +86,13 @@ public sealed partial class AutopilotRegistrationService
         _time = time ?? TimeProvider.System;
     }
 
+    /// <summary>Returns whether Autopilot self-registration is currently enabled in the portal configuration.</summary>
     public async Task<bool> IsEnabledAsync(CancellationToken ct) =>
         (await _config.GetAsync(ct)).AutopilotRegistrationEnabled;
 
     // ── Device submission ────────────────────────────────────────────────────
 
+    /// <summary>Submits a device hardware hash for Autopilot registration, creating or refreshing a pending request.</summary>
     public async Task<AutopilotResult<AutopilotSubmissionResponse>> SubmitAsync(AutopilotHashSubmission submission, CancellationToken ct)
     {
         var config = await _config.GetAsync(ct);
@@ -183,6 +206,7 @@ public sealed partial class AutopilotRegistrationService
         return AutopilotResult.Ok(ToSubmissionResponse(request, statusToken));
     }
 
+    /// <summary>Returns the device-visible status of a registration request if <paramref name="statusToken"/> matches, otherwise null.</summary>
     public async Task<AutopilotRegistrationStatus?> GetDeviceStatusAsync(Guid requestId, string statusToken, CancellationToken ct)
     {
         var found = await _requests.GetAsync(requestId, ct);
@@ -239,6 +263,7 @@ public sealed partial class AutopilotRegistrationService
         return results;
     }
 
+    /// <summary>Returns the operator-facing detail view of a registration request, including group tag options, or null if not found.</summary>
     public async Task<AutopilotRegistrationDetail?> GetDetailAsync(Guid requestId, CancellationToken ct)
     {
         var found = await _requests.GetAsync(requestId, ct);
@@ -263,6 +288,7 @@ public sealed partial class AutopilotRegistrationService
 
     // ── Approver decisions ───────────────────────────────────────────────────
 
+    /// <summary>Approves a pending registration request and starts the Autopilot Graph import.</summary>
     public async Task<AutopilotResult<AutopilotRegistrationRequest>> ApproveAsync(Guid requestId, AutopilotDecision decision, CancellationToken ct)
     {
         var found = await _requests.GetAsync(requestId, ct);
@@ -331,6 +357,7 @@ public sealed partial class AutopilotRegistrationService
         return await StartImportAsync(claimed, etag.Value, config, ct);
     }
 
+    /// <summary>Retries a previously failed Autopilot Graph import.</summary>
     public async Task<AutopilotResult<AutopilotRegistrationRequest>> RetryAsync(Guid requestId, AutopilotDecision decision, CancellationToken ct)
     {
         var found = await _requests.GetAsync(requestId, ct);
@@ -366,6 +393,7 @@ public sealed partial class AutopilotRegistrationService
         return await StartImportAsync(claimed, etag.Value, await _config.GetAsync(ct), ct);
     }
 
+    /// <summary>Rejects a pending or failed registration request.</summary>
     public async Task<AutopilotResult<AutopilotRegistrationRequest>> RejectAsync(Guid requestId, AutopilotDecision decision, CancellationToken ct)
     {
         var found = await _requests.GetAsync(requestId, ct);

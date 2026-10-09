@@ -28,12 +28,15 @@ public sealed partial class AutopilotFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<AutopilotFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the registration/group-tag requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public AutopilotFunctions(ImagingCoreClient coreClient, ILogger<AutopilotFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>GET autopilot/registrations. Lists pending registrations, or handled history when <c>view=history</c> is supplied.</summary>
     [Function("ListAutopilotRegistrations")]
     public async Task<HttpResponseData> ListRegistrations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "autopilot/registrations")] HttpRequestData req,
@@ -46,6 +49,7 @@ public sealed partial class AutopilotFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>GET autopilot/registrations/{id}. Returns a single registration's detail.</summary>
     [Function("GetAutopilotRegistration")]
     public async Task<HttpResponseData> GetRegistration(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "autopilot/registrations/{id}")] HttpRequestData req,
@@ -61,6 +65,7 @@ public sealed partial class AutopilotFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>POST autopilot/registrations/{id}/{action}. Records an approve/reject/retry decision for a pending registration.</summary>
     [Function("DecideAutopilotRegistration")]
     public async Task<HttpResponseData> Decide(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "autopilot/registrations/{id}/{action}")] HttpRequestData req,
@@ -84,6 +89,7 @@ public sealed partial class AutopilotFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>GET autopilot/group-tags. Lists the configured Autopilot group tags.</summary>
     [Function("ListAutopilotGroupTags")]
     public async Task<HttpResponseData> ListGroupTags(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "autopilot/group-tags")] HttpRequestData req,
@@ -93,6 +99,7 @@ public sealed partial class AutopilotFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>POST autopilot/group-tags. Creates a new Autopilot group tag.</summary>
     [Function("CreateAutopilotGroupTag")]
     public async Task<HttpResponseData> CreateGroupTag(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "autopilot/group-tags")] HttpRequestData req,
@@ -108,6 +115,7 @@ public sealed partial class AutopilotFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>PUT autopilot/group-tags/{id}. Updates an existing Autopilot group tag.</summary>
     [Function("UpdateAutopilotGroupTag")]
     public async Task<HttpResponseData> UpdateGroupTag(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "autopilot/group-tags/{id}")] HttpRequestData req,
@@ -124,6 +132,7 @@ public sealed partial class AutopilotFunctions
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>DELETE autopilot/group-tags/{id}. Deletes an Autopilot group tag.</summary>
     [Function("DeleteAutopilotGroupTag")]
     public async Task<HttpResponseData> DeleteGroupTag(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "autopilot/group-tags/{id}")] HttpRequestData req,

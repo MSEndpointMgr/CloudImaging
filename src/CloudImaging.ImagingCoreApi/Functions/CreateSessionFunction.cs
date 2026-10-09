@@ -38,6 +38,14 @@ public sealed partial class CreateSessionFunction
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="preFlight">Pre-flight device authorization service.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="partitioningSchemeRepo">Partitioning scheme repository.</param>
+    /// <param name="historyRepo">Session history repository.</param>
+    /// <param name="overrideRepo">Pre-flight override repository.</param>
+    /// <param name="config">Application configuration.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CreateSessionFunction(
         DeviceSessionRepository sessionRepo,
         DevicePreFlightAuthorizationService preFlight,
@@ -58,6 +66,7 @@ public sealed partial class CreateSessionFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions. Creates a new device imaging session.</summary>
     [Function(nameof(CreateSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions")] HttpRequestData req,

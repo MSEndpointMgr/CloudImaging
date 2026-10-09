@@ -25,6 +25,7 @@ public static class AutopilotHardwareHash
     private const ushort ChecksumRecord = 0x5343;
     private const ushort ChecksumRecordAlternate = 0x5342;
 
+    /// <summary>Reads the TPM version and endorsement key presence from a Base64 4K hardware hash.</summary>
     public static AutopilotHashInspection Inspect(string? hardwareHash)
     {
         byte[] bytes;

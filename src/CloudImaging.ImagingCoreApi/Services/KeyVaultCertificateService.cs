@@ -18,6 +18,8 @@ public sealed partial class KeyVaultCertificateService
     private readonly SecretClient _kvClient;
     private readonly ILogger<KeyVaultCertificateService> _logger;
 
+    /// <param name="kvClient">Key Vault secrets client.</param>
+    /// <param name="logger">Logger for this service.</param>
     public KeyVaultCertificateService(
         SecretClient kvClient,
         ILogger<KeyVaultCertificateService> logger)

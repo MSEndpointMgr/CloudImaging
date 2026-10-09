@@ -53,5 +53,6 @@ public static class ImageArchitecture
         return null;
     }
 
+    /// <summary>Error message used when a requested architecture string is neither "x64" nor "arm64".</summary>
     public const string InvalidArchitectureMessage = "architecture must be \"x64\" or \"arm64\".";
 }

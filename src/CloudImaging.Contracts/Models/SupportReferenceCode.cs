@@ -26,6 +26,7 @@ public sealed class SupportReferenceCode
     /// <summary>Unix epoch at time of error (seconds since 1970-01-01 UTC).</summary>
     public required long EpochSeconds { get; init; }
 
+    /// <summary>Formats the code as <c>{ComponentCode}-{SessionRef}-{StageCode}-{EpochSeconds}</c>.</summary>
     public override string ToString() =>
         $"{ComponentCode}-{SessionRef}-{StageCode}-{EpochSeconds}";
 

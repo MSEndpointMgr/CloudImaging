@@ -74,7 +74,6 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Reference" Style="{StaticResource CaptionTextBlockStyle}"
@@ -87,14 +86,9 @@
                             <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource SelectableMessageTextBoxStyle}"
                                      Text="{Binding SerialNumber, Mode=OneWay}" FontFamily="Consolas" Margin="0,8,0,0" />
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Device" Style="{StaticResource CaptionTextBlockStyle}"
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Model" Style="{StaticResource CaptionTextBlockStyle}"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
                             <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DeviceDescription}"
-                                       Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
-
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Location" Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LocationDisplay}"
                                        Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
                         </Grid>
                     </Border>

@@ -18,6 +18,8 @@ public sealed partial class PortalConfigurationRepository
     private readonly TableClient _table;
     private readonly ILogger<PortalConfigurationRepository> _logger;
 
+    /// <param name="tableService">Table service client used to resolve the portal configuration table.</param>
+    /// <param name="logger">Logger for this repository.</param>
     public PortalConfigurationRepository(
         TableServiceClient tableService,
         ILogger<PortalConfigurationRepository> logger)
