@@ -3,11 +3,22 @@ namespace CloudImaging.Contracts.Models;
 /// <summary>A published boot image artifact in the catalog (Key Entities, FR-063).</summary>
 public sealed class BootImage
 {
+    /// <summary>Identifier for this catalog entry.</summary>
     public required Guid BootImageId { get; init; }
+
+    /// <summary>Image version string.</summary>
     public required string Version { get; init; }
+
+    /// <summary>When the image was published to the catalog.</summary>
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Size of the WIM blob in bytes.</summary>
     public long SizeBytes { get; init; }
+
+    /// <summary>Blob path of the published WIM.</summary>
     public required string StoragePath { get; init; }
+
+    /// <summary>Version of the Media Builder manifest format this image targets.</summary>
     public required string ManifestVersion { get; init; }
 
     /// <summary>
@@ -22,6 +33,7 @@ public sealed class BootImage
     /// </summary>
     public bool IsLatestPublished { get; init; }
 
+    /// <summary>True while the entry remains selectable; soft-deleted entries are set to false instead of being removed.</summary>
     public bool IsActive { get; init; }
 
     /// <summary>

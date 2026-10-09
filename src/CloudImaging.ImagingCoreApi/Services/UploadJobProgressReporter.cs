@@ -42,6 +42,10 @@ public sealed class UploadJobProgressReporter : IProgress<double>
     private int _lastPercent = -1;
     private long _lastWriteTicks = DateTimeOffset.MinValue.UtcTicks;
 
+    /// <param name="repository">Upload job repository used to persist progress.</param>
+    /// <param name="uploadId">Id of the upload job being reported on.</param>
+    /// <param name="leaseRenewal">Lease extension written alongside each progress report.</param>
+    /// <param name="ct">Cancellation token for the publish operation.</param>
     public UploadJobProgressReporter(
         UploadJobRepository repository,
         string uploadId,

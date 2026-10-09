@@ -52,6 +52,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    /// <summary>Builds the view model and starts the background 30s status poll loop immediately.</summary>
     public SessionInitViewModel(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -75,7 +76,10 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         _ = PollLoopAsync(_cts.Token);
     }
 
+    /// <summary>Identifier of the session this view model polls.</summary>
     public Guid    SessionId   => _sessionId;
+
+    /// <summary>6-digit coupling passcode shown to the operator.</summary>
     public string  Passcode    { get; }
 
     /// <summary>
@@ -97,30 +101,35 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         return sb.ToString();
     }
 
+    /// <summary>True while the status poll loop is still running; false once a terminal state is reached.</summary>
     public bool IsPolling
     {
         get => _isPolling;
         private set { _isPolling = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Text shown under the passcode describing the current session state.</summary>
     public string? StatusMessage
     {
         get => _statusMessage;
         private set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True when the boot-media certificate or device-session token was rejected by the server.</summary>
     public bool HasCertError
     {
         get => _hasCertError;
         private set { _hasCertError = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Explanatory text shown when <see cref="HasCertError"/> is set.</summary>
     public string? CertErrorMessage
     {
         get => _certErrorMessage;
         private set { _certErrorMessage = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Polls the session status immediately instead of waiting for the next scheduled poll.</summary>
     public ICommand RefreshCommand { get; }
 
     // ── Polling ───────────────────────────────────────────────────────────────
@@ -251,7 +260,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Poll error: {ex.Message}";
+            StatusMessage = $"Could not check the session status. {ex.Message}";
         }
     }
 
@@ -262,12 +271,14 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         CertErrorMessage = message;
     }
 
+    /// <summary>Cancels the background poll loop.</summary>
     public void Dispose()
     {
         _cts.Cancel();
         _cts.Dispose();
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

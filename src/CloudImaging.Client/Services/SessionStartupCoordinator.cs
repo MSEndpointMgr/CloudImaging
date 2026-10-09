@@ -22,6 +22,7 @@ public sealed partial class SessionStartupCoordinator
 
     private readonly ILogger<SessionStartupCoordinator> _logger;
 
+    /// <summary>Builds the coordinator over the given logger.</summary>
     public SessionStartupCoordinator(ILogger<SessionStartupCoordinator> logger)
         => _logger = logger;
 

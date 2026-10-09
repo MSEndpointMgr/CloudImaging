@@ -468,9 +468,16 @@ public sealed partial class DeviceGatewayApiClient
 /// </summary>
 public sealed class CreateSessionResponse
 {
+    /// <summary>Identifier for the created session.</summary>
     public Guid SessionId { get; init; }
+
+    /// <summary>Bearer token the device uses to authenticate subsequent session calls.</summary>
     public string DeviceSessionToken { get; init; } = string.Empty;
+
+    /// <summary>The coupling passcode, returned only at creation.</summary>
     public string Passcode { get; init; } = string.Empty;
+
+    /// <summary>Lifecycle state the session was created in.</summary>
     public string State { get; init; } = string.Empty;
 }
 
@@ -480,12 +487,25 @@ public sealed class CreateSessionResponse
 /// </summary>
 public sealed class SessionStatusResponse
 {
+    /// <summary>Identifier of the session this status is for.</summary>
     public Guid SessionId { get; init; }
+
+    /// <summary>Current lifecycle state of the session.</summary>
     public string? State { get; init; }
+
+    /// <summary>Name of the imaging step currently in progress, or null when none has started.</summary>
     public string? CurrentStep { get; init; }
+
+    /// <summary>Overall imaging progress, 0-100.</summary>
     public int OverallProgressPercent { get; init; }
+
+    /// <summary>SAS URL to download the assigned OS image.</summary>
     public string? SasTokenUrl { get; init; }
+
+    /// <summary>When <see cref="SasTokenUrl"/> expires.</summary>
     public string? SasTokenUrlExpiresAt { get; init; }
+
+    /// <summary>SHA-256 hash of the assigned OS image, for cache validation.</summary>
     public string? Sha256Hash { get; init; }
 
     /// <summary>Architecture of the assigned OS image; null from backends that predate it (x64).</summary>
@@ -510,8 +530,13 @@ public sealed record SasRefreshResult(string? SasTokenUrl, DateTimeOffset? Expir
 /// </summary>
 public sealed class LogUploadUrlResponse
 {
+    /// <summary>Name to give the uploaded log file.</summary>
     public string FileName { get; init; } = string.Empty;
+
+    /// <summary>Time-limited SAS URL to upload the log file to.</summary>
     public string UploadUrl { get; init; } = string.Empty;
+
+    /// <summary>When <see cref="UploadUrl"/> expires.</summary>
     public DateTimeOffset ExpiresAt { get; init; }
 }
 
@@ -526,9 +551,15 @@ public sealed class DeviceGatewayApiException : Exception
     /// <summary>Well-known problem type used by <c>DeviceSessionTokenValidationMiddleware</c> for token failures.</summary>
     public const string TokenProblemType = "https://cloudimaging.io/errors/unauthorized";
 
+    private const int MaxPlainTextDetailLength = 300;
+
+    /// <summary>HTTP status code the Device Gateway API returned.</summary>
     public System.Net.HttpStatusCode StatusCode { get; }
+
+    /// <summary>RFC7807 "type" field from the response body, if present.</summary>
     public string? ProblemType { get; }
 
+    /// <summary>Builds the exception from an already-known status code, problem type and detail.</summary>
     public DeviceGatewayApiException(System.Net.HttpStatusCode statusCode, string? problemType, string? detail)
         : base(detail ?? $"Device Gateway API returned HTTP {(int)statusCode}.")
     {
@@ -567,7 +598,11 @@ public sealed class DeviceGatewayApiException : Exception
                 // dropped.
             }
 
-            detail ??= body.Trim();
+            // Only a short one-line reason is usable; an App Service HTML error page would flood the screen.
+            var trimmed = body.Trim();
+            var isHtml = string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith('<');
+            if (detail is null && !isHtml && trimmed.Length <= MaxPlainTextDetailLength && !trimmed.Contains('\n'))
+                detail = trimmed;
         }
 
         return new DeviceGatewayApiException(response.StatusCode, problemType, detail);

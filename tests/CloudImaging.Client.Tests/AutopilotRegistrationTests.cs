@@ -182,6 +182,54 @@ public sealed class AutopilotRegistrationTests : IDisposable
         return Convert.ToBase64String(stream.ToArray());
     }
 
+    [Theory]
+    [InlineData(AutopilotAvailabilityState.Enabled, true)]
+    [InlineData(AutopilotAvailabilityState.Disabled, false)]
+    public async Task SelectionCard_UsesTheAvailabilityResolvedAtStartup_WithoutCheckingAgain(AutopilotAvailabilityState known, bool selectable)
+    {
+        var handler = new ScriptedHandler();
+        var vm = new OperationSelectionViewModel(new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") }), (_, _) => { },
+            autopilotToolingPresent: true, navigateToAutopilot: () => { }, autopilotAvailability: known);
+
+        vm.AutopilotAvailability.Should().Be(known, "the card must open in its final state");
+        vm.IsAutopilotSelectable.Should().Be(selectable);
+        await Task.Delay(50);
+        handler.Bodies.Should().NotContainKey("GET /api/v1/autopilot/availability");
+    }
+
+    [Fact]
+    public async Task ResolveAvailability_ReportsUnreachable_WhenTheGatewayFails()
+    {
+        var gateway = new DeviceGatewayApiClient(new HttpClient(new ScriptedHandler()) { BaseAddress = new Uri("https://gw.example.com") });
+
+        (await OperationSelectionViewModel.ResolveAutopilotAvailabilityAsync(gateway)).Should().Be(AutopilotAvailabilityState.Unreachable);
+    }
+
+    [Fact]
+    public async Task Flow_KeepsWaiting_WhileIntuneImportsTheApprovedDevice()
+    {
+        StageTooling();
+        var requestId = Guid.NewGuid();
+        var handler = new ScriptedHandler();
+        handler.Respond("POST /api/v1/autopilot/registrations", HttpStatusCode.Created, new { requestId, referenceCode = "AP-7K3Q9", state = "PendingApproval", statusToken = "t" });
+        handler.Respond($"GET /api/v1/autopilot/registrations/{requestId}", HttpStatusCode.OK, new { requestId, referenceCode = "AP-7K3Q9", state = "Importing" });
+        var vm = new AutopilotRegistrationViewModel(
+            new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") }),
+            Capture(WritesReport),
+            navigateBack: () => { },
+            new SystemClockSynchronizationService(ntpServers: []),
+            readIdentity: () => new DeviceIdentity("SN-1", "Contoso", "Laptop 7", null, null),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        vm.Start();
+        await WaitUntilAsync(() => vm.Stage == AutopilotFlowStage.Submitted);
+        vm.WaitForDecisionCommand.Execute(null);
+        await WaitUntilAsync(() => vm.RequestState == AutopilotRegistrationState.Importing);
+
+        vm.Stage.Should().Be(AutopilotFlowStage.Waiting);
+        vm.Title.Should().Be("Waiting for approval");
+    }
+
     [Fact]
     public async Task Flow_SubmitsTheHash_ThenReportsTheDecision()
     {
@@ -204,7 +252,6 @@ public sealed class AutopilotRegistrationTests : IDisposable
 
         vm.ReferenceCode.Should().Be("AP-7K3Q9");
         vm.SerialNumber.Should().Be("SN-1");
-        vm.LocationDisplay.Should().Be("Stockholm HQ");
         using (var body = JsonDocument.Parse(handler.Bodies["POST /api/v1/autopilot/registrations"]))
         {
             body.RootElement.GetProperty("hardwareHash").GetString().Should().Be(Hash);

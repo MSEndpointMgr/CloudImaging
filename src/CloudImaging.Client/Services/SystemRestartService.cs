@@ -11,6 +11,7 @@ public sealed partial class SystemRestartService
 {
     private readonly ILogger<SystemRestartService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public SystemRestartService(ILogger<SystemRestartService> logger) => _logger = logger;
 
     /// <summary>

@@ -30,6 +30,8 @@ public sealed partial class CoupleSessionFunction
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ILogger<CoupleSessionFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CoupleSessionFunction(
         DeviceSessionRepository sessionRepo,
         ILogger<CoupleSessionFunction> logger)
@@ -38,6 +40,7 @@ public sealed partial class CoupleSessionFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/couple. Couples a device session to the technician's identity.</summary>
     [Function(nameof(CoupleSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/couple")] HttpRequestData req,

@@ -17,8 +17,16 @@ public sealed partial class UsbSafetyValidationService
 {
     private readonly ILogger<UsbSafetyValidationService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public UsbSafetyValidationService(ILogger<UsbSafetyValidationService> logger) => _logger = logger;
 
+    /// <summary>A physical disk enumerated from WMI, with the attributes needed to decide whether it's safe to erase.</summary>
+    /// <param name="DiskNumber">Windows disk number (e.g. for diskpart).</param>
+    /// <param name="Caption">Human-readable disk model/description.</param>
+    /// <param name="SizeBytes">Total disk capacity in bytes.</param>
+    /// <param name="BusType">Bus the disk is attached through (e.g. "USB").</param>
+    /// <param name="IsRemovable">Whether Windows reports the disk's media as removable.</param>
+    /// <param name="IsSystemDisk">Whether this is the disk the host OS is running from.</param>
     public sealed record DiskInfo(
         uint DiskNumber,
         string Caption,
@@ -27,6 +35,9 @@ public sealed partial class UsbSafetyValidationService
         bool IsRemovable,
         bool IsSystemDisk);
 
+    /// <summary>Outcome of validating a disk for USB boot image deployment.</summary>
+    /// <param name="Valid">True when the disk passed all safety rules.</param>
+    /// <param name="FailureReason">User-facing explanation of why the disk is ineligible; null when <paramref name="Valid"/> is true.</param>
     public sealed record ValidationResult(bool Valid, string? FailureReason);
 
     /// <summary>Returns all physical disks enumerated by WMI.</summary>

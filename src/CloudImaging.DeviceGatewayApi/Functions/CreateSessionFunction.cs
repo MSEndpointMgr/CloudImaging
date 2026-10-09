@@ -51,6 +51,11 @@ public sealed partial class CreateSessionFunction
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <param name="coreClient">Imaging Core API client the registration payload is forwarded to.</param>
+    /// <param name="tokenService">Issues the opaque device-session Bearer token returned on success.</param>
+    /// <param name="nonceStore">Single-use nonce store guarding proof-of-possession replay.</param>
+    /// <param name="configuration">Used to resolve the configured proof-of-possession max clock skew.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CreateSessionFunction(
         ImagingCoreClient coreClient,
         DeviceSessionTokenService tokenService,
@@ -68,6 +73,7 @@ public sealed partial class CreateSessionFunction
         _maxSignatureSkew = TimeSpan.FromSeconds(skewSeconds > 0 ? skewSeconds : DefaultMaxSkewSeconds);
     }
 
+    /// <summary>POST v1/sessions. Verifies mTLS proof-of-possession and bootstraps a new device imaging session.</summary>
     [Function("CreateSession")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions")] HttpRequestData req,

@@ -20,6 +20,8 @@ public sealed partial class PortalConfigurationFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<PortalConfigurationFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the configuration requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public PortalConfigurationFunctions(
         ImagingCoreClient coreClient,
         ILogger<PortalConfigurationFunctions> logger)

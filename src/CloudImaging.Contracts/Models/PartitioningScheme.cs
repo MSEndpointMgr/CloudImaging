@@ -7,6 +7,7 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class PartitionDefinition
 {
+    /// <summary>What kind of partition this is.</summary>
     public required PartitionType PartitionType { get; init; }
 
     /// <summary>
@@ -27,8 +28,10 @@ public sealed class PartitionDefinition
 /// </summary>
 public sealed class PartitioningScheme
 {
+    /// <summary>The partitions that make up this scheme, in creation order.</summary>
     public required IReadOnlyList<PartitionDefinition> Partitions { get; init; }
 
+    /// <summary>When the scheme was last modified.</summary>
     public DateTimeOffset LastModifiedAt { get; init; }
 
     /// <summary>

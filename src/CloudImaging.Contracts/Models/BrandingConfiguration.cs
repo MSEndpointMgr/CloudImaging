@@ -15,20 +15,40 @@ public sealed class BrandingConfiguration
     /// </summary>
     public string? PortalLogoBlobPath { get; init; }
 
+    /// <summary>Hex primary brand color.</summary>
     public string PrimaryColor { get; init; } = "#0078d4";
+
+    /// <summary>Hex accent brand color.</summary>
     public string AccentColor { get; init; } = "#005a9e";
+
+    /// <summary>Display name shown throughout the portal and boot media.</summary>
     public string ApplicationName { get; init; } = "Cloud Imaging";
 
     // Surface background colours (FR-038 extension). Each portal surface has an independent
     // light- and dark-theme value since the neutral (non-brand) shadcn theme differs
     // significantly between the two, and a single value risks poor contrast in one of them.
     // Defaults mirror the built-in shadcn "slate" theme already baked into index.css.
+    /// <summary>Sidebar background color, light theme.</summary>
     public string SidebarBackgroundLight { get; init; } = "#f8fafc";
+
+    /// <summary>Sidebar background color, dark theme.</summary>
     public string SidebarBackgroundDark { get; init; } = "#0d1321";
+
+    /// <summary>Card background color, light theme.</summary>
     public string CardBackgroundLight { get; init; } = "#ffffff";
+
+    /// <summary>Card background color, dark theme.</summary>
     public string CardBackgroundDark { get; init; } = "#0c121f";
+
+    /// <summary>Page background color, light theme.</summary>
     public string PageBackgroundLight { get; init; } = "#ffffff";
+
+    /// <summary>Page background color, dark theme.</summary>
     public string PageBackgroundDark { get; init; } = "#080c16";
+
+    /// <summary>Header background color, light theme.</summary>
     public string HeaderBackgroundLight { get; init; } = "#ffffff";
+
+    /// <summary>Header background color, dark theme.</summary>
     public string HeaderBackgroundDark { get; init; } = "#080c16";
 }

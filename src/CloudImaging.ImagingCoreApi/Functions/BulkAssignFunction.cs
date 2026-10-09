@@ -17,6 +17,8 @@ public sealed partial class BulkAssignFunction
     private readonly BulkAssignmentService _bulkService;
     private readonly ILogger<BulkAssignFunction> _logger;
 
+    /// <param name="bulkService">Bulk assignment service.</param>
+    /// <param name="logger">Logger for this function.</param>
     public BulkAssignFunction(
         BulkAssignmentService bulkService,
         ILogger<BulkAssignFunction> logger)
@@ -25,6 +27,7 @@ public sealed partial class BulkAssignFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/bulk-assign. Assigns an OS image to multiple sessions at once.</summary>
     [Function(nameof(BulkAssignFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/bulk-assign")] HttpRequestData req,

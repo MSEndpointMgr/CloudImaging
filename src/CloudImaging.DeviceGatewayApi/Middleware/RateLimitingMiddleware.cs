@@ -15,11 +15,15 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// </summary>
 public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 {
+    /// <summary>Maximum calls allowed per token within <see cref="WindowDuration"/>.</summary>
     public const int MaxCallsPerWindow = 10;
+
+    /// <summary>Length of the sliding rate-limit window.</summary>
     public static readonly TimeSpan WindowDuration = TimeSpan.FromSeconds(30);
 
     private static readonly ConcurrentDictionary<string, WindowCounter> _counters = new();
 
+    /// <summary>Function names not subject to rate limiting (called without a token).</summary>
     public static readonly IReadOnlyCollection<string> ExemptFunctionNames =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession" };
 
@@ -28,8 +32,10 @@ public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 
     private readonly ILogger<RateLimitingMiddleware> _logger;
 
+    /// <param name="logger">Logger for rate-limit rejections.</param>
     public RateLimitingMiddleware(ILogger<RateLimitingMiddleware> logger) => _logger = logger;
 
+    /// <summary>Counts the call against its token's window and short-circuits with 429 if the limit is exceeded.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         if (ExemptFunctions.Contains(context.FunctionDefinition.Name))

@@ -11,6 +11,7 @@ namespace CloudImaging.Client.Services;
 /// <summary>How a scanned network authenticates, bucketed for the "which networks can this feature connect to" decision.</summary>
 public enum WifiAuthKind
 {
+    /// <summary>Authentication could not be determined from the scan output.</summary>
     Unknown,
     /// <summary>No authentication (open hotspot-style network).</summary>
     Open,
@@ -52,9 +53,16 @@ public sealed record WifiNetwork(string Ssid, int SignalPercent, WifiAuthKind Au
 /// <summary>Outcome of <see cref="WirelessConnectionService.ConnectAsync"/>.</summary>
 public enum WifiConnectResult
 {
+    /// <summary>Connected successfully.</summary>
     Success,
+
+    /// <summary>The connection attempt failed (e.g. wrong passphrase).</summary>
     Failed,
+
+    /// <summary>Connection could not be confirmed within <see cref="WirelessConnectionService.ConnectPollTimeout"/>.</summary>
     Timeout,
+
+    /// <summary>No wireless adapter is present.</summary>
     NoAdapter,
 }
 

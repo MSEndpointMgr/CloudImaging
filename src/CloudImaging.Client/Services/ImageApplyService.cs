@@ -14,6 +14,7 @@ public sealed partial class ImageApplyService
 {
     private readonly ILogger<ImageApplyService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public ImageApplyService(ILogger<ImageApplyService> logger) => _logger = logger;
 
     /// <summary>

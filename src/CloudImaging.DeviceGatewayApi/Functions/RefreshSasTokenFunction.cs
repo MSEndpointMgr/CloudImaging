@@ -15,6 +15,8 @@ public sealed partial class RefreshSasTokenFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<RefreshSasTokenFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the SAS refresh request is forwarded to.</param>
+    /// <param name="logger">Logger for this function.</param>
     public RefreshSasTokenFunction(
         ImagingCoreClient coreClient,
         ILogger<RefreshSasTokenFunction> logger)
@@ -23,6 +25,7 @@ public sealed partial class RefreshSasTokenFunction
         _logger = logger;
     }
 
+    /// <summary>POST v1/sessions/{sessionId}/sas/refresh. Proxies a fresh SAS token request for the assigned OS image.</summary>
     [Function("RefreshSasToken")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/sas/refresh")] HttpRequestData req,

@@ -10,12 +10,14 @@ namespace CloudImaging.MediaBuilder.Services;
 /// </summary>
 public static class OperatorApiErrorDescription
 {
+    /// <summary>User-facing remediation message for a 401/403 response from the Operator API.</summary>
     public const string AccessDenied =
         "The Cloud Imaging Operator API denied this request. Your account needs the " +
         "CloudImaging.MediaBuilderAccess app role on the Cloud Imaging Operator API enterprise " +
         "application, which is granted separately from your Technician or Administrator role. " +
         "Ask your Cloud Imaging administrator to assign it.";
 
+    /// <summary>True when the given exception (or any inner exception in its chain) represents a 401/403 response from the Operator API.</summary>
     public static bool IsAccessDenied(Exception ex)
     {
         // Operator API calls made deep inside generation surface wrapped, so check the chain.
@@ -27,5 +29,6 @@ public static class OperatorApiErrorDescription
         return false;
     }
 
+    /// <summary>Returns a user-facing description of the given exception, substituting <see cref="AccessDenied"/> for 401/403 responses.</summary>
     public static string Describe(Exception ex) => IsAccessDenied(ex) ? AccessDenied : ex.Message;
 }

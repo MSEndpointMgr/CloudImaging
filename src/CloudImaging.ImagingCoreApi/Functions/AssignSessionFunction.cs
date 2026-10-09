@@ -36,6 +36,11 @@ public sealed partial class AssignSessionFunction
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<AssignSessionFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="imageRepo">OS image catalog repository.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="blobClient">Blob service client used to issue the assigned image's download SAS URL.</param>
+    /// <param name="logger">Logger for this function.</param>
     public AssignSessionFunction(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
@@ -50,6 +55,7 @@ public sealed partial class AssignSessionFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/{sessionId}/assign. Assigns an OS image to a session.</summary>
     [Function(nameof(AssignSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/assign")] HttpRequestData req,

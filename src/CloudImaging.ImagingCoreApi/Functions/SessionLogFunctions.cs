@@ -32,12 +32,15 @@ public sealed partial class SessionLogFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<SessionLogFunctions> _logger;
 
+    /// <param name="blobClient">Blob service client used for session log storage and SAS generation.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public SessionLogFunctions(BlobServiceClient blobClient, ILogger<SessionLogFunctions> logger)
     {
         _blobClient = blobClient;
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/{sessionId}/logs/upload-url. Issues a write SAS URL for a client log upload.</summary>
     [Function(nameof(RequestLogUploadUrl))]
     public async Task<HttpResponseData> RequestLogUploadUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/logs/upload-url")] HttpRequestData req,
@@ -80,6 +83,7 @@ public sealed partial class SessionLogFunctions
         return response;
     }
 
+    /// <summary>GET internal/sessions/{sessionId}/logs. Lists uploaded diagnostic logs for a session.</summary>
     [Function(nameof(ListSessionLogs))]
     public async Task<HttpResponseData> ListSessionLogs(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/logs")] HttpRequestData req,
@@ -121,6 +125,7 @@ public sealed partial class SessionLogFunctions
         return response;
     }
 
+    /// <summary>GET internal/sessions/{sessionId}/logs/{fileName}/download-url. Issues a read SAS URL for a specific uploaded log.</summary>
     [Function(nameof(GetLogDownloadUrl))]
     public async Task<HttpResponseData> GetLogDownloadUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/logs/{fileName}/download-url")] HttpRequestData req,

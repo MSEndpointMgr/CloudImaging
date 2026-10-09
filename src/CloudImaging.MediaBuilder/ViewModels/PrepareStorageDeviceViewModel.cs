@@ -66,6 +66,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// </summary>
     private string _currentStage = "DVI";
 
+    /// <summary>Builds the view model over the Operator API, Entra auth, USB validation/preparation, and boot image download/cache services.</summary>
     public PrepareStorageDeviceViewModel(
         OperatorApiClient operatorApi,
         EntraAuthenticationService authService,
@@ -124,13 +125,19 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         _ = RefreshBootImagesAsync();
     }
 
+    /// <summary>Published boot images available to prepare onto the target.</summary>
     public ObservableCollection<BootImageChoice> BootImages { get; } = [];
+    /// <summary>Eligible USB disks the target can be written to.</summary>
     public ObservableCollection<DiskChoice> Disks { get; } = [];
+    /// <summary>Site labels available to tag the prepared boot media with.</summary>
     public ObservableCollection<LocationChoice> Locations { get; } = [];
 
+    /// <summary>True when <see cref="BootImages"/> has at least one entry.</summary>
     public bool HasBootImages => BootImages.Count > 0;
+    /// <summary>True when <see cref="Disks"/> has at least one entry.</summary>
     public bool HasDisks => Disks.Count > 0;
 
+    /// <summary>The boot image to prepare onto the target.</summary>
     public BootImageChoice? SelectedBootImage
     {
         get => _selectedBootImage;
@@ -156,6 +163,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
     }
 
+    /// <summary>The USB disk to erase and prepare (ignored when <see cref="PrepareAsIso"/> is true).</summary>
     public DiskChoice? SelectedDisk
     {
         get => _selectedDisk;
@@ -184,6 +192,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>Whether a location is currently selected, so the Clear button next to the picker can be disabled when there is nothing to clear.</summary>
     public bool HasSelectedLocation => SelectedLocation is not null;
 
+    /// <summary>Technician's explicit acknowledgement that preparing the selected disk will erase it. Required before <see cref="CanPrepare"/> is true for the USB target.</summary>
     public bool ConfirmErase
     {
         get => _confirmErase;
@@ -250,6 +259,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>Success modal title — changes with the selected target.</summary>
     public string SuccessTitle => PrepareAsIso ? "ISO file generated" : "USB device prepared";
 
+    /// <summary>True while the destructive download/partition/deploy (or ISO generation) workflow is in flight.</summary>
     public bool IsBusy
     {
         get => _isBusy;
@@ -280,8 +290,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// </summary>
     public bool IsFormEnabled => !IsBusy;
 
+    /// <summary>True when the boot image picker should be enabled.</summary>
     public bool IsBootImageSelectionEnabled => HasBootImages && !IsBusy;
 
+    /// <summary>True when the disk picker should be enabled.</summary>
     public bool IsDiskSelectionEnabled => HasDisks && !IsBusy;
 
     /// <summary>
@@ -295,24 +307,28 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         private set { _isRefreshingBootImages = value; OnPropertyChanged(); CommandManager.InvalidateRequerySuggested(); }
     }
 
+    /// <summary>True once the Prepare workflow has finished successfully.</summary>
     public bool IsComplete
     {
         get => _isComplete;
         private set { _isComplete = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowResultDialog)); }
     }
 
+    /// <summary>Overall progress of the Prepare workflow, 0-100.</summary>
     public int ProgressPercent
     {
         get => _progressPercent;
         private set { _progressPercent = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Current status line shown above the progress bar.</summary>
     public string ProgressMessage
     {
         get => _progressMessage;
         private set { _progressMessage = value; OnPropertyChanged(); }
     }
 
+    /// <summary>General status caption shown on the page outside of an active Prepare workflow.</summary>
     public string StatusMessage
     {
         get => _statusMessage;
@@ -332,14 +348,17 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         private set { _resultFilePath = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasResultFilePath)); CommandManager.InvalidateRequerySuggested(); }
     }
 
+    /// <summary>True when <see cref="ResultFilePath"/> has a value.</summary>
     public bool HasResultFilePath => ResultFilePath is not null;
 
+    /// <summary>User-facing error message when the workflow fails; <c>null</c> otherwise.</summary>
     public string? ErrorMessage
     {
         get => _errorMessage;
         private set { _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); OnPropertyChanged(nameof(ShowResultDialog)); }
     }
 
+    /// <summary>True once the workflow has ended in failure.</summary>
     public bool HasError => ErrorMessage is not null;
 
     /// <summary>
@@ -354,6 +373,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         private set { _errorTitle = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True once the user has cancelled an in-progress Prepare workflow.</summary>
     public bool WasCancelled
     {
         get => _wasCancelled;
@@ -371,8 +391,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>Reason the selected disk is not eligible, or null when it is valid.</summary>
     public string? ValidationMessage => SelectedDisk is { IsValid: false } d ? d.InvalidReason : null;
 
+    /// <summary>True when <see cref="ValidationMessage"/> has a value.</summary>
     public bool HasValidationMessage => ValidationMessage is not null;
 
+    /// <summary>True when the current configuration is valid enough to start the Prepare workflow.</summary>
     public bool CanPrepare =>
         !IsBusy
         && SelectedBootImage is not null
@@ -380,13 +402,21 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             ? !string.IsNullOrWhiteSpace(IsoOutputPath)
             : SelectedDisk is { IsValid: true } && ConfirmErase);
 
+    /// <summary>Re-fetches the published boot image list.</summary>
     public ICommand RefreshCommand { get; }
+    /// <summary>Starts the destructive download/partition/deploy (or ISO generation) workflow.</summary>
     public ICommand PrepareCommand { get; }
+    /// <summary>Cancels an in-progress Prepare workflow.</summary>
     public ICommand CancelCommand { get; }
+    /// <summary>Navigates back without starting a workflow.</summary>
     public ICommand BackCommand { get; }
+    /// <summary>Dismisses the result modal.</summary>
     public ICommand DismissResultCommand { get; }
+    /// <summary>Browses for the ISO output file path.</summary>
     public ICommand BrowseIsoOutputCommand { get; }
+    /// <summary>Opens File Explorer with the generated ISO (or prepared disk) pre-selected.</summary>
     public ICommand OpenResultFolderCommand { get; }
+    /// <summary>Clears the selected site label.</summary>
     public ICommand ClearLocationCommand { get; }
 
     // ── Refresh ───────────────────────────────────────────────────────────────
@@ -961,6 +991,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         return 0;
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

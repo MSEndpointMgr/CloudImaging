@@ -30,6 +30,7 @@ public sealed partial class BootImageSelfUpdateService
     private readonly HttpClient _downloadHttp;
     private readonly ILogger<BootImageSelfUpdateService> _logger;
 
+    /// <summary>Builds the service over the Device Gateway API client and a plain (non-mTLS) HTTP client for SAS downloads.</summary>
     public BootImageSelfUpdateService(
         DeviceGatewayApiClient gateway,
         HttpClient downloadHttp,
@@ -40,6 +41,7 @@ public sealed partial class BootImageSelfUpdateService
         _logger = logger;
     }
 
+    /// <summary>Checks for a newer published boot image and replaces the local USB media's boot.wim if one is found.</summary>
     public async Task CheckAndUpdateAsync(CancellationToken ct = default)
     {
         try

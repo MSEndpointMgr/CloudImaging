@@ -17,13 +17,17 @@ namespace CloudImaging.Contracts.Models;
 [JsonConverter(typeof(MachineArchitectureJsonConverter))]
 public enum MachineArchitecture
 {
+    /// <summary>64-bit x86 (AMD64/Intel 64).</summary>
     X64,
+
+    /// <summary>64-bit ARM.</summary>
     Arm64,
 }
 
 /// <summary>Reads/writes <see cref="MachineArchitecture"/> as the lowercase wire values "x64"/"arm64".</summary>
 public sealed class MachineArchitectureJsonConverter : JsonConverter<MachineArchitecture>
 {
+    /// <inheritdoc/>
     public override MachineArchitecture Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
         reader.GetString() switch
         {
@@ -32,6 +36,7 @@ public sealed class MachineArchitectureJsonConverter : JsonConverter<MachineArch
             var other => throw new JsonException($"Unknown machine architecture \"{other}\"."),
         };
 
+    /// <inheritdoc/>
     public override void Write(Utf8JsonWriter writer, MachineArchitecture value, JsonSerializerOptions options) =>
         writer.WriteStringValue(MachineArchitecturePlatform.Slug(value));
 }

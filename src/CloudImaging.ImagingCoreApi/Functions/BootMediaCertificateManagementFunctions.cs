@@ -27,6 +27,10 @@ public sealed partial class BootMediaCertificateManagementFunctions
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<BootMediaCertificateManagementFunctions> _logger;
 
+    /// <param name="certRepo">Boot media certificate repository.</param>
+    /// <param name="kvService">Key Vault certificate service used to store generated PFX bytes.</param>
+    /// <param name="configRepo">Portal configuration repository, used to read the configured certificate validity period.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BootMediaCertificateManagementFunctions(
         BootMediaCertificateRepository certRepo,
         KeyVaultCertificateService kvService,
@@ -41,6 +45,7 @@ public sealed partial class BootMediaCertificateManagementFunctions
 
     // ── POST /api/internal/cert/generate ──────────────────────────────────────
 
+    /// <summary>POST internal/cert/generate. Generates a new self-signed boot media certificate and activates it.</summary>
     [Function("GenerateBootMediaCertificate")]
     public async Task<HttpResponseData> GenerateCertificate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/cert/generate")] HttpRequestData req,
@@ -80,6 +85,7 @@ public sealed partial class BootMediaCertificateManagementFunctions
 
     // ── POST /api/internal/cert/rotate ────────────────────────────────────────
 
+    /// <summary>POST internal/cert/rotate. Rotates to a newly generated boot media certificate.</summary>
     [Function("RotateBootMediaCertificate")]
     public async Task<HttpResponseData> RotateCertificate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/cert/rotate")] HttpRequestData req,

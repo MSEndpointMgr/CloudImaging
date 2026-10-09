@@ -36,6 +36,11 @@ public sealed partial class RecoveryImageUploadFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<RecoveryImageUploadFunctions> _logger;
 
+    /// <param name="recoveryImageRepo">Recovery image catalog repository.</param>
+    /// <param name="jobRepo">Upload job repository used to track staged upload progress.</param>
+    /// <param name="validator">Boot/recovery image validation service.</param>
+    /// <param name="blobClient">Blob service client used for direct-to-blob upload staging.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public RecoveryImageUploadFunctions(
         RecoveryImageRepository recoveryImageRepo,
         UploadJobRepository jobRepo,
@@ -52,6 +57,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     // ── POST /api/internal/recovery-images/upload/start ──────────────────────
 
+    /// <summary>POST internal/recovery-images/upload/start. Starts a staged upload and returns a write SAS URL.</summary>
     [Function("StartRecoveryImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/recovery-images/upload/start")] HttpRequestData req,
@@ -111,6 +117,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     // ── POST /api/internal/recovery-images/upload/{uploadId}/publish ─────────
 
+    /// <summary>POST internal/recovery-images/upload/{uploadId}/publish. Validates the uploaded blob and publishes the recovery image catalog entry.</summary>
     [Function("PublishRecoveryImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/recovery-images/upload/{uploadId}/publish")] HttpRequestData req,
@@ -196,6 +203,7 @@ public sealed partial class RecoveryImageUploadFunctions
 
     // ── DELETE /api/internal/recovery-images/{id} ─────────────────────────────
 
+    /// <summary>DELETE internal/recovery-images/{id}. Deletes a recovery image catalog entry.</summary>
     [Function("DeleteRecoveryImage")]
     public async Task<HttpResponseData> DeleteRecoveryImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/recovery-images/{id}")] HttpRequestData req,

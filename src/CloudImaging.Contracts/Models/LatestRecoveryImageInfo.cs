@@ -8,8 +8,13 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class LatestRecoveryImageInfo
 {
+    /// <summary>Image version string.</summary>
     public required string Version { get; init; }
+
+    /// <summary>SHA-256 hash of the WIM blob, for integrity verification before use.</summary>
     public required string Sha256Hash { get; init; }
+
+    /// <summary>Time-limited SAS URL to download the WIM.</summary>
     public required string SasTokenUrl { get; init; }
 
     /// <summary>Null from gateways that predate architecture tracking (x64).</summary>

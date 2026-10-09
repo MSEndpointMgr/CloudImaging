@@ -20,11 +20,13 @@ public sealed class UploadJobFunctions
 {
     private readonly ImagingCoreClient _coreClient;
 
+    /// <param name="coreClient">Imaging Core API client the upload job status request is forwarded to.</param>
     public UploadJobFunctions(ImagingCoreClient coreClient)
     {
         _coreClient = coreClient;
     }
 
+    /// <summary>GET upload-jobs/{uploadId}. Returns the status of a staged image upload job.</summary>
     [Function("GetUploadJob")]
     public async Task<HttpResponseData> GetUploadJob(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "upload-jobs/{uploadId}")] HttpRequestData req,

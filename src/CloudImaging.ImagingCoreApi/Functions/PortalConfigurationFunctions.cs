@@ -19,6 +19,8 @@ public sealed partial class PortalConfigurationFunctions
     private readonly PortalConfigurationRepository _repo;
     private readonly ILogger<PortalConfigurationFunctions> _logger;
 
+    /// <param name="repo">Portal configuration repository.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public PortalConfigurationFunctions(
         PortalConfigurationRepository repo,
         ILogger<PortalConfigurationFunctions> logger)

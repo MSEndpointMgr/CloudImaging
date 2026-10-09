@@ -19,6 +19,8 @@ public sealed partial class BootImageFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BootImageFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the boot image queries are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BootImageFunctions(
         ImagingCoreClient coreClient,
         ILogger<BootImageFunctions> logger)
@@ -29,6 +31,7 @@ public sealed partial class BootImageFunctions
 
     // ── GET /api/boot-images ──────────────────────────────────────────────────
 
+    /// <summary>GET boot-images. Lists active boot images, including sha256Hash and isLatestPublished.</summary>
     [Function("GetBootImages")]
     public async Task<HttpResponseData> GetBootImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "boot-images")] HttpRequestData req,
@@ -40,6 +43,7 @@ public sealed partial class BootImageFunctions
 
     // ── GET /api/boot-images/{id} ─────────────────────────────────────────────
 
+    /// <summary>GET boot-images/{id}. Returns a single boot image.</summary>
     [Function("GetBootImageById")]
     public async Task<HttpResponseData> GetBootImageById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "boot-images/{id}")] HttpRequestData req,
@@ -57,6 +61,7 @@ public sealed partial class BootImageFunctions
 
     // ── POST /api/boot-images/{id}/sas ────────────────────────────────────────
 
+    /// <summary>POST boot-images/{id}/sas. Issues a SAS URL and sha256Hash for a boot image, for Media Builder verification.</summary>
     [Function("GetBootImageSasUrl")]
     public async Task<HttpResponseData> GetBootImageSasUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/{id}/sas")] HttpRequestData req,

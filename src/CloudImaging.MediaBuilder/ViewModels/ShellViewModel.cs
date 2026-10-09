@@ -42,6 +42,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// </summary>
     private BootMediaCertificateStatus _certificateStatus = BootMediaCertificateStatus.Configured;
 
+    /// <summary>Builds the shell view model over the services needed by each hosted section.</summary>
     public ShellViewModel(
         EntraAuthenticationService authService,
         OperatorApiClient operatorApiClient,
@@ -139,6 +140,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         private set { _currentContent = value; OnPropertyChanged(); }
     }
 
+    /// <summary>Which section of the shell is currently hosted in <see cref="CurrentContent"/>.</summary>
     public ShellSection CurrentSection
     {
         get => _currentSection;
@@ -153,8 +155,11 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>True when the Home section is active, for nav pane item highlighting.</summary>
     public bool IsHomeActive       => CurrentSection == ShellSection.Home;
+    /// <summary>True when the Generate Boot Image section is active, for nav pane item highlighting.</summary>
     public bool IsGenerateActive   => CurrentSection == ShellSection.Generate;
+    /// <summary>True when the Prepare USB Device section is active, for nav pane item highlighting.</summary>
     public bool IsPrepareUsbActive => CurrentSection == ShellSection.PrepareUsb;
 
     /// <summary>
@@ -205,8 +210,11 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>Navigates to the Home section.</summary>
     public ICommand GoHomeCommand       { get; }
+    /// <summary>Navigates to the Generate Boot Image section.</summary>
     public ICommand GoGenerateCommand   { get; }
+    /// <summary>Navigates to the Prepare USB Device section.</summary>
     public ICommand GoPrepareUsbCommand { get; }
 
     /// <summary>Navigates to Home. Public (not just via the command) so dev-mode tooling can jump here directly.</summary>
@@ -315,6 +323,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private void OnTrackedContentPropertyChanged(object? sender, PropertyChangedEventArgs e) =>
         CanNavigate = !(_isTrackedContentBusy?.Invoke() ?? false);
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
@@ -323,7 +332,12 @@ public sealed class ShellViewModel : INotifyPropertyChanged
 /// <summary>The section currently hosted in the shell's content area.</summary>
 public enum ShellSection
 {
+    /// <summary>The landing tile selection screen.</summary>
     Home,
+
+    /// <summary>The Generate Boot Image workflow.</summary>
     Generate,
+
+    /// <summary>The Prepare USB Device (or ISO) workflow.</summary>
     PrepareUsb,
 }

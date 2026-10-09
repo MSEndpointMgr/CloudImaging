@@ -60,6 +60,7 @@ public sealed partial class IsoGenerationService
     private sealed record IsoGenerationParams(string WimPath, string OutputIsoPath, MachineArchitecture Architecture);
     private sealed record ElevatedIsoGenerationResult(bool Success, string? Error);
 
+    /// <param name="logger">Logger for this service's diagnostic output.</param>
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
     /// <param name="startElevatedProcessOverride">Test seam. Defaults to a real "runas"-elevated <see cref="Process"/> launch.</param>
     public IsoGenerationService(
@@ -89,6 +90,7 @@ public sealed partial class IsoGenerationService
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
     /// <param name="architecture">Target processor architecture of <paramref name="wimPath"/> (todo/arm64-support.md). Defaults to x64.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
+    /// <param name="ct">Cancellation token to abort generation.</param>
     public async Task GenerateElevatedAsync(
         string wimPath,
         string outputIsoPath,
@@ -109,6 +111,7 @@ public sealed partial class IsoGenerationService
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
     /// <param name="architecture">Target processor architecture of <paramref name="wimPath"/> (todo/arm64-support.md). Defaults to x64.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
+    /// <param name="ct">Cancellation token to abort generation.</param>
     public async Task GenerateAsync(
         string wimPath,
         string outputIsoPath,

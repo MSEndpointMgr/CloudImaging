@@ -34,6 +34,11 @@ public sealed partial class ReportProgressFunction
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<ReportProgressFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="stepRepo">Imaging step repository.</param>
+    /// <param name="historyRepo">Session history repository.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public ReportProgressFunction(
         DeviceSessionRepository sessionRepo,
         ImagingStepRepository stepRepo,
@@ -48,6 +53,7 @@ public sealed partial class ReportProgressFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/{sessionId}/progress. Records an imaging step progress/status update from the device.</summary>
     [Function(nameof(ReportProgressFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/progress")] HttpRequestData req,

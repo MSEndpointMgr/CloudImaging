@@ -43,6 +43,9 @@ public sealed partial class BrandingFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BrandingFunctions> _logger;
 
+    /// <param name="brandingRepo">Branding configuration repository.</param>
+    /// <param name="blobClient">Blob service client used for logo storage and SAS generation.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BrandingFunctions(
         BrandingRepository brandingRepo,
         BlobServiceClient blobClient,
@@ -53,6 +56,7 @@ public sealed partial class BrandingFunctions
         _logger = logger;
     }
 
+    /// <summary>GET internal/branding. Returns the current branding configuration.</summary>
     [Function("GetBranding")]
     public async Task<HttpResponseData> GetBranding(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/branding")] HttpRequestData req,
@@ -65,6 +69,7 @@ public sealed partial class BrandingFunctions
         return response;
     }
 
+    /// <summary>PUT internal/branding. Replaces the branding configuration.</summary>
     [Function("PutBranding")]
     public async Task<HttpResponseData> PutBranding(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/branding")] HttpRequestData req,
@@ -146,6 +151,7 @@ public sealed partial class BrandingFunctions
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
 
+    /// <summary>GET internal/branding/logo/sas. Issues a time-limited SAS URL for the branding logo blob.</summary>
     [Function("GetBrandingLogoSas")]
     public async Task<HttpResponseData> GetBrandingLogoSas(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/branding/logo/sas")] HttpRequestData req,
@@ -168,12 +174,14 @@ public sealed partial class BrandingFunctions
         return response;
     }
 
+    /// <summary>PUT internal/branding/logo. Uploads and normalizes the boot logo image.</summary>
     [Function("UploadBrandingLogo")]
     public Task<HttpResponseData> UploadBrandingLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/branding/logo")] HttpRequestData req,
         FunctionContext context)
         => ProcessLogoUploadAsync(req, isPortal: false, context.CancellationToken);
 
+    /// <summary>PUT internal/branding/portal-logo. Uploads and normalizes the portal logo image.</summary>
     [Function("UploadBrandingPortalLogo")]
     public Task<HttpResponseData> UploadBrandingPortalLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/branding/portal-logo")] HttpRequestData req,

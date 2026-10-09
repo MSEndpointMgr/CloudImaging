@@ -25,12 +25,15 @@ public sealed partial class SessionHistoryFunction
     private readonly SessionHistoryRepository _historyRepo;
     private readonly ILogger<SessionHistoryFunction> _logger;
 
+    /// <param name="historyRepo">Session history repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public SessionHistoryFunction(SessionHistoryRepository historyRepo, ILogger<SessionHistoryFunction> logger)
     {
         _historyRepo = historyRepo;
         _logger = logger;
     }
 
+    /// <summary>GET internal/session-history. Lists completed/failed/unauthorized session history entries.</summary>
     [Function(nameof(SessionHistoryFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/session-history")] HttpRequestData req,

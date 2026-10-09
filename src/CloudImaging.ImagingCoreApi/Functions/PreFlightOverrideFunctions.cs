@@ -28,6 +28,10 @@ public sealed partial class PreFlightOverrideFunctions
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<PreFlightOverrideFunctions> _logger;
 
+    /// <param name="overrideRepo">Pre-flight override repository.</param>
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="configRepo">Portal configuration repository, used to read whether pre-flight checks are enabled.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public PreFlightOverrideFunctions(
         PreFlightOverrideRepository overrideRepo,
         DeviceSessionRepository sessionRepo,
@@ -40,6 +44,7 @@ public sealed partial class PreFlightOverrideFunctions
         _logger = logger;
     }
 
+    /// <summary>GET internal/preflight-overrides. Returns active overrides and whether pre-flight checks are enabled.</summary>
     [Function("ListPreFlightOverrides")]
     public async Task<HttpResponseData> List(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/preflight-overrides")] HttpRequestData req,
@@ -64,6 +69,7 @@ public sealed partial class PreFlightOverrideFunctions
         return await JsonAsync(req, HttpStatusCode.OK, body, context.CancellationToken);
     }
 
+    /// <summary>POST internal/sessions/{id}/preflight-override. Approves a blocked session's device, overriding failed pre-flight checks.</summary>
     [Function("ApprovePreFlightOverride")]
     public async Task<HttpResponseData> Approve(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{id}/preflight-override")] HttpRequestData req,
@@ -126,6 +132,7 @@ public sealed partial class PreFlightOverrideFunctions
         return await JsonAsync(req, HttpStatusCode.OK, preFlightOverride, ct);
     }
 
+    /// <summary>DELETE internal/preflight-overrides. Revokes a device's pre-flight override.</summary>
     [Function("RevokePreFlightOverride")]
     public async Task<HttpResponseData> Revoke(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/preflight-overrides")] HttpRequestData req,

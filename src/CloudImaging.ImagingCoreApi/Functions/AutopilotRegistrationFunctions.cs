@@ -27,8 +27,10 @@ public sealed class AutopilotRegistrationFunctions
 
     private readonly AutopilotRegistrationService _service;
 
+    /// <param name="service">Autopilot registration service this function group delegates to.</param>
     public AutopilotRegistrationFunctions(AutopilotRegistrationService service) => _service = service;
 
+    /// <summary>GET internal/autopilot/availability. Returns whether Autopilot self-registration is enabled.</summary>
     [Function("GetAutopilotAvailability")]
     public async Task<HttpResponseData> GetAvailability(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/autopilot/availability")] HttpRequestData req,
@@ -38,6 +40,7 @@ public sealed class AutopilotRegistrationFunctions
         return await JsonAsync(req, HttpStatusCode.OK, new AutopilotAvailability { Enabled = enabled }, context.CancellationToken);
     }
 
+    /// <summary>POST internal/autopilot/registrations. Submits a device hardware hash for Autopilot registration.</summary>
     [Function("SubmitAutopilotRegistration")]
     public async Task<HttpResponseData> Submit(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/autopilot/registrations")] HttpRequestData req,
@@ -55,6 +58,7 @@ public sealed class AutopilotRegistrationFunctions
             : await ProblemAsync(req, StatusFor(result.Outcome), result.Error!, context.CancellationToken);
     }
 
+    /// <summary>POST internal/autopilot/registrations/{id}/device-status. Device poll for registration status using its status token.</summary>
     [Function("GetAutopilotDeviceStatus")]
     public async Task<HttpResponseData> GetDeviceStatus(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/autopilot/registrations/{id}/device-status")] HttpRequestData req,
@@ -74,6 +78,7 @@ public sealed class AutopilotRegistrationFunctions
             : await JsonAsync(req, HttpStatusCode.OK, status, context.CancellationToken);
     }
 
+    /// <summary>GET internal/autopilot/registrations. Lists open requests, or handled requests in a date range when <c>view=history</c>.</summary>
     [Function("ListAutopilotRegistrations")]
     public async Task<HttpResponseData> List(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/autopilot/registrations")] HttpRequestData req,
@@ -105,6 +110,7 @@ public sealed class AutopilotRegistrationFunctions
         return DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out result);
     }
 
+    /// <summary>GET internal/autopilot/registrations/{id}. Returns the operator-facing detail view of a registration request.</summary>
     [Function("GetAutopilotRegistration")]
     public async Task<HttpResponseData> Get(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/autopilot/registrations/{id}")] HttpRequestData req,
@@ -122,6 +128,7 @@ public sealed class AutopilotRegistrationFunctions
             : await JsonAsync(req, HttpStatusCode.OK, detail, context.CancellationToken);
     }
 
+    /// <summary>POST internal/autopilot/registrations/{id}/approve. Approves a pending registration request.</summary>
     [Function("ApproveAutopilotRegistration")]
     public Task<HttpResponseData> Approve(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/autopilot/registrations/{id}/approve")] HttpRequestData req,
@@ -129,6 +136,7 @@ public sealed class AutopilotRegistrationFunctions
         FunctionContext context) =>
         DecideAsync(req, id, _service.ApproveAsync, context.CancellationToken);
 
+    /// <summary>POST internal/autopilot/registrations/{id}/reject. Rejects a pending or failed registration request.</summary>
     [Function("RejectAutopilotRegistration")]
     public Task<HttpResponseData> Reject(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/autopilot/registrations/{id}/reject")] HttpRequestData req,
@@ -136,6 +144,7 @@ public sealed class AutopilotRegistrationFunctions
         FunctionContext context) =>
         DecideAsync(req, id, _service.RejectAsync, context.CancellationToken);
 
+    /// <summary>POST internal/autopilot/registrations/{id}/retry. Retries a previously failed Autopilot Graph import.</summary>
     [Function("RetryAutopilotRegistration")]
     public Task<HttpResponseData> Retry(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/autopilot/registrations/{id}/retry")] HttpRequestData req,

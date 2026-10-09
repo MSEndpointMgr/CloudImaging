@@ -23,6 +23,8 @@ public sealed partial class BootImageLifecycleFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BootImageLifecycleFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the lifecycle requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BootImageLifecycleFunctions(
         ImagingCoreClient coreClient,
         ILogger<BootImageLifecycleFunctions> logger)
@@ -33,6 +35,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── DELETE /api/boot-images/{id} ─────────────────────────────────────────
 
+    /// <summary>DELETE boot-images/{id}. Deletes a boot image; rejected with 409 if it's currently published.</summary>
     [Function("DeleteBootImage")]
     public async Task<HttpResponseData> DeleteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "boot-images/{id}")] HttpRequestData req,
@@ -56,6 +59,7 @@ public sealed partial class BootImageLifecycleFunctions
     // ── POST /api/boot-images/{id}/promote ─────────────────────────────────────
 
     // Not in the MediaBuilderAccess allowlist: only the Portal (Administrator-gated) can promote.
+    /// <summary>POST boot-images/{id}/promote. Promotes a boot image to the published/latest slot.</summary>
     [Function("PromoteBootImage")]
     public async Task<HttpResponseData> PromoteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/{id}/promote")] HttpRequestData req,
@@ -75,6 +79,7 @@ public sealed partial class BootImageLifecycleFunctions
     // ── POST /api/boot-images/{id}/demote ──────────────────────────────────────
 
     // Like promote, not in the MediaBuilderAccess allowlist.
+    /// <summary>POST boot-images/{id}/demote. Demotes a boot image out of the published/latest slot.</summary>
     [Function("DemoteBootImage")]
     public async Task<HttpResponseData> DemoteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "boot-images/{id}/demote")] HttpRequestData req,

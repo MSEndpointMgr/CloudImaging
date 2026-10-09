@@ -27,6 +27,10 @@ public sealed partial class SessionQueryFunctions
     private readonly OsImageRepository _osImageRepo;
     private readonly ILogger<SessionQueryFunctions> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="stepRepo">Imaging step repository, used to include step history in detail views.</param>
+    /// <param name="osImageRepo">OS image catalog repository, used to resolve assigned image metadata.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public SessionQueryFunctions(
         DeviceSessionRepository sessionRepo,
         ImagingStepRepository stepRepo,
@@ -41,6 +45,7 @@ public sealed partial class SessionQueryFunctions
 
     // ── GET /api/internal/sessions ───────────────────────────────────────────
 
+    /// <summary>GET internal/sessions. Lists all sessions (active + terminal), with an optional state filter.</summary>
     [Function("GetSessions")]
     public async Task<HttpResponseData> GetSessions(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions")] HttpRequestData req,
@@ -72,6 +77,7 @@ public sealed partial class SessionQueryFunctions
 
     // ── GET /api/internal/sessions/{id} ──────────────────────────────────────
 
+    /// <summary>GET internal/sessions/{id}. Returns a single session summary.</summary>
     [Function("GetSessionById")]
     public async Task<HttpResponseData> GetSessionById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{id}")] HttpRequestData req,
@@ -97,6 +103,7 @@ public sealed partial class SessionQueryFunctions
 
     // ── GET /api/internal/sessions/{sessionId}/status ────────────────────────
 
+    /// <summary>GET internal/sessions/{sessionId}/status. Device-facing status poll, secrets included; called only by Device Gateway API over Private Link.</summary>
     [Function("GetSessionStatus")]
     public async Task<HttpResponseData> GetSessionStatus(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/sessions/{sessionId}/status")] HttpRequestData req,

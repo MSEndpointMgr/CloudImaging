@@ -13,21 +13,41 @@ namespace CloudImaging.Client.ViewModels;
 /// <summary>Identity fields read from WMI and the USB preparation manifest.</summary>
 internal sealed record DeviceIdentity(string SerialNumber, string Manufacturer, string Model, Guid? LocationId, string? LocationName);
 
+/// <summary>Whether Autopilot registration should be offered to the operator.</summary>
 public enum AutopilotAvailabilityState
 {
+    /// <summary>Still asking the Device Gateway whether registration is enabled.</summary>
     Checking,
+
+    /// <summary>Registration is enabled for this tenant.</summary>
     Enabled,
+
+    /// <summary>An administrator has turned registration off in the portal.</summary>
     Disabled,
+
+    /// <summary>The imaging service could not be reached to check; offered optimistically.</summary>
     Unreachable,
 }
 
+/// <summary>Stage of the Autopilot registration flow.</summary>
 public enum AutopilotFlowStage
 {
+    /// <summary>Reading the device's hardware hash.</summary>
     Capturing,
+
+    /// <summary>Sending the hardware hash to the Device Gateway API.</summary>
     Submitting,
+
+    /// <summary>Submitted; the operator can image the device now or wait for a decision.</summary>
     Submitted,
+
+    /// <summary>Polling for the approver's decision.</summary>
     Waiting,
+
+    /// <summary>Reached a terminal state: imported, rejected, expired, or already registered.</summary>
     Finished,
+
+    /// <summary>Capture or submission failed before reaching the service.</summary>
     Failed,
 }
 
@@ -53,7 +73,6 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     private string? _referenceCode;
     private string? _serialNumber;
     private string? _deviceDescription;
-    private string? _locationName;
     private string? _detail;
     private string? _errorMessage;
     private string? _tpmWarning;
@@ -84,10 +103,16 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         WaitForDecisionCommand = new RelayCommand(_ => StartWaiting(), _ => Stage == AutopilotFlowStage.Submitted);
     }
 
+    /// <summary>Cancels the flow and returns to operation selection.</summary>
     public ICommand BackCommand { get; }
+
+    /// <summary>Restarts the flow from capture, enabled only after a failure.</summary>
     public ICommand RetryCommand { get; }
+
+    /// <summary>Starts polling for the approver's decision, enabled only once submitted.</summary>
     public ICommand WaitForDecisionCommand { get; }
 
+    /// <summary>Current stage of the flow.</summary>
     public AutopilotFlowStage Stage
     {
         get => _stage;
@@ -108,10 +133,19 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         }
     }
 
+    /// <summary>True while capturing or submitting.</summary>
     public bool IsBusy => Stage is AutopilotFlowStage.Capturing or AutopilotFlowStage.Submitting;
+
+    /// <summary>True once the request was submitted and is awaiting a decision.</summary>
     public bool IsSubmitted => Stage == AutopilotFlowStage.Submitted;
+
+    /// <summary>True while actively polling for a decision.</summary>
     public bool IsWaiting => Stage == AutopilotFlowStage.Waiting;
+
+    /// <summary>True when capture or submission failed.</summary>
     public bool IsFailed => Stage == AutopilotFlowStage.Failed;
+
+    /// <summary>True once device identity has been read, so the detail panel can be shown.</summary>
     public bool ShowDetails => _referenceCode is not null;
 
     /// <summary>Request state reported by the service, null before submission.</summary>
@@ -129,33 +163,45 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         }
     }
 
+    /// <summary>True once finished with an outcome that counts as a successful registration.</summary>
     public bool IsPositiveOutcome => Stage == AutopilotFlowStage.Finished
         && RequestState is AutopilotRegistrationState.Imported or AutopilotRegistrationState.AlreadyRegistered;
 
+    /// <summary>True once finished with an outcome that is not <see cref="IsPositiveOutcome"/>.</summary>
     public bool IsNegativeOutcome => Stage == AutopilotFlowStage.Finished && !IsPositiveOutcome;
 
+    /// <summary>Short code shown so a technician can find this request in the portal.</summary>
     public string? ReferenceCode { get => _referenceCode; private set { _referenceCode = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowDetails)); } }
+
+    /// <summary>Device serial number.</summary>
     public string? SerialNumber { get => _serialNumber; private set { _serialNumber = value; OnPropertyChanged(); } }
+
+    /// <summary>Manufacturer and model, formatted for display.</summary>
     public string? DeviceDescription { get => _deviceDescription; private set { _deviceDescription = value; OnPropertyChanged(); } }
-    public string? LocationName { get => _locationName; private set { _locationName = value; OnPropertyChanged(); OnPropertyChanged(nameof(LocationDisplay)); } }
-    public string LocationDisplay => string.IsNullOrWhiteSpace(_locationName) ? "Not set" : _locationName;
 
     /// <summary>Extra line under the subtitle: rejection reason, import error or last poll time.</summary>
     public string? Detail { get => _detail; private set { _detail = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasDetail)); } }
+
+    /// <summary>True when <see cref="Detail"/> is set.</summary>
     public bool HasDetail => !string.IsNullOrWhiteSpace(_detail);
 
+    /// <summary>Error message shown when <see cref="IsFailed"/>.</summary>
     public string? ErrorMessage { get => _errorMessage; private set { _errorMessage = value; OnPropertyChanged(); } }
 
     /// <summary>Set when the captured hash lacks the TPM 2.0 data pre-provisioning and self-deploying need.</summary>
     public string? TpmWarning { get => _tpmWarning; private set { _tpmWarning = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasTpmWarning)); } }
+
+    /// <summary>True when <see cref="TpmWarning"/> is set.</summary>
     public bool HasTpmWarning => !string.IsNullOrWhiteSpace(_tpmWarning);
 
+    /// <summary>Heading text for the current <see cref="Stage"/>/<see cref="RequestState"/>.</summary>
     public string Title => Stage switch
     {
         AutopilotFlowStage.Capturing => "Reading hardware hash",
         AutopilotFlowStage.Submitting => "Submitting for approval",
         AutopilotFlowStage.Submitted => "Submitted for approval",
-        AutopilotFlowStage.Waiting => RequestState == AutopilotRegistrationState.Importing ? "Approved, importing" : "Waiting for approval",
+        // Approval and the Intune import that follows read as one wait; the outcome screens follow either way.
+        AutopilotFlowStage.Waiting => "Waiting for approval",
         AutopilotFlowStage.Failed => "Registration not sent",
         _ => RequestState switch
         {
@@ -168,18 +214,17 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         },
     };
 
+    /// <summary>Explanatory text under <see cref="Title"/> for the current <see cref="Stage"/>/<see cref="RequestState"/>.</summary>
     public string Subtitle => Stage switch
     {
-        AutopilotFlowStage.Capturing => "Collecting the device's Windows Autopilot hardware hash. This takes up to a minute.",
+        AutopilotFlowStage.Capturing => "Collecting the device's Windows Autopilot hardware hash.\nThis might take some time.",
         AutopilotFlowStage.Submitting => "Sending the hardware hash to the Cloud Imaging service.",
-        AutopilotFlowStage.Submitted => "An approver reviews this request in the Cloud Imaging portal. You can image this device now; registration does not depend on it.",
-        AutopilotFlowStage.Waiting => RequestState == AutopilotRegistrationState.Importing
-            ? "Intune is processing the import. This usually takes a few minutes."
-            : "Checking for a decision every 30 seconds. You can go back at any time.",
+        AutopilotFlowStage.Submitted => "Approval is required. You can image this device in the meantime.",
+        AutopilotFlowStage.Waiting => $"Updates automatically every {_pollInterval.TotalSeconds:0} seconds.",
         AutopilotFlowStage.Failed => "Nothing was submitted. Check the network connection and try again.",
         _ => RequestState switch
         {
-            AutopilotRegistrationState.Imported => "Windows Autopilot will apply its profile the next time this device runs Windows setup.",
+            AutopilotRegistrationState.Imported => "The device has been imported into Windows Autopilot.",
             AutopilotRegistrationState.AlreadyRegistered => "This device is already a Windows Autopilot device. Nothing else to do.",
             AutopilotRegistrationState.Rejected => "The approver did not import this device.",
             AutopilotRegistrationState.Expired => "Nobody decided in time. Submit the device again to create a new request.",
@@ -204,7 +249,6 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
             var identity = await Task.Run(_readIdentity, ct);
             SerialNumber = identity.SerialNumber;
             DeviceDescription = $"{identity.Manufacturer} {identity.Model}".Trim();
-            LocationName = identity.LocationName;
 
             var hash = await _capture.CaptureAsync(ct);
 
@@ -321,6 +365,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         _cts = new CancellationTokenSource();
     }
 
+    /// <summary>Cancels any in-flight capture, submission, or polling.</summary>
     public void Dispose()
     {
         if (_disposed)
@@ -339,6 +384,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     [LoggerMessage(Level = LogLevel.Warning, Message = "Autopilot status check failed; retrying.")]
     private static partial void LogPollFailed(ILogger logger, Exception ex);
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

@@ -12,7 +12,7 @@ namespace CloudImaging.Client.ViewModels;
 /// Orchestrates the Format → Download → Apply → Configure Boot → Apply Recovery imaging
 /// pipeline once a session has (or reaches) an OS image assignment. Drives
 /// <see cref="ProgressViewModel"/>, reports step progress back to the Device Gateway API via
-/// <see cref="Services.ImagingProgressReporter"/>, and navigates to <see cref="ResultsView"/> on
+/// <see cref="Services.ImagingProgressReporter"/>, and navigates to <see cref="Views.ResultsView"/> on
 /// completion, failure, or an unexpected terminal transition
 /// (T056, FR-005, FR-006, FR-007, FR-008, FR-009d).
 ///
@@ -57,6 +57,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     private Services.SessionHeartbeatCoordinator? _heartbeatCoordinator;
     private Services.SessionStatusResponse _status;
 
+    /// <summary>Builds the pipeline and immediately starts running it in the background.</summary>
     public ImagingWorkflowViewModel(
         Services.DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -463,7 +464,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     /// Polls the Device Gateway API until the session carries both a SAS URL and image hash
     /// (i.e. an OS image has actually been assigned), a terminal state is reached, or
     /// <see cref="AssignmentWaitTimeout"/> elapses. Returns <c>false</c> (and has already
-    /// navigated to <see cref="ResultsView"/>) when the caller should stop; <c>true</c> when
+    /// navigated to <see cref="Views.ResultsView"/>) when the caller should stop; <c>true</c> when
     /// <see cref="_status"/> is ready to drive the pipeline.
     /// </summary>
     private async Task<bool> WaitForImageAssignmentAsync(CancellationToken ct)
@@ -593,6 +594,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             ? dt
             : null;
 
+    /// <summary>Stops the background SAS refresh and session heartbeat coordinators.</summary>
     public void Dispose()
     {
         _sasCoordinator?.Dispose();

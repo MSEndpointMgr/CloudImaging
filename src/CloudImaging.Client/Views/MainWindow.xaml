@@ -55,10 +55,10 @@
                      Background="{DynamicResource ApplicationBackgroundBrush}"
                      Foreground="{DynamicResource TextFillColorPrimaryBrush}">
             <ui:TitleBar.Header>
-                <StackPanel Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Margin="16,0,0,0">
                     <Image x:Name="TitleBrandingLogo"
                            Width="18" Height="18"
-                           Margin="16,0,8,0"
+                           Margin="0,0,8,0"
                            VerticalAlignment="Center"
                            Stretch="Uniform"
                            Visibility="Collapsed" />

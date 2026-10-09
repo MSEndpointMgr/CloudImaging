@@ -55,6 +55,11 @@ public sealed partial class OsImageUploadFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<OsImageUploadFunctions> _logger;
 
+    /// <param name="imageRepo">OS image catalog repository.</param>
+    /// <param name="jobRepo">Upload job repository used to track staged upload progress.</param>
+    /// <param name="validator">Boot/recovery image validation service.</param>
+    /// <param name="blobClient">Blob service client used for direct-to-blob upload staging.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public OsImageUploadFunctions(
         OsImageRepository imageRepo,
         UploadJobRepository jobRepo,
@@ -71,6 +76,7 @@ public sealed partial class OsImageUploadFunctions
 
     // ── POST /api/internal/images/upload/start ────────────────────────────────
 
+    /// <summary>POST internal/images/upload/start. Starts a staged chunked upload and returns a write SAS URL.</summary>
     [Function("StartOsImageUpload")]
     public async Task<HttpResponseData> StartUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/images/upload/start")] HttpRequestData req,
@@ -131,6 +137,7 @@ public sealed partial class OsImageUploadFunctions
 
     // ── POST /api/internal/images/upload/{uploadId}/publish ───────────────────
 
+    /// <summary>POST internal/images/upload/{uploadId}/publish. Commits the staged block list, validates SHA-256, and registers the OS image catalog entry.</summary>
     [Function("PublishOsImageUpload")]
     public async Task<HttpResponseData> PublishUpload(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/images/upload/{uploadId}/publish")] HttpRequestData req,

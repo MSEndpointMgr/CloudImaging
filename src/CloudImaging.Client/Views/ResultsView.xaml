@@ -159,13 +159,13 @@
                                            VerticalAlignment="Center" Margin="0,0,14,0" />
                             <StackPanel Grid.Column="1">
                                 <TextBlock Text="Device Blocked" Style="{StaticResource TitleTextBlockStyle}" />
-                                <WrapPanel>
+                                <WrapPanel Margin="0,8,0,0">
                                     <TextBlock Text="{Binding DeviceSerialNumber, StringFormat='Serial: {0}'}"
-                                               FontFamily="Consolas" FontSize="13"
+                                               Style="{StaticResource BodyTextBlockStyle}"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                               Margin="0,0,20,0" />
+                                               Margin="0,0,24,0" />
                                     <TextBlock Text="{Binding SessionId, StringFormat='Session: {0}'}"
-                                               FontFamily="Consolas" FontSize="13"
+                                               Style="{StaticResource BodyTextBlockStyle}"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                 </WrapPanel>
                             </StackPanel>
@@ -218,14 +218,9 @@
                                                             </Style>
                                                         </ui:SymbolIcon.Style>
                                                     </ui:SymbolIcon>
-                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0">
-                                                        <ui:SymbolIcon Symbol="{Binding Icon}" FontSize="16"
-                                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                                       VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                        <TextBlock Text="{Binding Name}"
-                                                                   Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                                   VerticalAlignment="Center" />
-                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                               VerticalAlignment="Center" Margin="12,0,0,0" />
                                                     <TextBlock Grid.Column="2" Text="{Binding Value}"
                                                                Style="{StaticResource BodyTextBlockStyle}"
                                                                TextTrimming="CharacterEllipsis"

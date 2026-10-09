@@ -17,6 +17,7 @@ public sealed class SignInViewModel : INotifyPropertyChanged
     private bool _hasError;
     private bool _isBusy;
 
+    /// <summary>Builds the view model over the Entra auth service and a callback to navigate to the operation selection screen on success.</summary>
     public SignInViewModel(
         EntraAuthenticationService authService,
         Action navigateToOperationSelection)
@@ -26,22 +27,27 @@ public sealed class SignInViewModel : INotifyPropertyChanged
         SignInCommand = new RelayCommand(async _ => await SignInAsync(), _ => CanSignIn);
     }
 
+    /// <summary>Current status line shown on the sign-in screen.</summary>
     public string StatusMessage
     {
         get => _statusMessage;
         private set { _statusMessage = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True when the last sign-in attempt failed.</summary>
     public bool HasError
     {
         get => _hasError;
         private set { _hasError = value; OnPropertyChanged(); }
     }
 
+    /// <summary>True when sign-in can be attempted (not already in progress).</summary>
     public bool CanSignIn => !_isBusy;
 
+    /// <summary>True while a sign-in attempt is in progress.</summary>
     public bool IsBusy => _isBusy;
 
+    /// <summary>Starts the Entra sign-in flow.</summary>
     public ICommand SignInCommand { get; }
 
     // ── Sign-in flow ──────────────────────────────────────────────────────────
@@ -81,6 +87,7 @@ public sealed class SignInViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

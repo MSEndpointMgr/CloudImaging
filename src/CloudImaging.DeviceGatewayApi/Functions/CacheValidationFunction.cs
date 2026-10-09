@@ -26,6 +26,8 @@ public sealed partial class CacheValidationFunction
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <param name="coreClient">Imaging Core API client used to resolve the assigned OS image hash.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CacheValidationFunction(
         ImagingCoreClient coreClient,
         ILogger<CacheValidationFunction> logger)
@@ -34,6 +36,7 @@ public sealed partial class CacheValidationFunction
         _logger = logger;
     }
 
+    /// <summary>POST v1/sessions/{sessionId}/cache/validate. Compares a client-supplied hash against the assigned OS image's SHA-256.</summary>
     [Function("CacheValidation")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/cache/validate")] HttpRequestData req,

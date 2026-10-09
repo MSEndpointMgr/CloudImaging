@@ -62,6 +62,7 @@ public sealed partial class OfflineDriveLetterService
 
     private readonly ILogger<OfflineDriveLetterService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public OfflineDriveLetterService(ILogger<OfflineDriveLetterService> logger) => _logger = logger;
 
     /// <summary>
@@ -70,6 +71,7 @@ public sealed partial class OfflineDriveLetterService
     /// Windows.
     /// </summary>
     /// <param name="windowsVolume">The Windows partition's WinPE drive letter, e.g. <c>"H:"</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
     /// <exception cref="InvalidOperationException">
     /// The applied image has no SYSTEM hive, the required privileges could not be acquired, or the
     /// hive could not be mounted.
