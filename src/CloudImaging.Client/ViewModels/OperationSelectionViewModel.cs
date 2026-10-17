@@ -1,10 +1,8 @@
 using System.ComponentModel;
 using System.IO;
 using System.Management;
-using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows.Input;
@@ -30,6 +28,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private readonly CommandPromptLauncherService _commandPromptLauncher;
     private readonly DevicePostureDetector _postureDetector;
     private readonly Action? _navigateToAutopilot;
+    private readonly StartupReadiness? _readiness;
+    private readonly Action? _recheck;
     private AutopilotAvailabilityState _autopilotAvailability = AutopilotAvailabilityState.Checking;
     // Decommissioning card is hidden (not implemented for the first release), so Imaging is
     // pre-selected rather than requiring an operator click before Continue is enabled.
@@ -57,6 +57,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// <param name="postureDetector">Optional override; defaults to a detector without logging.</param>
     /// <param name="startImagingImmediately">Starts a new imaging session at once, as if Continue was pressed (blocked screen's Try again).</param>
     /// <param name="autopilotAvailability">Current Autopilot registration availability state, refining the Autopilot tile's enabled/disabled reason.</param>
+    /// <param name="readiness">What the startup checks found. Null skips the gating (screens opened without startup checks).</param>
+    /// <param name="recheck">Runs the startup checks again. Null hides Check again.</param>
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
         Action<CreateSessionResponse, string> navigate,
@@ -68,7 +70,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         Action? navigateToAutopilot = null,
         DevicePostureDetector? postureDetector = null,
         bool startImagingImmediately = false,
-        AutopilotAvailabilityState? autopilotAvailability = null)
+        AutopilotAvailabilityState? autopilotAvailability = null,
+        StartupReadiness? readiness = null,
+        Action? recheck = null)
     {
         _gatewayClient          = gatewayClient;
         _navigate               = navigate;
@@ -78,11 +82,17 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         _commandPromptLauncher  = commandPromptLauncher ?? new CommandPromptLauncherService();
         _postureDetector        = postureDetector ?? new DevicePostureDetector();
         _navigateToAutopilot = navigateToAutopilot;
+        _readiness = readiness;
+        _recheck = recheck;
         IsAutopilotOptionVisible = autopilotToolingPresent && navigateToAutopilot is not null;
 
         SelectOperationCommand   = new RelayCommand(op => SelectOperation(op?.ToString()));
         ContinueCommand          = new RelayCommand(async _ => await ContinueAsync(), _ => CanContinue);
         LaunchCommandPromptCommand = new RelayCommand(_ => LaunchCommandPrompt(), _ => IsCommandPromptAvailable);
+        RecheckCommand           = new RelayCommand(_ => _recheck?.Invoke(), _ => CanRecheck);
+
+        if (!IsImagingSelectable)
+            _selectedOperation = null;
 
         if (IsAutopilotOptionVisible)
         {
@@ -93,12 +103,55 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
                 _ = LoadAutopilotAvailabilityAsync();
         }
 
-        if (startImagingImmediately)
+        if (startImagingImmediately && IsImagingSelectable)
         {
             SelectedOperation = "Imaging";
             _ = ContinueAsync();
         }
     }
+
+    /// <summary>False when startup could not use the Device Gateway API, which every operation needs.</summary>
+    public bool IsServiceAvailable => _readiness?.CanReachService ?? true;
+
+    /// <summary>True when the connectivity banner is shown and every operation is disabled.</summary>
+    public bool IsServiceBlocked => !IsServiceAvailable;
+
+    /// <summary>Imaging needs the service and exactly one local disk; unreadable disks are left for formatting to report.</summary>
+    public bool IsImagingSelectable => IsServiceAvailable && _readiness?.LocalDiskCount is null or 1;
+
+    /// <summary>Helper text on the Imaging card.</summary>
+    public string ImagingCardDescription => _readiness?.LocalDiskCount switch
+    {
+        0 => "No local disk found. The boot image may be missing this device's storage driver.",
+        > 1 and var count => $"{count} local disks found. Imaging needs exactly one.",
+        _ => "Apply a fresh OS image to this device.",
+    };
+
+    /// <summary>Heading of the connectivity banner.</summary>
+    public string ConnectivityTitle => _readiness?.Gateway switch
+    {
+        GatewayReachability.NoNetwork => "Network connection required",
+        GatewayReachability.ServiceUnavailable => "Cloud Imaging service unavailable",
+        GatewayReachability.CertificateRejected => "Boot media not accepted",
+        GatewayReachability.NotConfigured => "Service address missing",
+        _ => "Cannot reach the Cloud Imaging service",
+    };
+
+    /// <summary>What went wrong and what to do about it.</summary>
+    public string ConnectivityMessage => _readiness?.Gateway switch
+    {
+        GatewayReachability.NoNetwork => "Every operation needs the network. Connect a network cable, then select Check again. If a cable is already connected, the boot image may be missing this device's network driver.",
+        GatewayReachability.ServiceUnavailable => "The service is not responding. Wait a few minutes, then select Check again.",
+        GatewayReachability.CertificateRejected => "The service did not accept this boot media's certificate. Generate a new boot image in Media Builder and prepare the USB drive again.",
+        GatewayReachability.NotConfigured => "This boot image does not contain the Cloud Imaging service address. Generate a new boot image in Media Builder.",
+        _ => "The device is online but could not reach the service. Check that the network allows outbound HTTPS, then select Check again.",
+    };
+
+    /// <summary>True when Check again is offered.</summary>
+    public bool CanRecheck => _recheck is not null;
+
+    /// <summary>Runs the startup checks again.</summary>
+    public ICommand RecheckCommand { get; }
 
     /// <summary>The Autopilot card is shown only on boot media built with the hash tooling.</summary>
     public bool IsAutopilotOptionVisible { get; }
@@ -117,7 +170,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     }
 
     /// <summary>Selectable unless the portal has it turned off; an unreachable service gets its error on the next screen.</summary>
-    public bool IsAutopilotSelectable => IsAutopilotOptionVisible
+    public bool IsAutopilotSelectable => IsAutopilotOptionVisible && IsServiceAvailable
         && _autopilotAvailability is AutopilotAvailabilityState.Enabled or AutopilotAvailabilityState.Unreachable;
 
     /// <summary>Helper text shown on the Autopilot card for the current <see cref="AutopilotAvailability"/>.</summary>
@@ -133,6 +186,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     {
         if (operation == "Autopilot" && !IsAutopilotSelectable)
             return;
+        if (operation == "Imaging" && !IsImagingSelectable)
+            return;
         SelectedOperation = operation;
     }
 
@@ -141,7 +196,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         AutopilotAvailability = await ResolveAutopilotAvailabilityAsync(_gatewayClient);
 
         if (SelectedOperation == "Autopilot" && !IsAutopilotSelectable)
-            SelectedOperation = "Imaging";
+            SelectedOperation = IsImagingSelectable ? "Imaging" : null;
     }
 
     /// <summary>
@@ -153,7 +208,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         try
         {
             var deadline = DateTime.UtcNow + NetworkWaitTimeout;
-            while (!IsNetworkReady() && DateTime.UtcNow < deadline)
+            while (!NetworkReadiness.IsReady() && DateTime.UtcNow < deadline)
                 await Task.Delay(NetworkWaitPollInterval, ct);
 
             return await gateway.GetAutopilotAvailabilityAsync(ct) switch
@@ -187,7 +242,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public bool HasError     => !string.IsNullOrEmpty(StatusMessage);
 
     /// <summary>True when an operation is selected and no registration is already in flight.</summary>
-    public bool CanContinue  => SelectedOperation is not null && !_isBusy;
+    public bool CanContinue  => SelectedOperation is not null && !_isBusy && IsServiceAvailable;
 
     /// <summary>
     /// True from the moment Continue is pressed until either navigation away from this view
@@ -347,37 +402,15 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// </summary>
     private async Task WaitForNetworkAsync()
     {
-        if (IsNetworkReady())
+        if (NetworkReadiness.IsReady())
             return;
 
         IsWaitingForNetwork = true;
         var deadline = DateTime.UtcNow + NetworkWaitTimeout;
-        while (!IsNetworkReady() && DateTime.UtcNow < deadline)
+        while (!NetworkReadiness.IsReady() && DateTime.UtcNow < deadline)
             await Task.Delay(NetworkWaitPollInterval);
 
         IsWaitingForNetwork = false;
-    }
-
-    private static bool IsNetworkReady()
-    {
-        try
-        {
-            return NetworkInterface.GetAllNetworkInterfaces().Any(n =>
-                n.NetworkInterfaceType != NetworkInterfaceType.Loopback
-                && n.OperationalStatus == OperationalStatus.Up
-                && n.GetIPProperties().UnicastAddresses.Any(a =>
-                    a.Address.AddressFamily == AddressFamily.InterNetwork && !IsLinkLocal(a.Address)));
-        }
-        catch
-        {
-            return true; // Can't determine in this environment — don't block on it.
-        }
-    }
-
-    private static bool IsLinkLocal(IPAddress address)
-    {
-        var bytes = address.GetAddressBytes();
-        return bytes.Length == 4 && bytes[0] == 169 && bytes[1] == 254;
     }
 
     // ── Location Labels feature: read the technician-selected location, if any, from the USB

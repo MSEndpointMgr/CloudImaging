@@ -9,6 +9,11 @@
         UiThreadResponsivenessTests.View_ContainsNoScrollViewer).
     -->
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
         <Border Width="600"
                 CornerRadius="8"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
@@ -128,25 +133,30 @@
                                TextTrimming="CharacterEllipsis"
                                Margin="0,12,0,0"
                                Visibility="{Binding HasDetail, Converter={StaticResource BoolToVisibility}}" />
-
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,28,0,0">
-                        <ui:Button Content="Wait for decision"
-                                   Appearance="Primary"
-                                   Width="180" Height="40" Margin="0,0,12,0"
-                                   Command="{Binding WaitForDecisionCommand}"
-                                   Visibility="{Binding IsSubmitted, Converter={StaticResource BoolToVisibility}}" />
-                        <ui:Button Content="Try again"
-                                   Appearance="Primary"
-                                   Width="160" Height="40" Margin="0,0,12,0"
-                                   Command="{Binding RetryCommand}"
-                                   Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
-                        <ui:Button Content="Back to start"
-                                   Appearance="Secondary"
-                                   Width="160" Height="40"
-                                   Command="{Binding BackCommand}" />
-                    </StackPanel>
                 </StackPanel>
             </Grid>
         </Border>
+
+        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}">
+            <HeaderedContentControl.Content>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="Back to start"
+                               Appearance="Secondary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Command="{Binding BackCommand}" />
+                    <ui:Button Content="Wait for decision"
+                               Appearance="Primary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Command="{Binding WaitForDecisionCommand}"
+                               Visibility="{Binding IsSubmitted, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button Content="Try again"
+                               Appearance="Primary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Icon="{ui:SymbolIcon ArrowClockwise24}"
+                               Command="{Binding RetryCommand}"
+                               Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+            </HeaderedContentControl.Content>
+        </HeaderedContentControl>
     </Grid>
 </Page>

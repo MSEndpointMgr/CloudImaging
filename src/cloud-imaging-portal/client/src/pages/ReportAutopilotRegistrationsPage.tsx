@@ -3,19 +3,22 @@ import { AlertTriangle, BadgeCheck, FileDown, RefreshCw } from 'lucide-react';
 import { apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
+import { resolvePreset, type DateRange } from '../lib/dateRange.ts';
+import { sortRows, useSort } from '../lib/tableSort.ts';
+import { useDebouncedValue } from '../hooks/useDebouncedValue.ts';
 import { preProvisioningLabel, stateLabel, stateVariant, type AutopilotRequest } from '../lib/autopilot.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent } from '../components/ui/card.tsx';
-import { Input } from '../components/ui/input.tsx';
-import { Label } from '../components/ui/label.tsx';
+import { DateRangeSelect } from '../components/ui/date-range-select.tsx';
+import { SearchInput } from '../components/ui/search-input.tsx';
+import { ReportFilterBar, type AppliedFilter } from '../components/ReportFilterBar.tsx';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { Select } from '../components/ui/select.tsx';
 import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
-
-const DEFAULT_WINDOW_DAYS = 30;
+import { Table, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/table.tsx';
 
 const OUTCOME_FILTERS: { value: string; label: string }[] = [
   { value: '', label: 'All outcomes' },
@@ -24,10 +27,6 @@ const OUTCOME_FILTERS: { value: string; label: string }[] = [
   { value: 'Rejected', label: 'Rejected' },
   { value: 'Expired', label: 'Expired' },
 ];
-
-function isoDateInputValue(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 
 function deviceLabel(r: AutopilotRequest): string {
   return `${r.manufacturer} ${r.model}`.trim();
@@ -45,14 +44,15 @@ function outcomeNote(r: AutopilotRequest): string | null {
  * until the retention period set under Configuration, Autopilot deletes them.
  */
 export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
-  const today = useMemo(() => new Date(), []);
-  const [from, setFrom] = useState(isoDateInputValue(new Date(today.getTime() - DEFAULT_WINDOW_DAYS * 86_400_000)));
-  const [to, setTo] = useState(isoDateInputValue(today));
+  const [range, setRange] = useState<DateRange>(() => resolvePreset('last30')!);
   const [records, setRecords] = useState<AutopilotRequest[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState('');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [attempt, setAttempt] = useState(0);
+  const [sort, toggleSort] = useSort<'outcome' | 'reference' | 'serial' | 'device' | 'location' | 'groupTag' | 'decidedBy' | 'closed'>({ key: 'closed', dir: 'desc' });
+  const { from, to } = range;
 
   useEffect(() => {
     let cancelled = false;
@@ -81,12 +81,33 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
   const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return (records ?? []).filter((r) =>
+    const needle = debouncedSearch.trim().toLowerCase();
+    const matching = (records ?? []).filter((r) =>
       (!outcome || r.state === outcome)
       && (!needle || [r.serialNumber, r.referenceCode, deviceLabel(r), r.locationName ?? '', r.groupTag ?? '', r.decidedByUpn ?? '']
         .some((v) => v.toLowerCase().includes(needle))));
-  }, [records, outcome, search]);
+
+    return sortRows(matching, sort, {
+      outcome:   (r: AutopilotRequest) => stateLabel(r.state),
+      reference: (r: AutopilotRequest) => r.referenceCode,
+      serial:    (r: AutopilotRequest) => r.serialNumber,
+      device:    (r: AutopilotRequest) => deviceLabel(r),
+      location:  (r: AutopilotRequest) => r.locationName ?? '',
+      groupTag:  (r: AutopilotRequest) => r.groupTag ?? '',
+      decidedBy: (r: AutopilotRequest) => r.decidedByUpn ?? '',
+      closed:    (r: AutopilotRequest) => new Date(r.updatedAt).getTime(),
+    });
+  }, [records, outcome, debouncedSearch, sort]);
+
+  const appliedFilters = useMemo<AppliedFilter[]>(() => {
+    const chips: AppliedFilter[] = [];
+    if (search) chips.push({ key: 'search', label: `Search: ${search}`, onClear: () => setSearch('') });
+    if (outcome) {
+      const label = OUTCOME_FILTERS.find((o) => o.value === outcome)?.label ?? outcome;
+      chips.push({ key: 'outcome', label: `Outcome: ${label}`, onClear: () => setOutcome('') });
+    }
+    return chips;
+  }, [search, outcome]);
 
   const counts = useMemo(() => {
     const c = { total: 0, imported: 0, alreadyRegistered: 0, rejected: 0, expired: 0 };
@@ -136,29 +157,38 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="autopilot-report-from">Closed from</Label>
-            <Input id="autopilot-report-from" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="w-40" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="autopilot-report-to">To</Label>
-            <Input id="autopilot-report-to" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} className="w-40" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="autopilot-report-outcome">Outcome</Label>
-            <Select id="autopilot-report-outcome" value={outcome} onValueChange={setOutcome} options={OUTCOME_FILTERS} wrapperClassName="w-48" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="autopilot-report-search">Search</Label>
-            <Input id="autopilot-report-search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Serial, reference, location, tag or approver" className="w-72" />
-          </div>
-        </div>
-        <Button variant="outline" onClick={handleExport} disabled={filtered.length === 0}>
-          <FileDown /> Export CSV
-        </Button>
-      </div>
+      <ReportFilterBar
+        applied={appliedFilters}
+        onClearAll={() => { setSearch(''); setOutcome(''); }}
+        actions={
+          <Button variant="outline" onClick={handleExport} disabled={filtered.length === 0}>
+            <FileDown /> Export CSV
+          </Button>
+        }
+      >
+        <SearchInput
+          id="autopilot-report-search"
+          value={search}
+          onValueChange={setSearch}
+          placeholder="Serial, reference, location or approver"
+          wrapperClassName="w-96"
+        />
+        <DateRangeSelect
+          id="autopilot-report-range"
+          aria-label="Closed between"
+          value={range}
+          onValueChange={setRange}
+          wrapperClassName="w-44"
+        />
+        <Select
+          id="autopilot-report-outcome"
+          aria-label="Outcome"
+          value={outcome}
+          onValueChange={setOutcome}
+          options={OUTCOME_FILTERS}
+          wrapperClassName="w-44"
+        />
+      </ReportFilterBar>
 
       {loadError && (
         <div role="alert" className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
@@ -196,14 +226,14 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>Outcome</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Serial number</TableHead>
-                  <TableHead>Device</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Group tag</TableHead>
-                  <TableHead>Decided by</TableHead>
-                  <TableHead>Closed</TableHead>
+                  <SortableHead label="Outcome" sortKey="outcome" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Reference" sortKey="reference" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Serial number" sortKey="serial" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Device" sortKey="device" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Location" sortKey="location" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Group tag" sortKey="groupTag" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Decided by" sortKey="decidedBy" sort={sort} onSort={toggleSort} />
+                  <SortableHead label="Closed" sortKey="closed" sort={sort} onSort={toggleSort} />
                 </TableRow>
               </TableHeader>
               <TableBody>

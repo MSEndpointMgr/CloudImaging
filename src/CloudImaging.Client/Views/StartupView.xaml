@@ -4,18 +4,65 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="Getting ready">
     <!--
-        Shown only while startup resolves which operations this device is offered (whether the
-        portal allows Autopilot registration), so Operation Selection opens in its final state.
-        Fixed layout, no ScrollViewer (FR-002b).
+        First screen after launch: checks the prerequisites every operation depends on (StartupViewModel)
+        so Operation Selection opens in its final state. Fixed layout, no ScrollViewer (FR-002b).
     -->
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-        <ui:ProgressRing IsIndeterminate="True" Width="40" Height="40" HorizontalAlignment="Center" />
-        <TextBlock Text="Getting ready"
-                   Style="{StaticResource SubtitleTextBlockStyle}"
-                   HorizontalAlignment="Center" Margin="0,20,0,0" />
-        <TextBlock Text="Loading components and available operations"
-                   Style="{StaticResource BodyTextBlockStyle}"
-                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                   HorizontalAlignment="Center" Margin="0,8,0,0" />
-    </StackPanel>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="460">
+            <TextBlock Text="Getting ready"
+                       Style="{StaticResource SubtitleTextBlockStyle}"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Loading components and available operations"
+                       Style="{StaticResource BodyTextBlockStyle}"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       HorizontalAlignment="Center" Margin="0,8,0,0" />
+
+            <Border Margin="0,24,0,0" Padding="20,8" CornerRadius="8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <ItemsControl ItemsSource="{Binding Checks}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="20" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <Grid VerticalAlignment="Top" Margin="0,2,0,0">
+                                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16"
+                                                     Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
+                                    <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="18"
+                                                   Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                                   Visibility="{Binding IsPassed, Converter={StaticResource BoolToVisibility}}" />
+                                    <ui:SymbolIcon Symbol="Warning24" FontSize="18"
+                                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                                   Visibility="{Binding IsWarning, Converter={StaticResource BoolToVisibility}}" />
+                                    <ui:SymbolIcon Symbol="DismissCircle24" FontSize="18"
+                                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                                   Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
+                                </Grid>
+
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="{Binding Detail}" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis"
+                                               Margin="0,2,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Border>
+        </StackPanel>
+
+        <!-- No actions while checking; View Log is there for a check that hangs. -->
+        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}" />
+    </Grid>
 </Page>

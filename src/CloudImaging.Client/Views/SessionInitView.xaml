@@ -9,6 +9,11 @@
         Refresh button triggers immediate poll cycle (FR-031).
     -->
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
         <ui:Card HorizontalAlignment="Center" VerticalAlignment="Center" Padding="48,40">
             <StackPanel Width="520">
 
@@ -51,25 +56,27 @@
                             Message="{Binding CertErrorMessage}"
                             Severity="Error"
                             IsOpen="{Binding HasCertError}"
-                            IsClosable="False"
-                            Margin="0,0,0,16" />
-
-                <!-- Actions. Start over stays available after polling stops, because a rejected
-                     certificate or a passcode the server has already refused both leave the
-                     operator with no other way forward short of rebooting the device. -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <ui:Button Content="Refresh Status"
-                               Appearance="Secondary"
-                               Width="180"
-                               Command="{Binding RefreshCommand}"
-                               Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
-                    <ui:Button Content="Start Over"
-                               Appearance="Secondary"
-                               Width="180" Margin="12,0,0,0"
-                               Command="{Binding StartOverCommand}"
-                               Visibility="{Binding CanStartOver, Converter={StaticResource BoolToVisibility}}" />
-                </StackPanel>
+                            IsClosable="False" />
             </StackPanel>
         </ui:Card>
+
+        <!-- Start over stays available after polling stops: a rejected certificate or refused passcode leaves no other way forward short of rebooting. -->
+        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}">
+            <HeaderedContentControl.Content>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="Start over"
+                               Appearance="Secondary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Command="{Binding StartOverCommand}"
+                               Visibility="{Binding CanStartOver, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button Content="Refresh status"
+                               Appearance="Primary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Icon="{ui:SymbolIcon ArrowClockwise24}"
+                               Command="{Binding RefreshCommand}"
+                               Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+            </HeaderedContentControl.Content>
+        </HeaderedContentControl>
     </Grid>
 </Page>

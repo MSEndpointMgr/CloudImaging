@@ -66,10 +66,40 @@ public enum WifiConnectResult
     NoAdapter,
 }
 
+/// <summary>Why a Wi-Fi scan did or did not return networks.</summary>
+public enum WifiScanStatus
+{
+    /// <summary>The scan ran; the list may still be empty while the adapter is scanning.</summary>
+    Ok,
+
+    /// <summary>This Windows installation has no WLAN support (netsh has no wlan context).</summary>
+    NotSupported,
+
+    /// <summary>The WLAN AutoConfig service is stopped and could not be started.</summary>
+    ServiceNotRunning,
+
+    /// <summary>No wireless adapter is visible, usually because its driver is missing.</summary>
+    NoAdapter,
+
+    /// <summary>Windows withheld the scan results until location access is granted (desktop Windows only).</summary>
+    LocationPermissionRequired,
+
+    /// <summary>netsh failed for another reason.</summary>
+    Failed,
+}
+
+/// <summary>Outcome of <see cref="WirelessConnectionService.ScanAsync"/>.</summary>
+/// <param name="Status">Why the list is what it is.</param>
+/// <param name="Networks">Networks found; empty unless <paramref name="Status"/> is <see cref="WifiScanStatus.Ok"/>.</param>
+/// <param name="Detail">netsh's own first line of output when <paramref name="Status"/> is <see cref="WifiScanStatus.Failed"/>.</param>
+public sealed record WifiScanResult(WifiScanStatus Status, IReadOnlyList<WifiNetwork> Networks, string? Detail = null);
+
 /// <summary>
 /// Live, runtime-only Wi-Fi scan/connect for the WinPE Client's "Connect to Wi-Fi" support tool.
-/// Uses the built-in <c>netsh wlan</c> CLI (present in WinPE with the WinPE-WiFi-Package
-/// optional component) rather than a managed WLAN API, since none is referenced by this project.
+/// Uses the built-in <c>netsh wlan</c> CLI rather than a managed WLAN API, since none is referenced
+/// by this project. <c>netsh wlan</c> needs the WLAN AutoConfig service and its netsh helper; the
+/// ADK's WinPE supports wired networking only and ships neither, so on such a boot image
+/// <see cref="ScanAsync"/> reports <see cref="WifiScanStatus.NotSupported"/>.
 ///
 /// No credential persistence anywhere: the WLAN profile XML (which embeds the PSK in plain text,
 /// as required by the netsh profile schema) is written to a temp file only for the duration of
@@ -84,39 +114,102 @@ public sealed partial class WirelessConnectionService
     private static readonly TimeSpan ConnectPollTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan ConnectPollInterval = TimeSpan.FromSeconds(1);
 
+    // A freshly started WLAN service needs a moment to enumerate the adapter and finish a first scan.
+    private static readonly TimeSpan ServiceStartSettleTime = TimeSpan.FromSeconds(4);
+
     private readonly ILogger<WirelessConnectionService> _logger;
     private readonly Func<string, CancellationToken, Task<(int ExitCode, string StdOut, string StdErr)>> _runNetsh;
+    private readonly Func<CancellationToken, Task<bool>> _startWlanService;
+    private readonly TimeSpan _serviceStartSettleTime;
 
     /// <param name="logger">Defaults to a no-op logger when not supplied.</param>
     /// <param name="runNetshOverride">Test seam. Defaults to a real <c>netsh.exe</c> invocation.</param>
+    /// <param name="startWlanServiceOverride">Test seam. Defaults to <c>sc.exe start wlansvc</c>.</param>
+    /// <param name="serviceStartSettleTime">Test seam for the wait after starting the WLAN service.</param>
     public WirelessConnectionService(
         ILogger<WirelessConnectionService>? logger = null,
-        Func<string, CancellationToken, Task<(int, string, string)>>? runNetshOverride = null)
+        Func<string, CancellationToken, Task<(int, string, string)>>? runNetshOverride = null,
+        Func<CancellationToken, Task<bool>>? startWlanServiceOverride = null,
+        TimeSpan? serviceStartSettleTime = null)
     {
         _logger   = logger ?? NullLogger<WirelessConnectionService>.Instance;
         _runNetsh = runNetshOverride ?? RunNetshAsync;
+        _startWlanService = startWlanServiceOverride ?? StartWlanServiceAsync;
+        _serviceStartSettleTime = serviceStartSettleTime ?? ServiceStartSettleTime;
     }
 
-    /// <summary>Scans for visible Wi-Fi networks via <c>netsh wlan show networks mode=bssid</c>. Returns an empty list (never throws) on any failure.</summary>
-    public async Task<IReadOnlyList<WifiNetwork>> ScanAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Scans for visible Wi-Fi networks via <c>netsh wlan show networks mode=bssid</c>. When nothing
+    /// comes back, works out why (no WLAN support, stopped service, no adapter) so the window can say
+    /// so instead of showing an empty list. Starts a stopped WLAN service once. Never throws.
+    /// </summary>
+    public async Task<WifiScanResult> ScanAsync(CancellationToken ct = default)
     {
         try
         {
-            var (exitCode, stdOut, stdErr) = await _runNetsh("wlan show networks mode=bssid", ct);
-            if (exitCode != 0)
-            {
-                LogScanFailed(_logger, exitCode, stdOut + stdErr);
-                return [];
-            }
+            var result = await ScanOnceAsync(ct);
+            if (result.Status != WifiScanStatus.ServiceNotRunning)
+                return result;
 
-            return ParseNetworks(stdOut);
+            LogStartingWlanService(_logger);
+            if (!await _startWlanService(ct))
+                return result;
+
+            await Task.Delay(_serviceStartSettleTime, ct);
+            return await ScanOnceAsync(ct);
         }
         catch (Exception ex)
         {
             LogScanFailed(_logger, -1, ex.Message);
-            return [];
+            return new WifiScanResult(WifiScanStatus.Failed, [], ex.Message);
         }
     }
+
+    private async Task<WifiScanResult> ScanOnceAsync(CancellationToken ct)
+    {
+        var (exitCode, stdOut, stdErr) = await _runNetsh("wlan show networks mode=bssid", ct);
+        var output = stdOut + stdErr;
+        IReadOnlyList<WifiNetwork> networks = exitCode == 0 ? ParseNetworks(stdOut) : [];
+        if (networks.Count > 0)
+            return new WifiScanResult(WifiScanStatus.Ok, networks);
+
+        var status = ClassifyNetshOutput(output);
+        if (status == WifiScanStatus.Ok && exitCode == 0)
+        {
+            // No networks listed: confirm an adapter exists before calling an empty list a result.
+            var (ifExitCode, ifStdOut, ifStdErr) = await _runNetsh("wlan show interfaces", ct);
+            var interfaceStatus = ClassifyNetshOutput(ifStdOut + ifStdErr);
+            status = interfaceStatus != WifiScanStatus.Ok ? interfaceStatus
+                : ifExitCode == 0 && ParseInterfaceName(ifStdOut) is null ? WifiScanStatus.NoAdapter
+                : WifiScanStatus.Ok;
+        }
+        else if (status == WifiScanStatus.Ok)
+        {
+            status = WifiScanStatus.Failed;
+        }
+
+        if (status != WifiScanStatus.Ok)
+            LogScanFailed(_logger, exitCode, output.Trim());
+
+        return new WifiScanResult(status, [], status == WifiScanStatus.Failed ? FirstLine(output) : null);
+    }
+
+    /// <summary>Maps netsh's English error text to a scan status; <see cref="WifiScanStatus.Ok"/> when none matches.</summary>
+    internal static WifiScanStatus ClassifyNetshOutput(string output)
+    {
+        if (output.Contains("command was not found", StringComparison.OrdinalIgnoreCase))
+            return WifiScanStatus.NotSupported;
+        if (output.Contains("wlansvc", StringComparison.OrdinalIgnoreCase) && output.Contains("not running", StringComparison.OrdinalIgnoreCase))
+            return WifiScanStatus.ServiceNotRunning;
+        if (output.Contains("no wireless interface", StringComparison.OrdinalIgnoreCase))
+            return WifiScanStatus.NoAdapter;
+        if (output.Contains("location permission", StringComparison.OrdinalIgnoreCase))
+            return WifiScanStatus.LocationPermissionRequired;
+        return WifiScanStatus.Ok;
+    }
+
+    private static string? FirstLine(string output) =>
+        output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
 
     /// <summary>
     /// Connects to <paramref name="ssid"/> using <paramref name="password"/> (null/empty for open
@@ -303,13 +396,27 @@ public sealed partial class WirelessConnectionService
             """;
     }
 
-    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunNetshAsync(string arguments, CancellationToken ct)
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunNetshAsync(string arguments, CancellationToken ct) =>
+        await RunProcessAsync("netsh.exe", arguments, ct);
+
+    /// <summary>True when <c>sc.exe</c> started the WLAN AutoConfig service; false when it is not installed or refused.</summary>
+    private async Task<bool> StartWlanServiceAsync(CancellationToken ct)
+    {
+        var (exitCode, stdOut, stdErr) = await RunProcessAsync("sc.exe", "start wlansvc", ct);
+        if (exitCode == 0)
+            return true;
+
+        LogWlanServiceStartFailed(_logger, exitCode, (stdOut + stdErr).Trim());
+        return false;
+    }
+
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunProcessAsync(string fileName, string arguments, CancellationToken ct)
     {
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName               = "netsh.exe",
+                FileName               = fileName,
                 Arguments              = arguments,
                 UseShellExecute        = false,
                 RedirectStandardOutput = true,
@@ -342,6 +449,12 @@ public sealed partial class WirelessConnectionService
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Wi-Fi scan failed (exit {ExitCode}): {Output}")]
     private static partial void LogScanFailed(ILogger logger, int exitCode, string output);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "WLAN AutoConfig service is not running; starting it.")]
+    private static partial void LogStartingWlanService(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not start the WLAN AutoConfig service (exit {ExitCode}): {Output}")]
+    private static partial void LogWlanServiceStartFailed(ILogger logger, int exitCode, string output);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "No wireless adapter found.")]
     private static partial void LogNoAdapter(ILogger logger);

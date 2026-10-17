@@ -5,11 +5,13 @@ import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { formatImageVersion, formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { BOOT_IMAGE_STAGE_LABELS, bootImageStage } from '../lib/bootImageStage.ts';
+import { sortRows, useSort } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
+import { Table, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/table.tsx';
 
 interface OsImage {
   imageId: string;
@@ -68,6 +70,9 @@ function ageDays(iso: string): number {
  */
 export default function ReportImageInventoryPage(): React.ReactElement {
   const [rows, setRows] = useState<InventoryRow[] | null>(null);
+  // Rows arrive grouped by catalog, which is an artefact of fetching three endpoints rather than
+  // an order anyone asked for. Newest first matches the image catalog pages.
+  const [sort, toggleSort] = useSort<'catalog' | 'name' | 'size' | 'date' | 'status'>({ key: 'date', dir: 'desc' });
 
   useEffect(() => {
     let cancelled = false;
@@ -124,9 +129,17 @@ export default function ReportImageInventoryPage(): React.ReactElement {
     };
   }, [rows]);
 
+  const sorted = useMemo(() => sortRows(rows ?? [], sort, {
+    catalog: (r: InventoryRow) => r.catalog,
+    name:    (r: InventoryRow) => r.name,
+    size:    (r: InventoryRow) => r.sizeBytes,
+    date:    (r: InventoryRow) => new Date(r.date).getTime(),
+    status:  (r: InventoryRow) => r.statusLabel,
+  }), [rows, sort]);
+
   const handleExport = () => {
-    if (!rows || rows.length === 0) return;
-    const csv = toCsv(rows, [
+    if (sorted.length === 0) return;
+    const csv = toCsv(sorted, [
       { header: 'Catalog', accessor: r => r.catalog },
       { header: 'Name', accessor: r => r.name },
       { header: 'Size (bytes)', accessor: r => r.sizeBytes },
@@ -152,12 +165,12 @@ export default function ReportImageInventoryPage(): React.ReactElement {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Catalog</TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead>Size</TableHead>
-            <TableHead>Date</TableHead>
-            <TableHead>Age</TableHead>
-            <TableHead>Status</TableHead>
+            <SortableHead label="Catalog" sortKey="catalog" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Name" sortKey="name" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Date" sortKey="date" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Age" sortKey="date" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -170,7 +183,7 @@ export default function ReportImageInventoryPage(): React.ReactElement {
               </TableCell>
             </TableRow>
           )}
-          {rows?.map(r => (
+          {sorted.map(r => (
             <TableRow key={`${r.catalog}-${r.id}`}>
               <TableCell>{r.catalog}</TableCell>
               <TableCell>{r.name}</TableCell>

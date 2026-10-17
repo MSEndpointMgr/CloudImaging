@@ -118,12 +118,52 @@ the interruption as a diagnosable outcome. See [Session lifecycle](session-lifec
 
 ---
 
+### Symptom: Operation Selection is disabled with "Network connection required" or a similar banner
+
+**Cause**: When the Client starts, the **Getting ready** screen checks for a local disk, a network
+connection and the Device Gateway API. Every operation needs the Device Gateway, so if it cannot be
+used, Operation Selection opens with every option disabled and a banner naming the reason:
+
+| Banner | Meaning |
+|---|---|
+| Network connection required | No adapter got a routable address and the gateway could not be reached. Either no cable is connected, or the boot image has no driver for this device's network adapter. |
+| Cannot reach the Cloud Imaging service | The device is online, but DNS, routing, a proxy or a firewall stops it reaching the Device Gateway. |
+| Cloud Imaging service unavailable | The Device Gateway host answered with a server error. |
+| Boot media not accepted | The Device Gateway rejected the boot-media certificate. |
+| Service address missing | The boot image has no Device Gateway URL. |
+
+**Resolution**: Fix the cause, then select **Check again** to repeat the checks without restarting.
+For a missing network driver, add the driver package under **Drivers** in Media Builder → Generate
+Boot Image, regenerate the boot image and prepare the USB drive again. The Client log (**View Log**)
+records each check's outcome on a `Startup checks:` line.
+
+---
+
+### Symptom: Imaging card says "No local disk found" or "local disks found"
+
+**Cause**: Imaging formats exactly one non-USB disk. No disk usually means the boot image has no
+driver for the storage controller (common with Intel VMD/RST NVMe). Several disks are refused
+because the Client will not guess which one to wipe.
+
+**Resolution**: For no disk, add the storage driver under **Drivers** in Media Builder and
+regenerate the boot image, or switch the controller from RAID/VMD to AHCI in firmware. For several
+disks, remove or disable the extra disks. **Register with Autopilot** stays available either way,
+since it never touches the disk.
+
+---
+
 ### Symptom: Device has no wired network or needs Wi-Fi to reach the Device Gateway
 
-**Resolution**: On the Operation Selection screen, click **Connect to Wi-Fi** (always available,
-no opt-in required) to scan and connect to an Open or WPA2/WPA3-Personal network via `netsh wlan`.
-Enterprise/802.1X networks are listed but cannot be connected to via this flow. No credential is
-persisted; see [setup-instructions.md](setup-instructions.md#client-support-tools).
+**Cause**: Boot images built by Media Builder are based on the ADK's WinPE, which supports wired
+networking only. It does not include the WLAN service or the `netsh wlan` commands, so
+**Connect to Wi-Fi** reports "This boot image has no Wi-Fi support".
+
+**Resolution**: Use a wired connection (a USB Ethernet adapter works if its driver is in the boot
+image). On a boot image that does include WLAN support, **Connect to Wi-Fi** scans and connects to
+an Open or WPA2/WPA3-Personal network via `netsh wlan`, and explains when the list is empty (no
+wireless adapter, WLAN service stopped). Enterprise/802.1X networks are listed but cannot be
+connected to via this flow. No credential is persisted; see
+[setup-instructions.md](setup-instructions.md#client-support-tools).
 
 ---
 

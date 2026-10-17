@@ -19,13 +19,21 @@ public partial class OperationSelectionView : Page
 
     /// <summary>
     /// Opens the "Connect to Wi-Fi" support tool (FR-051d companion feature). Always available
-    /// (unlike Command Prompt, not gated by any Media Builder opt-in) — a code-behind click
-    /// handler, matching <c>MainWindow.ViewLogButton_Click</c>'s precedent, since opening a
-    /// Window is a View-layer concern.
+    /// (unlike Command Prompt, not gated by any Media Builder opt-in); opening a Window is a
+    /// View-layer concern, so this is a code-behind click handler.
     /// </summary>
     private void ConnectWifiButton_Click(object sender, RoutedEventArgs e)
     {
-        DialogHost.ShowDimmed(new WifiConnectionWindow(), Window.GetWindow(this));
+        var wifiWindow = new WifiConnectionWindow();
+        DialogHost.ShowDimmed(wifiWindow, Window.GetWindow(this));
+
+        // A new Wi-Fi connection may be what was missing, so check again instead of making the technician ask.
+        if (wifiWindow.DataContext is ViewModels.WifiConnectionViewModel { HasConnected: true }
+            && DataContext is ViewModels.OperationSelectionViewModel { IsServiceBlocked: true } vm
+            && vm.RecheckCommand.CanExecute(null))
+        {
+            vm.RecheckCommand.Execute(null);
+        }
     }
 
     /// <summary>

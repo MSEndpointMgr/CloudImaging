@@ -2,15 +2,14 @@ using System.ComponentModel;
 using System.Windows;
 using CloudImaging.Client.Services;
 using CloudImaging.Client.ViewModels;
+using Microsoft.Extensions.Logging;
 using Wpf.Ui.Controls;
 
 namespace CloudImaging.Client.Views;
 
 /// <summary>
-/// "Connect to Wi-Fi" support tool window (companion to <see cref="MainWindow.ViewLogButton"/>'s
-/// diagnostics access point). Opened from <see cref="OperationSelectionView"/>'s always-available
-/// "Connect to Wi-Fi" button. Unlike the Command Prompt support tool, this is always available —
-/// it is not gated by the Media Builder opt-in toggle.
+/// "Connect to Wi-Fi" support tool window, opened from <see cref="OperationSelectionView"/>'s footer.
+/// Unlike the Command Prompt support tool, it is not gated by the Media Builder opt-in toggle.
 /// </summary>
 public partial class WifiConnectionWindow : FluentWindow
 {
@@ -26,7 +25,9 @@ public partial class WifiConnectionWindow : FluentWindow
             NativeWindowChromeFix.RemoveNativeCaption(this);
         };
 
-        var viewModel = new WifiConnectionViewModel(new WirelessConnectionService(), closeRequested: Close);
+        // Scan and connect failures belong in the Client log, which is the only diagnostic a technician can send.
+        var logger = new Serilog.Extensions.Logging.SerilogLoggerFactory(Serilog.Log.Logger).CreateLogger<WirelessConnectionService>();
+        var viewModel = new WifiConnectionViewModel(new WirelessConnectionService(logger), closeRequested: Close);
         // The inline connect panel's PasswordBox is now a single persistent element (not
         // re-created per list item), so it must be cleared explicitly whenever the selected
         // network changes — otherwise a password typed for one network would silently carry

@@ -164,13 +164,15 @@ public sealed class WirelessConnectionServiceTests
     }
 
     [Fact]
-    public async Task ScanAsync_ReturnsEmptyList_WhenNetshFails_AndDoesNotThrow()
+    public async Task ScanAsync_ReportsFailed_WhenNetshFails_AndDoesNotThrow()
     {
         var svc = new WirelessConnectionService(runNetshOverride: (_, _) => Task.FromResult((1, string.Empty, "access denied")));
 
         var result = await svc.ScanAsync();
 
-        result.Should().BeEmpty();
+        result.Networks.Should().BeEmpty();
+        result.Status.Should().Be(WifiScanStatus.Failed);
+        result.Detail.Should().Be("access denied");
     }
 
     [Fact]
@@ -184,7 +186,70 @@ public sealed class WirelessConnectionServiceTests
 
         var result = await svc.ScanAsync();
 
-        result.Should().HaveCount(3);
+        result.Status.Should().Be(WifiScanStatus.Ok);
+        result.Networks.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task ScanAsync_ReportsNotSupported_WhenNetshHasNoWlanContext()
+    {
+        // ADK WinPE: netsh exists but has no wlan helper.
+        var svc = new WirelessConnectionService(runNetshOverride: (args, _) =>
+            Task.FromResult((1, $"The following command was not found: {args}.", string.Empty)));
+
+        (await svc.ScanAsync()).Status.Should().Be(WifiScanStatus.NotSupported);
+    }
+
+    [Theory]
+    [InlineData("There is no wireless interface on the system.")]
+    [InlineData("There is 0 interface on the system:")]
+    public async Task ScanAsync_ReportsNoAdapter_WhenNoWirelessInterfaceExists(string interfacesOutput)
+    {
+        var svc = new WirelessConnectionService(runNetshOverride: (_, _) => Task.FromResult((0, interfacesOutput, string.Empty)));
+
+        (await svc.ScanAsync()).Status.Should().Be(WifiScanStatus.NoAdapter);
+    }
+
+    [Fact]
+    public async Task ScanAsync_StartsAStoppedWlanService_ThenScansAgain()
+    {
+        var started = false;
+        var svc = new WirelessConnectionService(
+            runNetshOverride: (_, _) => Task.FromResult(started
+                ? (0, ScanFixture, string.Empty)
+                : (1, "The Wireless AutoConfig Service (wlansvc) is not running.", string.Empty)),
+            startWlanServiceOverride: _ => Task.FromResult(started = true),
+            serviceStartSettleTime: TimeSpan.Zero);
+
+        var result = await svc.ScanAsync();
+
+        started.Should().BeTrue();
+        result.Status.Should().Be(WifiScanStatus.Ok);
+        result.Networks.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task ScanAsync_ReportsServiceNotRunning_WhenTheWlanServiceCannotStart()
+    {
+        var svc = new WirelessConnectionService(
+            runNetshOverride: (_, _) => Task.FromResult((1, "The Wireless AutoConfig Service (wlansvc) is not running.", string.Empty)),
+            startWlanServiceOverride: _ => Task.FromResult(false));
+
+        (await svc.ScanAsync()).Status.Should().Be(WifiScanStatus.ServiceNotRunning);
+    }
+
+    [Fact]
+    public async Task ScanAsync_ReportsOk_WithAnEmptyList_WhenTheAdapterHasNotSeenAnyNetworkYet()
+    {
+        var svc = new WirelessConnectionService(runNetshOverride: (args, _) =>
+            Task.FromResult(args.StartsWith("wlan show interfaces", StringComparison.Ordinal)
+                ? (0, InterfacesFixtureDisconnected, string.Empty)
+                : (0, "Interface name : Wi-Fi\nThere are 0 networks currently visible.", string.Empty)));
+
+        var result = await svc.ScanAsync();
+
+        result.Status.Should().Be(WifiScanStatus.Ok);
+        result.Networks.Should().BeEmpty();
     }
 
     [Fact]

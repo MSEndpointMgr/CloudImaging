@@ -9,7 +9,7 @@ using Wpf.Ui.Controls;
 namespace CloudImaging.Client.Views;
 
 /// <summary>
-/// The Client's single top-level window: a fixed chrome (branding logo, View Log/dim overlay)
+/// The Client's single top-level window: a fixed chrome (branding logo, dim overlay)
 /// hosting each screen as a <see cref="Page"/> navigated into <c>NavigationFrame</c> via
 /// <see cref="NavigateTo"/>.
 /// </summary>
@@ -75,18 +75,10 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    /// <summary>Navigates to the given page, showing or hiding the floating View Log button as appropriate.</summary>
+    /// <summary>Navigates to the given page.</summary>
     public void NavigateTo(Page page)
     {
         NavigationFrame.Navigate(page);
-
-        // ProgressView hosts its own "View Log" button at the bottom of its step sidebar (it
-        // sits closer to hand and doesn't overlap the hero panel's progress bar/error area), and
-        // the blocked results card has one beside Try again, so the floating global button is
-        // hidden while either is the active page.
-        var hasOwnLogButton = page is ProgressView
-            || page.DataContext is ViewModels.ResultsViewModel { IsNotAuthorized: true };
-        ViewLogButton.Visibility = hasOwnLogButton ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>
@@ -116,15 +108,5 @@ public partial class MainWindow : FluentWindow
             DimOverlay.Visibility = dimmed ? Visibility.Visible : Visibility.Collapsed;
         else
             Dispatcher.Invoke(() => DimOverlay.Visibility = dimmed ? Visibility.Visible : Visibility.Collapsed);
-    }
-
-    /// <summary>
-    /// Opens the read-only local log viewer (FR-066) — see <see cref="LogViewerWindow"/>.
-    /// Available from every screen since it's hosted on <see cref="MainWindow"/> itself rather
-    /// than any individual <see cref="Page"/>.
-    /// </summary>
-    private void ViewLogButton_Click(object sender, RoutedEventArgs e)
-    {
-        DialogHost.ShowDimmed(new LogViewerWindow(), this);
     }
 }

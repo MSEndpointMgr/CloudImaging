@@ -16,16 +16,19 @@ namespace CloudImaging.Client;
 
 public partial class App : Application
 {
-    // Covers the 20-second network grace period plus the availability request itself.
-    private static readonly TimeSpan StartupAvailabilityTimeout = TimeSpan.FromSeconds(30);
+    // Covers the 20-second network wait plus the 15-second gateway probe.
+    private static readonly TimeSpan StartupChecksTimeout = TimeSpan.FromSeconds(40);
 
     // Long enough that Getting ready reads as a step rather than a flicker when there is nothing to load.
     private static readonly TimeSpan StartupMinimumDisplay = TimeSpan.FromSeconds(1);
 
     private Serilog.Core.Logger? _logger;
 
-    /// <summary>Autopilot availability resolved at startup, reused so Operation Selection never re-checks it on screen.</summary>
-    private static AutopilotAvailabilityState? s_autopilotAvailability;
+    /// <summary>What the startup checks found, reused so returning to Operation Selection never re-checks on screen.</summary>
+    private static StartupReadiness? s_readiness;
+
+    /// <summary>Re-runs the startup checks from Operation Selection's Check again.</summary>
+    private static Action? s_recheck;
 
     /// <summary>Wires up fatal-exception reporting, configures logging, and shows the first view.</summary>
     protected override void OnStartup(StartupEventArgs e)
@@ -80,7 +83,7 @@ public partial class App : Application
             var mainWindow = new MainWindow();
 
             // Navigate before Show: a page arriving while MainWindow.Loaded swaps the theme dictionary loses its inherited text colour.
-            _ = ShowOperationSelectionAsync(mainWindow, gatewayClient, loggerFactory, rememberAvailability: true);
+            _ = ShowOperationSelectionAsync(mainWindow, gatewayClient, loggerFactory, rememberReadiness: true);
             mainWindow.Show();
 
 #if DEV_SIMULATION
@@ -130,12 +133,19 @@ public partial class App : Application
         base.OnExit(e);
     }
 
+    /// <summary>View Log in the shared footer (<c>ClientFooterStyle</c> in App.xaml).</summary>
+    private void FooterViewLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        DialogHost.ShowDimmed(new LogViewerWindow(), Window.GetWindow((DependencyObject)sender));
+    }
+
     // ── Navigation factories ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Shows Getting ready, loads whatever Operation Selection needs (today the portal's Autopilot
-    /// setting, when this boot image can register), then opens Operation Selection in its final
-    /// state so no card visibly switches from disabled to enabled.
+    /// Shows Getting ready while it checks the prerequisites every operation depends on (local
+    /// disk, network, Device Gateway, and the portal's Autopilot setting when this boot image can
+    /// register), then opens Operation Selection in its final state so no card visibly switches
+    /// from disabled to enabled.
     /// </summary>
     private static async Task ShowOperationSelectionAsync(
         MainWindow window,
@@ -143,24 +153,26 @@ public partial class App : Application
         ILoggerFactory lf,
         AutopilotHashCaptureService? autopilotCapture = null,
         TimeSpan? autopilotPollInterval = null,
-        bool rememberAvailability = false)
+        bool rememberReadiness = false,
+        StartupViewModel? startupChecks = null)
     {
-        window.NavigateTo(new StartupView());
+        autopilotCapture ??= new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
+        startupChecks ??= new StartupViewModel(gateway.ProbeAsync, autopilotCapture.IsToolingPresent, logger: lf.CreateLogger<StartupViewModel>());
+        window.NavigateTo(new StartupView { DataContext = startupChecks });
         var minimumDisplay = Task.Delay(StartupMinimumDisplay);
 
-        autopilotCapture ??= new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
-        AutopilotAvailabilityState? availability = null;
-        if (autopilotCapture.IsToolingPresent)
+        using var timeout = new CancellationTokenSource(StartupChecksTimeout);
+        var readiness = await startupChecks.RunAsync(timeout.Token);
+        Action recheck = () => _ = ShowOperationSelectionAsync(window, gateway, lf, autopilotCapture, autopilotPollInterval, rememberReadiness);
+        if (rememberReadiness)
         {
-            using var timeout = new CancellationTokenSource(StartupAvailabilityTimeout);
-            availability = await OperationSelectionViewModel.ResolveAutopilotAvailabilityAsync(gateway, timeout.Token);
-            if (rememberAvailability)
-                s_autopilotAvailability = availability;
+            s_readiness = readiness;
+            s_recheck = recheck;
         }
 
         await minimumDisplay;
         window.NavigateTo(BuildOperationSelectionView(window, gateway, lf,
-            autopilotCapture: autopilotCapture, autopilotPollInterval: autopilotPollInterval, autopilotAvailability: availability));
+            autopilotCapture: autopilotCapture, autopilotPollInterval: autopilotPollInterval, readiness: readiness, recheck: recheck));
     }
 
 #if DEV_SIMULATION
@@ -202,17 +214,23 @@ public partial class App : Application
                     autopilotCapture: DevMode.DevAutopilotSimulation.Capture(withTpmData: true), autopilotPollInterval: DevMode.DevAutopilotSimulation.PollInterval)),
                 ("8 · Autopilot: approved and imported", () => window.NavigateTo(BuildAutopilotRegistrationView(window,
                     DevMode.DevAutopilotSimulation.Gateway(["PendingApproval", "Importing", "Imported"]), lf,
-                    DevMode.DevAutopilotSimulation.Capture(withTpmData: true), DevMode.DevAutopilotSimulation.PollInterval, AutopilotAvailabilityState.Enabled))),
+                    DevMode.DevAutopilotSimulation.Capture(withTpmData: true), DevMode.DevAutopilotSimulation.PollInterval, DevMode.DevAutopilotSimulation.Readiness))),
                 ("9 · Autopilot: hash without TPM data", () => window.NavigateTo(BuildAutopilotRegistrationView(window,
                     DevMode.DevAutopilotSimulation.Gateway(["PendingApproval", "Importing", "Imported"]), lf,
-                    DevMode.DevAutopilotSimulation.Capture(withTpmData: false), DevMode.DevAutopilotSimulation.PollInterval, AutopilotAvailabilityState.Enabled))),
+                    DevMode.DevAutopilotSimulation.Capture(withTpmData: false), DevMode.DevAutopilotSimulation.PollInterval, DevMode.DevAutopilotSimulation.Readiness))),
                 ("10 · Autopilot: rejected", () => window.NavigateTo(BuildAutopilotRegistrationView(window,
                     DevMode.DevAutopilotSimulation.Gateway(["PendingApproval", "Rejected"], rejectionReason: "Not a company-owned device."), lf,
-                    DevMode.DevAutopilotSimulation.Capture(withTpmData: true), DevMode.DevAutopilotSimulation.PollInterval, AutopilotAvailabilityState.Enabled))),
+                    DevMode.DevAutopilotSimulation.Capture(withTpmData: true), DevMode.DevAutopilotSimulation.PollInterval, DevMode.DevAutopilotSimulation.Readiness))),
                 ("11 · Autopilot: submission refused", () => window.NavigateTo(BuildAutopilotRegistrationView(window,
                     DevMode.DevAutopilotSimulation.Gateway(["PendingApproval"], refusal: "Autopilot registration is turned off in the portal."), lf,
-                    DevMode.DevAutopilotSimulation.Capture(withTpmData: true), DevMode.DevAutopilotSimulation.PollInterval, AutopilotAvailabilityState.Enabled))),
-                ("12 · Startup: getting ready", () => window.NavigateTo(new StartupView())),
+                    DevMode.DevAutopilotSimulation.Capture(withTpmData: true), DevMode.DevAutopilotSimulation.PollInterval, DevMode.DevAutopilotSimulation.Readiness))),
+                ("12 · Startup: no disk, no network", () => _ = ShowOperationSelectionAsync(window, gateway, lf,
+                    startupChecks: new StartupViewModel(
+                        _ => Task.FromResult(new GatewayProbeResult(GatewayReachability.Unreachable, null)),
+                        autopilotToolingPresent: false,
+                        findLocalDisks: () => [],
+                        findNetworkAdapter: () => null,
+                        networkWait: TimeSpan.FromSeconds(3)))),
             ]);
         launcher.Show();
     }
@@ -252,25 +270,35 @@ public partial class App : Application
         bool startImagingImmediately = false,
         AutopilotHashCaptureService? autopilotCapture = null,
         TimeSpan? autopilotPollInterval = null,
-        AutopilotAvailabilityState? autopilotAvailability = null)
+        StartupReadiness? readiness = null,
+        Action? recheck = null)
     {
         var config = LoadConfiguration();
         var view = new OperationSelectionView();
         autopilotCapture ??= new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
-        autopilotAvailability ??= s_autopilotAvailability;
+        readiness ??= s_readiness;
+        recheck ??= s_recheck;
+        var autopilotAvailability = readiness?.AutopilotAvailability;
         view.DataContext = new OperationSelectionViewModel(
             gateway,
             (sessionResponse, serialNumber) =>
                 window.NavigateTo(BuildSessionInitView(window, gateway, lf, sessionResponse, serialNumber)),
             new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()),
+#if DEV_SIMULATION
+            // Always shown in dev so its placement can be checked against every Operation Selection state.
+            commandPromptEnabled: true,
+#else
             commandPromptEnabled: config.CommandPromptEnabled ?? false,
+#endif
             setMainWindowTopmost: window.SetTopmost,
             commandPromptLauncher: new CommandPromptLauncherService(lf.CreateLogger<CommandPromptLauncherService>()),
             autopilotToolingPresent: autopilotCapture.IsToolingPresent,
-            navigateToAutopilot: () => window.NavigateTo(BuildAutopilotRegistrationView(window, gateway, lf, autopilotCapture, autopilotPollInterval, autopilotAvailability)),
+            navigateToAutopilot: () => window.NavigateTo(BuildAutopilotRegistrationView(window, gateway, lf, autopilotCapture, autopilotPollInterval, readiness, recheck)),
             postureDetector: new DevicePostureDetector(lf.CreateLogger<DevicePostureDetector>()),
             startImagingImmediately: startImagingImmediately,
-            autopilotAvailability: autopilotAvailability);
+            autopilotAvailability: autopilotAvailability,
+            readiness: readiness,
+            recheck: recheck);
         return view;
     }
 
@@ -280,12 +308,13 @@ public partial class App : Application
         ILoggerFactory lf,
         AutopilotHashCaptureService capture,
         TimeSpan? pollInterval = null,
-        AutopilotAvailabilityState? availability = null)
+        StartupReadiness? readiness = null,
+        Action? recheck = null)
     {
         var viewModel = new AutopilotRegistrationViewModel(
             gateway,
             capture,
-            navigateBack: () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf, autopilotCapture: capture, autopilotPollInterval: pollInterval, autopilotAvailability: availability)),
+            navigateBack: () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf, autopilotCapture: capture, autopilotPollInterval: pollInterval, readiness: readiness, recheck: recheck)),
             new SystemClockSynchronizationService(lf.CreateLogger<SystemClockSynchronizationService>()),
             logger: lf.CreateLogger<AutopilotRegistrationViewModel>(),
             pollInterval: pollInterval);

@@ -3,14 +3,17 @@ import { FileDown, AlertOctagon } from 'lucide-react';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
+import { resolvePreset, type DateRange } from '../lib/dateRange.ts';
+import { sortRows, useSort } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
-import { Input } from '../components/ui/input.tsx';
-import { Label } from '../components/ui/label.tsx';
+import { DateRangeSelect } from '../components/ui/date-range-select.tsx';
+import { ReportFilterBar } from '../components/ReportFilterBar.tsx';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { CopyableId } from '../components/ui/copyable-id.tsx';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
+import { Table, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/table.tsx';
 
 interface SessionHistoryRecord {
   sessionId: string;
@@ -25,11 +28,6 @@ interface SessionHistoryRecord {
 }
 
 const FAILURE_STATES = new Set(['SessionFailed', 'SessionNotAuthorized', 'SessionExpired']);
-const DEFAULT_WINDOW_DAYS = 30;
-
-function isoDateInputValue(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
 
 /** Display label for a `SessionState` name. Total, for the reason given on the same helper in ReportSessionOutcomesPage. */
 function stateLabel(state: string): string {
@@ -56,11 +54,10 @@ function stepLabel(step: string | null): string {
  * over a date range, with its failed step and error detail — for diagnosing recurring issues.
  */
 export default function ReportFailureDetailPage(): React.ReactElement {
-  const today = useMemo(() => new Date(), []);
-  const defaultFrom = useMemo(() => new Date(today.getTime() - DEFAULT_WINDOW_DAYS * 86_400_000), [today]);
-  const [from, setFrom] = useState(isoDateInputValue(defaultFrom));
-  const [to, setTo] = useState(isoDateInputValue(today));
+  const [range, setRange] = useState<DateRange>(() => resolvePreset('last30')!);
   const [records, setRecords] = useState<SessionHistoryRecord[] | null>(null);
+  const [sort, toggleSort] = useSort<'state' | 'device' | 'step' | 'error' | 'finished'>({ key: 'finished', dir: 'desc' });
+  const { from, to } = range;
 
   useEffect(() => {
     let cancelled = false;
@@ -82,9 +79,17 @@ export default function ReportFailureDetailPage(): React.ReactElement {
     return () => { cancelled = true; };
   }, [from, to]);
 
+  const sorted = useMemo(() => sortRows(records ?? [], sort, {
+    state:    (r: SessionHistoryRecord) => stateLabel(r.finalState),
+    device:   (r: SessionHistoryRecord) => r.deviceSerialNumber,
+    step:     (r: SessionHistoryRecord) => stepLabel(r.failedStepName),
+    error:    (r: SessionHistoryRecord) => r.errorDetail ?? '',
+    finished: (r: SessionHistoryRecord) => new Date(r.terminalAt).getTime(),
+  }), [records, sort]);
+
+  // Exports what is on screen, in the order it is on screen.
   const handleExport = () => {
-    if (!records || records.length === 0) return;
-    const csv = toCsv(records, [
+    const csv = toCsv(sorted, [
       { header: 'Session ID', accessor: r => r.sessionId },
       { header: 'Final State', accessor: r => stateLabel(r.finalState) },
       { header: 'Device Serial Number', accessor: r => r.deviceSerialNumber },
@@ -92,39 +97,39 @@ export default function ReportFailureDetailPage(): React.ReactElement {
       { header: 'Model', accessor: r => r.deviceModel },
       { header: 'Failed Step', accessor: r => stepLabel(r.failedStepName) },
       { header: 'Error Detail', accessor: r => r.errorDetail ?? '' },
-      { header: 'Created At', accessor: r => r.createdAt },
-      { header: 'Terminal At', accessor: r => r.terminalAt },
+      { header: 'Started At', accessor: r => r.createdAt },
+      { header: 'Finished At', accessor: r => r.terminalAt },
     ]);
     downloadBlob(`failure-detail-${from}-to-${to}.csv`, csv);
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-end gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="from">From</Label>
-            <Input id="from" type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} className="w-40" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="to">To</Label>
-            <Input id="to" type="date" value={to} min={from} onChange={e => setTo(e.target.value)} className="w-40" />
-          </div>
-        </div>
+      <ReportFilterBar
+        actions={
           <Button variant="outline" onClick={handleExport} disabled={!records || records.length === 0}>
-          <FileDown /> Export CSV
-        </Button>
-      </div>
+            <FileDown /> Export CSV
+          </Button>
+        }
+      >
+        <DateRangeSelect
+          id="failure-detail-range"
+          aria-label="Date range"
+          value={range}
+          onValueChange={setRange}
+          wrapperClassName="w-44"
+        />
+      </ReportFilterBar>
 
       <div className="rounded-md border border-border overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>State</TableHead>
-            <TableHead>Device</TableHead>
-            <TableHead>Failed Step</TableHead>
-            <TableHead>Error Detail</TableHead>
-            <TableHead>Terminal At</TableHead>
+            <SortableHead label="State" sortKey="state" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Device" sortKey="device" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Failed step" sortKey="step" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Error detail" sortKey="error" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Finished" sortKey="finished" sort={sort} onSort={toggleSort} />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -137,7 +142,7 @@ export default function ReportFailureDetailPage(): React.ReactElement {
               </TableCell>
             </TableRow>
           )}
-          {records?.map(r => (
+          {sorted.map(r => (
             <TableRow key={r.sessionId}>
               <TableCell><Badge variant={stateBadgeVariant(r.finalState)} dot>{stateLabel(r.finalState)}</Badge></TableCell>
               <TableCell>

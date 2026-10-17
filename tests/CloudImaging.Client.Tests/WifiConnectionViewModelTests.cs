@@ -97,6 +97,7 @@ public sealed class WifiConnectionViewModelTests
         await Task.Delay(1500); // allow the fire-and-forget async command + one poll tick to complete
 
         vm.HasSucceeded.Should().BeTrue();
+        vm.HasConnected.Should().BeTrue();
         vm.HasError.Should().BeFalse();
         vm.StatusMessage.Should().Contain("HomeNetwork");
     }
@@ -121,6 +122,33 @@ public sealed class WifiConnectionViewModelTests
         vm.HasError.Should().BeTrue();
         vm.HasSucceeded.Should().BeFalse();
         vm.StatusMessage.Should().Contain("adapter");
+    }
+
+    [Fact]
+    public void Refresh_ExplainsWhy_WhenTheBootImageHasNoWifiSupport()
+    {
+        var wifiService = new WirelessConnectionService(runNetshOverride: (args, _) =>
+            Task.FromResult((1, $"The following command was not found: {args}.", string.Empty)));
+
+        var vm = new WifiConnectionViewModel(wifiService);
+
+        vm.Networks.Should().BeEmpty();
+        vm.HasError.Should().BeTrue();
+        vm.StatusMessage.Should().Contain("no Wi-Fi support");
+    }
+
+    [Fact]
+    public void Refresh_ShowsANeutralNote_WhenTheAdapterHasNotFoundNetworksYet()
+    {
+        var wifiService = new WirelessConnectionService(runNetshOverride: (args, _) =>
+            Task.FromResult(args.StartsWith("wlan show interfaces", StringComparison.Ordinal)
+                ? (0, "Name                   : Wi-Fi\nState                  : disconnected", string.Empty)
+                : (0, "There are 0 networks currently visible.", string.Empty)));
+
+        var vm = new WifiConnectionViewModel(wifiService);
+
+        vm.HasError.Should().BeFalse();
+        vm.HasInfo.Should().BeTrue();
     }
 
     [Fact]

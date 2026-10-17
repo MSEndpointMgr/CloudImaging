@@ -15,6 +15,57 @@
             </ResourceDictionary.MergedDictionaries>
             <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
 
+            <!-- ClientFooter buttons: quiet tools on the left, normal-size actions on the right. -->
+            <Style x:Key="FooterToolButtonStyle" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Appearance" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="Margin" Value="0,0,4,0" />
+            </Style>
+            <Style x:Key="FooterActionButtonStyle" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Height" Value="32" />
+                <Setter Property="MinWidth" Value="120" />
+                <Setter Property="Margin" Value="8,0,0,0" />
+            </Style>
+
+            <!--
+                Footer bar every screen shares: Header = the screen's tools (left of View Log),
+                Content = the screen's actions (right-aligned, main action last). A style rather than
+                a UserControl: a local type in page XAML forces the _wpftmp markup project, which
+                Directory.Build.targets strips of the services the views depend on.
+            -->
+            <Style x:Key="ClientFooterStyle" TargetType="HeaderedContentControl">
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="HeaderedContentControl">
+                            <Border Height="64" Padding="16,0"
+                                    Background="{DynamicResource SolidBackgroundFillColorSecondaryBrush}"
+                                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,1,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ContentPresenter ContentSource="Header" />
+                                        <ui:Button Content="View Log"
+                                                   Style="{StaticResource FooterToolButtonStyle}"
+                                                   Icon="{ui:SymbolIcon DocumentText24}"
+                                                   Click="FooterViewLogButton_Click" />
+                                    </StackPanel>
+                                    <ContentPresenter Grid.Column="2" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <!--
                 Renders a status message as a read-only, selectable/copyable TextBox instead of
                 relying on ui:InfoBar's own (plain, non-selectable) Message property or a plain

@@ -223,27 +223,38 @@ public sealed partial class DiskFormatService
     /// </summary>
     private static int FindSingleFixedDiskIndex()
     {
-        var candidates = new List<int>();
-        using var searcher = new ManagementObjectSearcher("SELECT Index, InterfaceType FROM Win32_DiskDrive");
+        var candidates = FindLocalDisks();
+        return candidates.Count switch
+        {
+            0 => throw new InvalidOperationException(
+                "No fixed (non-USB) disk was found on this device. Formatting was refused."),
+            1 => candidates[0].Index,
+            _ => throw new InvalidOperationException(
+                $"{candidates.Count} fixed disks were found on this device. Automatic target-disk " +
+                "selection requires exactly one; formatting was refused to avoid wiping the wrong disk."),
+        };
+    }
+
+    /// <summary>
+    /// Every non-USB disk Windows can see: the candidates for the imaging target. Shared with the
+    /// startup checks so they report exactly what formatting will later accept or refuse.
+    /// </summary>
+    internal static IReadOnlyList<LocalDisk> FindLocalDisks()
+    {
+        var disks = new List<LocalDisk>();
+        using var searcher = new ManagementObjectSearcher("SELECT Index, InterfaceType, Model, Size FROM Win32_DiskDrive");
         using var results = searcher.Get();
         foreach (ManagementObject disk in results)
         {
             var interfaceType = disk["InterfaceType"]?.ToString();
             if (!string.Equals(interfaceType, "USB", StringComparison.OrdinalIgnoreCase) && disk["Index"] is not null)
             {
-                candidates.Add((int)(uint)disk["Index"]);
+                TryConvertDiskSizeBytes(disk["Size"], out var bytes);
+                disks.Add(new LocalDisk((int)(uint)disk["Index"], disk["Model"]?.ToString()?.Trim(), bytes));
             }
         }
 
-        return candidates.Count switch
-        {
-            0 => throw new InvalidOperationException(
-                "No fixed (non-USB) disk was found on this device. Formatting was refused."),
-            1 => candidates[0],
-            _ => throw new InvalidOperationException(
-                $"{candidates.Count} fixed disks were found on this device. Automatic target-disk " +
-                "selection requires exactly one; formatting was refused to avoid wiping the wrong disk."),
-        };
+        return disks;
     }
 
     /// <summary>Returns the target disk's total size in megabytes, via WMI.</summary>

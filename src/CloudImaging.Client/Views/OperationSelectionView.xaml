@@ -10,12 +10,16 @@
         removed, so it can be re-enabled for a future release without re-authoring the view.
     -->
     <Grid>
+        <!-- Own row for the footer, so a tall banner can never push content onto it. -->
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
         <Grid VerticalAlignment="Center" HorizontalAlignment="Center" Width="720">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="28" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="20" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="20" />
             <RowDefinition Height="Auto" />
@@ -70,7 +74,8 @@
         -->
         <UniformGrid Grid.Row="2" Rows="1" HorizontalAlignment="Center">
             <!-- Imaging card -->
-            <Border Width="340" Height="200" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <Border Width="340" Height="200" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand"
+                    IsEnabled="{Binding IsImagingSelectable}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -80,6 +85,10 @@
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
                                 <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55" />
+                                <Setter Property="Cursor" Value="Arrow" />
                             </Trigger>
                             <DataTrigger Binding="{Binding SelectedOperation}" Value="Imaging">
                                 <Setter Property="BorderBrush" Value="{DynamicResource SystemAccentColorBrush}" />
@@ -99,7 +108,7 @@
                     <TextBlock Text="Imaging"
                                Style="{StaticResource SubtitleTextBlockStyle}"
                                HorizontalAlignment="Center" Margin="0,0,0,8" />
-                    <TextBlock Text="Apply a fresh OS image to this device."
+                    <TextBlock Text="{Binding ImagingCardDescription}"
                                Style="{StaticResource BodyTextBlockStyle}"
                                TextWrapping="Wrap" TextAlignment="Center"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -186,6 +195,32 @@
         </UniformGrid>
 
         <!-- Status / error -->
+        <!-- Shown when startup could not use the Device Gateway API: every operation needs it. -->
+        <Border Grid.Row="4" Width="696" Padding="16,12" CornerRadius="6"
+                Background="{DynamicResource SystemFillColorCriticalBackgroundBrush}"
+                Visibility="{Binding IsServiceBlocked, Converter={StaticResource BoolToVisibility}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="20" VerticalAlignment="Top" Margin="0,1,12,0"
+                               Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="{Binding ConnectivityTitle}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{Binding ConnectivityMessage}" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                </StackPanel>
+                <ui:Button Grid.Column="2" Content="Check again" Appearance="Secondary"
+                           Icon="{ui:SymbolIcon ArrowClockwise24}"
+                           VerticalAlignment="Center" Margin="16,0,0,0"
+                           Command="{Binding RecheckCommand}"
+                           Visibility="{Binding CanRecheck, Converter={StaticResource BoolToVisibility}}" />
+            </Grid>
+        </Border>
+
         <ui:InfoBar Grid.Row="4"
                     Title="Waiting for network connection"
                     Message="Preparing to register this device with the imaging service…"
@@ -199,69 +234,44 @@
                     Severity="Error"
                     IsOpen="{Binding HasError}"
                     IsClosable="False" />
-
-        <!-- Continue button: shows an indeterminate spinner in place of the label while the
-             session-registration request (network wait + hardware scan + CreateSession call)
-             is in flight, so the operator gets feedback instead of a seemingly-unresponsive
-             button. Re-enabled (label restored) on error so Continue can be pressed again. -->
-        <ui:Button Grid.Row="6"
-                   Appearance="Primary"
-                   Width="200" Height="44" FontSize="15"
-                   Command="{Binding ContinueCommand}"
-                   HorizontalAlignment="Center"
-                   IsEnabled="{Binding CanContinue}">
-            <Grid>
-                <TextBlock Text="Continue"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Visibility="{Binding IsNotBusy, Converter={StaticResource BoolToVisibility}}" />
-                <ui:ProgressRing IsIndeterminate="True"
-                                 Width="20" Height="20"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
-            </Grid>
-        </ui:Button>
         </Grid>
 
-        <!--
-            Support tools (FR-051d): advanced/diagnostic actions, deliberately subtle (low
-            opacity, corner-anchored) so they never compete with the guided imaging workflow —
-            mirrors MainWindow's "View Log" button styling. Only shown on this screen, not
-            globally, since they're only useful before a session/imaging operation starts.
-        -->
-        <StackPanel Orientation="Horizontal"
-                    HorizontalAlignment="Left" VerticalAlignment="Bottom"
-                    Margin="16,0,0,16">
-            <ui:Button x:Name="ConnectWifiButton"
-                       Appearance="Secondary"
-                       FontSize="11"
-                       Height="28"
-                       Padding="10,0"
-                       Opacity="0.7"
-                       Margin="0,0,8,0"
-                       Click="ConnectWifiButton_Click">
+        <!-- Support tools are deliberately low-key so they never compete with Continue. -->
+        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}">
+            <HeaderedContentControl.Header>
                 <StackPanel Orientation="Horizontal">
-                    <!-- Explicit FontSize so the icon glyph isn't shrunk down to the button's
-                         tiny 11pt label size (which otherwise renders as an indistinct blob). -->
-                    <ui:SymbolIcon Symbol="Wifi124" FontSize="16" Margin="0,0,6,0" />
-                    <TextBlock Text="Connect to Wi-Fi" />
+                    <ui:Button x:Name="ConnectWifiButton"
+                               Content="Connect to Wi-Fi"
+                               Style="{StaticResource FooterToolButtonStyle}"
+                               Icon="{ui:SymbolIcon Wifi124}"
+                               Click="ConnectWifiButton_Click" />
+                    <ui:Button x:Name="CommandPromptButton"
+                               Content="Command Prompt"
+                               Style="{StaticResource FooterToolButtonStyle}"
+                               Icon="{ui:SymbolIcon WindowConsole20}"
+                               Command="{Binding LaunchCommandPromptCommand}"
+                               Visibility="{Binding IsCommandPromptAvailable, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
-            </ui:Button>
-
-            <ui:Button x:Name="CommandPromptButton"
-                       Appearance="Secondary"
-                       FontSize="11"
-                       Height="28"
-                       Padding="10,0"
-                       Opacity="0.7"
-                       Command="{Binding LaunchCommandPromptCommand}"
-                       Visibility="{Binding IsCommandPromptAvailable, Converter={StaticResource BoolToVisibility}}">
-                <StackPanel Orientation="Horizontal">
-                    <!-- Explicit FontSize so the icon glyph isn't shrunk down to the button's
-                         tiny 11pt label size (which otherwise renders as an indistinct blob). -->
-                    <ui:SymbolIcon Symbol="WindowConsole20" FontSize="16" Margin="0,0,6,0" />
-                    <TextBlock Text="Command Prompt" />
-                </StackPanel>
-            </ui:Button>
-        </StackPanel>
+            </HeaderedContentControl.Header>
+            <HeaderedContentControl.Content>
+                <!-- Spinner replaces the label while registration (network wait, hardware scan, CreateSession) runs. -->
+                <ui:Button Appearance="Primary"
+                           Style="{StaticResource FooterActionButtonStyle}"
+                           Command="{Binding ContinueCommand}"
+                           IsEnabled="{Binding CanContinue}">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding IsNotBusy, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="Continue" VerticalAlignment="Center" />
+                            <ui:SymbolIcon Symbol="ArrowRight24" FontSize="16" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ui:ProgressRing IsIndeterminate="True"
+                                         Width="16" Height="16"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center"
+                                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+                </ui:Button>
+            </HeaderedContentControl.Content>
+        </HeaderedContentControl>
     </Grid>
 </Page>

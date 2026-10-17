@@ -20,7 +20,9 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     private bool _isScanning;
     private bool _isConnecting;
     private string? _statusMessage;
+    private string? _infoMessage;
     private bool _hasSucceeded;
+    private bool _hasConnected;
 
     /// <summary>Builds the view model and starts an initial network scan.</summary>
     public WifiConnectionViewModel(WirelessConnectionService? wifiService = null, Action? closeRequested = null)
@@ -97,6 +99,23 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         private set { _hasSucceeded = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
+    /// <summary>True once any connection attempt in this window succeeded, so the caller can re-check connectivity.</summary>
+    public bool HasConnected
+    {
+        get => _hasConnected;
+        private set { _hasConnected = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Neutral note about the last scan, e.g. that no networks were found yet.</summary>
+    public string? InfoMessage
+    {
+        get => _infoMessage;
+        private set { _infoMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasInfo)); }
+    }
+
+    /// <summary>True when <see cref="InfoMessage"/> is set.</summary>
+    public bool HasInfo => !string.IsNullOrEmpty(InfoMessage);
+
     /// <summary>Re-scans for nearby networks.</summary>
     public ICommand RefreshCommand { get; }
 
@@ -113,13 +132,19 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     {
         IsScanning     = true;
         StatusMessage  = null;
+        InfoMessage    = null;
         HasSucceeded   = false;
         try
         {
-            var networks = await _wifiService.ScanAsync();
+            var result = await _wifiService.ScanAsync();
             Networks.Clear();
-            foreach (var network in networks.OrderByDescending(n => n.SignalPercent))
+            foreach (var network in result.Networks.OrderByDescending(n => n.SignalPercent))
                 Networks.Add(network);
+
+            if (result.Status == WifiScanStatus.Ok)
+                InfoMessage = Networks.Count == 0 ? "No networks found yet. The adapter can take a few seconds to scan; select Refresh to try again." : null;
+            else
+                StatusMessage = DescribeScanFailure(result);
         }
         catch (Exception ex)
         {
@@ -143,12 +168,13 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         {
             var result = await _wifiService.ConnectAsync(SelectedNetwork.Ssid, password);
             HasSucceeded = result == WifiConnectResult.Success;
+            HasConnected |= HasSucceeded;
             StatusMessage = result switch
             {
                 WifiConnectResult.Success   => $"Connected to {SelectedNetwork.Ssid}.",
                 WifiConnectResult.NoAdapter => "No wireless adapter was found.",
                 WifiConnectResult.Timeout   => "Could not confirm the connection in time. Check the password and try again.",
-                _                           => "Could not connect \u2014 check the password and try again.",
+                _                           => "Could not connect. Check the password and try again.",
             };
         }
         catch (Exception ex)
@@ -160,6 +186,15 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
             IsConnecting = false;
         }
     }
+
+    private static string DescribeScanFailure(WifiScanResult result) => result.Status switch
+    {
+        WifiScanStatus.NotSupported => "This boot image has no Wi-Fi support. Connect a network cable instead.",
+        WifiScanStatus.ServiceNotRunning => "The Wi-Fi service (WLAN AutoConfig) is not running and could not be started.",
+        WifiScanStatus.NoAdapter => "No wireless adapter was found. The boot image may be missing this device's Wi-Fi driver.",
+        WifiScanStatus.LocationPermissionRequired => "Windows needs location access to list Wi-Fi networks. Turn on location services in Settings.",
+        _ => string.IsNullOrWhiteSpace(result.Detail) ? "Could not scan for networks." : $"Could not scan for networks: {result.Detail}",
+    };
 
     /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;

@@ -68,34 +68,10 @@
         </ui:TitleBar>
 
         <Grid Grid.Row="1">
+            <!-- Each screen brings its own ClientFooter (View Log included); ProgressView has its own View Log. -->
             <Frame x:Name="NavigationFrame"
                    NavigationUIVisibility="Hidden"
                    Focusable="False" />
-
-            <!--
-                Always-available diagnostics access point (FR-066): every screen already logs
-                its requests/steps/payloads to the local rolling log, but WinPE has no
-                Explorer/Notepad to open the file with — this lets a technician view it without
-                leaving the app. Deliberately subtle (low opacity, corner-anchored) so it never
-                competes with the actual imaging workflow.
-            -->
-            <ui:Button x:Name="ViewLogButton"
-                       Appearance="Secondary"
-                       FontSize="11"
-                       Height="28"
-                       Padding="10,0"
-                       Opacity="0.7"
-                       HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom"
-                       Margin="0,0,16,16"
-                       Click="ViewLogButton_Click">
-                <StackPanel Orientation="Horizontal">
-                    <!-- Explicit FontSize so the icon glyph isn't shrunk down to the button's
-                         tiny 11pt label size (which otherwise renders as an indistinct blob). -->
-                    <ui:SymbolIcon Symbol="DocumentText24" FontSize="16" Margin="0,0,6,0" />
-                    <TextBlock Text="View Log" />
-                </StackPanel>
-            </ui:Button>
         </Grid>
 
         <!--
