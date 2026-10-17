@@ -31,6 +31,7 @@
     "winston": "^3.15.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.10",
@@ -39,7 +40,8 @@
     "@typescript-eslint/eslint-plugin": "^8.71.1",
     "@typescript-eslint/parser": "^8.71.1",
     "@vitest/coverage-v8": "^5.0.3",
-    "eslint": "^9.13.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "prettier": "^3.9.10",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
