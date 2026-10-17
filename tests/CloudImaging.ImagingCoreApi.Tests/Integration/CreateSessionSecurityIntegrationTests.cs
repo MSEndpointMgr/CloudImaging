@@ -117,10 +117,7 @@ public sealed class CreateSessionSecurityIntegrationTests
             Model        = "Latitude 5540",
         };
 
-        var (session, plainPasscode) = DeviceSessionFactory.CreateNew(
-            reg,
-            passcodeTtl:              TimeSpan.FromMinutes(10),
-            sessionInactivityTimeout: TimeSpan.FromMinutes(30));
+        var (session, plainPasscode) = DeviceSessionFactory.CreateNew(reg);
 
         session.SessionId.Should().NotBe(Guid.Empty);
         session.DeviceSerialNumber.Should().Be("SN123456");

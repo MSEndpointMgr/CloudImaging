@@ -54,12 +54,21 @@
                             IsClosable="False"
                             Margin="0,0,0,16" />
 
-                <!-- Refresh button -->
-                <ui:Button Content="Refresh Status"
-                           Appearance="Secondary"
-                           Width="180" HorizontalAlignment="Center"
-                           Command="{Binding RefreshCommand}"
-                           Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
+                <!-- Actions. Start over stays available after polling stops, because a rejected
+                     certificate or a passcode the server has already refused both leave the
+                     operator with no other way forward short of rebooting the device. -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <ui:Button Content="Refresh Status"
+                               Appearance="Secondary"
+                               Width="180"
+                               Command="{Binding RefreshCommand}"
+                               Visibility="{Binding IsPolling, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button Content="Start Over"
+                               Appearance="Secondary"
+                               Width="180" Margin="12,0,0,0"
+                               Command="{Binding StartOverCommand}"
+                               Visibility="{Binding CanStartOver, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
             </StackPanel>
         </ui:Card>
     </Grid>

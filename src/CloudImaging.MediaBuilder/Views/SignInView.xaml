@@ -35,15 +35,26 @@
                            Style="{StaticResource AppButtonStyle}"
                            HorizontalAlignment="Center"
                            HorizontalContentAlignment="Center"
-                           MinWidth="180"
+                           Height="44"
+                           MinWidth="260"
+                           Padding="24,0"
+                           FontSize="16"
                            Command="{Binding SignInCommand}"
                            IsEnabled="{Binding CanSignIn}"
                            IsDefault="True">
                     <Grid>
                         <StackPanel Orientation="Horizontal"
                                     Visibility="{Binding IsBusy, Converter={StaticResource InverseBoolToVisibility}}">
-                            <ui:SymbolIcon Symbol="PersonAccounts24" Margin="0,0,8,0" />
-                            <TextBlock Text="Sign in" VerticalAlignment="Center" />
+                            <!-- Microsoft logo per brand spec: four 10px squares, 1px gap, 21px canvas -->
+                            <Viewbox Width="20" Height="20" Margin="0,0,12,0" VerticalAlignment="Center">
+                                <Canvas Width="21" Height="21">
+                                    <Rectangle Width="10" Height="10" Fill="#F25022" />
+                                    <Rectangle Canvas.Left="11" Width="10" Height="10" Fill="#7FBA00" />
+                                    <Rectangle Canvas.Top="11" Width="10" Height="10" Fill="#00A4EF" />
+                                    <Rectangle Canvas.Left="11" Canvas.Top="11" Width="10" Height="10" Fill="#FFB900" />
+                                </Canvas>
+                            </Viewbox>
+                            <TextBlock Text="Sign in with Microsoft" VerticalAlignment="Center" />
                         </StackPanel>
                         <ui:ProgressRing IsIndeterminate="True"
                                          Width="22" Height="22"

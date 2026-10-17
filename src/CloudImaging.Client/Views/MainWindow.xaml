@@ -62,7 +62,7 @@
                            VerticalAlignment="Center"
                            Stretch="Uniform"
                            Visibility="Collapsed" />
-                    <TextBlock Text="Cloud Imaging" VerticalAlignment="Center" />
+                    <TextBlock x:Name="TitleText" Text="Cloud Imaging" VerticalAlignment="Center" />
                 </StackPanel>
             </ui:TitleBar.Header>
         </ui:TitleBar>

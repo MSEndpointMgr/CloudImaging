@@ -252,8 +252,30 @@ public sealed class PrepareStorageDeviceViewModelTests
         await WaitUntilIdleAsync(vm);
 
         vm.HasError.Should().BeTrue("preparation must fail without a signed-in Operator API session");
-        vm.ErrorMessage.Should().MatchRegex(@"CMB-PREPUSB-DVI-\d+",
+        vm.ErrorReference.Should().MatchRegex(@"^CMB-PREPUSB-DVI-\d+$",
             "every Media Builder failure path must surface a support reference code (T160, FR-058)");
+        vm.ErrorMessage.Should().NotContain("CMB-", "the reference is shown on its own line");
+        vm.ErrorDetails.Should().Contain(vm.ErrorReference!);
+    }
+
+    [Fact]
+    public void SplitSupportReference_ExtractsAnEmbeddedReference()
+    {
+        var (message, reference) = PrepareStorageDeviceViewModel.SplitSupportReference(
+            "Failed to download and verify the boot image after 3 attempts. Error reference: CMB-PREPUSB-BID-1792140733.",
+            () => "unused");
+
+        message.Should().Be("Failed to download and verify the boot image after 3 attempts.");
+        reference.Should().Be("CMB-PREPUSB-BID-1792140733");
+    }
+
+    [Fact]
+    public void SplitSupportReference_CreatesAReferenceWhenNoneIsEmbedded()
+    {
+        var (message, reference) = PrepareStorageDeviceViewModel.SplitSupportReference("Disk 2 is no longer present.", () => "CMB-PREPUSB-DVI-1");
+
+        message.Should().Be("Disk 2 is no longer present.");
+        reference.Should().Be("CMB-PREPUSB-DVI-1");
     }
 
     private static async Task WaitUntilIdleAsync(PrepareStorageDeviceViewModel vm)

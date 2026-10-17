@@ -27,6 +27,13 @@ public sealed partial class DeviceGatewayApiClient
     private readonly ILogger<DeviceGatewayApiClient> _logger;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    // A device that has just booted frequently attempts its first connect before the network path
+    // is actually usable, which surfaces as a refused or reset TCP connect. The readiness check in
+    // OperationSelectionViewModel only proves an adapter holds an address, so absorb the blip here
+    // instead of making the operator press Continue again.
+    private const int CreateSessionAttempts = 3;
+    private static readonly TimeSpan CreateSessionRetryBaseDelay = TimeSpan.FromSeconds(2);
+
     /// <param name="http">The mTLS-configured HTTP client.</param>
     /// <param name="signingCertificate">
     /// The boot-media certificate (with private key) used to sign the session-bootstrap
@@ -51,10 +58,40 @@ public sealed partial class DeviceGatewayApiClient
     /// POST /api/v1/sessions — Register a new imaging session.
     /// Returns (sessionId, deviceSessionToken, passcode, state).
     /// </summary>
+    /// <param name="payload">Registration payload describing the device.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<CreateSessionResponse?> CreateSessionAsync(
         DeviceRegistrationPayload payload,
         CancellationToken ct = default)
     {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CreateSessionOnceAsync(payload, ct);
+            }
+            catch (HttpRequestException ex) when (attempt < CreateSessionAttempts && IsTransientTransportFailure(ex))
+            {
+                LogCreateSessionRetry(_logger, attempt, ex.Message);
+                await Task.Delay(CreateSessionRetryBaseDelay * attempt, ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Transport failures that never reached the Device Gateway, so replaying the request is safe.
+    /// A rejection by the gateway surfaces as <see cref="DeviceGatewayApiException"/> instead and
+    /// is deliberately not retried: a refused certificate will be refused every time.
+    /// </summary>
+    private static bool IsTransientTransportFailure(HttpRequestException ex) =>
+        ex.HttpRequestError is HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError;
+
+    private async Task<CreateSessionResponse?> CreateSessionOnceAsync(
+        DeviceRegistrationPayload payload,
+        CancellationToken ct)
+    {
+        // Re-signed per attempt so a retry carries a fresh timestamp and nonce, rather than
+        // replaying a proof the gateway may now consider outside its clock-skew window.
         var signedPayload = SignPayload(payload);
         LogCreateSessionRequest(_logger, payload.SerialNumber, payload.Manufacturer, payload.Model);
 
@@ -430,6 +467,10 @@ public sealed partial class DeviceGatewayApiClient
     [LoggerMessage(Level = LogLevel.Information,
         Message = "CreateSession response: sessionId={SessionId} state={State} (passcode/device-session token omitted).")]
     private static partial void LogCreateSessionResponse(ILogger logger, Guid sessionId, string state);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "CreateSession attempt {Attempt} could not reach the Device Gateway ({Reason}); retrying.")]
+    private static partial void LogCreateSessionRetry(ILogger logger, int attempt, string reason);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Device-session bearer token set for subsequent requests (value omitted).")]
     private static partial void LogSessionTokenSet(ILogger logger);

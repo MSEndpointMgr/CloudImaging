@@ -28,7 +28,7 @@ namespace CloudImaging.ImagingCoreApi.Services;
 public sealed partial class DeviceSessionLifecycleService
 {
     /// <summary>Pre-imaging sessions with no heartbeat for this long are expired.</summary>
-    public static readonly TimeSpan InactivityTimeout = TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan InactivityTimeout = TimeSpan.FromMinutes(60);
 
     /// <summary>
     /// Sessions actively imaging tolerate this much heartbeat silence before being failed. The
@@ -102,14 +102,7 @@ public sealed partial class DeviceSessionLifecycleService
 
         await foreach (var session in _sessionRepo.QueryActiveAsync(ct))
         {
-            if (!ActiveNonTerminalStates.Contains(session.State))
-            {
-                continue;
-            }
-
-            var cutoff = now - TimeoutFor(session.State);
-            var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
-            if (lastHeartbeat < cutoff)
+            if (IsDueForExpiry(session, now))
             {
                 var terminalState = NeverCoupledStates.Contains(session.State)
                     ? SessionState.SessionExpired
@@ -117,13 +110,28 @@ public sealed partial class DeviceSessionLifecycleService
                 var transitioned = BuildTransition(session, terminalState);
                 await _sessionRepo.UpdateAsync(transitioned, ct);
                 await WriteHistoryAsync(transitioned, ct);
-                LogSessionExpired(_logger, session.SessionId, lastHeartbeat, terminalState);
+                LogSessionExpired(_logger, session.SessionId, session.LastHeartbeatAt ?? session.CreatedAt, terminalState);
                 expired++;
             }
         }
 
         LogExpiryRun(_logger, expired);
         return expired;
+    }
+
+    /// <summary>
+    /// True when <paramref name="session"/> should be moved to a terminal state at
+    /// <paramref name="now"/>. Heartbeat silence is the only thing that ends a session on a timer:
+    /// a second, independent deadline would let a device that is demonstrably alive be refused.
+    /// </summary>
+    /// <param name="session">Session to evaluate.</param>
+    /// <param name="now">Current time.</param>
+    public static bool IsDueForExpiry(DeviceSession session, DateTimeOffset now)
+    {
+        if (!ActiveNonTerminalStates.Contains(session.State)) return false;
+
+        var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
+        return lastHeartbeat < now - TimeoutFor(session.State);
     }
 
     /// <summary>How long a session in <paramref name="state"/> may go without a heartbeat.</summary>

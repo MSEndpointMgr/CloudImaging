@@ -79,6 +79,35 @@ function StatusIcon({ outcome }: { outcome: PreFlightCheckOutcome }): React.Reac
   }
 }
 
+/**
+ * Names who approved this session's failed checks, and which ones.
+ *
+ * A device has a single approver, so repeating the same UPN on every approved tile was noise that
+ * grew with the number of approved checks. The amber tile already marks each one.
+ */
+export function PreFlightApprovalNote({
+  checks,
+  className,
+}: {
+  checks: readonly PreFlightCheckResult[];
+  className?: string;
+}): React.ReactElement | null {
+  const approved = orderedChecks(checks).filter(result => result.outcome === 'Approved');
+  const approver = approved.find(result => result.approvedBy)?.approvedBy;
+  if (approved.length === 0 || !approver) return null;
+
+  const names = approved.map(result => preFlightCheckName(result.check));
+  const subject = names.length === 1
+    ? names[0]
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+  return (
+    <p className={cn('text-xs text-muted-foreground', className)}>
+      {subject} approved by {approver}
+    </p>
+  );
+}
+
 /** Expanded-row view of the checks: one tile per check with what the device reported. */
 export function PreFlightCheckTiles({ checks }: { checks: readonly PreFlightCheckResult[] }): React.ReactElement {
   return (
@@ -108,9 +137,6 @@ export function PreFlightCheckTiles({ checks }: { checks: readonly PreFlightChec
             </p>
             {result.outcome === 'Failed' && (
               <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">{preFlightFixHint(result.check, result.observed)}</p>
-            )}
-            {result.outcome === 'Approved' && result.approvedBy && (
-              <p className="mt-1 truncate text-xs text-muted-foreground">Approved by {result.approvedBy}</p>
             )}
           </div>
         );

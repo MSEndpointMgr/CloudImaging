@@ -97,7 +97,7 @@ several coupled sessions at a time.
 | Azure subscription | Owner (or Contributor + User Access Administrator) on the target resource group, to deploy the Bicep package |
 | Entra ID admin access | **Application Administrator** or **Cloud Application Administrator**, to create the app registrations, app roles, and admin consent used for Portal and Media Builder sign-in |
 | Windows workstation with the Windows Assessment and Deployment Kit (ADK) + WinPE add-on | Required to run Media Builder and generate boot images |
-| USB drive per boot media set (32 GB or larger) | Partitioned into a WinPE boot partition (2 GB) and an OS image cache partition (24 GB minimum) |
+| USB drive per boot media set (8 GB minimum, 32 GB or larger recommended) | Partitioned into a WinPE boot partition (2 GB) and an OS image cache partition (the rest; 24 GB or more caches the largest images) |
 | Target devices with outbound HTTPS access | No inbound connectivity or VPN to the device is required |
 
 > **Why User Access Administrator?** The Bicep package assigns Azure role assignments to the
@@ -223,7 +223,7 @@ flowchart TB
   supplied from a local path for offline/air-gap deployments
 - **Prepare USB Storage Device**: lists qualifying removable USB drives (USB bus
   type + removable flag); writes the WinPE boot partition (≥ 2 GB) and an OS image
-  cache partition (≥ 24 GB); auto-refreshes the device list on plug/unplug events
+  cache partition (24 GB or more recommended; smaller devices show a warning); auto-refreshes the device list on plug/unplug events
 - Ships as a per-machine **MSI** alongside the plain zip. Tenant configuration is
   passed as MSI install properties rather than baked into the payload, so the same
   package works in any tenant and upgrades keep the existing configuration. See

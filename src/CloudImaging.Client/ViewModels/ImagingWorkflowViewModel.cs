@@ -244,24 +244,37 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 pipelineLoggerFactory.CreateLogger<Services.ImageDownloadService>(),
                 cache);
 
-            var destinationPath = Path.Combine(_cacheRoot, $"ci-image-{_sessionId:N}.wim");
+            // USB devices under the recommended size have a small cache partition. When an image
+            // does not fit, stage it uncached on the target volume, like boot media without a cache.
+            async Task<string> DownloadWimAsync(string imageHash, Func<string> sasUrl, string fileName, Action<int> onProgress)
+            {
+                try
+                {
+                    return await downloadService.EnsureLocalWimAsync(imageHash, imageHash, sasUrl(), Path.Combine(_cacheRoot!, fileName), onProgress, _progress.SetTransferProgress, ct);
+                }
+                catch (Services.InsufficientDiskSpaceException ex) when (!_cacheRootIsTargetVolume)
+                {
+                    LogCachePartitionTooSmall(pipelineLoggerFactory.CreateLogger<ImagingWorkflowViewModel>(), ex.RequiredBytes, ex.AvailableBytes);
+                    _cacheRoot = Path.Combine($"{diskFormat.WindowsVolume}\\", "CloudImagingCache");
+                    _cacheRootIsTargetVolume = true;
+                    downloadService = new Services.ImageDownloadService(new HttpClient(), pipelineLoggerFactory.CreateLogger<Services.ImageDownloadService>());
+                    return await downloadService.EnsureLocalWimAsync(imageHash, imageHash, sasUrl(), Path.Combine(_cacheRoot, fileName), onProgress, _progress.SetTransferProgress, ct);
+                }
+            }
 
             string wimPath;
             try
             {
-                wimPath = await downloadService.EnsureLocalWimAsync(
-                    imageId: hash,
-                    expectedHash: hash,
-                    sasUrl: _sasCoordinator.CurrentSasUrl ?? _status.SasTokenUrl!,
-                    destinationPath: destinationPath,
-                    onProgress: pct =>
+                wimPath = await DownloadWimAsync(
+                    hash,
+                    () => _sasCoordinator.CurrentSasUrl ?? _status.SasTokenUrl!,
+                    $"ci-image-{_sessionId:N}.wim",
+                    pct =>
                     {
                         _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8–55%
                         _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, pct, ct: ct);
-                    },
-                    onBytesProgress: _progress.SetTransferProgress,
-                    ct: ct);
+                    });
             }
             catch (Exception ex)
             {
@@ -374,23 +387,19 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 return;
             }
 
-            var recoveryDestinationPath = Path.Combine(_cacheRoot, $"ci-recovery-{_sessionId:N}.wim");
             string recoveryWimPath;
             try
             {
-                recoveryWimPath = await downloadService.EnsureLocalWimAsync(
-                    imageId: recoveryInfo.Sha256Hash,
-                    expectedHash: recoveryInfo.Sha256Hash,
-                    sasUrl: recoveryInfo.SasTokenUrl,
-                    destinationPath: recoveryDestinationPath,
-                    onProgress: pct =>
+                recoveryWimPath = await DownloadWimAsync(
+                    recoveryInfo.Sha256Hash,
+                    () => recoveryInfo.SasTokenUrl,
+                    $"ci-recovery-{_sessionId:N}.wim",
+                    pct =>
                     {
                         _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85–95%
                         _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, pct, ct: ct);
-                    },
-                    onBytesProgress: _progress.SetTransferProgress,
-                    ct: ct);
+                    });
             }
             catch (Exception ex)
             {
@@ -609,4 +618,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Firmware mode detected: Legacy BIOS (CSM). Using MBR layout with BIOS boot files.")]
     private static partial void LogFirmwareModeLegacy(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The USB cache partition has {AvailableBytes} bytes free but the image needs {RequiredBytes}. Downloading to the target disk instead, without caching.")]
+    private static partial void LogCachePartitionTooSmall(ILogger logger, long requiredBytes, long availableBytes);
 }

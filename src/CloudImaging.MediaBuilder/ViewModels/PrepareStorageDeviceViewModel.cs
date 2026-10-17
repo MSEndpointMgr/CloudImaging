@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using CloudImaging.Contracts.Models;
@@ -55,6 +56,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private string _statusMessage = "Select a boot image and a USB device to begin.";
     private string? _resultFilePath;
     private string? _errorMessage;
+    private string? _errorReference;
     private string _errorTitle = "Preparation failed";
     private bool _wasCancelled;
     private CancellationTokenSource? _cts;
@@ -113,6 +115,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         DismissResultCommand = new RelayCommand(_ => CloseResultDialog());
         BrowseIsoOutputCommand = new RelayCommand(_ => BrowseIsoOutput());
         OpenResultFolderCommand = new RelayCommand(_ => OpenResultFolder(), _ => ResultFilePath is not null);
+        CopyResultPathCommand = new RelayCommand(_ => CopyToClipboard(ResultFilePath), _ => ResultFilePath is not null);
+        CopyErrorDetailsCommand = new RelayCommand(_ => CopyToClipboard(ErrorDetails), _ => HasError);
         ClearLocationCommand = new RelayCommand(_ => SelectedLocation = null, _ => IsFormEnabled && HasSelectedLocation);
 
         // Load the eligible USB disk list (fast, local WMI) and kick off the published boot
@@ -173,6 +177,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged();
             OnPropertyChanged(nameof(ValidationMessage));
             OnPropertyChanged(nameof(HasValidationMessage));
+            OnPropertyChanged(nameof(DiskWarning));
+            OnPropertyChanged(nameof(HasDiskWarning));
             OnPropertyChanged(nameof(CanPrepare));
         }
     }
@@ -221,6 +227,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged(nameof(PrepareButtonLabel));
             OnPropertyChanged(nameof(PrepareDescription));
             OnPropertyChanged(nameof(SuccessTitle));
+            OnPropertyChanged(nameof(CancelledTitle));
+            OnPropertyChanged(nameof(CancelledMessage));
         }
     }
 
@@ -238,6 +246,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged(nameof(PrepareButtonLabel));
             OnPropertyChanged(nameof(PrepareDescription));
             OnPropertyChanged(nameof(SuccessTitle));
+            OnPropertyChanged(nameof(CancelledTitle));
+            OnPropertyChanged(nameof(CancelledMessage));
         }
     }
 
@@ -258,6 +268,14 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>Success modal title — changes with the selected target.</summary>
     public string SuccessTitle => PrepareAsIso ? "ISO file generated" : "USB device prepared";
+
+    /// <summary>Cancelled modal title, for the selected target.</summary>
+    public string CancelledTitle => PrepareAsIso ? "ISO generation cancelled" : "Preparation cancelled";
+
+    /// <summary>Cancelled modal message, for the selected target.</summary>
+    public string CancelledMessage => PrepareAsIso
+        ? "No ISO file was saved. Temporary files were cleaned up."
+        : "Temporary files were cleaned up. If partitioning had started, prepare the USB device again before using it.";
 
     /// <summary>True while the destructive download/partition/deploy (or ISO generation) workflow is in flight.</summary>
     public bool IsBusy
@@ -345,21 +363,50 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public string? ResultFilePath
     {
         get => _resultFilePath;
-        private set { _resultFilePath = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasResultFilePath)); CommandManager.InvalidateRequerySuggested(); }
+        private set
+        {
+            _resultFilePath = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasResultFilePath));
+            OnPropertyChanged(nameof(ResultFileName));
+            OnPropertyChanged(nameof(ResultFolder));
+            CommandManager.InvalidateRequerySuggested();
+        }
     }
 
     /// <summary>True when <see cref="ResultFilePath"/> has a value.</summary>
     public bool HasResultFilePath => ResultFilePath is not null;
 
+    /// <summary>File name part of <see cref="ResultFilePath"/>.</summary>
+    public string? ResultFileName => ResultFilePath is null ? null : Path.GetFileName(ResultFilePath);
+
+    /// <summary>Folder part of <see cref="ResultFilePath"/>.</summary>
+    public string? ResultFolder => ResultFilePath is null ? null : Path.GetDirectoryName(ResultFilePath);
+
     /// <summary>User-facing error message when the workflow fails; <c>null</c> otherwise.</summary>
     public string? ErrorMessage
     {
         get => _errorMessage;
-        private set { _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); OnPropertyChanged(nameof(ShowResultDialog)); }
+        private set { _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); OnPropertyChanged(nameof(ShowResultDialog)); CommandManager.InvalidateRequerySuggested(); }
     }
 
     /// <summary>True once the workflow has ended in failure.</summary>
     public bool HasError => ErrorMessage is not null;
+
+    /// <summary>Support reference code for the failure, shown on its own line; <c>null</c> for failures that have none.</summary>
+    public string? ErrorReference
+    {
+        get => _errorReference;
+        private set { _errorReference = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasErrorReference)); }
+    }
+
+    /// <summary>True when <see cref="ErrorReference"/> has a value.</summary>
+    public bool HasErrorReference => ErrorReference is not null;
+
+    /// <summary>Title, message and reference as one block, for pasting into a support ticket.</summary>
+    public string ErrorDetails => ErrorReference is null
+        ? $"{ErrorTitle}{Environment.NewLine}{ErrorMessage}"
+        : $"{ErrorTitle}{Environment.NewLine}{ErrorMessage}{Environment.NewLine}Reference: {ErrorReference}";
 
     /// <summary>
     /// Heading shown alongside <see cref="ErrorMessage"/> — distinguishes a failure while merely
@@ -394,6 +441,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>True when <see cref="ValidationMessage"/> has a value.</summary>
     public bool HasValidationMessage => ValidationMessage is not null;
 
+    /// <summary>Caution for an eligible disk that is smaller than recommended; preparation can still continue.</summary>
+    public string? DiskWarning => SelectedDisk is { IsValid: true } d ? d.Warning : null;
+
+    /// <summary>True when <see cref="DiskWarning"/> has a value.</summary>
+    public bool HasDiskWarning => DiskWarning is not null;
+
     /// <summary>True when the current configuration is valid enough to start the Prepare workflow.</summary>
     public bool CanPrepare =>
         !IsBusy
@@ -416,6 +469,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public ICommand BrowseIsoOutputCommand { get; }
     /// <summary>Opens File Explorer with the generated ISO (or prepared disk) pre-selected.</summary>
     public ICommand OpenResultFolderCommand { get; }
+    /// <summary>Copies the generated ISO's full path to the clipboard.</summary>
+    public ICommand CopyResultPathCommand { get; }
+    /// <summary>Copies the failure title, message and reference to the clipboard.</summary>
+    public ICommand CopyErrorDetailsCommand { get; }
     /// <summary>Clears the selected site label.</summary>
     public ICommand ClearLocationCommand { get; }
 
@@ -426,6 +483,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         IsRefreshingBootImages = true;
         IsComplete             = false;
         ErrorMessage           = null;
+        ErrorReference         = null;
 
         try
         {
@@ -459,7 +517,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             var result = _validator.Validate(disk);
             var label  = string.Create(CultureInfo.InvariantCulture,
                 $"Disk {disk.DiskNumber}: {disk.Caption} ({FormatBytes(disk.SizeBytes)}, {disk.BusType})");
-            Disks.Add(new DiskChoice(disk.DiskNumber, label, disk, result.Valid, result.FailureReason));
+            Disks.Add(new DiskChoice(disk.DiskNumber, label, disk, result.Valid, result.FailureReason, result.Warning));
         }
 
         // Pre-select the first eligible USB disk, if any.
@@ -651,14 +709,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         catch (Exception ex)
         {
-            ErrorTitle   = "Preparation failed";
-            // T160/FR-058: every failure path surfaces a support reference code so a technician
-            // can quote it to support without needing log access. BootImageDownloadService
-            // already embeds its own BID code on retry exhaustion — avoid double-wrapping that.
-            ErrorMessage = ex.Message.Contains("CMB-", StringComparison.Ordinal)
-                ? ex.Message
-                : string.Create(CultureInfo.InvariantCulture,
-                    $"{ex.Message} (Error reference: {SupportReferenceCode.ForMediaBuilder("PREPUSB", _currentStage)})");
+            // T160/FR-058: every failure surfaces a support reference code; reuse one a service already embedded.
+            ShowFailure("Preparation failed", ex.Message, () => SupportReferenceCode.ForMediaBuilder("PREPUSB", _currentStage).ToString());
         }
         finally
         {
@@ -743,7 +795,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
             var isoSizeBytes = new FileInfo(IsoOutputPath).Length;
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
-                $"Boot image v{SelectedBootImage.Dto.Version} ({FormatBytes(isoSizeBytes)}).");
+                $"Boot image v{SelectedBootImage.Dto.Version} \u00B7 {DisplayArchitecture(SelectedBootImage.Dto.Architecture)} \u00B7 {FormatBytes(isoSizeBytes)}");
             ResultFilePath = IsoOutputPath;
             IsComplete    = true;
         }
@@ -755,11 +807,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         catch (Exception ex)
         {
-            ErrorTitle   = "ISO generation failed";
-            ErrorMessage = ex.Message.Contains("CMB-", StringComparison.Ordinal)
-                ? ex.Message
-                : string.Create(CultureInfo.InvariantCulture,
-                    $"{ex.Message} (Error reference: {SupportReferenceCode.ForMediaBuilder("GENISO", _currentStage)})");
+            ShowFailure("ISO generation failed", ex.Message, () => SupportReferenceCode.ForMediaBuilder("GENISO", _currentStage).ToString());
         }
         finally
         {
@@ -869,6 +917,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         IsComplete      = false;
         ErrorMessage    = null;
+        ErrorReference  = null;
         WasCancelled    = false;
         ConfirmErase    = false;
         ProgressPercent = 0;
@@ -900,6 +949,40 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             });
         }
         catch { /* best-effort */ }
+    }
+
+    private static readonly Regex EmbeddedReferenceRegex = new(
+        @"\s*\(?Error reference:\s*(?<code>CMB-[A-Z0-9]+-[A-Z0-9]+-\d+)\)?\.?", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Separates a support reference code a service already embedded in <paramref name="message"/>
+    /// from the readable reason, or creates a new one when there is none.
+    /// </summary>
+    public static (string Message, string Reference) SplitSupportReference(string message, Func<string> createReference)
+    {
+        var match = EmbeddedReferenceRegex.Match(message);
+        if (!match.Success)
+            return (message.Trim(), createReference());
+
+        var reason = message.Remove(match.Index, match.Length).Trim();
+        return (reason.Length > 0 ? reason : message.Trim(), match.Groups["code"].Value);
+    }
+
+    private void ShowFailure(string title, string message, Func<string> createReference)
+    {
+        var (reason, reference) = SplitSupportReference(message, createReference);
+        ErrorTitle     = title;
+        ErrorReference = reference;
+        ErrorMessage   = reason;
+    }
+
+    private static void CopyToClipboard(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        // The clipboard can be briefly locked by another process; copying is a convenience, never fatal.
+        try { Clipboard.SetText(text); } catch { /* best-effort */ }
     }
 
     // ── Progress plumbing ──────────────────────────────────────────────────────
@@ -1010,7 +1093,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         string Label,
         UsbSafetyValidationService.DiskInfo Info,
         bool IsValid,
-        string? InvalidReason);
+        string? InvalidReason,
+        string? Warning = null);
 
     /// <summary>A selectable published boot image.</summary>
     public sealed record BootImageChoice(Guid Id, string Label, BootImageDto Dto);

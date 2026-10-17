@@ -79,8 +79,8 @@ public sealed class ImageArchitectureTests
     [Fact]
     public void NewSession_TakesArchitectureFromRegistration_AndDefaultsLegacyClientsToX64()
     {
-        var arm = DeviceSessionFactory.CreateNew(Registration(MachineArchitecture.Arm64), TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(30)).Session;
-        var legacy = DeviceSessionFactory.CreateNew(Registration(null), TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(30)).Session;
+        var arm = DeviceSessionFactory.CreateNew(Registration(MachineArchitecture.Arm64)).Session;
+        var legacy = DeviceSessionFactory.CreateNew(Registration(null)).Session;
 
         arm.Architecture.Should().Be(MachineArchitecture.Arm64);
         legacy.Architecture.Should().Be(MachineArchitecture.X64);

@@ -4,7 +4,7 @@ param location string
 param storageAppName string      // Portal frontend, deployment assets
 param storageCoreApiName string  // ImagingCoreApi: sessions, OS images, boot images
 
-@description('Principal ID of the Device Gateway API user-assigned managed identity. Granted full blob/queue/table data-plane access on the app storage account for the host runtime, the device-session token store, the boot-media thumbprint cache and the proof-of-possession nonce store (FR-069).')
+@description('Principal ID of the Device Gateway API user-assigned managed identity. Granted full blob/queue/table data-plane access on the app storage account for the host runtime, the device-session token store, the boot-media thumbprint cache and the proof-of-possession nonce store.')
 param deviceGatewayMsiPrincipalId string
 
 @description('Principal ID of the Operator API user-assigned managed identity. Granted full blob/queue/table data-plane access on the app storage account (host runtime + operator data operations).')

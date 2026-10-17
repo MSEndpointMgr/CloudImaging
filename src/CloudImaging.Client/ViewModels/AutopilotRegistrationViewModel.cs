@@ -73,12 +73,14 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     private string? _referenceCode;
     private string? _serialNumber;
     private string? _deviceDescription;
+    private string? _groupTag;
     private string? _detail;
     private string? _errorMessage;
     private string? _tpmWarning;
     private Guid _requestId;
     private string? _statusToken;
     private DateTimeOffset? _lastCheckedAt;
+    private bool _lastPollFailed;
     private bool _disposed;
 
     internal AutopilotRegistrationViewModel(
@@ -179,7 +181,13 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     /// <summary>Manufacturer and model, formatted for display.</summary>
     public string? DeviceDescription { get => _deviceDescription; private set { _deviceDescription = value; OnPropertyChanged(); } }
 
-    /// <summary>Extra line under the subtitle: rejection reason, import error or last poll time.</summary>
+    /// <summary>Group tag the device was, or will be, imported with; null until the service reports one.</summary>
+    public string? GroupTag { get => _groupTag; private set { _groupTag = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasGroupTag)); } }
+
+    /// <summary>True when <see cref="GroupTag"/> is set.</summary>
+    public bool HasGroupTag => !string.IsNullOrWhiteSpace(_groupTag);
+
+    /// <summary>Extra line under the details: rejection reason or import error.</summary>
     public string? Detail { get => _detail; private set { _detail = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasDetail)); } }
 
     /// <summary>True when <see cref="Detail"/> is set.</summary>
@@ -220,7 +228,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         AutopilotFlowStage.Capturing => "Collecting the device's Windows Autopilot hardware hash.\nThis might take some time.",
         AutopilotFlowStage.Submitting => "Sending the hardware hash to the Cloud Imaging service.",
         AutopilotFlowStage.Submitted => "Approval is required. You can image this device in the meantime.",
-        AutopilotFlowStage.Waiting => $"Updates automatically every {_pollInterval.TotalSeconds:0} seconds.",
+        AutopilotFlowStage.Waiting => WaitingSubtitle(),
         AutopilotFlowStage.Failed => "Nothing was submitted. Check the network connection and try again.",
         _ => RequestState switch
         {
@@ -236,12 +244,24 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     /// <summary>Captures and submits. Safe to call again after a failure.</summary>
     public void Start() => _ = RunAsync();
 
+    private string WaitingSubtitle()
+    {
+        var seconds = _pollInterval.TotalSeconds.ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+        if (_lastPollFailed)
+            return $"Could not reach the imaging service. Retrying every {seconds} seconds.";
+
+        return _lastCheckedAt is null
+            ? $"Updates automatically every {seconds} seconds."
+            : $"Updates automatically every {seconds} seconds. Last checked {_lastCheckedAt:HH:mm:ss}.";
+    }
+
     private async Task RunAsync()
     {
         ResetCancellation();
         var ct = _cts.Token;
         ErrorMessage = null;
         Detail = null;
+        GroupTag = null;
         TpmWarning = null;
         try
         {
@@ -309,6 +329,8 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
             {
                 var status = await _gateway.GetAutopilotStatusAsync(_requestId, _statusToken!, ct);
                 _lastCheckedAt = DateTimeOffset.Now;
+                _lastPollFailed = false;
+                GroupTag = status.GroupTag;
                 RequestState = status.State;
                 OnPropertyChanged(nameof(Title));
                 OnPropertyChanged(nameof(Subtitle));
@@ -319,7 +341,6 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
                     {
                         AutopilotRegistrationState.Rejected when !string.IsNullOrWhiteSpace(status.RejectionReason) => $"Reason: {status.RejectionReason}",
                         AutopilotRegistrationState.ImportFailed when !string.IsNullOrWhiteSpace(status.ImportErrorName) => $"Intune reported: {status.ImportErrorName}",
-                        AutopilotRegistrationState.Imported when !string.IsNullOrWhiteSpace(status.GroupTag) => $"Group tag: {status.GroupTag}",
                         _ => null,
                     };
                     Stage = AutopilotFlowStage.Finished;
@@ -327,8 +348,6 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
                     OnPropertyChanged(nameof(IsNegativeOutcome));
                     return;
                 }
-
-                Detail = $"Last checked {_lastCheckedAt:HH:mm:ss}.";
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -338,7 +357,8 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
             {
                 // Keep waiting through transient outages; the operator can always go back.
                 LogPollFailed(_logger, ex);
-                Detail = "Could not reach the imaging service. Retrying.";
+                _lastPollFailed = true;
+                OnPropertyChanged(nameof(Subtitle));
             }
 
             try

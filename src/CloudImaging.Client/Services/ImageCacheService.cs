@@ -89,7 +89,7 @@ public sealed partial class ImageCacheService
     }
 
     /// <summary>
-    /// Persists a downloaded WIM to the cache and writes the metadata record.
+    /// Moves a downloaded WIM into the cache and writes the metadata record.
     /// Verifies the actual SHA-256 before writing the metadata.
     /// </summary>
     public async Task<string> WriteAsync(
@@ -110,14 +110,15 @@ public sealed partial class ImageCacheService
 
         var wimDest  = Path.Combine(dir, WimFileName);
         var metaPath = Path.Combine(dir, MetaFileName);
-        var info     = new FileInfo(sourcePath);
+        var sizeBytes = new FileInfo(sourcePath).Length;
 
-        File.Copy(sourcePath, wimDest, overwrite: true);
+        // Move, not copy: the download sits on the cache volume already, and a copy would need twice the image size free.
+        File.Move(sourcePath, wimDest, overwrite: true);
 
-        var meta = new CacheEntryMetadata(imageId, actualHash, info.Length, DateTimeOffset.UtcNow);
+        var meta = new CacheEntryMetadata(imageId, actualHash, sizeBytes, DateTimeOffset.UtcNow);
         await WriteMetaAsync(metaPath, meta, ct);
 
-        LogCacheWritten(_logger, imageId, info.Length);
+        LogCacheWritten(_logger, imageId, sizeBytes);
         return wimDest;
     }
 

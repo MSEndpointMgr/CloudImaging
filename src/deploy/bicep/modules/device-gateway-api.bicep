@@ -61,7 +61,7 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
           action: 'Allow'
           priority: 100
           name: 'AllowApplicationGatewaySubnet'
-          description: 'Allow traffic from Application Gateway subnet only (FR-042)'
+          description: 'Allow traffic from Application Gateway subnet only'
         }
         {
           ipAddress: 'Any'

@@ -40,10 +40,10 @@ public sealed class ElevatedUsbPreparationTests
 {
     private static UsbPreparationService.PreparationParams CreateParams() => new(
         DiskNumber: 1,
-        // Deliberately below the FR-055 minimum cache partition size, so PrepareAsync's
-        // "already elevated" path fails fast (in UsbPartitionProvisioningService.ProvisionAsync's
-        // pre-flight size check) BEFORE ever invoking the real diskpart.exe.
-        DiskSizeBytes: 8L * 1024 * 1024 * 1024,
+        // Deliberately below the minimum USB size, so PrepareAsync's "already elevated" path
+        // fails fast (in UsbPartitionProvisioningService.ProvisionAsync's pre-flight size check)
+        // BEFORE ever invoking the real diskpart.exe.
+        DiskSizeBytes: 4L * 1024 * 1024 * 1024,
         WimPath: @"C:\DoesNotExist\boot.wim",
         BootImageVersion: "1.0.0",
         SelectedDiskId: "1",
@@ -75,7 +75,7 @@ public sealed class ElevatedUsbPreparationTests
         Func<Task> act = async () => await svc.PrepareElevatedAsync(CreateParams());
 
         await act.Should().ThrowAsync<InvalidOperationException>(
-                "preparation should still fail fast (disk too small for FR-055 cache minimum) exactly as PrepareAsync would")
+                "preparation should still fail fast (disk below the minimum size) exactly as PrepareAsync would")
             .WithMessage("*too small*");
         launcherCalled.Should().BeFalse("no elevated process should be spawned when already elevated");
     }

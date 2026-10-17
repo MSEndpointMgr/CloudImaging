@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Management;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -320,6 +321,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // so it can be displayed later (e.g. ResultsView's NotAuthorized outcome, FR-026)
             // instead of being discarded once sent to the server.
             _navigate(sessionResponse, serialNumber);
+        }
+        catch (HttpRequestException ex)
+        {
+            // The raw .NET text ("the target machine actively refused it") reads as a fault in the
+            // device, when the actionable step is almost always the network path.
+            StatusMessage = $"Could not reach the Cloud Imaging service. Check the network connection, then try again. ({ex.Message})";
         }
         catch (Exception ex)
         {

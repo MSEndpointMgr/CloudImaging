@@ -8,15 +8,15 @@
 
 ### Symptom: Device displays passcode but coupling fails with 404
 
-**Cause**: Passcode expired or session transitioned out of `SessionAllowed` state.
+**Cause**: Session left `SessionAllowed`, or it expired after 60 minutes without a heartbeat.
 
 **Resolution**:
-1. Restart the Cloud Imaging Client on the device: this creates a new session with a fresh passcode.
-2. Couple within 30 minutes of the passcode appearing (the default lifetime).
-3. If the problem recurs frequently, raise **Session Passcode TTL (minutes)**. This is a
-   *deployment* parameter, not a portal setting: it's set in the deployment wizard and stored as
-   the `Security__PasscodeTtlMinutes` application setting on the Imaging Core API Function App,
-   so changing it means either redeploying or editing that application setting directly.
+1. A passcode stays valid for as long as its session does. The device heartbeats every 30 seconds
+   while it waits on the "Awaiting Session Coupling" screen, so a powered-on device holds its
+   passcode open indefinitely. Expiry only follows 60 minutes of silence, which in practice means
+   the device was shut down, rebooted or lost its network.
+2. Use **Start Over** on the device's "Awaiting Session Coupling" screen to request a new passcode
+   without rebooting. Restarting the Cloud Imaging Client has the same effect.
 
 ---
 

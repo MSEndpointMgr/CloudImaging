@@ -1,4 +1,5 @@
 using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Services;
 using FluentAssertions;
 using Xunit;
@@ -13,10 +14,10 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
     // ── Inactivity timeout ────────────────────────────────────────────────────
 
     [Fact]
-    public void InactivityTimeout_Is30Minutes()
+    public void InactivityTimeout_Is60Minutes()
     {
         DeviceSessionLifecycleService.InactivityTimeout.TotalMinutes
-            .Should().Be(30, "inactivity timeout is 30 minutes (FR-021)");
+            .Should().Be(60, "inactivity timeout is 60 minutes (FR-021)");
     }
 
     [Fact]
@@ -117,20 +118,20 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
     }
 
     [Fact]
-    public void SessionWith_HeartbeatOlderThan30Min_IsExpired()
+    public void SessionWith_HeartbeatOlderThanTheWindow_IsExpired()
     {
         var cutoff       = DateTimeOffset.UtcNow - DeviceSessionLifecycleService.InactivityTimeout;
-        var staleSession = DateTimeOffset.UtcNow.AddMinutes(-35);
+        var staleSession = DateTimeOffset.UtcNow.AddMinutes(-65);
 
         (staleSession < cutoff).Should().BeTrue(
-            "a session with last heartbeat 35 minutes ago should be expired");
+            "a session with last heartbeat 65 minutes ago should be expired");
     }
 
     [Fact]
     public void ActivelyImagingSession_QuietFor35Minutes_IsNotFailed()
     {
         // The reported bug: a device still applying an image dropped into the Failed bucket in the
-        // portal purely because it had been quiet for over 30 minutes.
+        // portal purely because it had been quiet for over the pre-imaging window.
         var cutoff = DateTimeOffset.UtcNow
                    - DeviceSessionLifecycleService.TimeoutFor(SessionState.SessionInProgress);
         var lastHeartbeat = DateTimeOffset.UtcNow.AddMinutes(-35);
@@ -149,6 +150,110 @@ public sealed class LifecycleAndHeartbeatIntegrationTests
         var lastHeartbeat = now.AddMinutes(heartbeatAgeMinutes);
 
         (lastHeartbeat < cutoff).Should().Be(expectFailed);
+    }
+
+    // ── Passcode validity ──────────────────────────────────────────────────────────
+
+    private static DeviceSession BuildSession(
+        SessionState state,
+        DateTimeOffset now,
+        DateTimeOffset? passcodeExpiresAt,
+        bool passcodeConsumed = false) => new()
+        {
+            SessionId = Guid.NewGuid(),
+            State = state,
+            DeviceSerialNumber = "SN-1",
+            DeviceManufacturer = "Contoso",
+            DeviceModel = "Model",
+            CreatedAt = now.AddHours(-1),
+            LastHeartbeatAt = now,
+            PasscodeExpiresAt = passcodeExpiresAt,
+            PasscodeConsumed = passcodeConsumed,
+        };
+
+    [Theory]
+    [InlineData(SessionState.SessionInit)]
+    [InlineData(SessionState.SessionAllowed)]
+    public void UncoupledSession_StillPolling_IsNeverExpired(SessionState state)
+    {
+        // The reported bug: an uncoupled device polls every 30s, so it is demonstrably alive, yet
+        // a separate absolute passcode deadline silently refused its code while the portal went on
+        // advertising the row as available. Heartbeat silence is the only timer that ends a session.
+        var now = DateTimeOffset.UtcNow;
+        var session = BuildSession(state, now, passcodeExpiresAt: now.AddMinutes(-90));
+
+        DeviceSessionLifecycleService.IsDueForExpiry(session, now).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(SessionState.SessionInit, SessionState.SessionExpired)]
+    [InlineData(SessionState.SessionAllowed, SessionState.SessionExpired)]
+    public void UncoupledSession_SilentForAnHour_Expires(SessionState state, SessionState _)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = BuildSession(state, now, passcodeExpiresAt: now.AddHours(1)) with
+        {
+            LastHeartbeatAt = now.AddMinutes(-61),
+        };
+
+        DeviceSessionLifecycleService.IsDueForExpiry(session, now).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CoupledSession_AwaitingImageSelection_SurvivesWhilePolling()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = BuildSession(SessionState.SessionAssigned, now, passcodeExpiresAt: now.AddMinutes(-90), passcodeConsumed: true);
+
+        DeviceSessionLifecycleService.IsDueForExpiry(session, now).Should().BeFalse();
+    }
+
+    [Fact]
+    public void SessionWithNoHeartbeatYet_FallsBackToCreatedAt()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = BuildSession(SessionState.SessionInit, now, passcodeExpiresAt: null) with
+        {
+            CreatedAt = now.AddMinutes(-61),
+            LastHeartbeatAt = null,
+        };
+
+        DeviceSessionLifecycleService.IsDueForExpiry(session, now).Should().BeTrue();
+    }
+
+    [Fact]
+    public void TerminalSession_IsNeverDueForExpiry()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var session = BuildSession(SessionState.SessionExpired, now, passcodeExpiresAt: now.AddHours(-2)) with
+        {
+            LastHeartbeatAt = now.AddDays(-1),
+        };
+
+        DeviceSessionLifecycleService.IsDueForExpiry(session, now).Should().BeFalse();
+    }
+
+    // ── Progress reporting is restricted to started sessions ──────────────────
+
+    [Theory]
+    [InlineData(SessionState.SessionStarted, true)]
+    [InlineData(SessionState.SessionInProgress, true)]
+    [InlineData(SessionState.SessionInit, false)]
+    [InlineData(SessionState.SessionAllowed, false)]
+    [InlineData(SessionState.SessionAssigned, false)]
+    [InlineData(SessionState.SessionCompleted, false)]
+    [InlineData(SessionState.SessionFailed, false)]
+    [InlineData(SessionState.SessionExpired, false)]
+    [InlineData(SessionState.SessionNotAuthorized, false)]
+    public void OnlyStartedSessions_MayReportProgress(SessionState state, bool mayReport)
+    {
+        // Mirrors the guard in ReportProgressFunction. Without it the reducer accepts reports in
+        // any state, so a device holding a valid token could drive an expired or already-terminal
+        // session back to Completed or Failed, and the drawn state machine would not hold.
+        var accepted = state is SessionState.SessionStarted or SessionState.SessionInProgress;
+
+        accepted.Should().Be(mayReport,
+            $"a session in {state} should {(mayReport ? "" : "not ")}be able to report imaging steps");
     }
 
     // ── Terminal purge eligibility ────────────────────────────────────────────

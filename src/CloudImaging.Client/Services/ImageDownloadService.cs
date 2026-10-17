@@ -131,7 +131,7 @@ public sealed partial class ImageDownloadService
                 await DownloadOnceAsync(sasUrl, destinationPath, onProgress, onBytesProgress, ct);
                 return;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException and not InsufficientDiskSpaceException)
             {
                 lastError = ex;
                 LogAttemptFailed(_logger, attempt, ex);
@@ -163,6 +163,8 @@ public sealed partial class ImageDownloadService
         response.EnsureSuccessStatusCode();
 
         var totalBytes = response.Content.Headers.ContentLength ?? -1;
+        if (totalBytes > 0)
+            EnsureRoomFor(destinationPath, totalBytes);
         long downloaded = 0;
 
         // A retried attempt restarts the transfer from zero, so reset the counter immediately
@@ -198,6 +200,23 @@ public sealed partial class ImageDownloadService
         onBytesProgress?.Invoke(downloaded, totalBytes > 0 ? totalBytes : downloaded);
 
         LogCompleted(_logger, downloaded);
+    }
+
+    private static void EnsureRoomFor(string destinationPath, long requiredBytes)
+    {
+        long available;
+        try
+        {
+            available = new DriveInfo(Path.GetPathRoot(Path.GetFullPath(destinationPath))!).AvailableFreeSpace;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            // Free space is unknown (e.g. a UNC path); let the write itself be the judge.
+            return;
+        }
+
+        if (available < requiredBytes)
+            throw new InsufficientDiskSpaceException(destinationPath, requiredBytes, available);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Starting image download from {UrlPrefix}…")]

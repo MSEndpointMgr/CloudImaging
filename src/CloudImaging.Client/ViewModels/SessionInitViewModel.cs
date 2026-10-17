@@ -26,6 +26,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     private readonly Action<ResultsViewModel.Outcome, string?, string?, string?> _navigateToResults;
     private readonly Action<SessionStatusResponse, string?> _navigateToProgress;
     private readonly Action<SessionStatusResponse, string?>? _navigateToBlocked;
+    private readonly Action? _navigateToStart;
     private readonly CancellationTokenSource _cts = new();
 
     private bool _isPolling = true;
@@ -53,6 +54,14 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     }
 
     /// <summary>Builds the view model and starts the background 30s status poll loop immediately.</summary>
+    /// <param name="gatewayClient">Device Gateway client used to poll session status.</param>
+    /// <param name="sessionId">Session this view model polls.</param>
+    /// <param name="passcode">Coupling passcode shown to the operator.</param>
+    /// <param name="deviceSerialNumber">Serial number carried through to downstream views.</param>
+    /// <param name="navigateToResults">Shows the results screen when the session reaches a terminal state.</param>
+    /// <param name="navigateToProgress">Hands off to the imaging pipeline once imaging starts.</param>
+    /// <param name="navigateToBlocked">Shows the blocked screen when pre-flight authorization refused the device.</param>
+    /// <param name="navigateToStart">Abandons this session and returns to operation selection to request a new passcode.</param>
     public SessionInitViewModel(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -60,7 +69,8 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         string? deviceSerialNumber,
         Action<ResultsViewModel.Outcome, string?, string?, string?> navigateToResults,
         Action<SessionStatusResponse, string?> navigateToProgress,
-        Action<SessionStatusResponse, string?>? navigateToBlocked = null)
+        Action<SessionStatusResponse, string?>? navigateToBlocked = null,
+        Action? navigateToStart = null)
     {
         _gatewayClient      = gatewayClient;
         _sessionId          = sessionId;
@@ -69,8 +79,10 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         _navigateToResults  = navigateToResults;
         _navigateToProgress = navigateToProgress;
         _navigateToBlocked  = navigateToBlocked;
+        _navigateToStart    = navigateToStart;
 
         RefreshCommand = new RelayCommand(async _ => await PollOnceAsync());
+        StartOverCommand = new RelayCommand(_ => StartOver());
 
         // Start background polling loop
         _ = PollLoopAsync(_cts.Token);
@@ -131,6 +143,23 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
 
     /// <summary>Polls the session status immediately instead of waiting for the next scheduled poll.</summary>
     public ICommand RefreshCommand { get; }
+
+    /// <summary>Abandons this session and returns to operation selection so a new passcode can be issued.</summary>
+    public ICommand StartOverCommand { get; }
+
+    /// <summary>True when a start-over affordance should be offered.</summary>
+    public bool CanStartOver => _navigateToStart is not null;
+
+    // The passcode on screen may already have been refused by the server while this session is
+    // still polling happily, so the operator needs a way out that does not involve a reboot.
+    private void StartOver()
+    {
+        if (_navigateToStart is null) return;
+        if (!TryClaimTerminalTransition()) return;
+        IsPolling = false;
+        _cts.Cancel();
+        _navigateToStart();
+    }
 
     // ── Polling ───────────────────────────────────────────────────────────────
 

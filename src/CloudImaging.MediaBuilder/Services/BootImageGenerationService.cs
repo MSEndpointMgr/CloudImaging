@@ -1117,7 +1117,7 @@ public sealed partial class BootImageGenerationService
         var toolDir = Path.Combine(clientDestDir, AutopilotTooling.ClientRelativeDirectory);
         Directory.CreateDirectory(toolDir);
         File.Copy(AutopilotTooling.Oa3ToolSourcePath(adkPath, architecture), Path.Combine(toolDir, AutopilotTooling.Oa3ToolFileName), overwrite: true);
-        RaiseLog($"Autopilot hash tooling staged: {AutopilotTooling.SecureStartupPackage}, {AutopilotTooling.PlatformIdPackage}, and {AutopilotTooling.Oa3ToolFileName} in \\CloudImaging\\{AutopilotTooling.ClientRelativeDirectory}.");
+        RaiseLog($"Autopilot hash tooling staged: {AutopilotTooling.SecureStartupPackage} and {AutopilotTooling.PlatformIdPackage} installed into the image; {AutopilotTooling.Oa3ToolFileName} copied to \\CloudImaging\\{AutopilotTooling.ClientRelativeDirectory}.");
     }
 
     /// <summary>

@@ -83,6 +83,15 @@ public sealed partial class ReportProgressFunction
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
 
+        // Only a session the operator has actually started may report steps. Without this the
+        // reducer accepts reports in any state, so a device holding a valid token could drive an
+        // expired or already-terminal session back to Completed or Failed.
+        if (session.State is not (SessionState.SessionStarted or SessionState.SessionInProgress))
+        {
+            LogProgressRejected(_logger, sessionGuid, session.State);
+            return req.CreateResponse(HttpStatusCode.Conflict);
+        }
+
         var allSteps = (await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken)).ToList();
         var existingStep = allSteps.FirstOrDefault(existing => existing.StepName == payload.StepName);
         var now = DateTimeOffset.UtcNow;
@@ -186,4 +195,8 @@ public sealed partial class ReportProgressFunction
         Message = "Progress: session={SessionId} step={StepName} status={Status} overall={Overall}%.")]
     private static partial void LogProgressReceived(
         ILogger logger, Guid sessionId, ImagingStepName stepName, ImagingStepStatus status, int overall);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Progress rejected: session={SessionId} is in {State}, which cannot report steps.")]
+    private static partial void LogProgressRejected(ILogger logger, Guid sessionId, SessionState state);
 }

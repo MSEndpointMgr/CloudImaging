@@ -228,6 +228,8 @@ public sealed class AutopilotRegistrationTests : IDisposable
 
         vm.Stage.Should().Be(AutopilotFlowStage.Waiting);
         vm.Title.Should().Be("Waiting for approval");
+        vm.Subtitle.Should().StartWith("Updates automatically every 0 seconds. Last checked ");
+        vm.HasDetail.Should().BeFalse();
     }
 
     [Fact]
@@ -263,7 +265,9 @@ public sealed class AutopilotRegistrationTests : IDisposable
 
         vm.RequestState.Should().Be(AutopilotRegistrationState.Imported);
         vm.IsPositiveOutcome.Should().BeTrue();
-        vm.Detail.Should().Contain("EMEA-SE-STD");
+        vm.GroupTag.Should().Be("EMEA-SE-STD");
+        vm.HasGroupTag.Should().BeTrue();
+        vm.HasDetail.Should().BeFalse();
         handler.Authorizations[$"GET /api/v1/autopilot/registrations/{requestId}"].Should().Be("Bearer status-token");
     }
 

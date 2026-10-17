@@ -19,6 +19,9 @@ public partial class App : Application
     // Covers the 20-second network grace period plus the availability request itself.
     private static readonly TimeSpan StartupAvailabilityTimeout = TimeSpan.FromSeconds(30);
 
+    // Long enough that Getting ready reads as a step rather than a flicker when there is nothing to load.
+    private static readonly TimeSpan StartupMinimumDisplay = TimeSpan.FromSeconds(1);
+
     private Serilog.Core.Logger? _logger;
 
     /// <summary>Autopilot availability resolved at startup, reused so Operation Selection never re-checks it on screen.</summary>
@@ -130,9 +133,9 @@ public partial class App : Application
     // ── Navigation factories ──────────────────────────────────────────────────
 
     /// <summary>
-    /// Opens Operation Selection in its final state. When this boot image can register with
-    /// Autopilot, the Getting ready screen stays up until the portal setting is known, so the
-    /// Autopilot card never visibly switches from disabled to enabled.
+    /// Shows Getting ready, loads whatever Operation Selection needs (today the portal's Autopilot
+    /// setting, when this boot image can register), then opens Operation Selection in its final
+    /// state so no card visibly switches from disabled to enabled.
     /// </summary>
     private static async Task ShowOperationSelectionAsync(
         MainWindow window,
@@ -142,17 +145,20 @@ public partial class App : Application
         TimeSpan? autopilotPollInterval = null,
         bool rememberAvailability = false)
     {
+        window.NavigateTo(new StartupView());
+        var minimumDisplay = Task.Delay(StartupMinimumDisplay);
+
         autopilotCapture ??= new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
         AutopilotAvailabilityState? availability = null;
         if (autopilotCapture.IsToolingPresent)
         {
-            window.NavigateTo(new StartupView());
             using var timeout = new CancellationTokenSource(StartupAvailabilityTimeout);
             availability = await OperationSelectionViewModel.ResolveAutopilotAvailabilityAsync(gateway, timeout.Token);
             if (rememberAvailability)
                 s_autopilotAvailability = availability;
         }
 
+        await minimumDisplay;
         window.NavigateTo(BuildOperationSelectionView(window, gateway, lf,
             autopilotCapture: autopilotCapture, autopilotPollInterval: autopilotPollInterval, autopilotAvailability: availability));
     }
@@ -297,7 +303,7 @@ public partial class App : Application
         string? deviceSerialNumber)
     {
         var view = new SessionInitView();
-        view.DataContext = new SessionInitViewModel(
+        var viewModel = new SessionInitViewModel(
             gateway,
             session.SessionId,
             session.Passcode,
@@ -307,7 +313,14 @@ public partial class App : Application
             navigateToProgress: (status, serialNumber) =>
                 window.NavigateTo(BuildProgressView(window, gateway, lf, session.SessionId, serialNumber, status)),
             navigateToBlocked: (status, serialNumber) =>
-                window.NavigateTo(BuildBlockedResultsView(window, gateway, lf, status, serialNumber)));
+                window.NavigateTo(BuildBlockedResultsView(window, gateway, lf, status, serialNumber)),
+            navigateToStart: () =>
+                window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)));
+        view.DataContext = viewModel;
+
+        // Without this the poll loop outlives the page and keeps touching the abandoned session,
+        // which holds it alive server-side and prevents it from ever expiring.
+        view.Unloaded += (_, _) => viewModel.Dispose();
         return view;
     }
 
