@@ -160,6 +160,9 @@
         <ui:InfoBar Grid.Row="2" Margin="16,0,16,8"
                     Title="Connected" Message="{Binding StatusMessage}"
                     Severity="Success" IsOpen="{Binding HasSucceeded}" IsClosable="False" />
+        <ui:InfoBar Grid.Row="2" Margin="16,0,16,8"
+                    Title="No networks" Message="{Binding InfoMessage}"
+                    Severity="Informational" IsOpen="{Binding HasInfo}" IsClosable="False" />
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16">
             <ui:Button Content="Close" Appearance="Secondary" Click="CloseButton_Click" />

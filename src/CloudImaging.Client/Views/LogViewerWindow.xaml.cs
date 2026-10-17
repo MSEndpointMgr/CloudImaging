@@ -8,7 +8,7 @@ namespace CloudImaging.Client.Views;
 
 /// <summary>
 /// Read-only viewer for the Client's local rolling diagnostic log file (FR-066). Opened from the
-/// always-available "View Log" button on <see cref="MainWindow"/> so a technician can inspect
+/// "View Log" button in every screen's footer (<c>ClientFooterStyle</c>) and ProgressView's sidebar so a technician can inspect
 /// every request/step logged so far without needing Explorer/Notepad, which WinPE does not
 /// provide. Purely local: it only reads the file Serilog is already writing to
 /// (<see cref="LoggingConfiguration.CurrentLogFilePath"/>) and never uploads or transmits it.

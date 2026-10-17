@@ -13,6 +13,11 @@
         can still select/copy failure details and support reference codes straight off screen.
     -->
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
         <Border CornerRadius="8"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
@@ -115,11 +120,6 @@
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                  TextAlignment="Center"
                                  Margin="0,8,0,0" />
-                        <ui:Button Content="Retry"
-                                   Appearance="Danger"
-                                   Width="160"
-                                   Command="{Binding RetryCommand}"
-                                   HorizontalAlignment="Center" Margin="0,24,0,0" />
                     </StackPanel>
 
                     <!-- EXPIRED — session never coupled before the passcode/inactivity window
@@ -139,11 +139,6 @@
                                    TextWrapping="Wrap"
                                    TextAlignment="Center"
                                    HorizontalAlignment="Center" Margin="0,12,0,0" />
-                        <ui:Button Content="Retry"
-                                   Appearance="Secondary"
-                                   Width="160"
-                                   Command="{Binding RetryCommand}"
-                                   HorizontalAlignment="Center" Margin="0,24,0,0" />
                     </StackPanel>
 
                     <!-- NOT AUTHORIZED: blocked by pre-flight checks. One line per switched-on
@@ -239,27 +234,35 @@
                                  Text="This device is not enrolled in Windows Autopilot or the Intune Corporate Device Identifiers list. Enroll the device in your organization's device management system before imaging."
                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                  Margin="0,14,0,0" />
-
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
-                            <ui:Button Content="View Log"
-                                       Appearance="Secondary"
-                                       MinWidth="120"
-                                       Icon="{ui:SymbolIcon DocumentText24}"
-                                       Click="ViewLogButton_Click" />
-                            <ui:Button Content="Try again"
-                                       Appearance="Secondary"
-                                       MinWidth="120" Margin="8,0,0,0"
-                                       Icon="{ui:SymbolIcon ArrowClockwise24}"
-                                       Command="{Binding TryAgainCommand}" />
-                            <ui:Button Content="Exit"
-                                       Appearance="Secondary"
-                                       MinWidth="120" Margin="8,0,0,0"
-                                       Command="{Binding ExitCommand}" />
-                        </StackPanel>
                     </StackPanel>
 
                 </StackPanel>
             </Grid>
         </Border>
+
+        <!-- Blocked devices read their fix hints in the log, so View Log matters most there. -->
+        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}">
+            <HeaderedContentControl.Content>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button Content="Exit"
+                               Appearance="Secondary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Command="{Binding ExitCommand}"
+                               Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button Content="Try again"
+                               Appearance="Primary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Icon="{ui:SymbolIcon ArrowClockwise24}"
+                               Command="{Binding TryAgainCommand}"
+                               Visibility="{Binding IsNotAuthorized, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button Content="Retry"
+                               Appearance="Primary"
+                               Style="{StaticResource FooterActionButtonStyle}"
+                               Icon="{ui:SymbolIcon ArrowClockwise24}"
+                               Command="{Binding RetryCommand}"
+                               Visibility="{Binding CanRetry, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
+            </HeaderedContentControl.Content>
+        </HeaderedContentControl>
     </Grid>
 </Page>

@@ -130,6 +130,9 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsExpired      => _outcome == Outcome.Expired;
 
+    /// <summary>Failed and expired sessions offer Retry, which starts a new session.</summary>
+    public bool CanRetry => IsFailure || IsExpired;
+
     /// <summary>Device serial number, for display.</summary>
     public string? DeviceSerialNumber => _deviceSerialNumber;
 

@@ -13,6 +13,8 @@ Start with the symptom visible to the technician or administrator. The linked ru
 | Image download returns HTTP 403 or its link expired | [Image download link returns 403](operations-runbook.md#symptom-image-download-link-returns-403) |
 | Progress stops during download or another imaging stage | [Progress reporting stops during imaging](operations-runbook.md#symptom-progress-reporting-stops-during-imaging) |
 | Waiting or imaging session remains stale in Portal | [Session remains stale in Portal](operations-runbook.md#symptom-session-remains-stale-in-portal) |
+| Operation Selection is disabled with a network or service banner | [Operation Selection is disabled](operations-runbook.md#symptom-operation-selection-is-disabled-with-network-connection-required-or-a-similar-banner) |
+| Imaging card says no local disk, or several disks, were found | [Imaging card reports a disk problem](operations-runbook.md#symptom-imaging-card-says-no-local-disk-found-or-local-disks-found) |
 | Device needs Wi-Fi before registration | [Device has no wired network](operations-runbook.md#symptom-device-has-no-wired-network-or-needs-wi-fi-to-reach-the-device-gateway) |
 | Session creation takes longer than five seconds | [Session creation takes more than five seconds](operations-runbook.md#symptom-session-creation-takes-more-than-5-seconds) |
 | Bulk assignment times out | [Bulk assignment times out for 20 or more sessions](operations-runbook.md#symptom-bulk-assignment-times-out-for-20-or-more-sessions) |

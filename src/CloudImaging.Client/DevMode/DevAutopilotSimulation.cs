@@ -17,6 +17,9 @@ internal static class DevAutopilotSimulation
 {
     public static readonly TimeSpan PollInterval = ViewModels.AutopilotRegistrationViewModel.StatusPollInterval;
 
+    /// <summary>Startup result for the scripted gateway: one disk, service reachable, Autopilot on.</summary>
+    public static readonly ViewModels.StartupReadiness Readiness = new(1, GatewayReachability.Reachable, ViewModels.AutopilotAvailabilityState.Enabled);
+
     /// <summary>A gateway whose status endpoint walks through <paramref name="statusSequence"/>, one state per poll.</summary>
     public static DeviceGatewayApiClient Gateway(string[] statusSequence, string? rejectionReason = null, string? refusal = null) =>
         new(new HttpClient(new ScriptedGateway(statusSequence, rejectionReason, refusal)) { BaseAddress = new Uri("https://dev-simulation.invalid") });

@@ -339,6 +339,52 @@ public sealed partial class DeviceGatewayApiClient
     // ── Autopilot hardware hash registration (independent of imaging sessions) ────────────────────
 
     /// <summary>
+    /// Startup reachability probe. Uses GET /api/v1/autopilot/availability because it needs only the
+    /// boot-media certificate, so one answer proves DNS, routing, TLS and the certificate together,
+    /// and carries the Autopilot setting Operation Selection needs anyway. Never throws.
+    /// </summary>
+    public async Task<GatewayProbeResult> ProbeAsync(CancellationToken ct = default)
+    {
+        const string path = "/api/v1/autopilot/availability";
+        if (_http.BaseAddress is null)
+            return new GatewayProbeResult(GatewayReachability.NotConfigured, null);
+
+        try
+        {
+            LogHttpRequest(_logger, "GET", path);
+            using var response = await _http.GetAsync(path, ct);
+            LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<AutopilotAvailability>(JsonOptions, ct);
+                return new GatewayProbeResult(GatewayReachability.Reachable, result?.Enabled);
+            }
+
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            return response.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => new GatewayProbeResult(GatewayReachability.CertificateRejected, null),
+                var code when (int)code >= 500 => new GatewayProbeResult(GatewayReachability.ServiceUnavailable, null),
+
+                // Any other answer still came from the gateway, e.g. 404 from one without the Autopilot route.
+                _ => new GatewayProbeResult(GatewayReachability.Reachable, null),
+            };
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is System.Security.Authentication.AuthenticationException)
+        {
+            LogProbeFailed(_logger, ex.Message);
+            return new GatewayProbeResult(GatewayReachability.CertificateRejected, null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or JsonException)
+        {
+            LogProbeFailed(_logger, ex.Message);
+            return new GatewayProbeResult(ex is JsonException ? GatewayReachability.Reachable : GatewayReachability.Unreachable, null);
+        }
+    }
+
+    /// <summary>
     /// GET /api/v1/autopilot/availability: whether the portal allows Autopilot registration.
     /// mTLS only. Returns null when the answer could not be obtained (offline, older backend).
     /// </summary>
@@ -459,6 +505,9 @@ public sealed partial class DeviceGatewayApiClient
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "HTTP {Method} {Path} \u2190 {StatusCode} (problem type: {ProblemType}; detail: {Detail}).")]
     private static partial void LogHttpRequestFailed(ILogger logger, string method, string path, int statusCode, string? problemType, string? detail);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Device Gateway reachability probe failed: {Reason}")]
+    private static partial void LogProbeFailed(ILogger logger, string reason);
 
     [LoggerMessage(Level = LogLevel.Debug,
         Message = "CreateSession request: serial={SerialNumber} manufacturer={Manufacturer} model={Model} (proof-of-possession signature omitted).")]

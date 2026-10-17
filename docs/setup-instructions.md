@@ -764,6 +764,8 @@ the always-on-top Cloud Imaging Client window:
   (greyed out, labeled "Not supported") but cannot be connected to via this flow. No Wi-Fi
   credential is ever persisted; the temporary WLAN profile (which embeds the passphrase in
   plain text, per the netsh profile schema) is deleted immediately after the connect attempt.
+  The ADK's WinPE supports wired networking only, so on boot images built by Media Builder the
+  window reports that the boot image has no Wi-Fi support.
 - **Command Prompt**: hidden unless the boot image was built with **Enable command prompt
   access** checked (off by default, per boot image). Launches an interactive `cmd.exe` for
   advanced troubleshooting, temporarily dropping the Client window's always-on-top behavior so

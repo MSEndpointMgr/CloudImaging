@@ -3,15 +3,18 @@ import { FileDown, PieChart } from 'lucide-react';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
+import { resolvePreset, type DateRange } from '../lib/dateRange.ts';
+import { sortRows, useSort } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent } from '../components/ui/card.tsx';
-import { Input } from '../components/ui/input.tsx';
-import { Label } from '../components/ui/label.tsx';
+import { DateRangeSelect } from '../components/ui/date-range-select.tsx';
+import { ReportFilterBar } from '../components/ReportFilterBar.tsx';
+import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '../components/ui/table.tsx';
+import { Table, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/table.tsx';
 
 interface SessionHistoryRecord {
   sessionId: string;
@@ -21,13 +24,6 @@ interface SessionHistoryRecord {
   deviceModel: string;
   createdAt: string;
   terminalAt: string;
-}
-
-/** Default report window: trailing 30 days. */
-const DEFAULT_WINDOW_DAYS = 30;
-
-function isoDateInputValue(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }
 
 /**
@@ -69,11 +65,12 @@ function formatDuration(fromIso: string, toIso: string): string {
  * purge-limited "DeviceSessions" table).
  */
 export default function ReportDeviceOutcomesPage(): React.ReactElement {
-  const today = useMemo(() => new Date(), []);
-  const defaultFrom = useMemo(() => new Date(today.getTime() - DEFAULT_WINDOW_DAYS * 86_400_000), [today]);
-  const [from, setFrom] = useState(isoDateInputValue(defaultFrom));
-  const [to, setTo] = useState(isoDateInputValue(today));
+  const [range, setRange] = useState<DateRange>(() => resolvePreset('last30')!);
   const [records, setRecords] = useState<SessionHistoryRecord[] | null>(null);
+  // The API returns rows in table-storage enumeration order, which is not chronological, so the
+  // report has to impose one.
+  const [sort, toggleSort] = useSort<'state' | 'device' | 'model' | 'started' | 'finished' | 'duration'>({ key: 'finished', dir: 'desc' });
+  const { from, to } = range;
 
   useEffect(() => {
     let cancelled = false;
@@ -108,16 +105,25 @@ export default function ReportDeviceOutcomesPage(): React.ReactElement {
 
   const successRate = counts.total > 0 ? Math.round((counts.completed / counts.total) * 100) : null;
 
+  const sorted = useMemo(() => sortRows(records ?? [], sort, {
+    state:    (r: SessionHistoryRecord) => stateLabel(r.finalState),
+    device:   (r: SessionHistoryRecord) => r.deviceSerialNumber,
+    model:    (r: SessionHistoryRecord) => `${r.deviceManufacturer} ${r.deviceModel}`,
+    started:  (r: SessionHistoryRecord) => new Date(r.createdAt).getTime(),
+    finished: (r: SessionHistoryRecord) => new Date(r.terminalAt).getTime(),
+    duration: (r: SessionHistoryRecord) => new Date(r.terminalAt).getTime() - new Date(r.createdAt).getTime(),
+  }), [records, sort]);
+
   const handleExport = () => {
-    if (!records || records.length === 0) return;
-    const csv = toCsv(records, [
+    if (sorted.length === 0) return;
+    const csv = toCsv(sorted, [
       { header: 'Session ID', accessor: r => r.sessionId },
       { header: 'Final State', accessor: r => stateLabel(r.finalState) },
       { header: 'Device Serial Number', accessor: r => r.deviceSerialNumber },
       { header: 'Manufacturer', accessor: r => r.deviceManufacturer },
       { header: 'Model', accessor: r => r.deviceModel },
-      { header: 'Created At', accessor: r => r.createdAt },
-      { header: 'Terminal At', accessor: r => r.terminalAt },
+      { header: 'Started At', accessor: r => r.createdAt },
+      { header: 'Finished At', accessor: r => r.terminalAt },
       { header: 'Duration', accessor: r => formatDuration(r.createdAt, r.terminalAt) },
     ]);
     downloadBlob(`device-outcomes-${from}-to-${to}.csv`, csv);
@@ -125,21 +131,21 @@ export default function ReportDeviceOutcomesPage(): React.ReactElement {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex items-end gap-3">
-          <div className="space-y-2">
-            <Label htmlFor="from">From</Label>
-            <Input id="from" type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} className="w-40" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="to">To</Label>
-            <Input id="to" type="date" value={to} min={from} onChange={e => setTo(e.target.value)} className="w-40" />
-          </div>
-        </div>
+      <ReportFilterBar
+        actions={
           <Button variant="outline" onClick={handleExport} disabled={!records || records.length === 0}>
-          <FileDown /> Export CSV
-        </Button>
-      </div>
+            <FileDown /> Export CSV
+          </Button>
+        }
+      >
+        <DateRangeSelect
+          id="device-outcomes-range"
+          aria-label="Date range"
+          value={range}
+          onValueChange={setRange}
+          wrapperClassName="w-44"
+        />
+      </ReportFilterBar>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {[
@@ -170,12 +176,12 @@ export default function ReportDeviceOutcomesPage(): React.ReactElement {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>State</TableHead>
-            <TableHead>Device</TableHead>
-            <TableHead>Manufacturer / Model</TableHead>
-            <TableHead>Created</TableHead>
-            <TableHead>Terminal</TableHead>
-            <TableHead>Duration</TableHead>
+            <SortableHead label="State" sortKey="state" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Device" sortKey="device" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Manufacturer / Model" sortKey="model" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Started" sortKey="started" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Finished" sortKey="finished" sort={sort} onSort={toggleSort} />
+            <SortableHead label="Duration" sortKey="duration" sort={sort} onSort={toggleSort} />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -188,7 +194,7 @@ export default function ReportDeviceOutcomesPage(): React.ReactElement {
               </TableCell>
             </TableRow>
           )}
-          {records?.map(r => (
+          {sorted.map(r => (
             <TableRow key={r.sessionId}>
               <TableCell><Badge variant={stateBadgeVariant(r.finalState)} dot>{stateLabel(r.finalState)}</Badge></TableCell>
               <TableCell>
