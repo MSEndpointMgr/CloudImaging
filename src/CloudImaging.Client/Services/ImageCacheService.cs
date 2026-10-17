@@ -26,6 +26,7 @@ public sealed partial class ImageCacheService
     private readonly string _cacheRoot;
     private readonly ILogger<ImageCacheService> _logger;
 
+    /// <summary>Builds the cache over the given cache-partition root.</summary>
     public ImageCacheService(
         string cacheRoot,
         ILogger<ImageCacheService> logger)
@@ -36,6 +37,11 @@ public sealed partial class ImageCacheService
 
     // ── Cache entry metadata ──────────────────────────────────────────────────
 
+    /// <summary>Metadata persisted alongside a cached WIM, used to validate and expire cache entries.</summary>
+    /// <param name="ImageId">Identifier of the cached OS image.</param>
+    /// <param name="Sha256Hash">Hash the cached WIM was verified against when written.</param>
+    /// <param name="SizeBytes">Size of the cached WIM in bytes.</param>
+    /// <param name="CachedAt">When this entry was last written or refreshed by a cache hit.</param>
     public sealed record CacheEntryMetadata(
         string ImageId,
         string Sha256Hash,
@@ -83,7 +89,7 @@ public sealed partial class ImageCacheService
     }
 
     /// <summary>
-    /// Persists a downloaded WIM to the cache and writes the metadata record.
+    /// Moves a downloaded WIM into the cache and writes the metadata record.
     /// Verifies the actual SHA-256 before writing the metadata.
     /// </summary>
     public async Task<string> WriteAsync(
@@ -104,14 +110,15 @@ public sealed partial class ImageCacheService
 
         var wimDest  = Path.Combine(dir, WimFileName);
         var metaPath = Path.Combine(dir, MetaFileName);
-        var info     = new FileInfo(sourcePath);
+        var sizeBytes = new FileInfo(sourcePath).Length;
 
-        File.Copy(sourcePath, wimDest, overwrite: true);
+        // Move, not copy: the download sits on the cache volume already, and a copy would need twice the image size free.
+        File.Move(sourcePath, wimDest, overwrite: true);
 
-        var meta = new CacheEntryMetadata(imageId, actualHash, info.Length, DateTimeOffset.UtcNow);
+        var meta = new CacheEntryMetadata(imageId, actualHash, sizeBytes, DateTimeOffset.UtcNow);
         await WriteMetaAsync(metaPath, meta, ct);
 
-        LogCacheWritten(_logger, imageId, info.Length);
+        LogCacheWritten(_logger, imageId, sizeBytes);
         return wimDest;
     }
 
@@ -186,6 +193,7 @@ public sealed partial class ImageCacheService
         try { File.Delete(path); } catch { /* best-effort */ }
     }
 
+    /// <summary>Computes the lowercase hex SHA-256 hash of a file.</summary>
     public static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
     {
         await using var stream = File.OpenRead(filePath);

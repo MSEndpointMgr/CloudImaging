@@ -21,9 +21,11 @@ public sealed class PreFlightOverrideRepository
 
     private readonly TableClient _table;
 
+    /// <param name="tableServiceClient">Table service client used to resolve the pre-flight overrides table.</param>
     public PreFlightOverrideRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Creates the backing table if it does not already exist.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
@@ -31,6 +33,7 @@ public sealed class PreFlightOverrideRepository
     public async Task UpsertAsync(PreFlightOverride preFlightOverride, CancellationToken ct = default) =>
         await _table.UpsertEntityAsync(ToEntity(preFlightOverride), TableUpdateMode.Replace, ct);
 
+    /// <summary>Returns a single override and its ETag for a device serial number, or null if none exists.</summary>
     public async Task<(PreFlightOverride Override, ETag ETag)?> GetAsync(string serialNumber, CancellationToken ct = default)
     {
         try
@@ -44,6 +47,7 @@ public sealed class PreFlightOverrideRepository
         }
     }
 
+    /// <summary>Lists all active pre-flight overrides.</summary>
     public IAsyncEnumerable<PreFlightOverride> ListAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition}");

@@ -23,6 +23,7 @@ public sealed partial class BootImageCacheService
     private readonly string _cacheDir;
     private readonly ILogger<BootImageCacheService> _logger;
 
+    /// <summary>Builds the cache over the default per-user cache directory.</summary>
     public BootImageCacheService(ILogger<BootImageCacheService> logger)
         : this(DefaultCacheDir(), logger)
     {

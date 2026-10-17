@@ -32,6 +32,7 @@ public partial class LogViewerWindow : FluentWindow
     private string? _loadedPath;
     private long _readPosition;
 
+    /// <summary>Builds the window and loads its XAML.</summary>
     public LogViewerWindow()
     {
         InitializeComponent();

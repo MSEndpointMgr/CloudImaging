@@ -1,10 +1,9 @@
 import * as React from 'react';
 import { CopyableId } from './ui/copyable-id.tsx';
-import { RelativeTime } from './ui/relative-time.tsx';
 import { formatDateTime } from '../lib/utils.ts';
 import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
 import type { PreFlightCheckResult } from '../lib/preflight.ts';
-import { PreFlightCheckTiles } from './PreFlightChecks.tsx';
+import { PreFlightApprovalNote, PreFlightCheckTiles } from './PreFlightChecks.tsx';
 
 export interface SessionHardware {
   motherboardManufacturer?: string | null;
@@ -131,19 +130,11 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
     <div className="space-y-4 p-4">
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       <DetailField label="Session ID">
-        <CopyableId
-          value={session.sessionId}
-          label="session ID"
-          className="font-mono text-xs text-muted-foreground"
-        />
+        <CopyableId value={session.sessionId} label="session ID" />
       </DetailField>
 
       <DetailField label="Serial number">
-        <CopyableId
-          value={session.deviceSerialNumber}
-          label="device serial number"
-          className="font-mono text-sm"
-        />
+        <CopyableId value={session.deviceSerialNumber} label="device serial number" />
       </DetailField>
 
       <DetailField label="Manufacturer">
@@ -162,7 +153,7 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
           records — it is the closest identifier the platform has to a network address. */}
       <DetailField label="MAC address">
         {session.macAddress ? (
-          <CopyableId value={session.macAddress} label="MAC address" className="font-mono text-sm" />
+          <CopyableId value={session.macAddress} label="MAC address" />
         ) : (
           <Maybe value={null} />
         )}
@@ -190,20 +181,12 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
       {/* The row itself shows this as a relative time, which answers "is this waiting on me?".
           The absolute instant is what you need when correlating against a device-side log. */}
       <DetailField label="Session initialised">
-        <span className="block">{formatDateTime(session.createdAt)}</span>
-        <span className="block text-xs text-muted-foreground">
-          <RelativeTime value={session.createdAt} />
-        </span>
+        {formatDateTime(session.createdAt)}
       </DetailField>
 
       <DetailField label="Last contact">
         {session.lastHeartbeatAt ? (
-          <>
-            <span className="block">{formatDateTime(session.lastHeartbeatAt)}</span>
-            <span className="block text-xs text-muted-foreground">
-              <RelativeTime value={session.lastHeartbeatAt} />
-            </span>
-          </>
+          formatDateTime(session.lastHeartbeatAt)
         ) : (
           <span className="text-muted-foreground">Not yet polled</span>
         )}
@@ -211,10 +194,7 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
 
       {session.terminalAt && (
         <DetailField label="Finished">
-          <span className="block">{formatDateTime(session.terminalAt)}</span>
-          <span className="block text-xs text-muted-foreground">
-            <RelativeTime value={session.terminalAt} />
-          </span>
+          {formatDateTime(session.terminalAt)}
         </DetailField>
       )}
       </dl>
@@ -224,6 +204,7 @@ export function SessionDetailsPanel({ session }: { session: SessionDetails }): R
           <h4 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Pre-flight checks <span className="normal-case tracking-normal">&middot; evaluated when the session started</span>
           </h4>
+          <PreFlightApprovalNote checks={preFlightChecks} />
           <PreFlightCheckTiles checks={preFlightChecks} />
         </section>
       )}

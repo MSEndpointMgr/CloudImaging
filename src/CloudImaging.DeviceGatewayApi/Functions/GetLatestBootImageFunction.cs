@@ -40,12 +40,15 @@ public sealed partial class GetLatestBootImageFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<GetLatestBootImageFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client used to look up the boot image catalog.</param>
+    /// <param name="logger">Logger for this function.</param>
     public GetLatestBootImageFunction(ImagingCoreClient coreClient, ILogger<GetLatestBootImageFunction> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>GET v1/boot-image/latest. Returns a SAS URL for the latest published boot image for the requested architecture.</summary>
     [Function("GetLatestBootImage")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/boot-image/latest")] HttpRequestData req,

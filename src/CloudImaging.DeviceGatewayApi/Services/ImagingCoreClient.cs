@@ -12,6 +12,7 @@ public sealed class ImagingCoreClient
     private readonly HttpClient _http;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <param name="http">Pre-configured HTTP client targeting the Imaging Core API over Private Link.</param>
     public ImagingCoreClient(HttpClient http) => _http = http;
 
     /// <summary>Forward session creation to ImagingCoreApi.</summary>

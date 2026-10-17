@@ -23,6 +23,7 @@ public sealed partial class SessionHeartbeatCoordinator : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private bool _disposed;
 
+    /// <summary>Builds the coordinator for the given session.</summary>
     public SessionHeartbeatCoordinator(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -56,6 +57,7 @@ public sealed partial class SessionHeartbeatCoordinator : IDisposable
         }
     }
 
+    /// <summary>Stops the background heartbeat loop.</summary>
     public void Dispose()
     {
         if (_disposed)

@@ -22,6 +22,8 @@ public sealed partial class BootMediaCertificateFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BootMediaCertificateFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the certificate requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BootMediaCertificateFunctions(
         ImagingCoreClient coreClient,
         ILogger<BootMediaCertificateFunctions> logger)
@@ -32,6 +34,7 @@ public sealed partial class BootMediaCertificateFunctions
 
     // ── GET /api/bootmedia/certificate/metadata ────────────────────────────
 
+    /// <summary>GET bootmedia/certificate/metadata. Returns metadata only (never PFX/private-key bytes) for the active boot media certificate.</summary>
     [Function("GetBootMediaCertificateMetadata")]
     public async Task<HttpResponseData> GetCertificateMetadata(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "bootmedia/certificate/metadata")] HttpRequestData req,
@@ -78,6 +81,7 @@ public sealed partial class BootMediaCertificateFunctions
 
     // ── GET /api/bootmedia/certificate/pfx ───────────────────────────────────
 
+    /// <summary>GET bootmedia/certificate/pfx. Returns the active boot media certificate's PFX bytes. MediaBuilderAccess role only.</summary>
     [Function("GetBootMediaCertificatePfx")]
     public async Task<HttpResponseData> GetCertificatePfx(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "bootmedia/certificate/pfx")] HttpRequestData req,
@@ -117,6 +121,7 @@ public sealed partial class BootMediaCertificateFunctions
 
     // ── POST /api/cert/generate (T177) ────────────────────────────────────────
 
+    /// <summary>POST cert/generate. Generates a new boot media certificate.</summary>
     [Function("GenerateBootMediaCertificate")]
     public async Task<HttpResponseData> GenerateCertificate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "cert/generate")] HttpRequestData req,
@@ -128,6 +133,7 @@ public sealed partial class BootMediaCertificateFunctions
 
     // ── POST /api/cert/rotate (T177) ──────────────────────────────────────────
 
+    /// <summary>POST cert/rotate. Rotates the active boot media certificate.</summary>
     [Function("RotateBootMediaCertificate")]
     public async Task<HttpResponseData> RotateCertificate(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "cert/rotate")] HttpRequestData req,

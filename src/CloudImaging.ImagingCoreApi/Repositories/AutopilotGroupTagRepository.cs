@@ -15,15 +15,19 @@ public sealed class AutopilotGroupTagRepository
     private const string Partition = "tag";
     private readonly TableClient _table;
 
+    /// <param name="tableServiceClient">Table service client used to resolve the Autopilot group tags table.</param>
     public AutopilotGroupTagRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Creates the backing table if it does not already exist.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Creates a new group tag definition.</summary>
     public async Task AddAsync(AutopilotGroupTagDefinition definition, CancellationToken ct = default) =>
         await _table.AddEntityAsync(ToEntity(definition), ct);
 
+    /// <summary>Updates an existing group tag definition. Returns false if it no longer exists.</summary>
     public async Task<bool> UpdateAsync(AutopilotGroupTagDefinition definition, CancellationToken ct = default)
     {
         try
@@ -34,6 +38,7 @@ public sealed class AutopilotGroupTagRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return false; }
     }
 
+    /// <summary>Returns a single group tag definition by id, or null if not found.</summary>
     public async Task<AutopilotGroupTagDefinition?> GetAsync(Guid id, CancellationToken ct = default)
     {
         try
@@ -44,6 +49,7 @@ public sealed class AutopilotGroupTagRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Lists all group tag definitions, sorted by name.</summary>
     public async Task<List<AutopilotGroupTagDefinition>> ListAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition}");
@@ -56,6 +62,7 @@ public sealed class AutopilotGroupTagRepository
         return definitions;
     }
 
+    /// <summary>Deletes a group tag definition. No-op if it does not exist.</summary>
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
     {
         try

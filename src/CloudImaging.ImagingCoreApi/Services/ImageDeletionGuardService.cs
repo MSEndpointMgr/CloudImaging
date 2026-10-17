@@ -13,6 +13,8 @@ public sealed partial class ImageDeletionGuardService
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ILogger<ImageDeletionGuardService> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="logger">Logger for this service.</param>
     public ImageDeletionGuardService(
         DeviceSessionRepository sessionRepo,
         ILogger<ImageDeletionGuardService> logger)

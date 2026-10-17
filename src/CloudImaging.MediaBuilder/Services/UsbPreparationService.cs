@@ -53,6 +53,9 @@ public sealed partial class UsbPreparationService
     /// </summary>
     public event EventHandler<(string Message, int Percent)>? ProgressChanged;
 
+    /// <param name="logger">Logger for this service's diagnostic output.</param>
+    /// <param name="provisioner">Partitions the target USB disk.</param>
+    /// <param name="deployer">Deploys the boot image WIM onto the partitioned disk.</param>
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
     /// <param name="startElevatedProcessOverride">Test seam. Defaults to a real "runas"-elevated <see cref="Process"/> launch.</param>
     public UsbPreparationService(
@@ -91,6 +94,9 @@ public sealed partial class UsbPreparationService
         Guid? BootImageId = null,
         bool PreparedForTesting = false);
 
+    /// <summary>Outcome of a successful USB preparation.</summary>
+    /// <param name="BootDriveLetter">Drive letter of the deployed WinPE boot partition.</param>
+    /// <param name="CacheDriveLetter">Drive letter of the OS image cache partition, if created.</param>
     public sealed record PreparationResult(string BootDriveLetter, string? CacheDriveLetter);
 
     private sealed record ElevatedPreparationResult(bool Success, string? BootDriveLetter, string? CacheDriveLetter, string? Error);

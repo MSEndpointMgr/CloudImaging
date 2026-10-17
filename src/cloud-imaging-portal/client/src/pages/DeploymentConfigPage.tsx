@@ -235,10 +235,12 @@ export default function DeploymentConfigPage(): React.ReactElement {
     description: string,
     defaultValue: number,
   ) => (
-    <div className="space-y-2">
+    // `h-full` + `mt-auto` keep the inputs on one line across a row: descriptions wrap to
+    // different heights, so without it each input floats at its own description's baseline.
+    <div className="flex h-full flex-col gap-2 rounded-md border border-border bg-muted/30 p-4">
       <Label htmlFor={key}>{label}</Label>
       <p className="text-sm text-muted-foreground">{description}</p>
-      <div className="flex items-center gap-2">
+      <div className="mt-auto flex items-center gap-2 pt-1">
         <Input
           id={key}
           type="number"

@@ -14,6 +14,7 @@ public sealed partial class BootConfigurationService
 {
     private readonly ILogger<BootConfigurationService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public BootConfigurationService(ILogger<BootConfigurationService> logger) => _logger = logger;
 
     /// <summary>

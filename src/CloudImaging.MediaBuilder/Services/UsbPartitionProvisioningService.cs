@@ -9,7 +9,7 @@ namespace CloudImaging.MediaBuilder.Services;
 ///
 /// Partition layout:
 ///   Part 1 (FAT32, boot, minimum 2 GB):   WinPE boot files.
-///   Part 2 (NTFS, cache, minimum 24 GB):  Cloud Imaging Client OS image cache
+///   Part 2 (NTFS, cache, the rest):       Cloud Imaging Client OS image cache
 ///                                         (see CloudImaging.Client's ImageCacheService, FR-009d).
 /// </summary>
 public sealed partial class UsbPartitionProvisioningService
@@ -17,16 +17,25 @@ public sealed partial class UsbPartitionProvisioningService
     /// <summary>Boot partition size in MB — the FR-055 minimum is 2 GB (2048 MB).</summary>
     public const int BootPartitionSizeMb = 2048;
 
+    /// <summary>Smallest accepted USB device. Sticks sold as 8 GB report roughly 7.2 to 8 GB of usable capacity.</summary>
+    public const long MinimumDiskBytes = 7_000_000_000L;
+
+    /// <summary>Label for <see cref="MinimumDiskBytes"/> in messages, matching how USB devices are sold.</summary>
+    public const string MinimumDiskLabel = "8 GB";
+
     /// <summary>
-    /// Minimum cache partition size in bytes, per FR-055. Sized to hold one OS image at the top of
-    /// the supported range (20 GB) plus NTFS metadata and working headroom; a bare 20 GB partition
-    /// could not actually store a 20 GB image, which would leave the cache silently unusable for
-    /// the largest catalog entries. Still fits on a 32 GB stick alongside the 2 GB boot partition.
+    /// Cache partition size that holds one OS image at the top of the supported range (20 GB) plus
+    /// NTFS headroom. Smaller devices still work: the Client stages images that don't fit on the
+    /// target disk instead, so they are downloaded every time rather than cached.
     /// </summary>
-    public const long MinimumCachePartitionBytes = 24L * 1024 * 1024 * 1024;
+    public const long RecommendedCachePartitionBytes = 24L * 1024 * 1024 * 1024;
+
+    /// <summary>Size left for the cache partition on a disk of <paramref name="diskSizeBytes"/>.</summary>
+    public static long CachePartitionBytes(long diskSizeBytes) => diskSizeBytes - BootPartitionSizeMb * 1024L * 1024L;
 
     private readonly ILogger<UsbPartitionProvisioningService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public UsbPartitionProvisioningService(ILogger<UsbPartitionProvisioningService> logger)
         => _logger = logger;
 
@@ -36,9 +45,8 @@ public sealed partial class UsbPartitionProvisioningService
     /// </summary>
     /// <param name="diskNumber">Physical disk index to partition.</param>
     /// <param name="diskSizeBytes">
-    /// Total disk capacity. Used to verify — before any destructive action is taken — that the
-    /// resulting cache partition will meet the <see cref="MinimumCachePartitionBytes"/> minimum
-    /// required by FR-055.
+    /// Total disk capacity. Checked against <see cref="MinimumDiskBytes"/> before any destructive
+    /// action is taken.
     /// </param>
     /// <param name="onProgress">
     /// Reports a friendly message plus a 0-100 percent completion of just this partitioning
@@ -51,6 +59,7 @@ public sealed partial class UsbPartitionProvisioningService
     /// to use in progress messages instead of the bare disk number. Falls back to "disk N" when
     /// not supplied.
     /// </param>
+    /// <param name="ct">Cancellation token to abort provisioning.</param>
     public async Task ProvisionAsync(
         uint diskNumber,
         long diskSizeBytes,
@@ -58,15 +67,10 @@ public sealed partial class UsbPartitionProvisioningService
         string? diskLabel = null,
         CancellationToken ct = default)
     {
-        var bootPartitionBytes = BootPartitionSizeMb * 1024L * 1024L;
-        var cachePartitionBytes = diskSizeBytes - bootPartitionBytes;
-        if (cachePartitionBytes < MinimumCachePartitionBytes)
+        if (diskSizeBytes < MinimumDiskBytes)
         {
             throw new InvalidOperationException(
-                $"Selected USB device is too small: after the {BootPartitionSizeMb} MB boot partition, only " +
-                $"{cachePartitionBytes / (1024.0 * 1024 * 1024):0.0} GB would remain for the cache partition, " +
-                $"below the {MinimumCachePartitionBytes / (1024L * 1024 * 1024)} GB minimum required (FR-055). " +
-                "Use a larger USB device.");
+                $"This USB device is too small ({diskSizeBytes / (1024.0 * 1024 * 1024):0.0} GB). Use a USB device of at least {MinimumDiskLabel}.");
         }
 
         var label = string.IsNullOrWhiteSpace(diskLabel) ? $"disk {diskNumber}" : diskLabel;

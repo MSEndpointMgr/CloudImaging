@@ -11,8 +11,10 @@ public sealed partial class ProblemDetailsMiddleware : IFunctionsWorkerMiddlewar
 {
     private readonly ILogger<ProblemDetailsMiddleware> _logger;
 
+    /// <param name="logger">Logger used to record unhandled exceptions.</param>
     public ProblemDetailsMiddleware(ILogger<ProblemDetailsMiddleware> logger) => _logger = logger;
 
+    /// <summary>Invokes the next middleware/function, converting any unhandled exception into an RFC 7807 ProblemDetails response.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         try

@@ -14,12 +14,15 @@ public sealed class RecoveryImageRepository
 {
     private const string TableName = "RecoveryImages";
     private const string Partition = "catalog";
+    /// <summary>Maximum number of active recovery image catalog entries allowed per architecture.</summary>
     public const int MaxActiveEntriesPerArchitecture = 5;
     private readonly TableClient _table;
 
+    /// <param name="tableServiceClient">Table service client used to resolve the recovery images table.</param>
     public RecoveryImageRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Creates the backing table if it does not already exist.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
@@ -34,6 +37,7 @@ public sealed class RecoveryImageRepository
         return (toDemote, sameArchitecture.Where(i => i.IsLatestPublished).ToList());
     }
 
+    /// <summary>Publishes a new recovery image, demoting the oldest entries of the same architecture past the cap and clearing the previous latest-published flag.</summary>
     public async Task<RecoveryImage> PublishAsync(RecoveryImage image, CancellationToken ct = default)
     {
         var activeEntries = await ListActiveAsync(ct).ToListAsync(ct);
@@ -70,6 +74,7 @@ public sealed class RecoveryImageRepository
         return newImage;
     }
 
+    /// <summary>Returns a single recovery image by id, or null if not found.</summary>
     public async Task<RecoveryImage?> GetByIdAsync(Guid recoveryImageId, CancellationToken ct = default)
     {
         try
@@ -80,12 +85,14 @@ public sealed class RecoveryImageRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Lists active recovery image catalog entries.</summary>
     public IAsyncEnumerable<RecoveryImage> ListActiveAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition} and IsActive eq true");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
     }
 
+    /// <summary>Deletes a recovery image catalog entry.</summary>
     public async Task DeleteAsync(Guid recoveryImageId, CancellationToken ct = default) =>
         await _table.DeleteEntityAsync(Partition, recoveryImageId.ToString(), cancellationToken: ct);
 

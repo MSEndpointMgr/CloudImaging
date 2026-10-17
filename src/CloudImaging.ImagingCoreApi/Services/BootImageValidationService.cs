@@ -53,8 +53,13 @@ public sealed partial class BootImageValidationService
 
     private readonly ILogger<BootImageValidationService> _logger;
 
+    /// <param name="logger">Logger for this service.</param>
     public BootImageValidationService(ILogger<BootImageValidationService> logger) => _logger = logger;
 
+    /// <summary>Outcome of a boot image signature/checksum validation.</summary>
+    /// <param name="Valid">Whether the file passed validation.</param>
+    /// <param name="ActualHash">The computed SHA-256 hash, when hashing was performed.</param>
+    /// <param name="FailureReason">A human-readable failure reason when <paramref name="Valid"/> is false.</param>
     public sealed record ValidationResult(bool Valid, string? ActualHash, string? FailureReason);
 
     /// <summary>
@@ -81,6 +86,9 @@ public sealed partial class BootImageValidationService
     /// The allow-list for this upload type — <see cref="OsImageExtensions"/> for OS images, or
     /// <see cref="WimOnlyExtensions"/> for boot/recovery images.
     /// </param>
+    /// <param name="blobClient">The uploaded blob whose leading bytes are inspected.</param>
+    /// <param name="extension">The file extension (e.g. ".wim") the blob is expected to match.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<ValidationResult> ValidateSignatureAsync(
         BlobBaseClient blobClient,
         string extension,
@@ -168,6 +176,11 @@ public sealed partial class BootImageValidationService
     /// The allow-list for this upload type — <see cref="OsImageExtensions"/> for OS images, or
     /// <see cref="WimOnlyExtensions"/> for boot/recovery images.
     /// </param>
+    /// <param name="blobClient">The uploaded blob to validate.</param>
+    /// <param name="expectedHash">The SHA-256 hash the blob's content is expected to match.</param>
+    /// <param name="extension">The file extension (e.g. ".wim") the blob is expected to match.</param>
+    /// <param name="progress">Optional sink for 0.0-1.0 hashing completion.</param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<ValidationResult> ValidateAsync(
         BlobBaseClient blobClient,
         string expectedHash,
@@ -229,10 +242,13 @@ public sealed partial class BootImageValidationService
     /// Computes the SHA-256 hash of the blob at <paramref name="blobStream"/> and compares it
     /// against <paramref name="expectedHash"/>. Returns the validation result.
     /// </summary>
+    /// <param name="blobStream">Stream positioned over the file content to hash.</param>
+    /// <param name="expectedHash">The SHA-256 hash the stream's content is expected to match.</param>
     /// <param name="progress">
     /// Optional sink for 0.0-1.0 completion, reported as the stream is consumed. Only usable when
     /// <paramref name="blobStream"/> reports a length; otherwise nothing is reported.
     /// </param>
+    /// <param name="ct">Cancellation token.</param>
     public async Task<ValidationResult> ValidateAsync(
         Stream blobStream,
         string expectedHash,

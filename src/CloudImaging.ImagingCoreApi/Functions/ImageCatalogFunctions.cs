@@ -27,6 +27,10 @@ public sealed partial class ImageCatalogFunctions
     private readonly ImageDeletionGuardService _deletionGuard;
     private readonly ILogger<ImageCatalogFunctions> _logger;
 
+    /// <param name="imageRepo">OS image catalog repository.</param>
+    /// <param name="sessionRepo">Device session repository, used to compute in-use state.</param>
+    /// <param name="deletionGuard">Guard service that blocks deletion of in-use images.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public ImageCatalogFunctions(
         OsImageRepository imageRepo,
         DeviceSessionRepository sessionRepo,
@@ -41,6 +45,7 @@ public sealed partial class ImageCatalogFunctions
 
     // ── GET /api/internal/images ─────────────────────────────────────────────
 
+    /// <summary>GET internal/images. Lists active OS images with computed in-use state.</summary>
     [Function("GetImages")]
     public async Task<HttpResponseData> GetImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/images")] HttpRequestData req,
@@ -58,6 +63,7 @@ public sealed partial class ImageCatalogFunctions
 
     // ── GET /api/internal/images/{id} ────────────────────────────────────────
 
+    /// <summary>GET internal/images/{id}. Returns a single OS image with computed in-use state.</summary>
     [Function("GetImageById")]
     public async Task<HttpResponseData> GetImageById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/images/{id}")] HttpRequestData req,
@@ -86,6 +92,7 @@ public sealed partial class ImageCatalogFunctions
 
     // ── POST /api/internal/images ────────────────────────────────────────────
 
+    /// <summary>POST internal/images. Creates/registers a new OS image catalog entry.</summary>
     [Function("CreateImage")]
     public async Task<HttpResponseData> CreateImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/images")] HttpRequestData req,
@@ -134,6 +141,7 @@ public sealed partial class ImageCatalogFunctions
 
     // ── PATCH /api/internal/images/{id} ──────────────────────────────────────
 
+    /// <summary>PATCH internal/images/{id}. Updates OS image metadata.</summary>
     [Function("UpdateImage")]
     public async Task<HttpResponseData> UpdateImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "patch", Route = "internal/images/{id}")] HttpRequestData req,
@@ -176,6 +184,7 @@ public sealed partial class ImageCatalogFunctions
 
     // ── DELETE /api/internal/images/{id} ─────────────────────────────────────
 
+    /// <summary>DELETE internal/images/{id}. Deletes an OS image, blocked if it has an active session.</summary>
     [Function("DeleteImage")]
     public async Task<HttpResponseData> DeleteImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/images/{id}")] HttpRequestData req,

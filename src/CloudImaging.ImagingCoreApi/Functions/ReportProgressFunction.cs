@@ -34,6 +34,11 @@ public sealed partial class ReportProgressFunction
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<ReportProgressFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="stepRepo">Imaging step repository.</param>
+    /// <param name="historyRepo">Session history repository.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public ReportProgressFunction(
         DeviceSessionRepository sessionRepo,
         ImagingStepRepository stepRepo,
@@ -48,6 +53,7 @@ public sealed partial class ReportProgressFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/{sessionId}/progress. Records an imaging step progress/status update from the device.</summary>
     [Function(nameof(ReportProgressFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/progress")] HttpRequestData req,
@@ -75,6 +81,15 @@ public sealed partial class ReportProgressFunction
         if (session is null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
+        }
+
+        // Only a session the operator has actually started may report steps. Without this the
+        // reducer accepts reports in any state, so a device holding a valid token could drive an
+        // expired or already-terminal session back to Completed or Failed.
+        if (session.State is not (SessionState.SessionStarted or SessionState.SessionInProgress))
+        {
+            LogProgressRejected(_logger, sessionGuid, session.State);
+            return req.CreateResponse(HttpStatusCode.Conflict);
         }
 
         var allSteps = (await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken)).ToList();
@@ -180,4 +195,8 @@ public sealed partial class ReportProgressFunction
         Message = "Progress: session={SessionId} step={StepName} status={Status} overall={Overall}%.")]
     private static partial void LogProgressReceived(
         ILogger logger, Guid sessionId, ImagingStepName stepName, ImagingStepStatus status, int overall);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Progress rejected: session={SessionId} is in {State}, which cannot report steps.")]
+    private static partial void LogProgressRejected(ILogger logger, Guid sessionId, SessionState state);
 }

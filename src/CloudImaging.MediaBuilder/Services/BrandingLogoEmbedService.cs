@@ -29,6 +29,7 @@ public sealed partial class BrandingLogoEmbedService
     private readonly OperatorApiClient _operatorApiClient;
     private readonly ILogger<BrandingLogoEmbedService> _logger;
 
+    /// <summary>Builds the service over the given HTTP client, Operator API client, and logger.</summary>
     public BrandingLogoEmbedService(
         HttpClient http,
         OperatorApiClient operatorApiClient,

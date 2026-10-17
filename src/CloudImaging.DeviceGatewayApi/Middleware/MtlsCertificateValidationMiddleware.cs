@@ -41,6 +41,8 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
     private readonly BootMediaCertificateThumbprintCache _thumbprintCache;
     private readonly ILogger<MtlsCertificateValidationMiddleware> _logger;
 
+    /// <param name="thumbprintCache">Cache of the active boot-media certificate thumbprint to validate against.</param>
+    /// <param name="logger">Logger for this middleware.</param>
     public MtlsCertificateValidationMiddleware(
         BootMediaCertificateThumbprintCache thumbprintCache,
         ILogger<MtlsCertificateValidationMiddleware> logger)
@@ -49,6 +51,7 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
         _logger = logger;
     }
 
+    /// <summary>Validates the forwarded client certificate header and attaches it to <see cref="FunctionContext.Items"/>, or short-circuits with 401.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var httpContext = await context.GetHttpRequestDataAsync();

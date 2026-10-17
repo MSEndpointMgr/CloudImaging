@@ -31,6 +31,8 @@ public sealed partial class DeviceSessionNonceStore
     private readonly NonceRegistrar _register;
     private readonly ILogger<DeviceSessionNonceStore> _logger;
 
+    /// <param name="register">Delegate persisting the nonce as first-seen; backed by an atomic Table Storage insert in production.</param>
+    /// <param name="logger">Logger for replay/store-failure events.</param>
     public DeviceSessionNonceStore(NonceRegistrar register, ILogger<DeviceSessionNonceStore> logger)
     {
         _register = register;

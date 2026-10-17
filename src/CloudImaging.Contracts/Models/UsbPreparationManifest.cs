@@ -17,11 +17,19 @@ public sealed class UsbPreparationManifest
     /// <summary>File name this manifest is written under, at the root of the BOOT partition.</summary>
     public const string FileName = "cloudimaging-manifest.json";
 
+    /// <summary>Schema version of this manifest format.</summary>
     public const string ManifestSchemaVersion = "1.0";
 
+    /// <summary>Schema version this manifest was written with.</summary>
     public required string ManifestVersion { get; init; }
+
+    /// <summary>When Media Builder prepared this USB media.</summary>
     public DateTimeOffset PreparedAt { get; init; }
+
+    /// <summary>Version of Media Builder that prepared this media.</summary>
     public required string ToolVersion { get; init; }
+
+    /// <summary>Version of the boot image deployed to this media at preparation time.</summary>
     public required string BootImageVersion { get; init; }
 
     /// <summary>
@@ -37,6 +45,7 @@ public sealed class UsbPreparationManifest
     /// </summary>
     public bool PreparedForTesting { get; init; }
 
+    /// <summary>Identifier of the disk Media Builder prepared, for diagnostics.</summary>
     public required string SelectedDiskId { get; init; }
 
     /// <summary>Boot image architecture. Null on manifests written before architecture tracking
@@ -59,5 +68,6 @@ public sealed class UsbPreparationManifest
     /// <summary>Disk/operation validation output captured at preparation time.</summary>
     public Dictionary<string, object> ValidationResults { get; init; } = [];
 
+    /// <summary>True when Media Builder configured the boot media for USB auto-start.</summary>
     public bool AutoStartConfigured { get; init; }
 }

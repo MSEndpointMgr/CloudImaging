@@ -93,7 +93,7 @@ describe('Portal frontend: session details panel', () => {
     expect(screen.queryByText('Pre-flight authorization')).toBeNull();
     expect(screen.getByText('Present in Autopilot')).toBeTruthy();
     expect(screen.getByText('Legacy BIOS (CSM)')).toBeTruthy();
-    expect(screen.getByText('Approved by j.doe@contoso.com')).toBeTruthy();
+    expect(screen.getByText('Firmware mode approved by j.doe@contoso.com')).toBeTruthy();
     expect(screen.getByText('Not enabled')).toBeTruthy();
     expect(screen.getByText('Enable Secure Boot in firmware settings.')).toBeTruthy();
     expect(screen.getByLabelText('Not required')).toBeTruthy();
@@ -101,6 +101,41 @@ describe('Portal frontend: session details panel', () => {
     // Tiles follow the fixed check order, whatever order the API used.
     const names = screen.getAllByText(/^(Autopilot presence|Firmware mode|Secure Boot|TPM version)$/).map(e => e.textContent);
     expect(names).toEqual(['Autopilot presence', 'Firmware mode', 'Secure Boot', 'TPM version']);
+  });
+
+  it('names the approver once, however many checks were approved', () => {
+    render(
+      <SessionDetailsPanel
+        session={{
+          ...base,
+          preFlightChecks: [
+            { check: 'AutopilotPresence', outcome: 'Passed', observed: 'Autopilot' },
+            { check: 'FirmwareMode', outcome: 'Approved', observed: 'LegacyBios', approvedBy: 'j.doe@contoso.com' },
+            { check: 'SecureBoot', outcome: 'Approved', observed: 'Disabled', approvedBy: 'j.doe@contoso.com' },
+          ],
+        }}
+      />,
+    );
+
+    // A device has one approver, so the UPN must not repeat per tile.
+    expect(screen.getAllByText(/j\.doe@contoso\.com/)).toHaveLength(1);
+    expect(screen.getByText('Firmware mode and Secure Boot approved by j.doe@contoso.com')).toBeTruthy();
+  });
+
+  it('omits the approval note when nothing was approved', () => {
+    render(
+      <SessionDetailsPanel
+        session={{
+          ...base,
+          preFlightChecks: [
+            { check: 'AutopilotPresence', outcome: 'Passed', observed: 'Autopilot' },
+            { check: 'SecureBoot', outcome: 'Failed', observed: 'Disabled' },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText(/approved by/i)).toBeNull();
   });
 
   it('joins motherboard manufacturer and model into one field', () => {

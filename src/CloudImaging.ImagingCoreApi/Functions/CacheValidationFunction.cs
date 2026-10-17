@@ -19,6 +19,9 @@ public sealed partial class CacheValidationFunction
     private readonly OsImageRepository _imageRepo;
     private readonly ILogger<CacheValidationFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="imageRepo">OS image catalog repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CacheValidationFunction(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
@@ -29,6 +32,7 @@ public sealed partial class CacheValidationFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/{sessionId}/cache/validate. Validates whether a locally-cached OS image is still current.</summary>
     [Function(nameof(CacheValidationFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/{sessionId}/cache/validate")] HttpRequestData req,

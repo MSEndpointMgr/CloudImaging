@@ -80,6 +80,10 @@ changes.
 - Config schema changes (Bicep parameters, `appsettings.json` shape,
   `docs.yaml`-style files) are compatibility contracts across components;
   bump only what actually changed and update every reader/writer together.
+- Every public type and member in a non-test .NET project needs an XML doc
+  comment (`GenerateDocumentationFile` is on repo-wide). A missing comment
+  is a build error (CS1591), not a warning, so this is caught the moment you
+  build the project locally.
 
 ## Validate the change
 

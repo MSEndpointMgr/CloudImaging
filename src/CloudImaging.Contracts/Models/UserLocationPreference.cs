@@ -9,8 +9,15 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class UserLocationPreference
 {
+    /// <summary>Entra ID object id (oid) of the portal user this preference belongs to.</summary>
     public required string UserId { get; init; }
+
+    /// <summary>The user's preferred location, or null when cleared.</summary>
     public Guid? LocationId { get; init; }
+
+    /// <summary>Display name of <see cref="LocationId"/>, captured at save time.</summary>
     public string? LocationName { get; init; }
+
+    /// <summary>When the preference was last saved.</summary>
     public DateTimeOffset UpdatedAt { get; init; }
 }

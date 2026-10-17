@@ -51,6 +51,20 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
     setTimeout(() => setCheckStatus('idle'), 2000);
   };
 
+  // Outcome and recency belong together: on their own rows they read as two unrelated facts.
+  const statusLine = loading || !status
+    ? ''
+    : [
+        status.status !== 'ok'
+          ? STATUS_MESSAGE[status.status]
+          : status.updateAvailable
+            ? ''
+            : 'This deployment is up to date.',
+        status.checkedAt ? `Last checked ${new Date(status.checkedAt).toLocaleString()}.` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+
   return (
     <Card>
       <CardHeader>
@@ -77,6 +91,21 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4">
+          <div>
+            <p className="text-sm font-medium">Check GitHub for new releases</p>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              When enabled, the portal periodically contacts github.com to read the latest published release number.
+            </p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={onChange}
+            disabled={disabled}
+            label="Check GitHub for new releases"
+          />
+        </div>
+
         <div className="grid grid-cols-1 gap-4 rounded-md border border-border bg-muted/30 p-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">Environment type</p>
@@ -98,13 +127,7 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
           </div>
         </div>
 
-        {!loading && status && status.status !== 'ok' && (
-          <p className="text-xs text-muted-foreground">{STATUS_MESSAGE[status.status]}</p>
-        )}
-
-        {!loading && status?.status === 'ok' && !status.updateAvailable && (
-          <p className="text-xs text-muted-foreground">This deployment is up to date.</p>
-        )}
+        {statusLine && <p className="text-xs text-muted-foreground">{statusLine}</p>}
 
         {!loading && status?.updateAvailable && status.releaseUrl && (
           <a
@@ -117,29 +140,6 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
           </a>
         )}
-
-        {!loading && status?.checkedAt && (
-          <p className="text-xs text-muted-foreground">
-            Last checked {new Date(status.checkedAt).toLocaleString()}.
-          </p>
-        )}
-
-        <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4">
-          <div>
-            <p className="text-sm font-medium">Check GitHub for new releases</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {enabled
-                ? 'Enabled. The portal contacts github.com periodically to read the latest published release number.'
-                : 'Disabled. The portal makes no outbound request and no version comparison is shown.'}
-            </p>
-          </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={onChange}
-            disabled={disabled}
-            label="Check GitHub for new releases"
-          />
-        </div>
       </CardContent>
     </Card>
   );

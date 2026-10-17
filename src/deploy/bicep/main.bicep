@@ -34,7 +34,7 @@ param certValidityPeriodDays int = 365
 @description('Passcode TTL in minutes.')
 param passcodeTtlMinutes int = 30
 
-@description('Application (client) ID of the manually-created Operator API Entra app registration. Used to configure the Operator API token validation audience (FR-040b).')
+@description('Application (client) ID of the manually-created Operator API Entra app registration. Used to configure the Operator API token validation audience.')
 param operatorApiClientId string
 
 @description('OS image SAS token URL expiry in minutes.')

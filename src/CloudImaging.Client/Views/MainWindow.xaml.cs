@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using CloudImaging.Client.Services;
@@ -7,12 +8,19 @@ using Wpf.Ui.Controls;
 
 namespace CloudImaging.Client.Views;
 
+/// <summary>
+/// The Client's single top-level window: a fixed chrome (branding logo, View Log/dim overlay)
+/// hosting each screen as a <see cref="Page"/> navigated into <c>NavigationFrame</c> via
+/// <see cref="NavigateTo"/>.
+/// </summary>
 public partial class MainWindow : FluentWindow
 {
+    /// <summary>Builds the window, applies the Dark theme, and strips WinPE's unsupported native chrome.</summary>
     public MainWindow()
     {
         InitializeComponent();
         LoadTitleBrandingLogo();
+        ShowVersionInTitle();
 
         // FluentWindow's own OnSourceInitialized unconditionally forces WindowStyle back to
         // SingleBorderWindow and only hides the resulting native chrome via a WindowChrome hack
@@ -44,6 +52,17 @@ public partial class MainWindow : FluentWindow
         TitleBrandingLogo.Visibility = Visibility.Visible;
     }
 
+    private void ShowVersionInTitle()
+    {
+        // Drop the "+commit" build metadata the SDK appends; technicians only need the release number.
+        var version = typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0];
+        if (string.IsNullOrWhiteSpace(version))
+            return;
+
+        TitleText.Text = $"Cloud Imaging {version}";
+        Title = TitleText.Text;
+    }
+
     private static void SafeApply(ApplicationTheme theme)
     {
         try
@@ -56,6 +75,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    /// <summary>Navigates to the given page, showing or hiding the floating View Log button as appropriate.</summary>
     public void NavigateTo(Page page)
     {
         NavigationFrame.Navigate(page);

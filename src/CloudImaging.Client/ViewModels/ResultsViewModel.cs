@@ -5,19 +5,32 @@ using System.Windows.Threading;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
-using Wpf.Ui.Controls;
 
 namespace CloudImaging.Client.ViewModels;
 
 /// <summary>One enabled pre-flight requirement on the blocked screen.</summary>
-public sealed record PreFlightRequirementRow(string Name, string Value, bool Met, SymbolRegular Icon);
+public sealed record PreFlightRequirementRow(string Name, string Value, bool Met);
 
 /// <summary>
 /// View model for the ResultsView displaying all four terminal outcomes (T135, FR-021, FR-025, FR-026).
 /// </summary>
 public sealed partial class ResultsViewModel : INotifyPropertyChanged
 {
-    public enum Outcome { Success, Failure, NotAuthorized, Expired }
+    /// <summary>Terminal session outcome the Results screen is showing.</summary>
+    public enum Outcome
+    {
+        /// <summary>All imaging steps completed successfully.</summary>
+        Success,
+
+        /// <summary>A step failed, or an active/coupled session timed out.</summary>
+        Failure,
+
+        /// <summary>The device failed a required pre-flight check.</summary>
+        NotAuthorized,
+
+        /// <summary>An uncoupled session timed out; a benign expiry, not a failure.</summary>
+        Expired
+    }
 
     /// <summary>How long the Success outcome waits before automatically restarting the device.</summary>
     private const int RestartCountdownDurationSeconds = 10;
@@ -30,6 +43,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     private readonly DispatcherTimer? _restartTimer;
     private int _restartCountdownSecondsRemaining = RestartCountdownDurationSeconds;
 
+    /// <summary>Builds the terminal screen for one outcome, computing the blocked-requirement list and support code.</summary>
     public ResultsViewModel(
         Outcome outcome,
         string? deviceSerialNumber,
@@ -57,8 +71,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
             .Select(c => new PreFlightRequirementRow(
                 PreFlightCheckText.Name(c.Check),
                 PreFlightCheckText.Value(c.Check, c.Observed),
-                c.Outcome != PreFlightCheckOutcome.Failed,
-                IconFor(c.Check)))
+                c.Outcome != PreFlightCheckOutcome.Failed))
             .ToList();
         var failedCount = required.Count(c => c.Outcome == PreFlightCheckOutcome.Failed);
         BlockedSummary = required.Count == 1
@@ -101,8 +114,13 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>All imaging steps completed successfully.</summary>
     public bool IsSuccess       => _outcome == Outcome.Success;
+
+    /// <summary>A step failed, or an active/coupled session timed out.</summary>
     public bool IsFailure       => _outcome == Outcome.Failure;
+
+    /// <summary>The device failed a required pre-flight check and is listed under Devices › Blocked.</summary>
     public bool IsNotAuthorized => _outcome == Outcome.NotAuthorized;
 
     /// <summary>
@@ -112,10 +130,16 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsExpired      => _outcome == Outcome.Expired;
 
+    /// <summary>Device serial number, for display.</summary>
     public string? DeviceSerialNumber => _deviceSerialNumber;
+
+    /// <summary>Code shown to the operator for support calls; set only on <see cref="Outcome.Failure"/>.</summary>
     public string? SupportReferenceCode { get; }
+
+    /// <summary>Error detail captured from the failed step, if applicable.</summary>
     public string? ErrorDetail  => _errorDetail;
 
+    /// <summary>Identifier of the session this outcome is for.</summary>
     public Guid? SessionId { get; }
 
     /// <summary>Every switched-on pre-flight requirement for the blocked outcome, in check order.</summary>
@@ -123,20 +147,15 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
 
     /// <summary>False for sessions from a backend without per-check results: the enrollment-only message is shown instead.</summary>
     public bool HasBlockedRequirements => BlockedRequirements.Count > 0;
+
+    /// <summary>True when the backend only knows the device failed enrollment, without per-check detail.</summary>
     public bool HasNoBlockedRequirements => !HasBlockedRequirements;
 
+    /// <summary>Summary line: how many of the enabled requirements are not met.</summary>
     public string BlockedSummary { get; }
 
     /// <summary>Starts a new session without a reboot, so a fixed or approved device can continue.</summary>
     public ICommand TryAgainCommand { get; }
-
-    private static SymbolRegular IconFor(PreFlightCheck check) => check switch
-    {
-        PreFlightCheck.AutopilotPresence => SymbolRegular.Fingerprint24,
-        PreFlightCheck.FirmwareMode => SymbolRegular.DeveloperBoard24,
-        PreFlightCheck.SecureBoot => SymbolRegular.ShieldCheckmark24,
-        _ => SymbolRegular.Key24,
-    };
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Pre-flight check failed: {Check}: {Value}. {FixHint}")]
     private static partial void LogCheckFailed(ILogger logger, string check, string value, string fixHint);
@@ -171,6 +190,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
         _restartSystem?.Invoke();
     }
 
+    /// <summary>Restarts imaging from the start screen.</summary>
     public ICommand RetryCommand { get; }
 
     /// <summary>
@@ -179,6 +199,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     /// </summary>
     public ICommand ExitCommand { get; }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

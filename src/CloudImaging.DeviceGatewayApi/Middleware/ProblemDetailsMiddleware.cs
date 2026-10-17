@@ -14,8 +14,10 @@ public sealed partial class ProblemDetailsMiddleware : IFunctionsWorkerMiddlewar
 {
     private readonly ILogger<ProblemDetailsMiddleware> _logger;
 
+    /// <param name="logger">Logger for unhandled exceptions.</param>
     public ProblemDetailsMiddleware(ILogger<ProblemDetailsMiddleware> logger) => _logger = logger;
 
+    /// <summary>Runs the pipeline, converting any unhandled exception into an RFC 7807 ProblemDetails 500 response.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         try

@@ -21,6 +21,8 @@ public sealed partial class PartitioningSchemeRepository
     private readonly TableClient _table;
     private readonly ILogger<PartitioningSchemeRepository> _logger;
 
+    /// <param name="tableService">Table service client used to resolve the partitioning scheme table.</param>
+    /// <param name="logger">Logger for this repository.</param>
     public PartitioningSchemeRepository(
         TableServiceClient tableService,
         ILogger<PartitioningSchemeRepository> logger)

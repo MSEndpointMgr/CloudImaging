@@ -13,6 +13,8 @@ public sealed partial class SessionLifecycleTimerFunction
     private readonly DeviceSessionLifecycleService _lifecycle;
     private readonly ILogger<SessionLifecycleTimerFunction> _logger;
 
+    /// <param name="lifecycle">Device session lifecycle service.</param>
+    /// <param name="logger">Logger for this function.</param>
     public SessionLifecycleTimerFunction(
         DeviceSessionLifecycleService lifecycle,
         ILogger<SessionLifecycleTimerFunction> logger)
@@ -21,6 +23,7 @@ public sealed partial class SessionLifecycleTimerFunction
         _logger = logger;
     }
 
+    /// <summary>Timer (every 5 minutes). Expires inactive sessions and purges terminal session records.</summary>
     [Function("SessionLifecycleTimer")]
     public async Task Run(
         [TimerTrigger("0 */5 * * * *")] TimerInfo timer,

@@ -61,34 +61,39 @@ public sealed class UsbPartitionDeploymentTests
     }
 
     [Fact]
-    public void CachePartition_MinimumSize_Is24Gb()
+    public void CachePartition_RecommendedSize_Is24Gb()
     {
-        UsbPartitionProvisioningService.MinimumCachePartitionBytes.Should().Be(24L * 1024 * 1024 * 1024,
-            "cache partition must hold one OS image at the top of the supported range (20 GB) plus "
-            + "filesystem overhead, otherwise the largest catalog entries could never be cached");
+        UsbPartitionProvisioningService.RecommendedCachePartitionBytes.Should().Be(24L * 1024 * 1024 * 1024,
+            "the recommended cache partition must hold one OS image at the top of the supported range (20 GB) plus "
+            + "filesystem overhead");
     }
 
     [Fact]
-    public void CachePartition_Minimum_FitsLargestSupportedOsImage()
+    public void CachePartition_Recommended_FitsLargestSupportedOsImage()
     {
         const long largestSupportedImageBytes = 20L * 1024 * 1024 * 1024;
-        UsbPartitionProvisioningService.MinimumCachePartitionBytes.Should().BeGreaterThan(largestSupportedImageBytes,
-            "a cache partition exactly the size of the largest supported image leaves no room for "
-            + "NTFS metadata, so the copy would fail at the end of a long download");
+        UsbPartitionProvisioningService.RecommendedCachePartitionBytes.Should().BeGreaterThan(largestSupportedImageBytes,
+            "a cache partition exactly the size of the largest supported image leaves no room for NTFS metadata");
     }
 
     [Fact]
-    public async Task ProvisionAsync_Throws_WhenDiskTooSmallForCacheMinimum()
+    public void MinimumDisk_AcceptsSticksSoldAs8Gb()
     {
-        // A disk that only leaves room for a cache partition under the FR-055 minimum must be
-        // rejected BEFORE any destructive diskpart action is taken.
+        const long typical8GbStickBytes = 7_743_995_904L;
+        typical8GbStickBytes.Should().BeGreaterThanOrEqualTo(UsbPartitionProvisioningService.MinimumDiskBytes);
+    }
+
+    [Fact]
+    public async Task ProvisionAsync_Throws_WhenDiskBelowMinimum()
+    {
+        // Must be rejected BEFORE any destructive diskpart action is taken.
         var svc = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
-        const long tooSmallDiskBytes = 8L * 1024 * 1024 * 1024; // 8 GB total
+        const long tooSmallDiskBytes = 4L * 1024 * 1024 * 1024;
 
         Func<Task> act = async () => await svc.ProvisionAsync(diskNumber: 1, diskSizeBytes: tooSmallDiskBytes);
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*too small*");
+        (await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*too small*"))
+            .Which.Message.Should().NotMatchRegex(@"\b(FR|T)-?\d{2,}");
     }
 
     // ── Boot image deployment service ─────────────────────────────────────────

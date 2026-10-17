@@ -1,5 +1,6 @@
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
+using CloudImaging.ImagingCoreApi.Services;
 
 namespace CloudImaging.ImagingCoreApi.Domain;
 
@@ -13,10 +14,9 @@ public static class DeviceSessionFactory
     /// Passcode is generated and hashed; device-session token is issued separately
     /// by the calling service after pre-flight evaluation completes.
     /// </summary>
+    /// <param name="registration">Registration payload the device submitted.</param>
     public static (DeviceSession Session, string PlainPasscode) CreateNew(
-        DeviceRegistrationPayload registration,
-        TimeSpan passcodeTtl,
-        TimeSpan sessionInactivityTimeout)
+        DeviceRegistrationPayload registration)
     {
         var sessionId = Guid.NewGuid();
         var plainPasscode = PasscodeSecurityPolicy.GeneratePasscode();
@@ -38,7 +38,9 @@ public static class DeviceSessionFactory
             SecurityPosture = registration.SecurityPosture,
             PreFlightAuthorizationResult = PreFlightAuthorizationResult.Skipped,
             Passcode = passcodeHash,
-            PasscodeExpiresAt = now + passcodeTtl,
+            // Informational only: the authoritative deadline is heartbeat silence, which slides
+            // every time the device polls. This records when an idle device would be expired.
+            PasscodeExpiresAt = now + DeviceSessionLifecycleService.InactivityTimeout,
             PasscodeConsumed = false,
             OverallProgressPercent = 0,
             CreatedAt = now,

@@ -20,6 +20,11 @@ public sealed partial class BulkAssignmentService
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<BulkAssignmentService> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="imageRepo">OS image catalog repository, used to validate the target image exists.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="blobClient">Blob service client used to issue image download SAS URLs upon assignment.</param>
+    /// <param name="logger">Logger for this service.</param>
     public BulkAssignmentService(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
@@ -34,6 +39,11 @@ public sealed partial class BulkAssignmentService
         _logger = logger;
     }
 
+    /// <summary>Summary of a bulk assignment operation.</summary>
+    /// <param name="Assigned">Number of sessions successfully assigned.</param>
+    /// <param name="Skipped">Number of sessions skipped (not found or not in an assignable state).</param>
+    /// <param name="AssignedIds">Ids of the sessions successfully assigned.</param>
+    /// <param name="SkippedIds">Ids of the sessions skipped.</param>
     public sealed record BulkAssignResult(
         int Assigned,
         int Skipped,

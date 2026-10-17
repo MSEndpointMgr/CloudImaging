@@ -781,7 +781,7 @@ the always-on-top Cloud Imaging Client window:
 
 1. In **Cloud Imaging Media Builder**, select **Prepare USB Storage Device**
 2. Select the boot image to deploy
-3. Insert a USB drive (32 GB+, USB 3.x)
+3. Insert a USB drive (8 GB minimum, 32 GB+ recommended, USB 3.x). Under 32 GB, a warning explains that larger OS images won't be cached on the drive; preparation can still continue.
 4. Click **Prepare**; the drive will be partitioned and the WIM deployed
 
 ---

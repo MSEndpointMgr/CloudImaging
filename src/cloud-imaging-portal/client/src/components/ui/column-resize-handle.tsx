@@ -72,7 +72,13 @@ export function ColumnResizeHandle({ label, widthPct, minPct, maxPct, onChange, 
     >
       <span
         aria-hidden="true"
-        className="my-2 w-px bg-border transition-colors group-hover/resize:bg-foreground/40 group-focus-visible/resize:w-0.5 group-focus-visible/resize:bg-ring"
+        // Not `bg-border`: that is 20% lightness against a 22% `--table-header`, so the grip was
+        // invisible until hovered. A foreground tint works on both themes without hardcoding.
+        className={cn(
+          'my-2 w-px bg-foreground/30 transition-all',
+          'group-hover/resize:w-0.5 group-hover/resize:bg-foreground/70',
+          'group-focus-visible/resize:w-0.5 group-focus-visible/resize:bg-ring',
+        )}
       />
     </div>
   );

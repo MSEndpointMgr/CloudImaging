@@ -6,8 +6,13 @@ namespace CloudImaging.Contracts.Enums;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum FirmwareMode
 {
+    /// <summary>Not yet determined.</summary>
     Unknown,
+
+    /// <summary>The device booted in UEFI mode.</summary>
     Uefi,
+
+    /// <summary>The device booted in Legacy BIOS (CSM) mode.</summary>
     LegacyBios,
 }
 
@@ -18,8 +23,13 @@ public enum FirmwareMode
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SecureBootState
 {
+    /// <summary>Not yet determined.</summary>
     Unknown,
+
+    /// <summary>Secure Boot is enabled.</summary>
     Enabled,
+
+    /// <summary>Secure Boot is disabled, or the firmware is in setup mode.</summary>
     Disabled,
 
     /// <summary>The firmware has no Secure Boot support, or the device booted in Legacy BIOS mode.</summary>
@@ -30,8 +40,15 @@ public enum SecureBootState
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TpmPresence
 {
+    /// <summary>Not yet determined.</summary>
     Unknown,
+
+    /// <summary>No TPM was detected.</summary>
     NotDetected,
+
+    /// <summary>A TPM 1.2 was detected.</summary>
     Tpm12,
+
+    /// <summary>A TPM 2.0 was detected.</summary>
     Tpm20,
 }

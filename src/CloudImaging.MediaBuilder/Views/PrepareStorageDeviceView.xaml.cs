@@ -6,6 +6,7 @@ namespace CloudImaging.MediaBuilder.Views;
 
 public partial class PrepareStorageDeviceView : UserControl
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public PrepareStorageDeviceView()
     {
         InitializeComponent();

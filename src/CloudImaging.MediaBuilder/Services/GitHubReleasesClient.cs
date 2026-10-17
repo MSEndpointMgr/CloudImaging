@@ -44,6 +44,7 @@ public sealed partial class GitHubReleasesClient
     private readonly HttpClient _http;
     private readonly ILogger<GitHubReleasesClient> _logger;
 
+    /// <summary>Builds the client over the given HTTP client and logger.</summary>
     public GitHubReleasesClient(HttpClient http, ILogger<GitHubReleasesClient> logger)
     {
         _http   = http;

@@ -4,6 +4,7 @@ using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Domain;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -30,6 +31,8 @@ public sealed partial class CoupleSessionFunction
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ILogger<CoupleSessionFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CoupleSessionFunction(
         DeviceSessionRepository sessionRepo,
         ILogger<CoupleSessionFunction> logger)
@@ -38,6 +41,7 @@ public sealed partial class CoupleSessionFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions/couple. Couples a device session to the technician's identity.</summary>
     [Function(nameof(CoupleSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions/couple")] HttpRequestData req,
@@ -72,8 +76,10 @@ public sealed partial class CoupleSessionFunction
             return req.CreateResponse(HttpStatusCode.Conflict);
         }
 
-        // Check expiry
-        if (session.PasscodeExpiresAt.HasValue && DateTimeOffset.UtcNow > session.PasscodeExpiresAt.Value)
+        // A passcode is valid for exactly as long as its session is. The lifecycle sweep runs every
+        // five minutes, so this closes the window where a session is already past its heartbeat
+        // deadline but has not been transitioned yet.
+        if (DeviceSessionLifecycleService.IsDueForExpiry(session, DateTimeOffset.UtcNow))
         {
             LogPasscodeExpired(_logger, session.SessionId);
             return req.CreateResponse(HttpStatusCode.NotFound);

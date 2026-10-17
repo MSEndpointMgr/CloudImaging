@@ -8,6 +8,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class ProgressView : Page
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public ProgressView()
     {
         InitializeComponent();

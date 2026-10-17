@@ -28,8 +28,10 @@ public sealed class UploadJob
     /// <summary>The upload session id, reused as the job id so the portal can poll without a second identifier.</summary>
     public required string UploadId { get; init; }
 
+    /// <summary>Which catalog this upload publishes into.</summary>
     public required UploadJobKind Kind { get; init; }
 
+    /// <summary>Lifecycle state of the publish job.</summary>
     public required UploadJobStatus Status { get; init; }
 
     /// <summary>Path of the staged blob within the kind's upload container.</summary>
@@ -38,6 +40,7 @@ public sealed class UploadJob
     /// <summary>The SHA-256 the browser computed over the local file, which the worker re-verifies.</summary>
     public required string Sha256Hash { get; init; }
 
+    /// <summary>Image version string.</summary>
     public required string Version { get; init; }
 
     /// <summary>Catalog display name. OS images only; boot and recovery images are identified by version.</summary>
@@ -55,8 +58,10 @@ public sealed class UploadJob
     /// <summary>Size of the uploaded file as reported by the browser, used for the catalog entry.</summary>
     public long SizeBytes { get; init; }
 
+    /// <summary>When the job was created.</summary>
     public DateTimeOffset CreatedAt { get; init; }
 
+    /// <summary>When the job was last modified.</summary>
     public DateTimeOffset UpdatedAt { get; init; }
 
     /// <summary>Operator-facing explanation when <see cref="Status"/> is <see cref="UploadJobStatus.Failed"/>.</summary>

@@ -71,7 +71,7 @@ sequenceDiagram
                 ClientWinPE->>Cache: Store downloaded image + hash + metadata
                 Cache-->>ClientWinPE: Cached successfully
             else Insufficient space after purge (FR-009d)
-                Note over ClientWinPE: Skip cache write -- proceed with in-memory staging<br/>No LRU eviction of existing valid cache entries
+                Note over ClientWinPE: Skip cache write -- use the downloaded copy directly<br/>No LRU eviction of existing valid cache entries
             end
             Note over ClientWinPE: Image ready for apply
         else Checksum mismatch
@@ -104,7 +104,7 @@ sequenceDiagram
 
 - **Step order**: format-disk -> download-image -> apply-image (matches ProgressView label order: Format, Download, Apply)
 - **Format target**: System disk (device internal drive) formatted before download/apply
-- **Download staging**: OS image downloaded to USB cache partition or in-memory staging; not written to the system disk
+- **Download staging**: OS image downloaded to the USB cache partition. When there is no cache partition, or the image does not fit its free space (a USB device under the recommended 32 GB), it is downloaded to the target disk instead, uncached, and removed after imaging
 - **Cache skip**: If insufficient space on USB cache partition after 30-day auto-purge, cache write is skipped and direct staging used; no LRU eviction of valid cache entries (FR-009d)
 - **Resume-capable download**: Range headers supported; client tracks byte offset across SAS refreshes
 - **SAS refresh**: Auto-refresh if < 15 min remaining on current token

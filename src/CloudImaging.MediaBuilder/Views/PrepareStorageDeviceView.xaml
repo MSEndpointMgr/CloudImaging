@@ -151,8 +151,15 @@
 
                     <ui:InfoBar Title="Disk not eligible"
                                 Message="{Binding ValidationMessage}"
-                                Severity="Warning"
+                                Severity="Error"
                                 IsOpen="{Binding HasValidationMessage}"
+                                IsClosable="False"
+                                Margin="0,12,0,0" />
+
+                    <ui:InfoBar Title="Smaller than recommended"
+                                Message="{Binding DiskWarning}"
+                                Severity="Warning"
+                                IsOpen="{Binding HasDiskWarning}"
                                 IsClosable="False"
                                 Margin="0,12,0,0" />
                 </StackPanel>
@@ -330,13 +337,9 @@
             "Accent strip" design (chosen over a boxed ui:InfoBar-per-state layout, which read
             as too many nested boxes): a thin 4px colour strip along the card's top edge signals
             the outcome instead of a full InfoBar banner, with a plain icon + title beneath it.
-            WPF-UI's InfoBar template renders Title/Message as plain, non-selectable TextBlocks
-            and has no ContentPresenter at all (a child element set via Content never renders),
-            so the message — and, for the ISO case, the saved-file path — are still shown via a
-            borderless read-only TextBox (SelectableMessageTextBoxStyle) so technicians can
-            select/copy failure details, support reference codes, and the output path straight
-            out of the modal. The path has no separate label or inline folder button; the single
-            "Open folder" button in the footer, next to "Close", is the only way to reveal it.
+            Messages, the ISO path and the support reference use read-only TextBoxes so they stay
+            selectable. The ISO is shown as a file row (name, folder, inline copy/open), and a
+            failure puts its reference on its own line with a Copy details footer action.
 
             The card caps its own height (MaxHeight) and scrolls its content internally: long
             failure output (e.g. ISO generation's copype.cmd/DISM console log) would otherwise
@@ -400,6 +403,17 @@
                                          Text="{Binding ErrorMessage, Mode=OneWay}"
                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                          Margin="0,8,0,0" />
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0"
+                                            Visibility="{Binding HasErrorReference, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="Reference" Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                             Text="{Binding ErrorReference, Mode=OneWay}"
+                                             FontFamily="Cascadia Mono, Consolas, monospace"
+                                             FontSize="12"
+                                             VerticalAlignment="Center" />
+                                </StackPanel>
                             </StackPanel>
 
                             <StackPanel Visibility="{Binding WasCancelled, Converter={StaticResource BoolToVisibility}}">
@@ -407,26 +421,65 @@
                                     <ui:SymbolIcon Symbol="Warning24" FontSize="20" Margin="0,0,8,0"
                                                    Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                                    VerticalAlignment="Center" />
-                                    <TextBlock Text="Preparation cancelled" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding CancelledTitle}" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
                                 </StackPanel>
                                 <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
-                                         Text="USB device preparation was cancelled and temporary files were cleaned up."
+                                         Text="{Binding CancelledMessage, Mode=OneWay}"
                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                          Margin="0,8,0,0" />
                             </StackPanel>
 
-                            <!--
-                                Full saved-file path, selectable/copyable but otherwise plain text
-                                (no "Saved to" label, no boxed background, no inline folder icon —
-                                the "Open folder" button in the footer below is the only affordance
-                                needed to reveal it). Only shown for the ISO target.
-                            -->
-                            <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
-                                     Text="{Binding ResultFilePath, Mode=OneWay}"
-                                     FontFamily="Cascadia Mono, Consolas, monospace"
-                                     FontSize="12"
-                                     Margin="0,16,0,18"
-                                     Visibility="{Binding HasResultFilePath, Converter={StaticResource BoolToVisibility}}" />
+                            <!-- Generated ISO as a file row: name, folder, inline copy and open. -->
+                            <Border Margin="0,16,0,0"
+                                    Padding="14,10,8,10"
+                                    CornerRadius="6"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    Visibility="{Binding HasResultFilePath, Converter={StaticResource BoolToVisibility}}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Grid.Column="0" Symbol="Cd16" FontSize="24" Margin="0,0,12,0"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                                 Text="{Binding ResultFileName, Mode=OneWay}"
+                                                 FontFamily="Cascadia Mono, Consolas, monospace"
+                                                 FontSize="12"
+                                                 FontWeight="SemiBold" />
+                                        <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                                 Text="{Binding ResultFolder, Mode=OneWay}"
+                                                 FontSize="12"
+                                                 Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                 Margin="0,2,0,0" />
+                                    </StackPanel>
+                                    <ui:Button Grid.Column="2"
+                                               Appearance="Transparent"
+                                               ToolTip="Copy path"
+                                               Padding="6"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Command="{Binding CopyResultPathCommand}">
+                                        <ui:SymbolIcon Symbol="Copy24" FontSize="16" />
+                                    </ui:Button>
+                                    <ui:Button Grid.Column="3"
+                                               Appearance="Transparent"
+                                               ToolTip="Open folder"
+                                               Padding="6"
+                                               Margin="2,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Command="{Binding OpenResultFolderCommand}">
+                                        <ui:SymbolIcon Symbol="FolderOpen24" FontSize="16" />
+                                    </ui:Button>
+                                </Grid>
+                            </Border>
+                            <Border Height="18" />
                         </StackPanel>
                     </ScrollViewer>
 
@@ -434,18 +487,21 @@
                             BorderThickness="0,1,0,0"
                             BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                             Padding="24,16">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <ui:Button Content="Open folder"
-                                       Appearance="Secondary"
-                                       Style="{StaticResource AppButtonStyle}"
-                                       Margin="0,0,8,0"
-                                       Command="{Binding OpenResultFolderCommand}"
-                                       Visibility="{Binding HasResultFilePath, Converter={StaticResource BoolToVisibility}}" />
+                        <Grid>
+                            <ui:Button Content="Copy details"
+                                       Appearance="Transparent"
+                                       HorizontalAlignment="Left"
+                                       Padding="10,0"
+                                       Height="36"
+                                       FontSize="14"
+                                       Command="{Binding CopyErrorDetailsCommand}"
+                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}" />
                             <ui:Button Content="Close"
                                        Appearance="Primary"
                                        Style="{StaticResource AppButtonStyle}"
+                                       HorizontalAlignment="Right"
                                        Command="{Binding DismissResultCommand}" />
-                        </StackPanel>
+                        </Grid>
                     </Border>
                 </Grid>
             </Border>

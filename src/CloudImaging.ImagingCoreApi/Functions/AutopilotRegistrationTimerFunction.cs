@@ -13,12 +13,15 @@ public sealed partial class AutopilotRegistrationTimerFunction
     private readonly AutopilotRegistrationService _service;
     private readonly ILogger<AutopilotRegistrationTimerFunction> _logger;
 
+    /// <param name="service">Autopilot registration service.</param>
+    /// <param name="logger">Logger for this function.</param>
     public AutopilotRegistrationTimerFunction(AutopilotRegistrationService service, ILogger<AutopilotRegistrationTimerFunction> logger)
     {
         _service = service;
         _logger = logger;
     }
 
+    /// <summary>Timer (every 2 minutes). Advances in-flight Autopilot imports and expires undecided registration requests.</summary>
     [Function("AutopilotRegistrationTimer")]
     public async Task Run(
         [TimerTrigger("0 */2 * * * *")] TimerInfo timer,

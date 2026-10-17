@@ -22,6 +22,7 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     private string? _statusMessage;
     private bool _hasSucceeded;
 
+    /// <summary>Builds the view model and starts an initial network scan.</summary>
     public WifiConnectionViewModel(WirelessConnectionService? wifiService = null, Action? closeRequested = null)
     {
         _wifiService    = wifiService ?? new WirelessConnectionService();
@@ -35,8 +36,10 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         _ = RefreshAsync();
     }
 
+    /// <summary>Networks found by the last scan, ordered by signal strength.</summary>
     public System.Collections.ObjectModel.ObservableCollection<WifiNetwork> Networks { get; } = [];
 
+    /// <summary>The network currently picked from <see cref="Networks"/>, or null when none is selected.</summary>
     public WifiNetwork? SelectedNetwork
     {
         get => _selectedNetwork;
@@ -63,18 +66,21 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     /// <summary>True when the selected network needs a passphrase (WPA/WPA2/WPA3-Personal). Open networks show no password field at all.</summary>
     public bool ShowPasswordField => SelectedNetwork?.AuthKind == WifiAuthKind.PersonalPsk;
 
+    /// <summary>True while a network scan is in flight.</summary>
     public bool IsScanning
     {
         get => _isScanning;
         private set { _isScanning = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanConnect)); }
     }
 
+    /// <summary>True while a connection attempt is in flight.</summary>
     public bool IsConnecting
     {
         get => _isConnecting;
         private set { _isConnecting = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanConnect)); }
     }
 
+    /// <summary>Result text of the last scan or connect attempt; null before either has run.</summary>
     public string? StatusMessage
     {
         get => _statusMessage;
@@ -91,9 +97,16 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         private set { _hasSucceeded = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
+    /// <summary>Re-scans for nearby networks.</summary>
     public ICommand RefreshCommand { get; }
+
+    /// <summary>Connects to <see cref="SelectedNetwork"/> using the entered passphrase (if any).</summary>
     public ICommand ConnectCommand { get; }
+
+    /// <summary>Clears <see cref="SelectedNetwork"/>, hiding the inline connect panel.</summary>
     public ICommand ClearSelectionCommand { get; }
+
+    /// <summary>Closes the Wi-Fi window.</summary>
     public ICommand CloseCommand { get; }
 
     private async Task RefreshAsync()
@@ -148,6 +161,7 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

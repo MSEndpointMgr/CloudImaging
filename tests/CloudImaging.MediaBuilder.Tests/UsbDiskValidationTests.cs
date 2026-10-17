@@ -32,6 +32,42 @@ public sealed class UsbDiskValidationTests
         result.FailureReason.Should().BeNull();
     }
 
+    // ── Size: 8 GB minimum, warning below the recommended cache size ───────────
+
+    private static UsbSafetyValidationService.DiskInfo UsbDisk(long sizeBytes) =>
+        new(DiskNumber: 1, Caption: "Generic Flash Disk USB Device", SizeBytes: sizeBytes, BusType: "USB", IsRemovable: true, IsSystemDisk: false);
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(4L * 1024 * 1024 * 1024)]
+    public void Validate_Fails_BelowMinimumSize(long sizeBytes)
+    {
+        var result = _svc.Validate(UsbDisk(sizeBytes));
+
+        result.Valid.Should().BeFalse();
+        result.FailureReason.Should().NotMatchRegex(@"\b(FR|T)-?\d{2,}", "user-facing text never carries spec references");
+    }
+
+    [Theory]
+    [InlineData(7_743_995_904L)]
+    [InlineData(15_376_000_000L)]
+    public void Validate_WarnsButAllows_BelowRecommendedSize(long sizeBytes)
+    {
+        var result = _svc.Validate(UsbDisk(sizeBytes));
+
+        result.Valid.Should().BeTrue("a smaller device is a warning, not a blocker");
+        result.Warning.Should().Contain("32 GB").And.NotMatchRegex(@"\b(FR|T)-?\d{2,}");
+    }
+
+    [Fact]
+    public void Validate_HasNoWarning_AtRecommendedSize()
+    {
+        var result = _svc.Validate(UsbDisk(32_000_000_000L));
+
+        result.Valid.Should().BeTrue();
+        result.Warning.Should().BeNull();
+    }
+
     // ── Non-USB bus type is rejected ──────────────────────────────────────────
 
     [Theory]

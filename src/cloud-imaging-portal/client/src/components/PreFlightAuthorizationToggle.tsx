@@ -63,9 +63,8 @@ export function PreFlightAuthorizationToggle({
           <div>
             <p className="text-sm font-medium">Require pre-flight authorization</p>
             <p className="mt-0.5 text-sm text-muted-foreground">
-              {enabled
-                ? 'Enabled. Devices must meet every selected requirement.'
-                : 'Disabled. Any device may image. Firmware mode, Secure Boot and TPM version are still recorded on each session.'}
+              When enabled, a device must meet every selected requirement before it can image.
+              Firmware mode, Secure Boot and TPM version are recorded on each session either way.
             </p>
           </div>
           <Switch

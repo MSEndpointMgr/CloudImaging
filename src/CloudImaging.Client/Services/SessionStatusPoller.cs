@@ -13,6 +13,11 @@ public sealed class SessionStatusPoller : IDisposable
     /// <summary>
     /// Represents the current status received from a status poll.
     /// </summary>
+    /// <param name="State">Current session lifecycle state.</param>
+    /// <param name="SasTokenUrl">SAS URL to download the assigned OS image, once assigned.</param>
+    /// <param name="Sha256Hash">Hash of the assigned OS image, once assigned.</param>
+    /// <param name="OverallProgressPercent">Overall imaging progress, 0-100.</param>
+    /// <param name="CurrentStep">Name of the imaging step currently in progress, if any.</param>
     public sealed record StatusResult(
         SessionState State,
         string? SasTokenUrl,
@@ -26,9 +31,13 @@ public sealed class SessionStatusPoller : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private Task? _pollTask;
 
+    /// <summary>Raised with the latest status after every successful poll.</summary>
     public event EventHandler<StatusResult>? StatusReceived;
+
+    /// <summary>Raised when a poll fails with an unexpected exception.</summary>
     public event EventHandler<Exception>? PollError;
 
+    /// <summary>Builds the poller for a session, without starting the background loop.</summary>
     public SessionStatusPoller(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -100,6 +109,7 @@ public sealed class SessionStatusPoller : IDisposable
         }
     }
 
+    /// <summary>Stops the background polling loop.</summary>
     public void Dispose()
     {
         _cts.Cancel();

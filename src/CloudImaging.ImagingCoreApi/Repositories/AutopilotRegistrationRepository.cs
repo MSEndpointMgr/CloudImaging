@@ -16,15 +16,19 @@ public sealed class AutopilotRegistrationRepository
     private const string Partition = "request";
     private readonly TableClient _table;
 
+    /// <param name="tableServiceClient">Table service client used to resolve the Autopilot registrations table.</param>
     public AutopilotRegistrationRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Creates the backing table if it does not already exist.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Creates a new registration request.</summary>
     public async Task AddAsync(AutopilotRegistrationRequest request, CancellationToken ct = default) =>
         await _table.AddEntityAsync(ToEntity(request), ct);
 
+    /// <summary>Returns a single registration request and its ETag, or null if not found.</summary>
     public async Task<(AutopilotRegistrationRequest Request, ETag ETag)?> GetAsync(Guid requestId, CancellationToken ct = default)
     {
         try
@@ -60,12 +64,14 @@ public sealed class AutopilotRegistrationRepository
         catch (RequestFailedException ex) when (ex.Status is 404 or 412) { return false; }
     }
 
+    /// <summary>Lists all registration requests with their ETags.</summary>
     public IAsyncEnumerable<(AutopilotRegistrationRequest Request, ETag ETag)> ListAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition}");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(e => (FromEntity(e), e.ETag));
     }
 
+    /// <summary>Lists registration requests currently in the given <paramref name="state"/>, with their ETags.</summary>
     public IAsyncEnumerable<(AutopilotRegistrationRequest Request, ETag ETag)> ListByStateAsync(AutopilotRegistrationState state, CancellationToken ct = default)
     {
         var stateName = state.ToString();
@@ -73,6 +79,7 @@ public sealed class AutopilotRegistrationRepository
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(e => (FromEntity(e), e.ETag));
     }
 
+    /// <summary>Lists registration requests for a given device serial number, with their ETags.</summary>
     public IAsyncEnumerable<(AutopilotRegistrationRequest Request, ETag ETag)> ListBySerialAsync(string serialNumber, CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition} and SerialNumber eq {serialNumber}");

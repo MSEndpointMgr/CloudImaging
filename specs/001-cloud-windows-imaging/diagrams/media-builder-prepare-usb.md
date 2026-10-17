@@ -38,8 +38,8 @@ sequenceDiagram
     MediaBuilder->>USB: Query device properties
     Note over USB: Bus type, removable flag
     USB-->>MediaBuilder: device info
-    MediaBuilder->>MediaBuilder: Qualify: bus type = USB, removable flag = true (FR-054)
-    Note over MediaBuilder: Host OS/system disk always blocked
+    MediaBuilder->>MediaBuilder: Qualify: bus type = USB, removable flag = true, size >= 8 GB (FR-054)
+    Note over MediaBuilder: Host OS/system disk always blocked<br/>Under 32 GB: warning only, preparation can continue
     
     alt Device qualifies (USB bus, removable, not host OS disk)
         MediaOp->>MediaBuilder: Confirm preparation (irreversible)
@@ -57,7 +57,7 @@ sequenceDiagram
         
         alt Checksum matches
             MediaBuilder->>USB: Create two partitions on USB
-            Note over USB: Partition 1: Cache (min 24GB, holds one OS image up to 20GB)<br/>Partition 2: Bootable (UEFI format for WinPE)
+            Note over USB: Partition 1: Bootable (FAT32, 2 GB, WinPE)<br/>Partition 2: Cache (NTFS, rest of the device; 24 GB+ recommended to cache a 20 GB image)
             USB-->>MediaBuilder: two partitions created
             
             MediaBuilder->>USB: Deploy boot image to bootable partition
@@ -79,7 +79,7 @@ sequenceDiagram
             MediaBuilder->>MediaBuilder: Error: checksum validation failed
             MediaOp->>MediaBuilder: Retry download
         end
-    else Device does not qualify (wrong bus type, not removable, or host OS disk)
+    else Device does not qualify (wrong bus type, not removable, host OS disk, or under 8 GB)
         MediaBuilder->>MediaBuilder: Error: device does not meet USB qualification criteria (FR-054)
         MediaOp->>USB: Use a different USB drive
     end
@@ -87,11 +87,11 @@ sequenceDiagram
 
 ## USB Preparation Steps
 
-1. **Device qualification**: Bus type = USB AND removable flag = true; host OS/system disk always blocked (FR-054)
+1. **Device qualification**: Bus type = USB AND removable flag = true AND at least 8 GB; host OS/system disk always blocked (FR-054). Devices under 32 GB show a warning but can be prepared.
 2. **SAS request**: 1-hour expiry for download session
 3. **Download**: Chunked, resume-capable transfer
 4. **Checksum**: Validate against manifest
-5. **Create partitions**: Two partitions on USB (Cache: for OS image caching + Bootable: UEFI format for WinPE)
+5. **Create partitions**: Two partitions on USB (Bootable: FAT32 2 GB for WinPE + Cache: NTFS, the rest of the device)
 6. **Deploy**: Write WIM to bootable partition (WIM contains WinPE + Cloud Imaging Client + branding logo; FR-051, FR-053)
 7. **Configure**: UEFI auto-start and preparation manifest
 8. **Eject**: Ready for device deployment (boot partition has WIM; cache partition empty)

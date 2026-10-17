@@ -24,12 +24,15 @@ public sealed partial class UserPreferencesFunctions
     private readonly UserLocationPreferenceRepository _repo;
     private readonly ILogger<UserPreferencesFunctions> _logger;
 
+    /// <param name="repo">User location preference repository.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public UserPreferencesFunctions(UserLocationPreferenceRepository repo, ILogger<UserPreferencesFunctions> logger)
     {
         _repo = repo;
         _logger = logger;
     }
 
+    /// <summary>GET internal/user-preferences/{userId}. Returns the user's preferred location, or 404 if unset.</summary>
     [Function("GetUserLocationPreference")]
     public async Task<HttpResponseData> GetUserLocationPreference(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/user-preferences/{userId}")] HttpRequestData req,
@@ -48,6 +51,7 @@ public sealed partial class UserPreferencesFunctions
         return response;
     }
 
+    /// <summary>PUT internal/user-preferences/{userId}. Sets or clears the user's preferred location.</summary>
     [Function("PutUserLocationPreference")]
     public async Task<HttpResponseData> PutUserLocationPreference(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/user-preferences/{userId}")] HttpRequestData req,

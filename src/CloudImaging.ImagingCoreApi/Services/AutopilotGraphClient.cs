@@ -9,30 +9,39 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// <summary>Result of reading a Graph importedWindowsAutopilotDeviceIdentity.</summary>
 public sealed record AutopilotImportStatus(string DeviceImportStatus, string? ErrorCode, string? ErrorName)
 {
+    /// <summary>True when the import has finished successfully.</summary>
     public bool IsComplete => string.Equals(DeviceImportStatus, "complete", StringComparison.OrdinalIgnoreCase);
+    /// <summary>True when the import finished with an error.</summary>
     public bool IsError => string.Equals(DeviceImportStatus, "error", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>A Graph call failed in a way the operator should see verbatim.</summary>
 public sealed class AutopilotGraphException : Exception
 {
+    /// <param name="message">The error message.</param>
+    /// <param name="statusCode">The HTTP status code returned by Graph, when known.</param>
     public AutopilotGraphException(string message, HttpStatusCode? statusCode = null)
         : base(message) => StatusCode = statusCode;
 
+    /// <summary>Initializes a new instance with no message.</summary>
     public AutopilotGraphException()
     {
     }
 
+    /// <param name="message">The error message.</param>
     public AutopilotGraphException(string message)
         : base(message)
     {
     }
 
+    /// <param name="message">The error message.</param>
+    /// <param name="innerException">The underlying exception that caused this failure.</param>
     public AutopilotGraphException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 
+    /// <summary>The HTTP status code returned by Graph, when known.</summary>
     public HttpStatusCode? StatusCode { get; }
 }
 
@@ -50,6 +59,8 @@ public class AutopilotGraphClient
     private readonly HttpClient _httpClient;
     private readonly TokenCredential _credential;
 
+    /// <param name="httpClient">HttpClient configured for Microsoft Graph calls.</param>
+    /// <param name="credential">Credential used to acquire Graph access tokens.</param>
     public AutopilotGraphClient(HttpClient httpClient, TokenCredential credential)
     {
         _httpClient = httpClient;

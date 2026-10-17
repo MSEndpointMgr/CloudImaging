@@ -41,18 +41,20 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <TextBlock Text="{Binding Subtitle}"
-                               Style="{StaticResource BodyTextBlockStyle}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                               TextWrapping="Wrap" TextAlignment="Center"
-                               Margin="0,12,0,0" />
+                    <!-- DockPanel keeps the waiting spinner beside the text while still letting long subtitles wrap -->
+                    <DockPanel HorizontalAlignment="Center" Margin="0,12,0,0">
+                        <ui:ProgressRing DockPanel.Dock="Left" IsIndeterminate="True" Width="16" Height="16"
+                                         Margin="0,0,10,0" VerticalAlignment="Center"
+                                         Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock Text="{Binding Subtitle}"
+                                   Style="{StaticResource BodyTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap" TextAlignment="Center" />
+                    </DockPanel>
 
                     <ui:ProgressRing IsIndeterminate="True" Width="36" Height="36"
                                      Margin="0,20,0,0" HorizontalAlignment="Center"
                                      Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisibility}}" />
-                    <ui:ProgressRing IsIndeterminate="True" Width="24" Height="24"
-                                     Margin="0,16,0,0" HorizontalAlignment="Center"
-                                     Visibility="{Binding IsWaiting, Converter={StaticResource BoolToVisibility}}" />
 
                     <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
                              Text="{Binding ErrorMessage, Mode=OneWay}"
@@ -61,42 +63,51 @@
                              Margin="0,16,0,0"
                              Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
 
-                    <!-- Reference + device details, shown once the request exists -->
+                    <!-- Reference first: it is what the technician reads out to the approver. -->
                     <Border Margin="0,24,0,0" Padding="20,16" CornerRadius="6"
                             Background="{DynamicResource SubtleFillColorSecondaryBrush}"
                             Visibility="{Binding ShowDetails, Converter={StaticResource BoolToVisibility}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="140" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="Reference" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" />
+                            <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                     Text="{Binding ReferenceCode, Mode=OneWay}" TextAlignment="Center"
+                                     FontFamily="Consolas" FontSize="26" FontWeight="SemiBold" Margin="0,2,0,0" />
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Reference" Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
-                            <TextBox Grid.Row="0" Grid.Column="1" Style="{StaticResource SelectableMessageTextBoxStyle}"
-                                     Text="{Binding ReferenceCode, Mode=OneWay}" FontFamily="Consolas" FontSize="20" FontWeight="SemiBold" />
+                            <Border Height="1" Margin="0,12,0,12" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Serial number" Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Style="{StaticResource SelectableMessageTextBoxStyle}"
-                                     Text="{Binding SerialNumber, Mode=OneWay}" FontFamily="Consolas" Margin="0,8,0,0" />
+                            <Grid HorizontalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" MaxWidth="360" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Device" Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DeviceDescription}"
-                                       Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="Serial number" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,16,0" />
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SerialNumber}"
+                                           Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" />
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Location" Style="{StaticResource CaptionTextBlockStyle}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0" />
-                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LocationDisplay}"
-                                       Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
-                        </Grid>
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="Model" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,8,16,0" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DeviceDescription}"
+                                           Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="Group tag" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,8,16,0"
+                                           Visibility="{Binding HasGroupTag, Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding GroupTag}"
+                                           Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" Margin="0,8,0,0"
+                                           Visibility="{Binding HasGroupTag, Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
+                        </StackPanel>
                     </Border>
 
                     <Border Margin="0,16,0,0" Padding="12,8" CornerRadius="6"

@@ -16,12 +16,15 @@ public sealed class CorporateIdentifierGraphClient
     private readonly HttpClient _httpClient;
     private readonly TokenCredential _credential;
 
+    /// <param name="httpClient">HttpClient configured for Microsoft Graph calls.</param>
+    /// <param name="credential">Credential used to acquire Graph access tokens.</param>
     public CorporateIdentifierGraphClient(HttpClient httpClient, TokenCredential credential)
     {
         _httpClient = httpClient;
         _credential = credential;
     }
 
+    /// <summary>True when a corporate identifier matching the given manufacturer, model and serial number exists in the tenant.</summary>
     public async Task<bool> ExistsAsync(
         string manufacturer,
         string model,

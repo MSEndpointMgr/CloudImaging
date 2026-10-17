@@ -30,6 +30,7 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
     public static readonly IReadOnlySet<string> StatusTokenFunctionNames =
         new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GetAutopilotRegistrationStatus" };
 
+    /// <summary>Validates the Authorization bearer token and attaches the session ID to <see cref="FunctionContext.Items"/>, or short-circuits with 401.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         var functionName = context.FunctionDefinition.Name;

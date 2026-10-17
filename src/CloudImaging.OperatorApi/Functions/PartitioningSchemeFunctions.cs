@@ -20,6 +20,8 @@ public sealed partial class PartitioningSchemeFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<PartitioningSchemeFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the partitioning scheme requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public PartitioningSchemeFunctions(
         ImagingCoreClient coreClient,
         ILogger<PartitioningSchemeFunctions> logger)

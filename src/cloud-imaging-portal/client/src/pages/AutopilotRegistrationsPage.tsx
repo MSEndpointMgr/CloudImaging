@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, BadgeCheck, CheckCircle2, History, RefreshCw, RotateCcw, Tag, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, History, RefreshCw, RotateCcw, Tag, X, XCircle } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { countryName } from '../lib/countries.ts';
@@ -86,15 +86,9 @@ export default function AutopilotRegistrationsPage(): React.ReactElement {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="max-w-3xl space-y-1">
-          <div className="flex items-center gap-2">
-            <BadgeCheck size={24} className="text-primary" aria-hidden="true" />
-            <h2 className="text-lg font-semibold">Autopilot registrations</h2>
-          </div>
+        <div className="max-w-3xl">
           <p className="text-sm text-muted-foreground">
-            Hardware hashes submitted from boot media wait here for approval. Approved devices are imported into Windows Autopilot
-            {canDecideAutopilot ? '.' : '. You can view requests; an approver or administrator decides on them.'}
-            {' '}Handled requests leave this queue.
+            Approved devices are imported into Windows Autopilot.
           </p>
         </div>
         <div className="flex gap-2">
@@ -160,8 +154,8 @@ function PendingTable({ rows, canDecide, onOpen }: {
               <TableCell colSpan={7} className="p-0">
                 <EmptyState
                   icon={CheckCircle2}
-                  title="Nothing waiting for approval"
-                  description="Technicians submit a device from the boot media with Register with Autopilot. New requests appear here."
+                  title="No registrations waiting"
+                  description="Devices submitted from boot media appear here automatically."
                 />
               </TableCell>
             </TableRow>

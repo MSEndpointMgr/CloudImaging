@@ -30,6 +30,10 @@ public sealed partial class AutopilotRegistrationFunctions
     private readonly TimeSpan _maxSignatureSkew;
     private readonly ILogger<AutopilotRegistrationFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the registration/status requests are proxied to.</param>
+    /// <param name="nonceStore">Single-use nonce store guarding proof-of-possession replay.</param>
+    /// <param name="configuration">Used to resolve the configured proof-of-possession max clock skew.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public AutopilotRegistrationFunctions(
         ImagingCoreClient coreClient,
         DeviceSessionNonceStore nonceStore,
@@ -44,6 +48,7 @@ public sealed partial class AutopilotRegistrationFunctions
         _maxSignatureSkew = TimeSpan.FromSeconds(skewSeconds > 0 ? skewSeconds : DefaultMaxSkewSeconds);
     }
 
+    /// <summary>GET v1/autopilot/availability. mTLS only; proxies the Imaging Core API's availability check.</summary>
     [Function("GetAutopilotAvailability")]
     public async Task<HttpResponseData> GetAvailability(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/autopilot/availability")] HttpRequestData req,
@@ -53,6 +58,7 @@ public sealed partial class AutopilotRegistrationFunctions
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>POST v1/autopilot/registrations. Verifies proof-of-possession and nonce uniqueness, then forwards the hardware hash submission.</summary>
     [Function("SubmitAutopilotRegistration")]
     public async Task<HttpResponseData> Submit(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/autopilot/registrations")] HttpRequestData req,
@@ -109,6 +115,7 @@ public sealed partial class AutopilotRegistrationFunctions
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>GET v1/autopilot/registrations/{requestId}. Requires the bearer status token returned by <see cref="Submit"/>.</summary>
     [Function("GetAutopilotRegistrationStatus")]
     public async Task<HttpResponseData> GetStatus(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/autopilot/registrations/{requestId}")] HttpRequestData req,

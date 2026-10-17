@@ -8,7 +8,7 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// with a token credential (managed identity / <c>DefaultAzureCredential</c>) rather than an
 /// account key (FR-025, security-hardening: no storage account keys anywhere in this solution).
 ///
-/// <see cref="BlobClient.CanGenerateSasUri"/> is <c>false</c> for a token-credential-backed client,
+/// <c>BlobClient.CanGenerateSasUri</c> is <c>false</c> for a token-credential-backed client,
 /// because the classic "shared key" SAS signing path requires the account key. The previous code at
 /// every SAS call site checked that flag and, when false, silently fell back to returning the BARE
 /// blob URL with no signature at all — which 403/409s the moment the caller tries to use it, because

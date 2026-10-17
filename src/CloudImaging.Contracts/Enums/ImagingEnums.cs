@@ -6,10 +6,19 @@ namespace CloudImaging.Contracts.Enums;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ImagingStepName
 {
+    /// <summary>Partitioning and formatting the target disk.</summary>
     FormatDisk,
+
+    /// <summary>Downloading the OS image from blob storage.</summary>
     DownloadImage,
+
+    /// <summary>Applying the downloaded WIM/ESD to the Windows partition.</summary>
     ApplyImage,
+
+    /// <summary>Configuring the boot loader (BCD) for the applied OS.</summary>
     ConfigureBoot,
+
+    /// <summary>Applying the recovery (WinRE) image to the Recovery partition.</summary>
     ApplyRecoveryImage
 }
 
@@ -17,9 +26,16 @@ public enum ImagingStepName
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ImagingStepStatus
 {
+    /// <summary>Not yet started.</summary>
     Pending,
+
+    /// <summary>Currently executing.</summary>
     InProgress,
+
+    /// <summary>Finished successfully.</summary>
     Completed,
+
+    /// <summary>Finished with an error.</summary>
     Failed
 }
 
@@ -51,8 +67,13 @@ public enum PartitionType
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum UploadJobKind
 {
+    /// <summary>Publishes into the OS image catalog.</summary>
     OsImage,
+
+    /// <summary>Publishes into the boot image catalog.</summary>
     BootImage,
+
+    /// <summary>Publishes into the recovery image catalog.</summary>
     RecoveryImage
 }
 

@@ -7,8 +7,13 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class DeviceRegistrationPayload
 {
+    /// <summary>Device serial number.</summary>
     public required string SerialNumber { get; init; }
+
+    /// <summary>Device manufacturer, as reported by firmware.</summary>
     public required string Manufacturer { get; init; }
+
+    /// <summary>Device model, as reported by firmware.</summary>
     public required string Model { get; init; }
 
     /// <summary>MAC address — informational only.</summary>

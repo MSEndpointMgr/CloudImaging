@@ -21,12 +21,15 @@ public sealed partial class LocationFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<LocationFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the location requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public LocationFunctions(ImagingCoreClient coreClient, ILogger<LocationFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>GET locations. Lists all location labels.</summary>
     [Function("GetLocations")]
     public async Task<HttpResponseData> GetLocations(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "locations")] HttpRequestData req,
@@ -36,6 +39,7 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>POST locations. Creates a new location label.</summary>
     [Function("CreateLocation")]
     public async Task<HttpResponseData> CreateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "locations")] HttpRequestData req,
@@ -48,6 +52,7 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>PUT locations/{id}. Updates a location label's name, region and country.</summary>
     [Function("UpdateLocation")]
     public async Task<HttpResponseData> UpdateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "locations/{id}")] HttpRequestData req,
@@ -65,6 +70,7 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
+    /// <summary>DELETE locations/{id}. Deletes a location label.</summary>
     [Function("DeleteLocation")]
     public async Task<HttpResponseData> DeleteLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "locations/{id}")] HttpRequestData req,

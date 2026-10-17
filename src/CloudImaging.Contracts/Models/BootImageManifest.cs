@@ -19,10 +19,19 @@ public sealed class BootImageManifest
     /// 1.2 for <see cref="AutopilotToolingIncluded"/>. Manifests at 1.0 are treated as x64.</summary>
     public const string ManifestSchemaVersion = "1.2";
 
+    /// <summary>Schema version this manifest was written with.</summary>
     public required string ManifestVersion { get; init; }
+
+    /// <summary>Version of the OS image this boot image targets.</summary>
     public required string ImageVersion { get; init; }
+
+    /// <summary>When the boot image was generated.</summary>
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Version of WinPE used to build this boot image.</summary>
     public string? WinPeVersion { get; init; }
+
+    /// <summary>Version of the Cloud Imaging Client embedded in this boot image.</summary>
     public string? ClientVersion { get; init; }
 
     /// <summary>Target processor architecture this boot image was generated for (todo/arm64-support.md).</summary>

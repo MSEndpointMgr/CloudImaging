@@ -10,6 +10,7 @@ namespace CloudImaging.MediaBuilder.Views;
 /// </summary>
 public partial class OperationSelectionView : UserControl
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public OperationSelectionView()
     {
         InitializeComponent();

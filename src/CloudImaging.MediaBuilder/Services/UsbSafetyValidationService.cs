@@ -11,14 +11,23 @@ namespace CloudImaging.MediaBuilder.Services;
 ///   1. Bus type MUST be USB.
 ///   2. Removable flag MUST be true.
 ///   3. The host OS/system disk is ALWAYS blocked, regardless of rules 1–2.
-///   4. Disk must have sufficient capacity for the boot partition.
+///   4. Disk must be at least <see cref="UsbPartitionProvisioningService.MinimumDiskBytes"/>; below the
+///      recommended cache size it is still eligible, with a warning.
 /// </summary>
 public sealed partial class UsbSafetyValidationService
 {
     private readonly ILogger<UsbSafetyValidationService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public UsbSafetyValidationService(ILogger<UsbSafetyValidationService> logger) => _logger = logger;
 
+    /// <summary>A physical disk enumerated from WMI, with the attributes needed to decide whether it's safe to erase.</summary>
+    /// <param name="DiskNumber">Windows disk number (e.g. for diskpart).</param>
+    /// <param name="Caption">Human-readable disk model/description.</param>
+    /// <param name="SizeBytes">Total disk capacity in bytes.</param>
+    /// <param name="BusType">Bus the disk is attached through (e.g. "USB").</param>
+    /// <param name="IsRemovable">Whether Windows reports the disk's media as removable.</param>
+    /// <param name="IsSystemDisk">Whether this is the disk the host OS is running from.</param>
     public sealed record DiskInfo(
         uint DiskNumber,
         string Caption,
@@ -27,7 +36,11 @@ public sealed partial class UsbSafetyValidationService
         bool IsRemovable,
         bool IsSystemDisk);
 
-    public sealed record ValidationResult(bool Valid, string? FailureReason);
+    /// <summary>Outcome of validating a disk for USB boot image deployment.</summary>
+    /// <param name="Valid">True when the disk passed all safety rules.</param>
+    /// <param name="FailureReason">User-facing explanation of why the disk is ineligible; null when <paramref name="Valid"/> is true.</param>
+    /// <param name="Warning">User-facing caution for an eligible disk (e.g. smaller than recommended); null when there is none.</param>
+    public sealed record ValidationResult(bool Valid, string? FailureReason, string? Warning = null);
 
     /// <summary>Returns all physical disks enumerated by WMI.</summary>
     public IReadOnlyList<DiskInfo> EnumerateDisks()
@@ -93,7 +106,7 @@ public sealed partial class UsbSafetyValidationService
         if (!disk.BusType.Equals("USB", StringComparison.OrdinalIgnoreCase))
         {
             LogRejected(_logger, disk.Caption, "not USB");
-            return new ValidationResult(false, $"Disk bus type is '{disk.BusType}' — only USB disks are permitted.");
+            return new ValidationResult(false, $"Disk bus type is '{disk.BusType}'. Only USB disks are permitted.");
         }
 
         if (!disk.IsRemovable)
@@ -102,9 +115,24 @@ public sealed partial class UsbSafetyValidationService
             return new ValidationResult(false, "Disk is not marked as removable.");
         }
 
+        if (disk.SizeBytes < UsbPartitionProvisioningService.MinimumDiskBytes)
+        {
+            LogRejected(_logger, disk.Caption, "too small");
+            return new ValidationResult(false, disk.SizeBytes <= 0
+                ? "Windows did not report a size for this USB device. Reconnect it and try again."
+                : $"This USB device is too small ({FormatGb(disk.SizeBytes)}). Use a USB device of at least {UsbPartitionProvisioningService.MinimumDiskLabel}.");
+        }
+
         LogApproved(_logger, disk.Caption);
-        return new ValidationResult(true, null);
+        var cacheBytes = UsbPartitionProvisioningService.CachePartitionBytes(disk.SizeBytes);
+        return cacheBytes < UsbPartitionProvisioningService.RecommendedCachePartitionBytes
+            ? new ValidationResult(true, null,
+                $"Only {FormatGb(cacheBytes)} is left to cache OS images. Imaging works, but larger images are downloaded every time instead of cached. 32 GB or larger is recommended.")
+            : new ValidationResult(true, null);
     }
+
+    private static string FormatGb(long bytes) =>
+        string.Create(System.Globalization.CultureInfo.CurrentCulture, $"{bytes / (1024.0 * 1024 * 1024):0.0} GB");
 
     /// <summary>
     /// Determines whether physical disk <paramref name="diskNumber"/> hosts the running Windows

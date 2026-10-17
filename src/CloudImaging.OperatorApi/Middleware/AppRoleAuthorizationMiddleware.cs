@@ -13,9 +13,13 @@ namespace CloudImaging.OperatorApi.Middleware;
 /// </summary>
 public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
 {
+    /// <summary><see cref="FunctionContext.Items"/> key under which the resolved role is stored for downstream handlers.</summary>
     public const string ResolvedRoleKey = "OperatorApiRole";
 
+    /// <summary>Full-access service role, covering every Operator API endpoint.</summary>
     public const string PortalAccessRole = "CloudImaging.PortalAccess";
+
+    /// <summary>Read-only service role, limited to <see cref="MediaBuilderAllowedFunctions"/>.</summary>
     public const string MediaBuilderAccessRole = "CloudImaging.MediaBuilderAccess";
 
     // Endpoints accessible by MediaBuilderAccess (read-only subset) — all others require PortalAccess
@@ -31,6 +35,7 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
             "GetLocations",
         };
 
+    /// <summary>Validates the resolved role has access to the invoked function, or short-circuits with 403.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
         if (!context.Items.TryGetValue(EntraAuthMiddleware.ClaimsPrincipalKey, out var principalObj)

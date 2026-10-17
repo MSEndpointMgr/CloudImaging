@@ -18,9 +18,9 @@ stateDiagram-v2
     SessionInProgress --> SessionCompleted: All five steps complete
     SessionInProgress --> SessionFailed: Any step fails
 
-    SessionInit --> SessionExpired: 30 min without heartbeat
-    SessionAllowed --> SessionExpired: 30 min without heartbeat
-    SessionAssigned --> SessionFailed: 30 min without heartbeat
+    SessionInit --> SessionExpired: 60 min without heartbeat
+    SessionAllowed --> SessionExpired: 60 min without heartbeat
+    SessionAssigned --> SessionFailed: 60 min without heartbeat
     SessionStarted --> SessionFailed: 2 hr without heartbeat
     SessionInProgress --> SessionFailed: 2 hr without heartbeat
 
@@ -112,7 +112,7 @@ The Client polls or reports progress while it is running. Successful status poll
 
 | Session condition | Maximum heartbeat silence | Result |
 |---|---:|---|
-| Not yet imaging: `SessionInit`, `SessionAllowed`, or `SessionAssigned` | 30 minutes | Uncoupled sessions become `SessionExpired`; coupled sessions become `SessionFailed` |
+| Not yet imaging: `SessionInit`, `SessionAllowed`, or `SessionAssigned` | 60 minutes | Uncoupled sessions become `SessionExpired`; coupled sessions become `SessionFailed` |
 | Imaging: `SessionStarted` or `SessionInProgress` | 2 hours | Session becomes `SessionFailed` |
 
 The lifecycle timer evaluates sessions every five minutes, so a transition can occur after the threshold rather than at its exact second.

@@ -15,6 +15,7 @@ public sealed partial class BrandingLogoService
     private const string LogoRelativePath = "branding\\logo.png";
     private readonly ILogger<BrandingLogoService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public BrandingLogoService(ILogger<BrandingLogoService> logger) => _logger = logger;
 
     /// <summary>

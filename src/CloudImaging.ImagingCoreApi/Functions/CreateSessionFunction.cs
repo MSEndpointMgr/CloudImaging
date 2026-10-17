@@ -38,6 +38,14 @@ public sealed partial class CreateSessionFunction
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="preFlight">Pre-flight device authorization service.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="partitioningSchemeRepo">Partitioning scheme repository.</param>
+    /// <param name="historyRepo">Session history repository.</param>
+    /// <param name="overrideRepo">Pre-flight override repository.</param>
+    /// <param name="config">Application configuration.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CreateSessionFunction(
         DeviceSessionRepository sessionRepo,
         DevicePreFlightAuthorizationService preFlight,
@@ -58,6 +66,7 @@ public sealed partial class CreateSessionFunction
         _logger = logger;
     }
 
+    /// <summary>POST internal/sessions. Creates a new device imaging session.</summary>
     [Function(nameof(CreateSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/sessions")] HttpRequestData req,
@@ -86,24 +95,8 @@ public sealed partial class CreateSessionFunction
             return bad;
         }
 
-        // Read configuration. Azure Function App settings are surfaced as OS environment
-        // variables, which the environment-variables configuration provider re-keys from
-        // "Security__PasscodeTtlMinutes" to "Security:PasscodeTtlMinutes" — so the colon form
-        // must be queried first (falling back to the literal double-underscore form for
-        // local.settings.json, which is not re-keyed the same way).
-        int passcodeTtlMinutes = _config.GetValue<int?>("Security:PasscodeTtlMinutes")
-            ?? _config.GetValue<int?>("Security__PasscodeTtlMinutes")
-            ?? 10;
-        int sessionInactivityMinutes = _config.GetValue<int?>("Security:SessionInactivityMinutes")
-            ?? _config.GetValue<int?>("Security__SessionInactivityMinutes")
-            ?? 30;
-
-        var passcodeTtl = TimeSpan.FromMinutes(passcodeTtlMinutes);
-        var sessionInactivityTimeout = TimeSpan.FromMinutes(sessionInactivityMinutes);
-
         // Create session with passcode
-        var (session, plainPasscode) = DeviceSessionFactory.CreateNew(
-            payload, passcodeTtl, sessionInactivityTimeout);
+        var (session, plainPasscode) = DeviceSessionFactory.CreateNew(payload);
 
         // Run device pre-flight checks. Evaluated once here and stored; later policy changes never touch this session.
         var portalConfig = await _configRepo.GetAsync(context.CancellationToken);

@@ -15,12 +15,15 @@ public sealed class LocationRepository
     private const string Partition = "location";
     private readonly TableClient _table;
 
+    /// <param name="tableServiceClient">Table service client used to resolve the locations table.</param>
     public LocationRepository(TableServiceClient tableServiceClient) =>
         _table = tableServiceClient.GetTableClient(TableName);
 
+    /// <summary>Creates the backing table if it does not already exist.</summary>
     public async Task EnsureTableExistsAsync(CancellationToken ct = default) =>
         await _table.CreateIfNotExistsAsync(ct);
 
+    /// <summary>Creates a new location.</summary>
     public async Task<Location> CreateAsync(Location location, CancellationToken ct = default)
     {
         var newLocation = new Location
@@ -46,6 +49,7 @@ public sealed class LocationRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return false; }
     }
 
+    /// <summary>Returns a single location by id, or null if not found.</summary>
     public async Task<Location?> GetByIdAsync(Guid locationId, CancellationToken ct = default)
     {
         try
@@ -56,12 +60,14 @@ public sealed class LocationRepository
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
     }
 
+    /// <summary>Lists all locations.</summary>
     public IAsyncEnumerable<Location> ListAllAsync(CancellationToken ct = default)
     {
         var filter = TableClient.CreateQueryFilter($"PartitionKey eq {Partition}");
         return _table.QueryAsync<TableEntity>(filter, cancellationToken: ct).Select(FromEntity);
     }
 
+    /// <summary>Deletes a location. No-op if it does not exist.</summary>
     public async Task DeleteAsync(Guid locationId, CancellationToken ct = default)
     {
         try

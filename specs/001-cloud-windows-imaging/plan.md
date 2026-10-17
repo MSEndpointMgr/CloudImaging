@@ -131,7 +131,7 @@ environment without code changes.
 - Boot image SAS token URLs: configurable, shorter expiry window than OS image SAS token URLs (e.g., 2 hours)
 - Passcode TTL: distinct configurable deployment parameter (default: 30 min); independent of session inactivity timeout; passcode uniqueness is scoped to currently active (non-terminal, non-expired) sessions; passcodes from terminal or expired sessions MAY be reused in new sessions
 - Boot image catalog: maximum 5 active entries; only the latest published entry is eligible for USB preparation selection
-- USB bootable partition minimum size: 2 GB; cache partition minimum: 24 GB (holds one OS image at the 20 GB supported maximum plus filesystem overhead)
+- USB bootable partition minimum size: 2 GB; USB device minimum: 8 GB; cache partition recommended: 24 GB or more (holds one OS image at the 20 GB supported maximum plus filesystem overhead), smaller is allowed with a warning
 - Support reference codes: structured format {ComponentCode}-{SessionRef}-{StageCode}-{EpochSeconds} (CIC=Cloud Imaging Client, CMB=Media Builder); defined in Session June 22, 2026 spec clarification
 - User-level roles (CloudImaging.Administrator / CloudImaging.Technician) enforced at Portal backend and Media Builder; service-level roles (CloudImaging.PortalAccess / CloudImaging.MediaBuilderAccess) enforced at Operator API; shared enterprise app registration for both Portal and Media Builder (FR-040b); **both the shared registration and the Operator API registration are manual prerequisites created by the administrator before deployment** -- neither is provisioned by Bicep in this release
 - All deployable components must support customer-managed naming, regions,

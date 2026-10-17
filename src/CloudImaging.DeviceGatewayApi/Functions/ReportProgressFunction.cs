@@ -16,6 +16,8 @@ public sealed partial class ReportProgressFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<ReportProgressFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the progress payload is relayed to.</param>
+    /// <param name="logger">Logger for this function.</param>
     public ReportProgressFunction(
         ImagingCoreClient coreClient,
         ILogger<ReportProgressFunction> logger)
@@ -24,6 +26,7 @@ public sealed partial class ReportProgressFunction
         _logger = logger;
     }
 
+    /// <summary>POST v1/sessions/{sessionId}/progress. Relays an imaging progress update to the Imaging Core API.</summary>
     [Function("ReportProgress")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/sessions/{sessionId}/progress")] HttpRequestData req,

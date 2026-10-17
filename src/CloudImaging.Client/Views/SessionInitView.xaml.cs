@@ -7,6 +7,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class SessionInitView : Page
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public SessionInitView()
     {
         InitializeComponent();

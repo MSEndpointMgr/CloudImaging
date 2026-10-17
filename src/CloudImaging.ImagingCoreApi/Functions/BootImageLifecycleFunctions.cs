@@ -26,6 +26,8 @@ public sealed partial class BootImageLifecycleFunctions
     private readonly BootImageRepository _repo;
     private readonly ILogger<BootImageLifecycleFunctions> _logger;
 
+    /// <param name="repo">Boot image catalog repository.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BootImageLifecycleFunctions(
         BootImageRepository repo,
         ILogger<BootImageLifecycleFunctions> logger)
@@ -36,6 +38,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── DELETE /api/internal/boot-images/{id} ────────────────────────────────
 
+    /// <summary>DELETE internal/boot-images/{id}. Soft-deletes (deactivates) a boot image.</summary>
     [Function("DeleteBootImage")]
     public async Task<HttpResponseData> DeleteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/boot-images/{id}")] HttpRequestData req,
@@ -69,6 +72,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── POST /api/internal/boot-images/{id}/promote ────────────────────────────
 
+    /// <summary>POST internal/boot-images/{id}/promote. Moves a tested pre-production image to production as the latest for its architecture.</summary>
     [Function("PromoteBootImage")]
     public async Task<HttpResponseData> PromoteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/{id}/promote")] HttpRequestData req,
@@ -104,6 +108,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── POST /api/internal/boot-images/{id}/demote ─────────────────────────────
 
+    /// <summary>POST internal/boot-images/{id}/demote. Moves a production image back to pre-production, restoring the previous latest when needed.</summary>
     [Function("DemoteBootImage")]
     public async Task<HttpResponseData> DemoteBootImage(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/boot-images/{id}/demote")] HttpRequestData req,

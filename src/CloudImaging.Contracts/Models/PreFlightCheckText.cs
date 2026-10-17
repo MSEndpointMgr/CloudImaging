@@ -8,6 +8,7 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public static class PreFlightCheckText
 {
+    /// <summary>Display name for a check.</summary>
     public static string Name(PreFlightCheck check) => check switch
     {
         PreFlightCheck.AutopilotPresence => "Autopilot presence",
@@ -17,6 +18,7 @@ public static class PreFlightCheckText
         _ => check.ToString(),
     };
 
+    /// <summary>Display text for what was observed for a check.</summary>
     public static string Value(PreFlightCheck check, string observed) => observed switch
     {
         PreFlightObserved.NotReported => "Not reported",

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Management;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
@@ -55,6 +56,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// <param name="navigateToAutopilot">Opens the Autopilot registration view. Null hides the option.</param>
     /// <param name="postureDetector">Optional override; defaults to a detector without logging.</param>
     /// <param name="startImagingImmediately">Starts a new imaging session at once, as if Continue was pressed (blocked screen's Try again).</param>
+    /// <param name="autopilotAvailability">Current Autopilot registration availability state, refining the Autopilot tile's enabled/disabled reason.</param>
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
         Action<CreateSessionResponse, string> navigate,
@@ -65,7 +67,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         bool autopilotToolingPresent = false,
         Action? navigateToAutopilot = null,
         DevicePostureDetector? postureDetector = null,
-        bool startImagingImmediately = false)
+        bool startImagingImmediately = false,
+        AutopilotAvailabilityState? autopilotAvailability = null)
     {
         _gatewayClient          = gatewayClient;
         _navigate               = navigate;
@@ -83,7 +86,11 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
         if (IsAutopilotOptionVisible)
         {
-            _ = LoadAutopilotAvailabilityAsync();
+            // Startup resolves this before the screen is shown; checking here as well would make the card visibly change state.
+            if (autopilotAvailability is { } known)
+                _autopilotAvailability = known;
+            else
+                _ = LoadAutopilotAvailabilityAsync();
         }
 
         if (startImagingImmediately)
@@ -96,6 +103,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// <summary>The Autopilot card is shown only on boot media built with the hash tooling.</summary>
     public bool IsAutopilotOptionVisible { get; }
 
+    /// <summary>Whether Autopilot registration is currently offered to the operator.</summary>
     public AutopilotAvailabilityState AutopilotAvailability
     {
         get => _autopilotAvailability;
@@ -112,6 +120,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public bool IsAutopilotSelectable => IsAutopilotOptionVisible
         && _autopilotAvailability is AutopilotAvailabilityState.Enabled or AutopilotAvailabilityState.Unreachable;
 
+    /// <summary>Helper text shown on the Autopilot card for the current <see cref="AutopilotAvailability"/>.</summary>
     public string AutopilotCardDescription => _autopilotAvailability switch
     {
         AutopilotAvailabilityState.Checking => "Checking whether registration is available…",
@@ -129,15 +138,25 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     private async Task LoadAutopilotAvailabilityAsync()
     {
-        // Runs at startup, so give the NIC the same grace period registration gets, without the waiting banner.
-        var deadline = DateTime.UtcNow + NetworkWaitTimeout;
-        while (!IsNetworkReady() && DateTime.UtcNow < deadline)
-            await Task.Delay(NetworkWaitPollInterval);
+        AutopilotAvailability = await ResolveAutopilotAvailabilityAsync(_gatewayClient);
 
+        if (SelectedOperation == "Autopilot" && !IsAutopilotSelectable)
+            SelectedOperation = "Imaging";
+    }
+
+    /// <summary>
+    /// Asks the Device Gateway whether the portal allows Autopilot registration, after giving the
+    /// NIC the same grace period registration gets. Never throws; no answer means Unreachable.
+    /// </summary>
+    internal static async Task<AutopilotAvailabilityState> ResolveAutopilotAvailabilityAsync(DeviceGatewayApiClient gateway, CancellationToken ct = default)
+    {
         try
         {
-            var enabled = await _gatewayClient.GetAutopilotAvailabilityAsync();
-            AutopilotAvailability = enabled switch
+            var deadline = DateTime.UtcNow + NetworkWaitTimeout;
+            while (!IsNetworkReady() && DateTime.UtcNow < deadline)
+                await Task.Delay(NetworkWaitPollInterval, ct);
+
+            return await gateway.GetAutopilotAvailabilityAsync(ct) switch
             {
                 true => AutopilotAvailabilityState.Enabled,
                 false => AutopilotAvailabilityState.Disabled,
@@ -146,26 +165,28 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         }
         catch
         {
-            AutopilotAvailability = AutopilotAvailabilityState.Unreachable;
+            return AutopilotAvailabilityState.Unreachable;
         }
-
-        if (SelectedOperation == "Autopilot" && !IsAutopilotSelectable)
-            SelectedOperation = "Imaging";
     }
 
+    /// <summary>Which card the operator picked: "Imaging" or "Autopilot".</summary>
     public string? SelectedOperation
     {
         get => _selectedOperation;
         set { _selectedOperation = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanContinue)); }
     }
 
+    /// <summary>Error text shown when registration fails; null while no error has occurred.</summary>
     public string? StatusMessage
     {
         get => _statusMessage;
         private set { _statusMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); }
     }
 
+    /// <summary>True when <see cref="StatusMessage"/> is set.</summary>
     public bool HasError     => !string.IsNullOrEmpty(StatusMessage);
+
+    /// <summary>True when an operation is selected and no registration is already in flight.</summary>
     public bool CanContinue  => SelectedOperation is not null && !_isBusy;
 
     /// <summary>
@@ -204,8 +225,13 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// </summary>
     public bool IsCommandPromptAvailable { get; }
 
+    /// <summary>Picks "Imaging" or "Autopilot" as the selected operation.</summary>
     public ICommand SelectOperationCommand   { get; }
+
+    /// <summary>Registers a new session (Imaging) or opens the Autopilot flow, for the selected operation.</summary>
     public ICommand ContinueCommand          { get; }
+
+    /// <summary>Opens the command prompt support tool.</summary>
     public ICommand LaunchCommandPromptCommand { get; }
 
     private void LaunchCommandPrompt()
@@ -295,6 +321,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             // so it can be displayed later (e.g. ResultsView's NotAuthorized outcome, FR-026)
             // instead of being discarded once sent to the server.
             _navigate(sessionResponse, serialNumber);
+        }
+        catch (HttpRequestException ex)
+        {
+            // The raw .NET text ("the target machine actively refused it") reads as a fault in the
+            // device, when the actionable step is almost always the network path.
+            StatusMessage = $"Could not reach the Cloud Imaging service. Check the network connection, then try again. ({ex.Message})";
         }
         catch (Exception ex)
         {
@@ -499,6 +531,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     // ── INotifyPropertyChanged ────────────────────────────────────────────────
 
+    /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

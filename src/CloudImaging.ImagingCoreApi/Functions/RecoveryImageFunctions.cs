@@ -25,6 +25,10 @@ public sealed partial class RecoveryImageFunctions
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<RecoveryImageFunctions> _logger;
 
+    /// <param name="recoveryImageRepo">Recovery image catalog repository.</param>
+    /// <param name="configRepo">Portal configuration repository.</param>
+    /// <param name="blobClient">Blob service client used to issue image download SAS URLs.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public RecoveryImageFunctions(
         RecoveryImageRepository recoveryImageRepo,
         PortalConfigurationRepository configRepo,
@@ -39,6 +43,7 @@ public sealed partial class RecoveryImageFunctions
 
     // ── GET /api/internal/recovery-images ────────────────────────────────────
 
+    /// <summary>GET internal/recovery-images. Lists active recovery images.</summary>
     [Function("GetRecoveryImages")]
     public async Task<HttpResponseData> GetRecoveryImages(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/recovery-images")] HttpRequestData req,
@@ -56,6 +61,7 @@ public sealed partial class RecoveryImageFunctions
 
     // ── GET /api/internal/recovery-images/{id} ───────────────────────────────
 
+    /// <summary>GET internal/recovery-images/{id}. Gets a single recovery image.</summary>
     [Function("GetRecoveryImageById")]
     public async Task<HttpResponseData> GetRecoveryImageById(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/recovery-images/{id}")] HttpRequestData req,
@@ -81,6 +87,7 @@ public sealed partial class RecoveryImageFunctions
 
     // ── POST /api/internal/recovery-images/{id}/sas ──────────────────────────
 
+    /// <summary>POST internal/recovery-images/{id}/sas. Issues a time-limited SAS URL and sha256Hash.</summary>
     [Function("GetRecoveryImageSasUrl")]
     public async Task<HttpResponseData> GetRecoveryImageSasUrl(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/recovery-images/{id}/sas")] HttpRequestData req,

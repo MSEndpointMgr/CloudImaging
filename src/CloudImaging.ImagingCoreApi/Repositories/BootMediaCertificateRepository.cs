@@ -24,6 +24,8 @@ public sealed partial class BootMediaCertificateRepository
     private readonly TableClient _table;
     private readonly ILogger<BootMediaCertificateRepository> _logger;
 
+    /// <param name="tableService">Table service client used to resolve the boot media certificate table.</param>
+    /// <param name="logger">Logger for this repository.</param>
     public BootMediaCertificateRepository(
         TableServiceClient tableService,
         ILogger<BootMediaCertificateRepository> logger)

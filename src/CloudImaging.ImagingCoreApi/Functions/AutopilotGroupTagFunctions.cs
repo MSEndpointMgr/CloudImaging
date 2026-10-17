@@ -24,12 +24,15 @@ public sealed partial class AutopilotGroupTagFunctions
     private readonly AutopilotGroupTagRepository _repo;
     private readonly ILogger<AutopilotGroupTagFunctions> _logger;
 
+    /// <param name="repo">Autopilot group tag repository.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public AutopilotGroupTagFunctions(AutopilotGroupTagRepository repo, ILogger<AutopilotGroupTagFunctions> logger)
     {
         _repo = repo;
         _logger = logger;
     }
 
+    /// <summary>GET internal/autopilot/group-tags. Lists admin-defined Autopilot group tags.</summary>
     [Function("ListAutopilotGroupTags")]
     public async Task<HttpResponseData> List(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/autopilot/group-tags")] HttpRequestData req,
@@ -39,6 +42,7 @@ public sealed partial class AutopilotGroupTagFunctions
         return await AutopilotRegistrationFunctions.JsonAsync(req, HttpStatusCode.OK, definitions, context.CancellationToken);
     }
 
+    /// <summary>POST internal/autopilot/group-tags. Creates a new Autopilot group tag definition.</summary>
     [Function("CreateAutopilotGroupTag")]
     public async Task<HttpResponseData> Create(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/autopilot/group-tags")] HttpRequestData req,
@@ -64,6 +68,7 @@ public sealed partial class AutopilotGroupTagFunctions
         return await AutopilotRegistrationFunctions.JsonAsync(req, HttpStatusCode.Created, definition, context.CancellationToken);
     }
 
+    /// <summary>PUT internal/autopilot/group-tags/{id}. Updates an existing group tag definition.</summary>
     [Function("UpdateAutopilotGroupTag")]
     public async Task<HttpResponseData> Update(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/autopilot/group-tags/{id}")] HttpRequestData req,
@@ -101,6 +106,7 @@ public sealed partial class AutopilotGroupTagFunctions
         return await AutopilotRegistrationFunctions.JsonAsync(req, HttpStatusCode.OK, updated, context.CancellationToken);
     }
 
+    /// <summary>DELETE internal/autopilot/group-tags/{id}. Deletes a group tag definition.</summary>
     [Function("DeleteAutopilotGroupTag")]
     public async Task<HttpResponseData> Delete(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/autopilot/group-tags/{id}")] HttpRequestData req,

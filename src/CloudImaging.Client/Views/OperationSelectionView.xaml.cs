@@ -10,6 +10,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class OperationSelectionView : Page
 {
+    /// <summary>Builds the view and loads its XAML.</summary>
     public OperationSelectionView()
     {
         InitializeComponent();

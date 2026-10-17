@@ -29,6 +29,8 @@ public sealed partial class CancelSessionFunction
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ILogger<CancelSessionFunction> _logger;
 
+    /// <param name="sessionRepo">Device session repository.</param>
+    /// <param name="logger">Logger for this function.</param>
     public CancelSessionFunction(
         DeviceSessionRepository sessionRepo,
         ILogger<CancelSessionFunction> logger)
@@ -37,6 +39,7 @@ public sealed partial class CancelSessionFunction
         _logger = logger;
     }
 
+    /// <summary>DELETE internal/sessions/{sessionId}. Cancels an in-progress session.</summary>
     [Function(nameof(CancelSessionFunction))]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/sessions/{sessionId}")] HttpRequestData req,

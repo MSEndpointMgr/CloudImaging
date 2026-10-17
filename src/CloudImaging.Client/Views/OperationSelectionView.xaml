@@ -63,10 +63,14 @@
             </StackPanel>
         </StackPanel>
 
-        <!-- Operation cards -->
-        <UniformGrid Grid.Row="2" HorizontalAlignment="Center">
+        <!--
+            Operation cards. One row, fixed card height: a UniformGrid without Rows lays out
+            square (two cards became 2x2, an empty card-tall row), and a card whose description
+            wraps would grow the row. Either moved the header and Continue when a card appeared.
+        -->
+        <UniformGrid Grid.Row="2" Rows="1" HorizontalAlignment="Center">
             <!-- Imaging card -->
-            <Border Width="340" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <Border Width="340" Height="200" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
@@ -89,7 +93,7 @@
                                   Command="{Binding SelectOperationCommand}"
                                   CommandParameter="Imaging" />
                 </Border.InputBindings>
-                <StackPanel>
+                <StackPanel VerticalAlignment="Center">
                     <!-- Imaging = pull a fresh OS image from the cloud down onto the local disk -->
                     <ui:SymbolIcon Symbol="CloudArrowDown24" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
                     <TextBlock Text="Imaging"
@@ -103,7 +107,7 @@
             </Border>
 
             <!-- Register with Autopilot: only on boot media built with the hash tooling; never touches the disk -->
-            <Border Width="340" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand"
+            <Border Width="340" Height="200" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand"
                     Visibility="{Binding IsAutopilotOptionVisible, Converter={StaticResource BoolToVisibility}}"
                     IsEnabled="{Binding IsAutopilotSelectable}">
                 <Border.Style>
@@ -132,7 +136,7 @@
                                   Command="{Binding SelectOperationCommand}"
                                   CommandParameter="Autopilot" />
                 </Border.InputBindings>
-                <StackPanel>
+                <StackPanel VerticalAlignment="Center">
                     <ui:SymbolIcon Symbol="ShieldCheckmark24" FontSize="40" HorizontalAlignment="Center" Margin="0,0,0,12" />
                     <TextBlock Text="Register with Autopilot"
                                Style="{StaticResource SubtitleTextBlockStyle}"
@@ -145,7 +149,7 @@
             </Border>
 
             <!-- Decommissioning card: not implemented, hidden until a future release -->
-            <Border Visibility="Collapsed" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
+            <Border Visibility="Collapsed" Width="340" Height="200" Margin="8" Padding="24" CornerRadius="8" Cursor="Hand">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />

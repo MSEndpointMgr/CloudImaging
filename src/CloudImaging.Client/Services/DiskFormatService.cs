@@ -44,6 +44,7 @@ public sealed partial class DiskFormatService
 
     private readonly ILogger<DiskFormatService> _logger;
 
+    /// <summary>Builds the service over the given logger.</summary>
     public DiskFormatService(ILogger<DiskFormatService> logger) => _logger = logger;
 
     /// <summary>

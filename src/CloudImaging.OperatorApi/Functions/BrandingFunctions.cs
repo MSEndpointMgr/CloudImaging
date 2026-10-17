@@ -16,18 +16,22 @@ public sealed partial class BrandingFunctions
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<BrandingFunctions> _logger;
 
+    /// <param name="coreClient">Imaging Core API client the branding requests are forwarded to.</param>
+    /// <param name="logger">Logger for this function group.</param>
     public BrandingFunctions(ImagingCoreClient coreClient, ILogger<BrandingFunctions> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>GET branding. Returns the current branding configuration.</summary>
     [Function("GetBranding")]
     public async Task<HttpResponseData> GetBranding(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "branding")] HttpRequestData req,
         FunctionContext context)
         => await Proxy(req, await _coreClient.GetBrandingAsync(context.CancellationToken), context.CancellationToken);
 
+    /// <summary>PUT branding. Updates the branding configuration.</summary>
     [Function("PutBranding")]
     public async Task<HttpResponseData> PutBranding(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "branding")] HttpRequestData req,
@@ -38,12 +42,14 @@ public sealed partial class BrandingFunctions
         return await Proxy(req, await _coreClient.UpdateBrandingAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
+    /// <summary>GET branding/logo/sas. Issues a SAS URL for uploading/downloading the client branding logo.</summary>
     [Function("GetBrandingLogoSas")]
     public async Task<HttpResponseData> GetBrandingLogoSas(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "branding/logo/sas")] HttpRequestData req,
         FunctionContext context)
         => await Proxy(req, await _coreClient.GetBrandingLogoSasAsync(context.CancellationToken), context.CancellationToken);
 
+    /// <summary>PUT branding/logo. Uploads the client branding logo.</summary>
     [Function("UploadBrandingLogo")]
     public async Task<HttpResponseData> UploadBrandingLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "branding/logo")] HttpRequestData req,
@@ -54,6 +60,7 @@ public sealed partial class BrandingFunctions
         return await Proxy(req, await _coreClient.UploadBrandingLogoAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
+    /// <summary>PUT branding/portal-logo. Uploads the portal branding logo.</summary>
     [Function("UploadBrandingPortalLogo")]
     public async Task<HttpResponseData> UploadBrandingPortalLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "branding/portal-logo")] HttpRequestData req,
@@ -64,24 +71,28 @@ public sealed partial class BrandingFunctions
         return await Proxy(req, await _coreClient.UploadBrandingPortalLogoAsync(payload!, context.CancellationToken), context.CancellationToken);
     }
 
+    /// <summary>GET branding/logo/content. Returns the client branding logo bytes.</summary>
     [Function("GetBrandingLogoContent")]
     public async Task<HttpResponseData> GetBrandingLogoContent(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "branding/logo/content")] HttpRequestData req,
         FunctionContext context)
         => await ProxyBinary(req, await _coreClient.GetBrandingLogoContentAsync(context.CancellationToken), context.CancellationToken);
 
+    /// <summary>GET branding/portal-logo/content. Returns the portal branding logo bytes.</summary>
     [Function("GetBrandingPortalLogoContent")]
     public async Task<HttpResponseData> GetBrandingPortalLogoContent(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "branding/portal-logo/content")] HttpRequestData req,
         FunctionContext context)
         => await ProxyBinary(req, await _coreClient.GetBrandingPortalLogoContentAsync(context.CancellationToken), context.CancellationToken);
 
+    /// <summary>DELETE branding/logo. Deletes the client branding logo.</summary>
     [Function("DeleteBrandingLogo")]
     public async Task<HttpResponseData> DeleteBrandingLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "branding/logo")] HttpRequestData req,
         FunctionContext context)
         => await Proxy(req, await _coreClient.DeleteBrandingLogoAsync(context.CancellationToken), context.CancellationToken);
 
+    /// <summary>DELETE branding/portal-logo. Deletes the portal branding logo.</summary>
     [Function("DeleteBrandingPortalLogo")]
     public async Task<HttpResponseData> DeleteBrandingPortalLogo(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "branding/portal-logo")] HttpRequestData req,

@@ -28,12 +28,15 @@ public sealed partial class GetLatestRecoveryImageFunction
     private readonly ImagingCoreClient _coreClient;
     private readonly ILogger<GetLatestRecoveryImageFunction> _logger;
 
+    /// <param name="coreClient">Imaging Core API client used to look up the recovery image catalog.</param>
+    /// <param name="logger">Logger for this function.</param>
     public GetLatestRecoveryImageFunction(ImagingCoreClient coreClient, ILogger<GetLatestRecoveryImageFunction> logger)
     {
         _coreClient = coreClient;
         _logger = logger;
     }
 
+    /// <summary>GET v1/recovery-image/latest. Returns a SAS URL for the currently published recovery (WinRE) image.</summary>
     [Function("GetLatestRecoveryImage")]
     public async Task<HttpResponseData> Run(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/recovery-image/latest")] HttpRequestData req,

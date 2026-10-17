@@ -14,6 +14,7 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class WifiConnectionWindow : FluentWindow
 {
+    /// <summary>Builds the window and loads its XAML.</summary>
     public WifiConnectionWindow()
     {
         InitializeComponent();

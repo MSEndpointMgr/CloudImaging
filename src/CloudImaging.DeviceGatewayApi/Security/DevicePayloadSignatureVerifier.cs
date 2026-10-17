@@ -12,7 +12,7 @@ namespace CloudImaging.DeviceGatewayApi.Security;
 /// the boot-media certificate's <b>private</b> key. This verifier reconstructs the challenge and
 /// checks the signature with the <b>public</b> key taken from the mTLS certificate the client
 /// actually presented (already parsed and thumbprint-validated by
-/// <see cref="MtlsCertificateValidationMiddleware"/>).
+/// <see cref="CloudImaging.DeviceGatewayApi.Middleware.MtlsCertificateValidationMiddleware"/>).
 ///
 /// Because the boot-media public certificate is embedded in widely-distributed WIM media it is not
 /// secret; thumbprint-only validation of the forwarded <c>X-ARR-ClientCert</c> header would be
@@ -22,12 +22,22 @@ namespace CloudImaging.DeviceGatewayApi.Security;
 /// </summary>
 public static class DevicePayloadSignatureVerifier
 {
+    /// <summary>Outcome of verifying a device payload's proof-of-possession signature.</summary>
     public enum Result
     {
+        /// <summary>Signature verified successfully within the allowed clock skew.</summary>
         Valid,
+
+        /// <summary>The proof-of-possession block was absent from the payload.</summary>
         Missing,
+
+        /// <summary>The signed timestamp falls outside the allowed clock-skew window.</summary>
         Expired,
+
+        /// <summary>The signature value could not be parsed/decoded.</summary>
         MalformedSignature,
+
+        /// <summary>The signature did not verify against the presented certificate's public key.</summary>
         InvalidSignature,
     }
 

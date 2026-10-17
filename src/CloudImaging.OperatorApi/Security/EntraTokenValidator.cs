@@ -49,6 +49,7 @@ public sealed class EntraTokenValidator
         MapInboundClaims = false,
     };
 
+    /// <param name="options">Tenant, authority and audience configuration controlling validation.</param>
     public EntraTokenValidator(EntraValidationOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
