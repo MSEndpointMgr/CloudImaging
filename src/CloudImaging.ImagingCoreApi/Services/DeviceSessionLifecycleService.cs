@@ -128,7 +128,10 @@ public sealed partial class DeviceSessionLifecycleService
     /// <param name="now">Current time.</param>
     public static bool IsDueForExpiry(DeviceSession session, DateTimeOffset now)
     {
-        if (!ActiveNonTerminalStates.Contains(session.State)) return false;
+        if (!ActiveNonTerminalStates.Contains(session.State))
+        {
+            return false;
+        }
 
         var lastHeartbeat = session.LastHeartbeatAt ?? session.CreatedAt;
         return lastHeartbeat < now - TimeoutFor(session.State);

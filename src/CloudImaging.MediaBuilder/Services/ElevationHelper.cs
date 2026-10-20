@@ -44,25 +44,80 @@ internal static class ElevationHelper
     /// True when the folder's owner marker names a still-running process. PID, name, and start
     /// time must all match so a reused PID is not mistaken for the owner.
     /// </summary>
-    public static bool IsOwnedByLiveProcess(string dir)
+    public static bool IsOwnedByLiveProcess(string dir) => GetOwnerState(dir) == OwnerState.Alive;
+
+    /// <summary>Whether a folder's owner is running, has exited, or cannot be determined.</summary>
+    public enum OwnerState
     {
+        /// <summary>No readable marker, or the owner could not be inspected.</summary>
+        Unknown,
+        /// <summary>The owner process is still running.</summary>
+        Alive,
+        /// <summary>The owner process has exited (or its PID now belongs to another process).</summary>
+        Gone,
+    }
+
+    /// <summary>Reads the folder's owner marker and checks that process.</summary>
+    public static OwnerState GetOwnerState(string dir)
+    {
+        string[] parts;
         try
         {
             var markerFile = Path.Combine(dir, OwnerMarkerFileName);
             if (!File.Exists(markerFile))
-                return false;
-
-            var parts = File.ReadAllText(markerFile).Split('|');
-            if (parts.Length != 3 || !int.TryParse(parts[0], out var pid) || !long.TryParse(parts[2], out var startTicks))
-                return false;
-
-            using var owner = Process.GetProcessById(pid);
-            return owner.ProcessName == parts[1] && owner.StartTime.Ticks == startTicks;
+                return OwnerState.Unknown;
+            parts = File.ReadAllText(markerFile).Split('|');
         }
         catch
         {
-            // Owner gone (GetProcessById throws) or marker unreadable: sweep rather than leak.
-            return false;
+            return OwnerState.Unknown;
+        }
+
+        if (parts.Length != 3 || !int.TryParse(parts[0], out var pid) || !long.TryParse(parts[2], out var startTicks))
+            return OwnerState.Unknown;
+
+        try
+        {
+            using var owner = Process.GetProcessById(pid);
+            return owner.ProcessName == parts[1] && owner.StartTime.Ticks == startTicks ? OwnerState.Alive : OwnerState.Gone;
+        }
+        catch (ArgumentException)
+        {
+            // No process with that PID.
+            return OwnerState.Gone;
+        }
+        catch
+        {
+            // e.g. access denied reading another session's process: can't tell.
+            return OwnerState.Unknown;
+        }
+    }
+
+    /// <summary>
+    /// Elevated-worker side of cancellation: cancels <paramref name="cts"/> when the parent writes
+    /// <paramref name="cancelFile"/>, or when the parent that owns the IPC folder has exited (closed
+    /// or killed), so a worker never keeps running unattended and still cleans up its mounts.
+    /// </summary>
+    public static async Task WatchForCancelOrParentExitAsync(string cancelFile, CancellationTokenSource cts)
+    {
+        var ipcDir = Path.GetDirectoryName(cancelFile) ?? string.Empty;
+        var tick = 0;
+        try
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                // The owner check is a process lookup, so it runs every ~1.2 s rather than every tick.
+                if (File.Exists(cancelFile) || (++tick % 4 == 0 && GetOwnerState(ipcDir) == OwnerState.Gone))
+                {
+                    cts.Cancel();
+                    return;
+                }
+                await Task.Delay(300, cts.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected once the worker finishes and cancels cts in its finally.
         }
     }
 

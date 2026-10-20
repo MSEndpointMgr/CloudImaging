@@ -50,4 +50,10 @@ public sealed class BootImage
     /// so existing callers/tests that predate architecture tracking keep compiling and behaving as x64.
     /// </summary>
     public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
+
+    /// <summary>
+    /// Windows PE or Windows RE, read from the WIM at upload. Devices self-update only to the latest
+    /// image of their own base, so a Wi-Fi stick never silently loses Wi-Fi.
+    /// </summary>
+    public BootImageBase Base { get; init; } = BootImageBase.WindowsPE;
 }

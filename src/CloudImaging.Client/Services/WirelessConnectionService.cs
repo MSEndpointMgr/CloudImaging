@@ -3,6 +3,7 @@ using System.Globalization;
 using System.IO;
 using System.Security;
 using System.Text.RegularExpressions;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -27,8 +28,14 @@ public enum WifiAuthKind
 /// <see cref="WifiAuthKind.PersonalPsk"/> — Enterprise/802.1X networks are shown (not hidden)
 /// but cannot be connected to via this simple PSK-only flow.
 /// </summary>
-public sealed record WifiNetwork(string Ssid, int SignalPercent, WifiAuthKind AuthKind, bool IsSupported)
+public sealed record VisibleWifiNetwork(string Ssid, int SignalPercent, WifiAuthKind AuthKind, bool IsSupported, bool IsManaged = false, bool IsHidden = false)
 {
+    /// <summary>Second line under the name: hidden managed networks say so, since they never appear in a scan.</summary>
+    public string Subtitle => IsHidden ? "Hidden network" : string.Empty;
+
+    /// <summary>True when <see cref="Subtitle"/> has text.</summary>
+    public bool HasSubtitle => IsHidden;
+
     /// <summary>Empty when supported; a short explanatory suffix otherwise (bound directly in the UI, no converter needed).</summary>
     public string NotSupportedLabel => IsSupported ? string.Empty : " (Not supported: Enterprise/802.1X)";
 
@@ -50,7 +57,7 @@ public sealed record WifiNetwork(string Ssid, int SignalPercent, WifiAuthKind Au
     };
 }
 
-/// <summary>Outcome of <see cref="WirelessConnectionService.ConnectAsync"/>.</summary>
+/// <summary>Outcome of a <see cref="WirelessConnectionService"/> connect attempt.</summary>
 public enum WifiConnectResult
 {
     /// <summary>Connected successfully.</summary>
@@ -92,7 +99,7 @@ public enum WifiScanStatus
 /// <param name="Status">Why the list is what it is.</param>
 /// <param name="Networks">Networks found; empty unless <paramref name="Status"/> is <see cref="WifiScanStatus.Ok"/>.</param>
 /// <param name="Detail">netsh's own first line of output when <paramref name="Status"/> is <see cref="WifiScanStatus.Failed"/>.</param>
-public sealed record WifiScanResult(WifiScanStatus Status, IReadOnlyList<WifiNetwork> Networks, string? Detail = null);
+public sealed record WifiScanResult(WifiScanStatus Status, IReadOnlyList<VisibleWifiNetwork> Networks, string? Detail = null);
 
 /// <summary>
 /// Live, runtime-only Wi-Fi scan/connect for the WinPE Client's "Connect to Wi-Fi" support tool.
@@ -169,7 +176,7 @@ public sealed partial class WirelessConnectionService
     {
         var (exitCode, stdOut, stdErr) = await _runNetsh("wlan show networks mode=bssid", ct);
         var output = stdOut + stdErr;
-        IReadOnlyList<WifiNetwork> networks = exitCode == 0 ? ParseNetworks(stdOut) : [];
+        IReadOnlyList<VisibleWifiNetwork> networks = exitCode == 0 ? ParseNetworks(stdOut) : [];
         if (networks.Count > 0)
             return new WifiScanResult(WifiScanStatus.Ok, networks);
 
@@ -219,7 +226,14 @@ public sealed partial class WirelessConnectionService
     /// "wrong password" signal, so a failed/timed-out connect necessarily surfaces a generic
     /// reason to the caller.
     /// </summary>
-    public async Task<WifiConnectResult> ConnectAsync(string ssid, string? password, CancellationToken ct = default)
+    public async Task<WifiConnectResult> ConnectAsync(string ssid, string? password, CancellationToken ct = default) =>
+        await ConnectAsync(ssid, password, security: null, hidden: false, ct);
+
+    /// <summary>
+    /// Connects with an explicit security type and hidden flag, as saved for a managed network:
+    /// WPA3 needs the SAE profile keyword, and a hidden network must be joined without a scan result.
+    /// </summary>
+    public async Task<WifiConnectResult> ConnectAsync(string ssid, string? password, WifiSecurityType? security, bool hidden, CancellationToken ct = default)
     {
         var (ifExitCode, ifStdOut, _) = await _runNetsh("wlan show interfaces", ct);
         var interfaceName = ifExitCode == 0 ? ParseInterfaceName(ifStdOut) : null;
@@ -229,7 +243,7 @@ public sealed partial class WirelessConnectionService
             return WifiConnectResult.NoAdapter;
         }
 
-        var profileXml = BuildProfileXml(ssid, password);
+        var profileXml = BuildProfileXml(ssid, password, security, hidden);
         var tempProfilePath = Path.Combine(Path.GetTempPath(), $"ci-wifi-{Guid.NewGuid():N}.xml");
         try
         {
@@ -274,9 +288,9 @@ public sealed partial class WirelessConnectionService
     }
 
     /// <summary>Parses <c>netsh wlan show networks mode=bssid</c> output into a flat network list (max signal seen per SSID).</summary>
-    public static IReadOnlyList<WifiNetwork> ParseNetworks(string output)
+    public static IReadOnlyList<VisibleWifiNetwork> ParseNetworks(string output)
     {
-        var networks = new List<WifiNetwork>();
+        var networks = new List<VisibleWifiNetwork>();
         string? currentSsid = null;
         var currentAuth = WifiAuthKind.Unknown;
         var currentSignal = 0;
@@ -285,7 +299,7 @@ public sealed partial class WirelessConnectionService
         {
             if (!string.IsNullOrWhiteSpace(currentSsid))
             {
-                networks.Add(new WifiNetwork(
+                networks.Add(new VisibleWifiNetwork(
                     currentSsid!,
                     currentSignal,
                     currentAuth,
@@ -360,14 +374,15 @@ public sealed partial class WirelessConnectionService
         output.Split('\n').Select(l => l.Trim()).Any(l => StateConnectedRegex().IsMatch(l));
 
     /// <summary>
-    /// Builds a WLAN profile XML for <paramref name="ssid"/>. WPA3-Personal networks are
-    /// requested with the same <c>WPA2PSK</c> authentication keyword as WPA2-Personal (Windows
-    /// negotiates the strongest mutually-supported handshake) — a deliberate simplification since
-    /// both are treated as the same simple-PSK bucket by this feature.
+    /// Builds a WLAN profile XML for <paramref name="ssid"/>. Without a <paramref name="security"/>
+    /// (a network picked from the scan list) WPA3-Personal is requested with the same <c>WPA2PSK</c>
+    /// keyword as WPA2-Personal, and Windows negotiates the strongest handshake. A managed network
+    /// states its type: WPA3 uses <c>WPA3SAE</c>, and WPA2/WPA3 adds the v4 transition-mode flag.
     /// </summary>
-    public static string BuildProfileXml(string ssid, string? password)
+    public static string BuildProfileXml(string ssid, string? password, WifiSecurityType? security = null, bool hidden = false)
     {
         var escapedSsid = SecurityElement.Escape(ssid);
+        var nonBroadcast = hidden ? "<nonBroadcast>true</nonBroadcast>" : string.Empty;
 
         if (string.IsNullOrEmpty(password))
         {
@@ -375,7 +390,7 @@ public sealed partial class WirelessConnectionService
                 <?xml version="1.0"?>
                 <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
                     <name>{escapedSsid}</name>
-                    <SSIDConfig><SSID><name>{escapedSsid}</name></SSID></SSIDConfig>
+                    <SSIDConfig><SSID><name>{escapedSsid}</name></SSID>{nonBroadcast}</SSIDConfig>
                     <connectionType>ESS</connectionType>
                     <connectionMode>manual</connectionMode>
                     <MSM><security><authEncryption><authentication>open</authentication><encryption>none</encryption><useOneX>false</useOneX></authEncryption></security></MSM>
@@ -383,15 +398,22 @@ public sealed partial class WirelessConnectionService
                 """;
         }
 
+        var authentication = security is WifiSecurityType.Wpa3Personal or WifiSecurityType.Wpa2Wpa3Personal ? "WPA3SAE" : "WPA2PSK";
+        var transition = security == WifiSecurityType.Wpa2Wpa3Personal
+            ? "<transitionMode xmlns=\"http://www.microsoft.com/networking/WLAN/profile/v4\">true</transitionMode>"
+            : string.Empty;
         var escapedPassword = SecurityElement.Escape(password);
+
+        // A 64-character hex string is the raw key, which the profile schema types differently from a passphrase.
+        var keyType = password.Length == 64 && password.All(char.IsAsciiHexDigit) ? "networkKey" : "passPhrase";
         return $"""
             <?xml version="1.0"?>
             <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
                 <name>{escapedSsid}</name>
-                <SSIDConfig><SSID><name>{escapedSsid}</name></SSID></SSIDConfig>
+                <SSIDConfig><SSID><name>{escapedSsid}</name></SSID>{nonBroadcast}</SSIDConfig>
                 <connectionType>ESS</connectionType>
                 <connectionMode>manual</connectionMode>
-                <MSM><security><authEncryption><authentication>WPA2PSK</authentication><encryption>AES</encryption><useOneX>false</useOneX></authEncryption><sharedKey><keyType>passPhrase</keyType><protected>false</protected><keyMaterial>{escapedPassword}</keyMaterial></sharedKey></security></MSM>
+                <MSM><security><authEncryption><authentication>{authentication}</authentication><encryption>AES</encryption><useOneX>false</useOneX>{transition}</authEncryption><sharedKey><keyType>{keyType}</keyType><protected>false</protected><keyMaterial>{escapedPassword}</keyMaterial></sharedKey></security></MSM>
             </WLANProfile>
             """;
     }

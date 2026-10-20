@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Input;
 using CloudImaging.Contracts.Models;
@@ -67,6 +66,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// ISO (ISO packaging).
     /// </summary>
     private string _currentStage = "DVI";
+    private IReadOnlyList<WifiNetworkRow> _wifiNetworks = [];
+    private bool _isLoadingWifi;
+    private string? _wifiLoadError;
+    private int _wifiLoadVersion;
 
     /// <summary>Builds the view model over the Operator API, Entra auth, USB validation/preparation, and boot image download/cache services.</summary>
     public PrepareStorageDeviceViewModel(
@@ -115,8 +118,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         DismissResultCommand = new RelayCommand(_ => CloseResultDialog());
         BrowseIsoOutputCommand = new RelayCommand(_ => BrowseIsoOutput());
         OpenResultFolderCommand = new RelayCommand(_ => OpenResultFolder(), _ => ResultFilePath is not null);
-        CopyResultPathCommand = new RelayCommand(_ => CopyToClipboard(ResultFilePath), _ => ResultFilePath is not null);
-        CopyErrorDetailsCommand = new RelayCommand(_ => CopyToClipboard(ErrorDetails), _ => HasError);
+        CopyResultPathCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ResultFilePath), _ => ResultFilePath is not null);
+        CopyErrorDetailsCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ErrorDetails), _ => HasError);
         ClearLocationCommand = new RelayCommand(_ => SelectedLocation = null, _ => IsFormEnabled && HasSelectedLocation);
 
         // Load the eligible USB disk list (fast, local WMI) and kick off the published boot
@@ -150,6 +153,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _selectedBootImage = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanPrepare));
+            _ = RefreshWifiNetworksAsync();
 
             // Keep the suggested ISO filename version-specific by default (FR: technicians who
             // never click Browse should still get "cloud-imaging-boot-v{version}.iso" instead of
@@ -192,7 +196,61 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public LocationChoice? SelectedLocation
     {
         get => _selectedLocation;
-        set { _selectedLocation = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelectedLocation)); }
+        set
+        {
+            _selectedLocation = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasSelectedLocation));
+            _ = RefreshWifiNetworksAsync();
+        }
+    }
+
+    /// <summary>True when the selected boot image is built on Windows RE and can join Wi-Fi.</summary>
+    public bool IsWifiImageSelected => SelectedBootImage?.Dto.Base == BootImageBase.WindowsRE;
+
+    /// <summary>The Wi-Fi Networks card applies only to USB media of a Windows RE image; an ISO is read-only.</summary>
+    public bool ShowWifiCard => IsWifiImageSelected && !PrepareAsIso;
+
+    /// <summary>The networks written to the USB media for the selected location. Display only; no passwords.</summary>
+    public IReadOnlyList<WifiNetworkRow> WifiNetworks
+    {
+        get => _wifiNetworks;
+        private set { _wifiNetworks = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasWifiNetworks)); OnPropertyChanged(nameof(WifiCardDescription)); }
+    }
+
+    /// <summary>True when at least one network will be written to the USB media.</summary>
+    public bool HasWifiNetworks => _wifiNetworks.Count > 0;
+
+    /// <summary>True while the networks for the selected location are loading.</summary>
+    public bool IsLoadingWifi
+    {
+        get => _isLoadingWifi;
+        private set { _isLoadingWifi = value; OnPropertyChanged(); OnPropertyChanged(nameof(WifiCardDescription)); }
+    }
+
+    /// <summary>Why the networks could not be loaded, or null.</summary>
+    public string? WifiLoadError
+    {
+        get => _wifiLoadError;
+        private set { _wifiLoadError = value; OnPropertyChanged(); OnPropertyChanged(nameof(WifiCardDescription)); }
+    }
+
+    /// <summary>Caption of the Wi-Fi Networks card for the current state.</summary>
+    public string WifiCardDescription
+    {
+        get
+        {
+            var where = SelectedLocation is null ? "this media" : SelectedLocation.Name;
+            if (IsLoadingWifi) return "Loading the Wi-Fi networks for " + where + "…";
+            if (WifiLoadError is not null) return "The Wi-Fi networks could not be loaded. " + WifiLoadError;
+            if (HasWifiNetworks)
+                return SelectedLocation is null
+                    ? "Saved on the USB media so devices can get online without Ethernet. Encrypted with the boot media certificate."
+                    : $"Saved on the USB media so devices at {where} can get online without Ethernet. Encrypted with the boot media certificate.";
+            return SelectedLocation is null
+                ? "No networks are saved for all locations. Choose a location, or add networks in the portal under Wi-Fi Networks. Devices need Ethernet, or a technician types the password on the device."
+                : $"No networks are saved for {where}. Devices need Ethernet, or a technician types the password on the device. Add networks in the portal under Wi-Fi Networks.";
+        }
     }
 
     /// <summary>Whether a location is currently selected, so the Clear button next to the picker can be disabled when there is nothing to clear.</summary>
@@ -223,6 +281,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _prepareAsIso = false;
             OnPropertyChanged();
             OnPropertyChanged(nameof(PrepareAsIso));
+            OnPropertyChanged(nameof(ShowWifiCard));
             OnPropertyChanged(nameof(CanPrepare));
             OnPropertyChanged(nameof(PrepareButtonLabel));
             OnPropertyChanged(nameof(PrepareDescription));
@@ -242,6 +301,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _prepareAsIso = true;
             OnPropertyChanged();
             OnPropertyChanged(nameof(PrepareAsUsb));
+            OnPropertyChanged(nameof(ShowWifiCard));
             OnPropertyChanged(nameof(CanPrepare));
             OnPropertyChanged(nameof(PrepareButtonLabel));
             OnPropertyChanged(nameof(PrepareDescription));
@@ -383,6 +443,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>Folder part of <see cref="ResultFilePath"/>.</summary>
     public string? ResultFolder => ResultFilePath is null ? null : Path.GetDirectoryName(ResultFilePath);
 
+    /// <summary>Icon for the output file row in the result dialog.</summary>
+    public Wpf.Ui.Controls.SymbolRegular ResultFileSymbol { get; } = Wpf.Ui.Controls.SymbolRegular.Cd16;
+
     /// <summary>User-facing error message when the workflow fails; <c>null</c> otherwise.</summary>
     public string? ErrorMessage
     {
@@ -404,9 +467,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public bool HasErrorReference => ErrorReference is not null;
 
     /// <summary>Title, message and reference as one block, for pasting into a support ticket.</summary>
-    public string ErrorDetails => ErrorReference is null
-        ? $"{ErrorTitle}{Environment.NewLine}{ErrorMessage}"
-        : $"{ErrorTitle}{Environment.NewLine}{ErrorMessage}{Environment.NewLine}Reference: {ErrorReference}";
+    public string ErrorDetails => OperationResultText.ErrorDetails(ErrorTitle, ErrorMessage, ErrorReference);
 
     /// <summary>
     /// Heading shown alongside <see cref="ErrorMessage"/> — distinguishes a failure while merely
@@ -543,8 +604,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             .OrderByDescending(i => i.Version, Comparer<string>.Create(CompareVersions)))
         {
             var stage = image.IsLatestPublished ? " (latest)" : image.IsProduction ? string.Empty : " (pre-production)";
+            var wifi = image.Base == BootImageBase.WindowsRE ? " · Wi-Fi" : string.Empty;
             var label  = string.Create(CultureInfo.InvariantCulture,
-                $"v{image.Version} · {DisplayArchitecture(image.Architecture)} ({FormatBytes(image.SizeBytes)}){stage}");
+                $"v{image.Version} · {DisplayArchitecture(image.Architecture)}{wifi} ({FormatBytes(image.SizeBytes)}){stage}");
             BootImages.Add(new BootImageChoice(image.BootImageId, label, image));
         }
 
@@ -664,6 +726,16 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             // Must run before partitioning so a mislabeled image never erases the USB device.
             await EnsureWimMatchesCatalogArchitectureAsync(wimPath, SelectedBootImage.Dto, ct);
 
+            // Resolved and encrypted here, before elevation: the elevated worker has no Operator
+            // API client, and the IPC file must never hold a plain-text password.
+            string? wifiEnvelope = null;
+            if (IsWifiImageSelected)
+            {
+                _currentStage = "WFI";
+                SetProgress("Encrypting Wi-Fi networks for the USB media…", 57);
+                wifiEnvelope = await BuildWifiEnvelopeAsync(SelectedLocation?.Id, ct);
+            }
+
             _currentStage = "PRT";
             SetProgress("Partitioning USB device…", 60);
 
@@ -693,7 +765,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 SelectedLocation?.Name,
                 SelectedBootImage.Dto.Architecture,
                 SelectedBootImage.Dto.BootImageId,
-                !SelectedBootImage.Dto.IsProduction);
+                !SelectedBootImage.Dto.IsProduction,
+                SelectedBootImage.Dto.Base,
+                wifiEnvelope);
             await _preparation.PrepareElevatedAsync(preparationParams, ct);
 
             SetProgress("USB device prepared successfully.", 100);
@@ -951,38 +1025,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         catch { /* best-effort */ }
     }
 
-    private static readonly Regex EmbeddedReferenceRegex = new(
-        @"\s*\(?Error reference:\s*(?<code>CMB-[A-Z0-9]+-[A-Z0-9]+-\d+)\)?\.?", RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// Separates a support reference code a service already embedded in <paramref name="message"/>
-    /// from the readable reason, or creates a new one when there is none.
-    /// </summary>
-    public static (string Message, string Reference) SplitSupportReference(string message, Func<string> createReference)
-    {
-        var match = EmbeddedReferenceRegex.Match(message);
-        if (!match.Success)
-            return (message.Trim(), createReference());
-
-        var reason = message.Remove(match.Index, match.Length).Trim();
-        return (reason.Length > 0 ? reason : message.Trim(), match.Groups["code"].Value);
-    }
-
     private void ShowFailure(string title, string message, Func<string> createReference)
     {
-        var (reason, reference) = SplitSupportReference(message, createReference);
+        var (reason, reference) = OperationResultText.SplitSupportReference(message, createReference);
         ErrorTitle     = title;
         ErrorReference = reference;
         ErrorMessage   = reason;
-    }
-
-    private static void CopyToClipboard(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return;
-
-        // The clipboard can be briefly locked by another process; copying is a convenience, never fatal.
-        try { Clipboard.SetText(text); } catch { /* best-effort */ }
     }
 
     // ── Progress plumbing ──────────────────────────────────────────────────────
@@ -1101,4 +1149,79 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>A selectable entry from the admin-managed location catalog (Location Labels feature).</summary>
     public sealed record LocationChoice(Guid Id, string Name, LocationDto Dto);
+
+    /// <summary>A Wi-Fi network as the card lists it: name and security, never the password.</summary>
+    public sealed record WifiNetworkRow(string Ssid, string Detail);
+
+    /// <summary>
+    /// Loads the networks for the selected location for display. A later selection supersedes an
+    /// earlier one still in flight, so the card never shows another location's networks.
+    /// </summary>
+    private async Task RefreshWifiNetworksAsync()
+    {
+        OnPropertyChanged(nameof(IsWifiImageSelected));
+        OnPropertyChanged(nameof(ShowWifiCard));
+        var version = ++_wifiLoadVersion;
+        if (!IsWifiImageSelected)
+        {
+            WifiNetworks = [];
+            WifiLoadError = null;
+            IsLoadingWifi = false;
+            return;
+        }
+
+        IsLoadingWifi = true;
+        WifiLoadError = null;
+        try
+        {
+            var token = await _authService.GetAccessTokenAsync();
+            if (token is null)
+                return;
+            _operatorApi.SetAccessToken(token);
+            var set = await _operatorApi.GetManagedWifiNetworksAsync(SelectedLocation?.Id);
+            if (version == _wifiLoadVersion)
+                WifiNetworks = [.. set.Networks.Select(n => new WifiNetworkRow(n.Ssid, DescribeWifi(n)))];
+        }
+        catch (Exception ex)
+        {
+            if (version == _wifiLoadVersion)
+            {
+                WifiNetworks = [];
+                WifiLoadError = OperatorApiErrorDescription.Describe(ex);
+            }
+        }
+        finally
+        {
+            if (version == _wifiLoadVersion)
+                IsLoadingWifi = false;
+        }
+    }
+
+    /// <summary>
+    /// Fetches the location's networks fresh and encrypts them to the active boot media certificate,
+    /// the one devices present to the Device Gateway. Returns null when there are none, so no file is written.
+    /// </summary>
+    private async Task<string?> BuildWifiEnvelopeAsync(Guid? locationId, CancellationToken ct)
+    {
+        var set = await _operatorApi.GetManagedWifiNetworksAsync(locationId, ct);
+        if (set.Networks.Count == 0)
+            return null;
+
+        var pfx = await _operatorApi.GetBootMediaCertPfxAsync(ct);
+        using var withKey = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12(
+            pfx, password: null, System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet);
+        using var publicOnly = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadCertificate(withKey.RawData);
+        return Convert.ToBase64String(ManagedWifiEnvelope.Encrypt(set, publicOnly));
+    }
+
+    private static string DescribeWifi(ManagedWifiNetwork network)
+    {
+        var security = network.Security switch
+        {
+            WifiSecurityType.Wpa3Personal => "WPA3-Personal",
+            WifiSecurityType.Wpa2Wpa3Personal => "WPA2/WPA3-Personal",
+            _ => "WPA2-Personal",
+        };
+        return network.Hidden ? security + ", hidden" : security;
+    }
 }

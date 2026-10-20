@@ -15,6 +15,9 @@ public sealed partial class BootImageDeploymentService
 {
     private static readonly JsonSerializerOptions ManifestWriteOptions = new() { WriteIndented = true };
 
+    // Must match a prefix MountCleanup sweeps.
+    private const string WorkDirPrefix = "ci-deploy-";
+
     private readonly ILogger<BootImageDeploymentService> _logger;
 
     /// <summary>Raised as deployment progresses, with a status message and overall percent.</summary>
@@ -74,6 +77,17 @@ public sealed partial class BootImageDeploymentService
     }
 
     /// <summary>
+    /// Writes the location's managed Wi-Fi networks, already encrypted to the boot media
+    /// certificate (<see cref="ManagedWifiEnvelope"/>), next to the manifest so a device without
+    /// Ethernet can get online the first time. The Client replaces it with a fresh copy once online.
+    /// </summary>
+    public static async Task WriteManagedWifiAsync(string bootDriveLetter, byte[] envelope, CancellationToken ct = default)
+    {
+        var path = Path.Combine(bootDriveLetter.TrimEnd('\\', '/'), ManagedWifiEnvelope.FileName);
+        await File.WriteAllBytesAsync(path, envelope, ct);
+    }
+
+    /// <summary>
     /// Makes the FAT32 boot partition bootable (BIOS + UEFI for x64, UEFI only for ARM64) from the
     /// boot.wim itself, so no ADK or extra published files are needed on this machine.
     /// <para/>
@@ -86,16 +100,17 @@ public sealed partial class BootImageDeploymentService
     /// </summary>
     private static async Task ConfigureBootFilesAsync(string wimPath, string mediaRoot, MachineArchitecture architecture, CancellationToken ct)
     {
-        var mountDir = Path.Combine(Path.GetTempPath(), $"ci-deploy-mount-{Guid.NewGuid():N}");
+        var workDir = Path.Combine(Path.GetTempPath(), $"{WorkDirPrefix}{Guid.NewGuid():N}");
+        var mountDir = Path.Combine(workDir, "Mount");
         Directory.CreateDirectory(mountDir);
-        var mounted = false;
+        ElevationHelper.WriteOwnerMarker(workDir);
+        MountCleanup.RecordWimMount(workDir, mountDir);
         try
         {
             await RunExternalAsync(
                 "dism.exe",
                 $"/Mount-Image /ImageFile:\"{wimPath}\" /Index:1 /MountDir:\"{mountDir}\" /ReadOnly",
                 ct);
-            mounted = true;
 
             var windowsDir = Path.Combine(mountDir, "Windows");
             if (!Directory.Exists(windowsDir))
@@ -119,19 +134,17 @@ public sealed partial class BootImageDeploymentService
         }
         finally
         {
-            if (mounted)
+            // Discard even when mounting was interrupted part-way; a no-op when nothing is mounted.
+            try
             {
-                try
-                {
-                    await RunExternalAsync("dism.exe", $"/Unmount-Image /MountDir:\"{mountDir}\" /Discard", CancellationToken.None);
-                }
-                catch
-                {
-                    // Best effort — the mount was read-only, so there's nothing to lose by
-                    // leaving it mounted; ElevationHelper cleanup below still removes the folder.
-                }
+                await RunExternalAsync("dism.exe", $"/Unmount-Image /MountDir:\"{mountDir}\" /Discard", CancellationToken.None);
+                MountCleanup.Forget(workDir, mountDir);
             }
-            ElevationHelper.TryDeleteDirectoryRecursive(mountDir);
+            catch
+            {
+                // Left journaled, so the next elevated operation's MountCleanup sweep discards it.
+            }
+            ElevationHelper.TryDeleteDirectoryRecursive(workDir);
         }
     }
 
@@ -176,7 +189,7 @@ public sealed partial class BootImageDeploymentService
     {
         var output = await RunExternalAsync("bcdedit.exe", $"/store \"{bcdPath}\" /enum all", ct);
         if (!output.Contains(@"\sources\boot.wim", StringComparison.OrdinalIgnoreCase)
-            || output.Contains("ci-deploy-mount", StringComparison.OrdinalIgnoreCase))
+            || output.Contains(WorkDirPrefix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 $"The boot configuration at \"{bcdPath}\" does not boot \\sources\\boot.wim from the USB device. The USB device would not boot.");
     }

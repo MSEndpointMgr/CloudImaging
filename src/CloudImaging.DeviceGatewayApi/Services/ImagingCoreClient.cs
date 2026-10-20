@@ -69,6 +69,10 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> GetAutopilotAvailabilityAsync(CancellationToken ct = default) =>
         _http.GetAsync("/api/internal/autopilot/availability", ct);
 
+    /// <summary>A location's managed Wi-Fi networks with passwords; null location receives "all locations" networks only.</summary>
+    public Task<HttpResponseMessage> GetManagedWifiNetworksAsync(Guid? locationId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/wifi-networks/managed?purpose=device-gateway{(locationId is { } id ? $"&locationId={id}" : string.Empty)}", ct);
+
     /// <summary>Forward a verified Autopilot hardware hash submission.</summary>
     public Task<HttpResponseMessage> SubmitAutopilotRegistrationAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/autopilot/registrations", payload, JsonOptions, ct);

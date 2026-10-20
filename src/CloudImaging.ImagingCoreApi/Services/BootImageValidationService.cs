@@ -138,6 +138,19 @@ public sealed partial class BootImageValidationService
     /// </summary>
     public async Task<int?> ReadWimProcessorArchitectureAsync(BlobBaseClient blobClient, CancellationToken ct = default)
     {
+        var xml = await ReadWimXmlAsync(blobClient, ct);
+        return xml is null ? null : WimMetadataReader.ParseProcessorArchitecture(xml);
+    }
+
+    /// <summary>Whether image 1 is built on Windows PE or Windows RE; Windows PE when undeterminable.</summary>
+    public async Task<BootImageBase> ReadWimBootImageBaseAsync(BlobBaseClient blobClient, CancellationToken ct = default)
+    {
+        var xml = await ReadWimXmlAsync(blobClient, ct);
+        return xml is null ? BootImageBase.WindowsPE : WimMetadataReader.ParseBootImageBase(xml);
+    }
+
+    private async Task<byte[]?> ReadWimXmlAsync(BlobBaseClient blobClient, CancellationToken ct)
+    {
         try
         {
             var header = await DownloadRangeAsync(blobClient, 0, WimMetadataReader.HeaderSize, ct);
@@ -147,7 +160,7 @@ public sealed partial class BootImageValidationService
             }
 
             var xml = await DownloadRangeAsync(blobClient, offset, length, ct);
-            return xml.Length == length ? WimMetadataReader.ParseProcessorArchitecture(xml) : null;
+            return xml.Length == length ? xml : null;
         }
         catch (Exception ex)
         {

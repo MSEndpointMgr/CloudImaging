@@ -250,7 +250,7 @@ function SessionsPageImpl(): React.ReactElement {
   }, []);
 
   const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>({ key: 'registered', dir: 'asc' });
-  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
+  const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'architecture' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'registered' | 'state' | 'progress' | 'step'>({ key: 'registered', dir: 'desc' });
   const [successSort, toggleSuccessSort]     = useSort<'serial' | 'device' | 'location' | 'finished'>({ key: 'finished', dir: 'desc' });
   const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>({ key: 'registered', dir: 'asc' });
@@ -258,7 +258,7 @@ function SessionsPageImpl(): React.ReactElement {
   const [overrideSort, toggleOverrideSort]   = useSort<'serial' | 'device' | 'location' | 'approvedBy' | 'expires'>({ key: 'expires', dir: 'asc' });
 
   const availableCols = useColumnWidths({ serial: 18, device: 24, location: 16, state: 12, passcode: 13, registered: 13 });
-  const coupledCols = useColumnWidths({ serial: 22, device: 28, location: 18, registered: 20 });
+  const coupledCols = useColumnWidths({ serial: 20, device: 28, architecture: 12, location: 16, registered: 16 });
   const monitorCols = useColumnWidths({ serial: 14, device: 17, location: 10, registered: 15, state: 9, progress: 15, step: 16 });
   const successCols = useColumnWidths({ serial: 15, device: 25, location: 15, progress: 20, finished: 20 });
   const failedCols = useColumnWidths({ serial: 12, device: 17, location: 11, state: 10, step: 14, registered: 11, actions: 20 });
@@ -380,6 +380,7 @@ function SessionsPageImpl(): React.ReactElement {
     {
       serial:     (s: Session) => s.deviceSerialNumber,
       device:     (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
+      architecture: (s: Session) => architectureLabel(s.architecture),
       location:   (s: Session) => s.locationName ?? '',
       registered: (s: Session) => new Date(s.createdAt).getTime(),
     },
@@ -713,7 +714,7 @@ function SessionsPageImpl(): React.ReactElement {
                       toggle without redistributing the existing columns. */}
                   <TableHead className="w-[4%]"><span className="sr-only">Expand device details</span></TableHead>
                   <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('serial')}>{availableCols.handle('serial', 'Serial')}</SortableHead>
-                  <SortableHead label="Device" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('device')}>{availableCols.handle('device', 'Device')}</SortableHead>
+                  <SortableHead label="Model" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('device')}>{availableCols.handle('device', 'Model')}</SortableHead>
                   <SortableHead label="Location" sortKey="location" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('location')}>{availableCols.handle('location', 'Location')}</SortableHead>
                   <SortableHead label="State" sortKey="state" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('state')}>{availableCols.handle('state', 'State')}</SortableHead>
                   <TableHead className="relative" style={availableCols.style('passcode')}>Passcode{availableCols.handle('passcode', 'Passcode')}</TableHead>
@@ -823,7 +824,8 @@ function SessionsPageImpl(): React.ReactElement {
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('serial')}>{coupledCols.handle('serial', 'Serial')}</SortableHead>
-                  <SortableHead label="Device" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('device')}>{coupledCols.handle('device', 'Device')}</SortableHead>
+                  <SortableHead label="Model" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('device')}>{coupledCols.handle('device', 'Model')}</SortableHead>
+                  <SortableHead label="Architecture" sortKey="architecture" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('architecture')}>{coupledCols.handle('architecture', 'Architecture')}</SortableHead>
                   <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('location')}>{coupledCols.handle('location', 'Location')}</SortableHead>
                   <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} style={coupledCols.style('registered')} />
                   {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
@@ -835,7 +837,7 @@ function SessionsPageImpl(): React.ReactElement {
               <TableBody>
                 {coupled.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5} className="p-0">
+                    <TableCell colSpan={6} className="p-0">
                       <EmptyState
                         icon={CheckCircle2}
                         title="No devices ready for imaging"
@@ -849,7 +851,9 @@ function SessionsPageImpl(): React.ReactElement {
                       <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                     </TableCell>
                     <TableCell>
-                      {s.deviceManufacturer} {s.deviceModel}{' '}
+                      {s.deviceManufacturer} {s.deviceModel}
+                    </TableCell>
+                    <TableCell>
                       <Badge variant="outline">{architectureLabel(s.architecture)}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
@@ -885,7 +889,7 @@ function SessionsPageImpl(): React.ReactElement {
                     container on anything above ~1750px and forced a horizontal scrollbar. */}
                 <TableHead className="w-[4%]"><span className="sr-only">Details</span></TableHead>
                 <SortableHead label="Serial / Session" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('serial')}>{monitorCols.handle('serial', 'Serial / Session')}</SortableHead>
-                <SortableHead label="Device" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('device')}>{monitorCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Model" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('device')}>{monitorCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('location')}>{monitorCols.handle('location', 'Location')}</SortableHead>
                 <SortableHead label="Registered" sortKey="registered" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('registered')}>{monitorCols.handle('registered', 'Registered')}</SortableHead>
                 <SortableHead label="State" sortKey="state" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('state')}>{monitorCols.handle('state', 'State')}</SortableHead>
@@ -983,7 +987,7 @@ function SessionsPageImpl(): React.ReactElement {
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
                 <SortableHead label="Serial" sortKey="serial" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('serial')}>{successCols.handle('serial', 'Serial')}</SortableHead>
-                <SortableHead label="Device" sortKey="device" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('device')}>{successCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Model" sortKey="device" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('device')}>{successCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('location')}>{successCols.handle('location', 'Location')}</SortableHead>
                 <TableHead className="relative" style={successCols.style('progress')}>Progress{successCols.handle('progress', 'Progress')}</TableHead>
                 <SortableHead label="Finished" sortKey="finished" sort={successSort} onSort={toggleSuccessSort} style={successCols.style('finished')} />
@@ -1074,7 +1078,7 @@ function SessionsPageImpl(): React.ReactElement {
                     container width. */}
                 <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
                 <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('serial')}>{failedCols.handle('serial', 'Serial')}</SortableHead>
-                <SortableHead label="Device" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('device')}>{failedCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Model" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('device')}>{failedCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('location')}>{failedCols.handle('location', 'Location')}</SortableHead>
                 <SortableHead label="State" sortKey="state" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('state')}>{failedCols.handle('state', 'State')}</SortableHead>
                 <SortableHead label="Last step" sortKey="step" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('step')}>{failedCols.handle('step', 'Last step')}</SortableHead>
@@ -1176,7 +1180,7 @@ function SessionsPageImpl(): React.ReactElement {
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
                 <SortableHead label="Serial" sortKey="serial" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('serial')}>{blockedCols.handle('serial', 'Serial')}</SortableHead>
-                <SortableHead label="Device" sortKey="device" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('device')}>{blockedCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Model" sortKey="device" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('device')}>{blockedCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('location')}>{blockedCols.handle('location', 'Location')}</SortableHead>
                 <TableHead className="relative" style={blockedCols.style('checks')}>Checks{blockedCols.handle('checks', 'Checks')}</TableHead>
                 <SortableHead label="Registered" sortKey="registered" sort={blockedSort} onSort={toggleBlockedSort} className={canApprove ? 'relative' : undefined} style={blockedCols.style('registered')}>{canApprove ? blockedCols.handle('registered', 'Registered') : null}</SortableHead>
@@ -1256,7 +1260,7 @@ function SessionsPageImpl(): React.ReactElement {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <SortableHead label="Serial" sortKey="serial" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('serial')}>{overrideCols.handle('serial', 'Serial')}</SortableHead>
-                <SortableHead label="Device" sortKey="device" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('device')}>{overrideCols.handle('device', 'Device')}</SortableHead>
+                <SortableHead label="Model" sortKey="device" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('device')}>{overrideCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('location')}>{overrideCols.handle('location', 'Location')}</SortableHead>
                 <TableHead className="relative" style={overrideCols.style('checks')}>Checks{overrideCols.handle('checks', 'Checks')}</TableHead>
                 <SortableHead label="Approved by" sortKey="approvedBy" sort={overrideSort} onSort={toggleOverrideSort} className="relative" style={overrideCols.style('approvedBy')}>{overrideCols.handle('approvedBy', 'Approved by')}</SortableHead>

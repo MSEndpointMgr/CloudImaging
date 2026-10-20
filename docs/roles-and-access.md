@@ -75,7 +75,8 @@ Portal backend's managed identity.
 | **Boot Images** / **Recovery Images** catalog: upload / edit / delete | ❌ | ❌ | ❌ | ✅ |
 | **Boot Images**: promote a tested pre-production image to production, or demote one back | ❌ | ❌ | ❌ | ✅ |
 | **Locations**: select a location (Header account menu picker, Devices filter) | ❌ | ❌ | ✅ | ✅ |
-| **Locations** catalog page: add / remove locations | ❌ | ❌ | ❌ | ✅ |
+| **Locations** catalog page: add / remove locations, edit country-to-region mapping | ❌ | ❌ | ❌ | ✅ |
+| **Wi-Fi Networks**: view, add, edit, reorder, delete, assign to locations | ❌ | ❌ | ❌ | ✅ |
 | **Branding**: view / edit logo | ❌ | ❌ | ❌ | ✅ |
 | **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view) | ❌ | ❌ | ❌ | ✅ |
 
@@ -102,6 +103,11 @@ Locations is deliberately split into two separate capabilities: reading the cata
 the Header account menu's "My location" picker, the Devices filter, and the Media Builder USB
 prep screen) is available to any Technician or Administrator, while managing the catalog itself
 (the `/locations` admin page: adding or removing entries) is Administrator-only.
+
+Wi-Fi passwords are never returned to the Portal. Only two callers can read them: Media Builder
+(`MediaBuilderAccess`; the Operator API refuses a Portal token on that route) while it prepares
+USB media, and the Device Gateway for a device presenting the boot media certificate. Both receive
+them encrypted to the boot media certificate, and Imaging Core audits every read with its purpose.
 
 > **Implementation note**: the Portal backend expands roles through an implication hierarchy
 > (`Administrator` ⟹ `Technician` ⟹ `PortalAccess`) so that any signed-in user satisfies the

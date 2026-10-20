@@ -124,6 +124,10 @@ public sealed partial class IsoGenerationService
                 "Windows ADK with WinPE add-on is not installed. " +
                 "Download both from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
 
+        if (MountCleanup.FindOrphanedWorkDirs().Count > 0)
+            onProgress?.Invoke("Cleaning up after an interrupted run…", 5);
+        await MountCleanup.SweepAsync();
+
         var workDir = Path.Combine(Path.GetTempPath(), $"{WorkDirPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(workDir);
 
@@ -373,7 +377,7 @@ public sealed partial class IsoGenerationService
         string paramsFile, string progressFile, string resultFile, string cancelFile, ILoggerFactory loggerFactory)
     {
         using var cts = new CancellationTokenSource();
-        var cancelWatcherTask = WatchForCancelSignalAsync(cancelFile, cts);
+        var cancelWatcherTask = ElevationHelper.WatchForCancelOrParentExitAsync(cancelFile, cts);
 
         try
         {
@@ -410,31 +414,6 @@ public sealed partial class IsoGenerationService
         {
             cts.Cancel();
             try { await cancelWatcherTask; } catch { /* ignore */ }
-        }
-    }
-
-    /// <summary>
-    /// Polls for the parent-created <paramref name="cancelFile"/> and cancels
-    /// <paramref name="cts"/> once it appears — the cooperative half of the elevated-worker
-    /// cancellation handshake described on <see cref="RunElevatedWorkerAsync"/>.
-    /// </summary>
-    private static async Task WatchForCancelSignalAsync(string cancelFile, CancellationTokenSource cts)
-    {
-        try
-        {
-            while (!cts.IsCancellationRequested)
-            {
-                if (File.Exists(cancelFile))
-                {
-                    cts.Cancel();
-                    return;
-                }
-                await Task.Delay(300, cts.Token);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected once generation finishes and the caller cancels cts in its finally.
         }
     }
 

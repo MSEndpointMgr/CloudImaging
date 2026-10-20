@@ -330,6 +330,44 @@ export class OperatorApiClient {
     await this.http.delete<unknown>(`/api/locations/${encodeURIComponent(locationId)}`);
   }
 
+  async getRegions(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/regions');
+    return data;
+  }
+
+  async putRegions(payload: unknown): Promise<void> {
+    await this.http.put<unknown>('/api/regions', payload);
+  }
+
+  // ── Wi-Fi networks ────────────────────────────────────────────────────────
+
+  async getWifiNetworks(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/wifi-networks');
+    return data;
+  }
+
+  async createWifiNetwork(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/wifi-networks', payload);
+    return data;
+  }
+
+  async updateWifiNetwork(networkId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>(`/api/wifi-networks/${encodeURIComponent(networkId)}`, payload);
+    return data;
+  }
+
+  async deleteWifiNetwork(networkId: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/wifi-networks/${encodeURIComponent(networkId)}`);
+  }
+
+  async setWifiNetworkOrder(payload: unknown): Promise<void> {
+    await this.http.put<unknown>('/api/wifi-networks/order', payload);
+  }
+
+  async setLocationWifiNetworks(locationId: string, payload: unknown): Promise<void> {
+    await this.http.put<unknown>(`/api/locations/${encodeURIComponent(locationId)}/wifi-networks`, payload);
+  }
+
   // ── User location preference ──────────────────────────────────────────────
 
   async getUserLocationPreference(userId: string): Promise<unknown> {

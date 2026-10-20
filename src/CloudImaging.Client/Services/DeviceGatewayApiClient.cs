@@ -254,10 +254,12 @@ public sealed partial class DeviceGatewayApiClient
     /// block Client startup). Also null on 204, which means this stick runs a pre-production
     /// image that must not be replaced.
     /// </summary>
-    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, Guid? currentBootImageId = null, CancellationToken ct = default)
+    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, Guid? currentBootImageId = null, BootImageBase bootImageBase = BootImageBase.WindowsPE, CancellationToken ct = default)
     {
+        // Only Windows RE sends a base: older gateways ignore it, and Windows PE is what they assume.
         var path = $"/api/v1/boot-image/latest?architecture={MachineArchitecturePlatform.Slug(architecture)}"
-            + (currentBootImageId is { } current ? $"&currentBootImageId={current}" : string.Empty);
+            + (currentBootImageId is { } current ? $"&currentBootImageId={current}" : string.Empty)
+            + (bootImageBase == BootImageBase.WindowsRE ? "&base=WindowsRE" : string.Empty);
         LogHttpRequest(_logger, "GET", path);
         var response = await _http.GetAsync(path, ct);
         LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
@@ -280,6 +282,47 @@ public sealed partial class DeviceGatewayApiClient
             LogLatestBootImage(_logger, result.Version, result.Sha256Hash, redactedSasUrl);
         }
         return result;
+    }
+
+    /// <summary>
+    /// POST /api/v1/wifi-networks: the managed Wi-Fi networks for this device's location, as a
+    /// <see cref="ManagedWifiEnvelope"/> encrypted to the boot media certificate. mTLS plus a
+    /// proof-of-possession over the location; no session token. Null on any failure, since a
+    /// refresh must never block startup. The bytes are never logged.
+    /// </summary>
+    public async Task<byte[]?> GetManagedWifiNetworksAsync(string serialNumber, Guid? locationId, CancellationToken ct = default)
+    {
+        const string path = "/api/v1/wifi-networks";
+        if (_signingCertificate is null)
+            return null;
+
+        using var rsa = _signingCertificate.GetRSAPrivateKey()
+            ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
+        var timestampUtc = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var challenge = DevicePayloadSignature.BuildWifiChallenge(serialNumber, locationId, timestampUtc, nonce);
+        var request = new ManagedWifiRequest
+        {
+            SerialNumber = serialNumber,
+            LocationId = locationId,
+            ProofOfPossession = new DeviceProofOfPossession
+            {
+                Nonce = nonce,
+                TimestampUtc = timestampUtc,
+                Signature = Convert.ToBase64String(rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)),
+            },
+        };
+
+        LogHttpRequest(_logger, "POST", path);
+        var response = await _http.PostAsJsonAsync(path, request, JsonOptions, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
+        if (!response.IsSuccessStatusCode)
+        {
+            var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+            LogHttpRequestFailed(_logger, "POST", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            return null;
+        }
+        return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
     /// <summary>

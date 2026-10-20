@@ -194,12 +194,8 @@ public sealed partial class ImageCacheService
     }
 
     /// <summary>Computes the lowercase hex SHA-256 hash of a file.</summary>
-    public static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
-    {
-        await using var stream = File.OpenRead(filePath);
-        var hash = await SHA256.HashDataAsync(stream, ct);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+    public static Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
+        => ImageHasher.ComputeAsync(filePath, onProgress: null, ct);
 
     // ── Logging ───────────────────────────────────────────────────────────────
 

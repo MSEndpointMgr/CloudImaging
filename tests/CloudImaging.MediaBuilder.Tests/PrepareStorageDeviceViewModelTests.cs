@@ -261,7 +261,7 @@ public sealed class PrepareStorageDeviceViewModelTests
     [Fact]
     public void SplitSupportReference_ExtractsAnEmbeddedReference()
     {
-        var (message, reference) = PrepareStorageDeviceViewModel.SplitSupportReference(
+        var (message, reference) = OperationResultText.SplitSupportReference(
             "Failed to download and verify the boot image after 3 attempts. Error reference: CMB-PREPUSB-BID-1792140733.",
             () => "unused");
 
@@ -272,7 +272,7 @@ public sealed class PrepareStorageDeviceViewModelTests
     [Fact]
     public void SplitSupportReference_CreatesAReferenceWhenNoneIsEmbedded()
     {
-        var (message, reference) = PrepareStorageDeviceViewModel.SplitSupportReference("Disk 2 is no longer present.", () => "CMB-PREPUSB-DVI-1");
+        var (message, reference) = OperationResultText.SplitSupportReference("Disk 2 is no longer present.", () => "CMB-PREPUSB-DVI-1");
 
         message.Should().Be("Disk 2 is no longer present.");
         reference.Should().Be("CMB-PREPUSB-DVI-1");

@@ -89,6 +89,8 @@ import { partitioningSchemeRouter } from './routes/partitioning-scheme.js';
 import { recoveryImagesRouter } from './routes/recovery-images.js';
 import { sessionHistoryRouter } from './routes/session-history.js';
 import { locationsRouter } from './routes/locations.js';
+import { regionsRouter } from './routes/regions.js';
+import { wifiNetworksRouter } from './routes/wifi-networks.js';
 import { userPreferencesRouter } from './routes/user-preferences.js';
 import { uploadJobsRouter } from './routes/upload-jobs.js';
 import { updateCheckRouter } from './routes/update-check.js';
@@ -111,6 +113,8 @@ app.use('/api/partitioning-scheme', partitioningSchemeRouter);
 app.use('/api/recovery-images',     recoveryImagesRouter);
 app.use('/api/session-history',     sessionHistoryRouter);
 app.use('/api/locations',           locationsRouter);
+app.use('/api/regions',             regionsRouter);
+app.use('/api/wifi-networks',       wifiNetworksRouter);
 app.use('/api/user-preferences',    userPreferencesRouter);
 app.use('/api/upload-jobs',         uploadJobsRouter);
 app.use('/api/update-check',        updateCheckRouter);
@@ -131,7 +135,11 @@ function truncateDetail(detail: string | undefined): string | undefined {
 
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Unhandled error', err);
+  // An AxiosError carries its request config: the Operator API bearer token and the request body,
+  // which can hold a Wi-Fi password. Log only what identifies the failure.
+  console.error('Unhandled error', axios.isAxiosError(err)
+    ? { message: err.message, code: err.code, method: err.config?.method, url: err.config?.url, status: err.response?.status, response: err.response?.data as unknown }
+    : err);
 
   // Translate downstream Operator API failures into meaningful responses so the
   // portal can distinguish "backend unreachable" from an authorization/validation

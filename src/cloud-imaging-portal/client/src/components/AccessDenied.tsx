@@ -15,6 +15,7 @@ import {
   LogOut,
   Moon,
   Sun,
+  Wifi,
 } from 'lucide-react';
 import { useTheme } from '../context/themeContext.tsx';
 import { useAuth } from '../context/authContext.tsx';
@@ -49,6 +50,7 @@ const NAV_SECTIONS = [
     title: 'Administration',
     items: [
       { label: 'Locations', icon: <MapPin size={18} /> },
+      { label: 'Wi-Fi Networks', icon: <Wifi size={18} /> },
       { label: 'Branding', icon: <Palette size={18} /> },
       { label: 'Configuration', icon: <Settings size={18} /> },
     ],

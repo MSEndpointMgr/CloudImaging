@@ -15,6 +15,7 @@ const SECTION_TITLES: Record<string, string> = {
   '/reports/location-statistics': 'Location Statistics',
   '/reports/autopilot-registrations': 'Autopilot Registration History',
   '/locations': 'Locations',
+  '/wifi-networks': 'Wi-Fi Networks',
   '/branding': 'Branding',
   '/configuration': 'Configuration',
 };

@@ -56,6 +56,7 @@ public sealed partial class AutopilotRegistrationService
     private readonly AutopilotRegistrationRepository _requests;
     private readonly AutopilotGroupTagRepository _groupTags;
     private readonly LocationRepository _locations;
+    private readonly RegionConfigurationRepository _regions;
     private readonly PortalConfigurationRepository _config;
     private readonly AutopilotGraphClient _graph;
     private readonly TimeProvider _time;
@@ -64,6 +65,7 @@ public sealed partial class AutopilotRegistrationService
     /// <param name="requests">Autopilot registration request repository.</param>
     /// <param name="groupTags">Autopilot group tag definition repository.</param>
     /// <param name="locations">Location catalog repository, used to resolve region/country for group tag options.</param>
+    /// <param name="regions">Region configuration, used to derive a location's region from its country.</param>
     /// <param name="config">Portal configuration repository, used to check whether registration is enabled and retention settings.</param>
     /// <param name="graph">Microsoft Graph client used to import approved devices into Autopilot.</param>
     /// <param name="logger">Logger for this service.</param>
@@ -72,6 +74,7 @@ public sealed partial class AutopilotRegistrationService
         AutopilotRegistrationRepository requests,
         AutopilotGroupTagRepository groupTags,
         LocationRepository locations,
+        RegionConfigurationRepository regions,
         PortalConfigurationRepository config,
         AutopilotGraphClient graph,
         ILogger<AutopilotRegistrationService> logger,
@@ -80,6 +83,7 @@ public sealed partial class AutopilotRegistrationService
         _requests = requests;
         _groupTags = groupTags;
         _locations = locations;
+        _regions = regions;
         _config = config;
         _graph = graph;
         _logger = logger;
@@ -627,9 +631,13 @@ public sealed partial class AutopilotRegistrationService
     private async Task<(string? Name, string? Region, string? Country)> ResolveLocationAsync(AutopilotRegistrationRequest request, CancellationToken ct)
     {
         var location = request.LocationId is { } id ? await _locations.GetByIdAsync(id, ct) : null;
-        return location is null
-            ? (request.LocationName, null, null)
-            : (location.Name, location.Region, location.CountryCode);
+        if (location is null)
+        {
+            return (request.LocationName, null, null);
+        }
+
+        var regions = await _regions.GetAsync(ct);
+        return (location.Name, regions.EffectiveRegion(location), location.CountryCode);
     }
 
     internal static AutopilotGroupTagOption ToOption(AutopilotGroupTagDefinition definition, string? locationName, string? region, string? country)

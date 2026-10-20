@@ -19,9 +19,9 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
     public const string SessionIdKey = "DeviceSessionId";
 
     /// <summary>Function names exempt from token validation (public/mTLS-only endpoints).</summary>
-    /// <remarks>Autopilot availability and submission run before, and independently of, any imaging session.</remarks>
+    /// <remarks>Autopilot availability and submission, and managed Wi-Fi networks, run before, and independently of, any imaging session.</remarks>
     public static readonly IReadOnlySet<string> ExemptFunctionNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage", "GetAutopilotAvailability", "SubmitAutopilotRegistration" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage", "GetAutopilotAvailability", "SubmitAutopilotRegistration", "GetManagedWifiNetworks" };
 
     /// <summary>
     /// Functions authenticated by a per-request Autopilot status token instead of a session token.

@@ -3,6 +3,7 @@ using System.Management;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using CloudImaging.Client.Logging;
 using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
@@ -69,9 +70,11 @@ public sealed partial class BootImageSelfUpdateService
             }
 
             // Only test sticks identify their image: the gateway then holds them on it while it is pre-production.
+            // The base keeps a Windows RE (Wi-Fi) stick on Windows RE images.
             var latest = await _gateway.GetLatestBootImageAsync(
                 currentManifest.Architecture ?? MachineArchitecture.X64,
                 currentManifest.PreparedForTesting ? currentManifest.BootImageId : null,
+                currentManifest.BootImageBase ?? (BootImageCapabilities.SupportsWifi() ? BootImageBase.WindowsRE : BootImageBase.WindowsPE),
                 ct);
             if (latest is null)
             {
@@ -126,7 +129,7 @@ public sealed partial class BootImageSelfUpdateService
         }
         catch (Exception ex)
         {
-            LogSelfUpdateFailed(_logger, ex);
+            LogSelfUpdateFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
         }
     }
 
@@ -151,6 +154,8 @@ public sealed partial class BootImageSelfUpdateService
             LocationId = current.LocationId,
             LocationName = current.LocationName,
             Architecture = current.Architecture,
+            BootImageBase = current.BootImageBase,
+            ManagedWifiIncluded = current.ManagedWifiIncluded,
             PartitionSchema = current.PartitionSchema,
             ValidationResults = current.ValidationResults,
             AutoStartConfigured = current.AutoStartConfigured,
@@ -165,7 +170,7 @@ public sealed partial class BootImageSelfUpdateService
     /// <c>UsbPartitionProvisioningService.FindBootVolumeDriveLetter</c> in the Media Builder,
     /// which creates and labels this same volume during USB preparation.
     /// </summary>
-    private static string? FindBootVolumeDriveLetter()
+    internal static string? FindBootVolumeDriveLetter()
     {
         try
         {
@@ -186,12 +191,8 @@ public sealed partial class BootImageSelfUpdateService
         return null;
     }
 
-    private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
-    {
-        await using var stream = File.OpenRead(filePath);
-        var hash = await SHA256.HashDataAsync(stream, ct);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+    private static Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
+        => ImageHasher.ComputeAsync(filePath, onProgress: null, ct);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update: could not locate the BOOT volume.")]
     private static partial void LogBootVolumeNotFound(ILogger logger);
@@ -217,6 +218,6 @@ public sealed partial class BootImageSelfUpdateService
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image self-update: boot.wim replaced with version {Version}. Effective on next boot.")]
     private static partial void LogUpdateComplete(ILogger logger, string version);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update check failed. Continuing with the current boot.wim.")]
-    private static partial void LogSelfUpdateFailed(ILogger logger, Exception ex);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot image self-update check failed, continuing with the current boot.wim: {Reason}")]
+    private static partial void LogSelfUpdateFailed(ILogger logger, string reason, Exception? ex);
 }

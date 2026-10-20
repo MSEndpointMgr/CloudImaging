@@ -15,19 +15,25 @@ namespace CloudImaging.Client.ViewModels;
 public sealed class WifiConnectionViewModel : INotifyPropertyChanged
 {
     private readonly WirelessConnectionService _wifiService;
+    private readonly ManagedWifiService? _managedWifi;
     private readonly Action? _closeRequested;
-    private WifiNetwork? _selectedNetwork;
+    private VisibleWifiNetwork? _selectedNetwork;
     private bool _isScanning;
     private bool _isConnecting;
     private string? _statusMessage;
     private string? _infoMessage;
     private bool _hasSucceeded;
     private bool _hasConnected;
+    private bool _managedPasswordRejected;
 
     /// <summary>Builds the view model and starts an initial network scan.</summary>
-    public WifiConnectionViewModel(WirelessConnectionService? wifiService = null, Action? closeRequested = null)
+    /// <param name="wifiService">Defaults to a real netsh-based service.</param>
+    /// <param name="closeRequested">Closes the window.</param>
+    /// <param name="managedWifi">The portal's networks: listed first, in portal order, and joined without a password.</param>
+    public WifiConnectionViewModel(WirelessConnectionService? wifiService = null, Action? closeRequested = null, ManagedWifiService? managedWifi = null)
     {
         _wifiService    = wifiService ?? new WirelessConnectionService();
+        _managedWifi    = managedWifi;
         _closeRequested = closeRequested;
 
         RefreshCommand       = new RelayCommand(async _ => await RefreshAsync(), _ => !IsScanning && !IsConnecting);
@@ -39,19 +45,22 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     }
 
     /// <summary>Networks found by the last scan, ordered by signal strength.</summary>
-    public System.Collections.ObjectModel.ObservableCollection<WifiNetwork> Networks { get; } = [];
+    public System.Collections.ObjectModel.ObservableCollection<VisibleWifiNetwork> Networks { get; } = [];
 
     /// <summary>The network currently picked from <see cref="Networks"/>, or null when none is selected.</summary>
-    public WifiNetwork? SelectedNetwork
+    public VisibleWifiNetwork? SelectedNetwork
     {
         get => _selectedNetwork;
         set
         {
             _selectedNetwork = value;
+            _managedPasswordRejected = false;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanConnect));
             OnPropertyChanged(nameof(HasSelection));
             OnPropertyChanged(nameof(ShowPasswordField));
+            OnPropertyChanged(nameof(IsManagedSelection));
+            OnPropertyChanged(nameof(ManagedNote));
             // Picking a (different) network starts the connect flow fresh rather than carrying
             // over a stale error/success message left over from whatever was selected before.
             StatusMessage = null;
@@ -65,8 +74,19 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     /// <summary>True once a network is picked from the list — reveals the inline connect panel (mirrors the Windows Wi-Fi flyout's per-network expand).</summary>
     public bool HasSelection => SelectedNetwork is not null;
 
-    /// <summary>True when the selected network needs a passphrase (WPA/WPA2/WPA3-Personal). Open networks show no password field at all.</summary>
-    public bool ShowPasswordField => SelectedNetwork?.AuthKind == WifiAuthKind.PersonalPsk;
+    /// <summary>
+    /// True when the selected network needs a passphrase typed here. A managed network needs none,
+    /// unless its saved password was just rejected.
+    /// </summary>
+    public bool ShowPasswordField => SelectedNetwork?.AuthKind == WifiAuthKind.PersonalPsk && (!SelectedNetwork.IsManaged || _managedPasswordRejected);
+
+    /// <summary>True when the selected network was saved by the organization.</summary>
+    public bool IsManagedSelection => SelectedNetwork?.IsManaged == true;
+
+    /// <summary>Explains why no password is asked for, or that the saved one was rejected.</summary>
+    public string ManagedNote => _managedPasswordRejected
+        ? "The saved password was rejected. Enter the current one to connect this device. It is used for this session only."
+        : "Saved by your organization. No password needed.";
 
     /// <summary>True while a network scan is in flight.</summary>
     public bool IsScanning
@@ -138,11 +158,11 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         {
             var result = await _wifiService.ScanAsync();
             Networks.Clear();
-            foreach (var network in result.Networks.OrderByDescending(n => n.SignalPercent))
+            foreach (var network in Merge(result.Networks, _managedWifi?.Networks ?? []))
                 Networks.Add(network);
 
             if (result.Status == WifiScanStatus.Ok)
-                InfoMessage = Networks.Count == 0 ? "No networks found yet. The adapter can take a few seconds to scan; select Refresh to try again." : null;
+                InfoMessage = Networks.Count == 0 ? "No networks found. The first scan can take a few seconds; select Refresh to scan again." : null;
             else
                 StatusMessage = DescribeScanFailure(result);
         }
@@ -164,17 +184,30 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         IsConnecting  = true;
         StatusMessage = null;
         HasSucceeded  = false;
+        var selected = SelectedNetwork;
+        var managed = selected.IsManaged ? _managedWifi?.Find(selected.Ssid) : null;
         try
         {
-            var result = await _wifiService.ConnectAsync(SelectedNetwork.Ssid, password);
+            // A typed password wins, so a technician can recover from a rejected saved one. It is never stored.
+            var result = managed is not null
+                ? await _wifiService.ConnectAsync(selected.Ssid, string.IsNullOrEmpty(password) ? managed.Password : password, managed.Security, managed.Hidden)
+                : await _wifiService.ConnectAsync(selected.Ssid, password);
             HasSucceeded = result == WifiConnectResult.Success;
             HasConnected |= HasSucceeded;
+            if (managed is not null && !HasSucceeded && result != WifiConnectResult.NoAdapter)
+            {
+                _managedPasswordRejected = true;
+                OnPropertyChanged(nameof(ShowPasswordField));
+                OnPropertyChanged(nameof(ManagedNote));
+            }
             StatusMessage = result switch
             {
-                WifiConnectResult.Success   => $"Connected to {SelectedNetwork.Ssid}.",
-                WifiConnectResult.NoAdapter => "No wireless adapter was found.",
-                WifiConnectResult.Timeout   => "Could not confirm the connection in time. Check the password and try again.",
-                _                           => "Could not connect. Check the password and try again.",
+                WifiConnectResult.Success   => $"Connected to {selected.Ssid}.",
+                WifiConnectResult.NoAdapter => "No wireless adapter detected.",
+                WifiConnectResult.Timeout when managed is not null => $"{selected.Ssid} did not accept the connection. It may be out of range, or its password changed.",
+                WifiConnectResult.Timeout   => "Connection not confirmed within 15 seconds. Check the passphrase.",
+                _ when managed is not null  => $"{selected.Ssid} rejected the saved password.",
+                _                           => "Connection failed. Check the passphrase.",
             };
         }
         catch (Exception ex)
@@ -187,13 +220,35 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Managed networks first, in portal order: those in range with their signal, hidden ones even
+    /// though a scan never shows them. Then every other network by signal strength.
+    /// </summary>
+    internal static IEnumerable<VisibleWifiNetwork> Merge(IReadOnlyList<VisibleWifiNetwork> scanned, IReadOnlyList<CloudImaging.Contracts.Models.ManagedWifiNetwork> managed)
+    {
+        var bySsid = scanned.GroupBy(n => n.Ssid, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.MaxBy(n => n.SignalPercent)!, StringComparer.Ordinal);
+        var managedSsids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var network in managed)
+        {
+            if (!managedSsids.Add(network.Ssid))
+                continue;
+            if (bySsid.TryGetValue(network.Ssid, out var seen))
+                yield return seen with { AuthKind = WifiAuthKind.PersonalPsk, IsSupported = true, IsManaged = true, IsHidden = network.Hidden };
+            else if (network.Hidden)
+                yield return new VisibleWifiNetwork(network.Ssid, 0, WifiAuthKind.PersonalPsk, true, IsManaged: true, IsHidden: true);
+        }
+
+        foreach (var network in scanned.Where(n => !managedSsids.Contains(n.Ssid)).OrderByDescending(n => n.SignalPercent))
+            yield return network;
+    }
+
     private static string DescribeScanFailure(WifiScanResult result) => result.Status switch
     {
-        WifiScanStatus.NotSupported => "This boot image has no Wi-Fi support. Connect a network cable instead.",
-        WifiScanStatus.ServiceNotRunning => "The Wi-Fi service (WLAN AutoConfig) is not running and could not be started.",
-        WifiScanStatus.NoAdapter => "No wireless adapter was found. The boot image may be missing this device's Wi-Fi driver.",
-        WifiScanStatus.LocationPermissionRequired => "Windows needs location access to list Wi-Fi networks. Turn on location services in Settings.",
-        _ => string.IsNullOrWhiteSpace(result.Detail) ? "Could not scan for networks." : $"Could not scan for networks: {result.Detail}",
+        WifiScanStatus.NotSupported => "Wi-Fi is not available in this boot image (WinPE has no WLAN stack). Use Ethernet.",
+        WifiScanStatus.ServiceNotRunning => "WLAN AutoConfig service (wlansvc) failed to start.",
+        WifiScanStatus.NoAdapter => "No wireless adapter detected. Add the Wi-Fi driver to the boot image.",
+        WifiScanStatus.LocationPermissionRequired => "Windows requires location services to list Wi-Fi networks. Turn them on in Settings.",
+        _ => string.IsNullOrWhiteSpace(result.Detail) ? "Scan failed." : $"Scan failed: {result.Detail}",
     };
 
     /// <inheritdoc/>

@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin, BadgeCheck } from 'lucide-react';
+import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin, BadgeCheck, Wifi } from 'lucide-react';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { cn } from '../lib/utils.ts';
@@ -48,6 +48,7 @@ const navSections: NavSection[] = [
     title: 'Administration',
     items: [
       { label: 'Locations',     path: '/locations',     icon: <MapPin   size={18} />, access: 'admin' },
+      { label: 'Wi-Fi Networks', path: '/wifi-networks', icon: <Wifi    size={18} />, access: 'admin' },
       { label: 'Branding',      path: '/branding',      icon: <Palette  size={18} />, access: 'admin' },
       { label: 'Configuration', path: '/configuration', icon: <Settings size={18} />, access: 'admin' },
     ],

@@ -67,7 +67,7 @@ Begin {
     # Keeps the operator's output to what this script reports. Az otherwise prints SDK
     # breaking-change banners, survey prompts, and performs a gallery version check that
     # raises its own confirmation prompt. Process scope, so the machine config is untouched.
-    Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process | Out-Null
+    Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process -WhatIf:$false | Out-Null
 
     $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $PackageRoot = $PSScriptRoot
@@ -230,10 +230,10 @@ Begin {
                 Write-Verbose -Message "Probe $($Counter) of $($Attempt) failed: $($_.Exception.Message)"
             }
 
-            # Written out rather than reported through Write-Progress, which renders nothing in
-            # some hosts and leaves the operator watching a still screen for minutes.
+            # Information stream, not output: output would become part of the boolean returned
+            # and make a failed probe read as a response.
             if ($Counter -lt $Attempt) {
-                Write-Output "    No response yet, retrying in $($DelaySecond) seconds (attempt $($Counter) of $($Attempt))"
+                Write-Information -MessageData "    No response yet, retrying in $($DelaySecond) seconds (attempt $($Counter) of $($Attempt))" -InformationAction Continue
                 Start-Sleep -Seconds $DelaySecond
             }
         }
@@ -265,13 +265,13 @@ Process {
         $AzContext = Get-AzContext -ErrorAction SilentlyContinue
         if ($null -eq $AzContext) {
             Write-Output "No Azure session found, a browser sign-in will open"
-            Connect-AzAccount -SubscriptionId $SubscriptionId | Out-Null
+            Connect-AzAccount -SubscriptionId $SubscriptionId -WhatIf:$false | Out-Null
             $AzContext = Get-AzContext
         }
 
         if ($AzContext.Subscription.Id -ne $SubscriptionId) {
             Write-Output "Selecting subscription $($SubscriptionId)"
-            $AzContext = (Set-AzContext -SubscriptionId $SubscriptionId).Context
+            $AzContext = (Set-AzContext -SubscriptionId $SubscriptionId -WhatIf:$false).Context
         }
 
         # Confirms the account can actually reach the subscription that was asked for, rather
@@ -484,9 +484,11 @@ Process {
 
                 # Node prints a punycode deprecation warning the CLI cannot avoid, and the CLI
                 # itself hints about api-language defaults unless they are stated. There is no
-                # managed API here, so neither message is actionable.
+                # managed API here, so neither message is actionable. The token goes through the
+                # environment so it never shows up in the process list.
                 $env:NODE_OPTIONS = "--no-deprecation"
-                swa deploy $FrontendDirectory --deployment-token $DeploymentToken --env production --api-language node --api-version 22
+                $env:SWA_CLI_DEPLOYMENT_TOKEN = $DeploymentToken
+                swa deploy $FrontendDirectory --env production --api-language node --api-version 22
                 if ($LASTEXITCODE -ne 0) {
                     throw "swa deploy exited with code $($LASTEXITCODE)."
                 }
@@ -501,6 +503,7 @@ Process {
         }
         finally {
             $env:NODE_OPTIONS = $PreviousNodeOptions
+            Remove-Item -Path "Env:\SWA_CLI_DEPLOYMENT_TOKEN" -ErrorAction SilentlyContinue -WhatIf:$false
             if (Test-Path -Path $FrontendDirectory) {
                 Remove-Item -Path $FrontendDirectory -Recurse -Force -ErrorAction SilentlyContinue
             }

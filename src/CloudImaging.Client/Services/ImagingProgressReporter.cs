@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using CloudImaging.Client.Logging;
 using CloudImaging.Contracts.Enums;
 using Microsoft.Extensions.Logging;
 
@@ -90,7 +91,7 @@ public sealed partial class ImagingProgressReporter
         }
         catch (Exception ex)
         {
-            LogReportFailed(_logger, ex, stepName);
+            LogReportFailed(_logger, LoggedFailure.StackTrace(ex), stepName, LoggedFailure.Reason(ex));
             // Do NOT rethrow — progress reporting is best-effort; imaging continues
         }
     }
@@ -128,6 +129,6 @@ public sealed partial class ImagingProgressReporter
     private static partial void LogReported(
         ILogger logger, ImagingStepName stepName, ImagingStepStatus status, int subProgress);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to report progress for step {StepName}.")]
-    private static partial void LogReportFailed(ILogger logger, Exception ex, ImagingStepName stepName);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to report progress for step {StepName}: {Reason}")]
+    private static partial void LogReportFailed(ILogger logger, Exception? ex, ImagingStepName stepName, string reason);
 }

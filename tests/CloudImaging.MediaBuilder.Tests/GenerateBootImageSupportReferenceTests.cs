@@ -32,8 +32,14 @@ public sealed class GenerateBootImageSupportReferenceTests
         await WaitUntilIdleAsync(vm);
 
         vm.ErrorMessage.Should().NotBeNullOrEmpty("generation must fail without a signed-in Operator API session");
-        vm.ErrorMessage.Should().MatchRegex(@"CMB-GENBOOT-(DWN|APL)-\d+",
+        vm.ErrorReference.Should().MatchRegex(@"^CMB-GENBOOT-(DWN|APL)-\d+$",
             "every Media Builder failure path must surface a support reference code (T160, FR-058)");
+        vm.ErrorMessage.Should().NotContain("CMB-", "the reference is shown on its own line in the result dialog");
+        vm.ShowResultDialog.Should().BeTrue("a failed run opens the same result dialog as USB preparation");
+
+        vm.DismissResultCommand.Execute(null);
+        vm.ShowResultDialog.Should().BeFalse();
+        vm.HasError.Should().BeTrue("closing the dialog keeps the failed run's log and Retry available");
     }
 
     private static async Task WaitUntilIdleAsync(GenerateBootImageViewModel vm)

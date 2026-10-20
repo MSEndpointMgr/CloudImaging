@@ -287,8 +287,13 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.OverallPercent = 55;
 
             // ── Apply OS image ─────────────────────────────────────────────────
-            _progress.StatusMessage = "Applying operating system image…";
+            _progress.StatusMessage = "Verifying operating system image…";
             _progress.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress);
+
+            // Tells the portal the step has started. Verification of a multi-gigabyte image runs
+            // before DISM emits anything, so without this the session reports no progress at all
+            // for the whole of what is often the longest wait in the pipeline.
+            await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, ct: ct);
 
             var applyService = new Services.ImageApplyService(pipelineLoggerFactory.CreateLogger<Services.ImageApplyService>());
             try
@@ -299,11 +304,19 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     diskFormat.WindowsVolume,
                     onProgress: pct =>
                     {
+                        _progress.StatusMessage = "Applying operating system image…";
                         _progress.OverallPercent = 55 + (int)(pct * 0.25); // 55–80%
                         _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
-                    ct: ct);
+                    ct: ct,
+                    // Verification has its own bar rather than sharing the apply percentage: the two
+                    // measure different work, and a bar that filled twice would read as a restart.
+                    onVerifyProgress: pct =>
+                    {
+                        _progress.StatusMessage = $"Verifying operating system image… {pct}%";
+                        _progress.StepPercent = pct;
+                    });
             }
             catch (Exception ex)
             {

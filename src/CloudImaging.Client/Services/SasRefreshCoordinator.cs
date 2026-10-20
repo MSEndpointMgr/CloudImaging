@@ -1,3 +1,4 @@
+using CloudImaging.Client.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
@@ -67,10 +68,10 @@ public sealed partial class SasRefreshCoordinator : IDisposable
                     }
                 }
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
-                LogRefreshFailed(_logger, ex, _sessionId);
+                LogRefreshFailed(_logger, LoggedFailure.StackTrace(ex), _sessionId, LoggedFailure.Reason(ex));
             }
         }
     }
@@ -97,6 +98,6 @@ public sealed partial class SasRefreshCoordinator : IDisposable
     [LoggerMessage(Level = LogLevel.Information, Message = "SAS token refreshed for session {SessionId}.")]
     private static partial void LogRefreshed(ILogger logger, Guid sessionId);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "SAS token refresh failed for session {SessionId}.")]
-    private static partial void LogRefreshFailed(ILogger logger, Exception ex, Guid sessionId);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "SAS token refresh failed for session {SessionId}: {Reason}")]
+    private static partial void LogRefreshFailed(ILogger logger, Exception? ex, Guid sessionId, string reason);
 }

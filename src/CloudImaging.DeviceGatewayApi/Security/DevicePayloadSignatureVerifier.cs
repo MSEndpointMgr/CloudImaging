@@ -87,6 +87,24 @@ public static class DevicePayloadSignatureVerifier
             now);
     }
 
+    /// <summary>Verifies the proof-of-possession on a managed Wi-Fi network request, which covers the location asked for.</summary>
+    public static Result VerifyWifi(
+        X509Certificate2 clientCertificate,
+        ManagedWifiRequest request,
+        TimeSpan maxSkew,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(clientCertificate);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return Verify(
+            clientCertificate,
+            request.ProofOfPossession,
+            pop => DevicePayloadSignature.BuildWifiChallenge(request.SerialNumber, request.LocationId, pop.TimestampUtc, pop.Nonce),
+            maxSkew,
+            now);
+    }
+
     private static Result Verify(
         X509Certificate2 clientCertificate,
         DeviceProofOfPossession? pop,

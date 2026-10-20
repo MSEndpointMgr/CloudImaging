@@ -217,13 +217,18 @@
                            Icon="{ui:SymbolIcon ArrowClockwise24}"
                            VerticalAlignment="Center" Margin="16,0,0,0"
                            Command="{Binding RecheckCommand}"
-                           Visibility="{Binding CanRecheck, Converter={StaticResource BoolToVisibility}}" />
+                           Visibility="{Binding ShowBannerRecheck, Converter={StaticResource BoolToVisibility}}" />
+                <ui:Button Grid.Column="2" Content="Connect to Wi-Fi" Appearance="Secondary"
+                           Icon="{ui:SymbolIcon Wifi124}"
+                           VerticalAlignment="Center" Margin="16,0,0,0"
+                           Click="ConnectWifiButton_Click"
+                           Visibility="{Binding ShowBannerWifiAction, Converter={StaticResource BoolToVisibility}}" />
             </Grid>
         </Border>
 
         <ui:InfoBar Grid.Row="4"
-                    Title="Waiting for network connection"
-                    Message="Preparing to register this device with the imaging service…"
+                    Title="Waiting for an IP address"
+                    Message="Registration starts once a network adapter is up."
                     Severity="Informational"
                     IsOpen="{Binding IsWaitingForNetwork}"
                     IsClosable="False" />
@@ -241,9 +246,10 @@
             <HeaderedContentControl.Header>
                 <StackPanel Orientation="Horizontal">
                     <ui:Button x:Name="ConnectWifiButton"
-                               Content="Connect to Wi-Fi"
+                               Content="{Binding WifiButtonLabel}"
                                Style="{StaticResource FooterToolButtonStyle}"
                                Icon="{ui:SymbolIcon Wifi124}"
+                               Visibility="{Binding IsWifiAvailable, Converter={StaticResource BoolToVisibility}}"
                                Click="ConnectWifiButton_Click" />
                     <ui:Button x:Name="CommandPromptButton"
                                Content="Command Prompt"

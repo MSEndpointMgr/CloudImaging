@@ -134,7 +134,7 @@ public sealed class WifiConnectionViewModelTests
 
         vm.Networks.Should().BeEmpty();
         vm.HasError.Should().BeTrue();
-        vm.StatusMessage.Should().Contain("no Wi-Fi support");
+        vm.StatusMessage.Should().Contain("not available in this boot image");
     }
 
     [Fact]

@@ -125,15 +125,19 @@ What you should see, in order:
 
 1. The release version this bundle contains
 2. The prerequisite checks, confirming the Static Web Apps CLI and every component package
-3. The resolved resource names for your deployment
-4. One upload, settings change, and restart per Function App
+3. The deployment name prefix, confirmation that all five components were found, and the
+   release currently deployed. Note that release: it is the bundle you would roll back to
+4. One upload, settings change, and restart per Function App, Imaging Core first
 5. The portal backend deployment
 6. The Static Web App deployment
-7. A summary table listing each component as upgraded, skipped, or failed
+7. Verification: each Function App is bound to its new package, the portal backend reports the
+   new release, and the portal frontend responds
+8. A summary table listing each component as upgraded or failed
 
-Components are upgraded independently. If one fails the rest still proceed, so read the summary
-rather than assuming a single error aborted everything. A component whose package is missing
-from the bundle is reported as skipped, not failed.
+Every resource is resolved before anything changes, so a wrong resource group or a missing
+resource stops the run with nothing touched. After that, components are upgraded independently:
+if one fails the rest still proceed, so read the summary rather than assuming a single error
+aborted everything.
 
 ### Step 4: Verify the upgrade
 
@@ -266,8 +270,10 @@ Two limits worth knowing:
 | Symptom | Cause and resolution |
 |---|---|
 | A component package is missing | The bundle was extracted incompletely, or you are running the script from outside the extracted folder. The component packages must sit beside `upgrade.ps1`. |
-| `The Azure Static Web Apps CLI ('swa') is not installed` | Run `npm install -g @azure/static-web-apps-cli` and re-run. The backend components upgraded before this point are already done, and re-running is safe. |
-| `No Function Apps found in resource group` | Wrong resource group name, or the deployment lives in a different subscription than the one passed to `-SubscriptionId`. |
+| `The Azure Static Web Apps CLI was not found on PATH` | Run `npm install -g @azure/static-web-apps-cli`, open a new terminal, and re-run. This is checked before anything is deployed, so nothing has changed yet. |
+| `No Cloud Imaging deployment was found` | Wrong resource group name, or the deployment lives in a different subscription than the one passed to `-SubscriptionId`. |
+| `... was not found in '<resource group>'. Nothing was changed.` | A resource the upgrade expects is missing. Redeploy the Template Spec ([Part 2](#part-2-apply-infrastructure-changes)) to restore it, then re-run. |
+| Portal backend: `no response from the new release` | The backend did not report the bundle's release within three minutes. It may still be starting: open `https://<backend-host>/api/config` and check `version`. If it still shows the old release, check the App Service log stream. |
 | Portal loads the old interface after upgrading | Browser cache. Hard refresh with Ctrl+F5. |
 | Portal shows errors or empty lists right after upgrading | A Function App is still restarting. Wait a minute and refresh. If it persists, check Application Insights as described in the [operations runbook](operations-runbook.md). |
 | Devices fail to authenticate after upgrading | Almost always a certificate rotation rather than the upgrade. Confirm whether the boot media certificate was regenerated; if so, boot media must be rebuilt. |

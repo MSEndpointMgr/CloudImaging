@@ -160,7 +160,7 @@ public sealed class StartupReadinessTests
         vm.IsAutopilotSelectable.Should().BeFalse();
         vm.SelectedOperation.Should().BeNull();
         vm.CanContinue.Should().BeFalse();
-        vm.ConnectivityTitle.Should().Be("Network connection required");
+        vm.ConnectivityTitle.Should().Be("No network connection");
 
         vm.SelectOperationCommand.Execute("Imaging");
         vm.SelectedOperation.Should().BeNull();
@@ -176,7 +176,7 @@ public sealed class StartupReadinessTests
 
         vm.IsServiceBlocked.Should().BeFalse();
         vm.IsImagingSelectable.Should().BeFalse();
-        vm.ImagingCardDescription.Should().StartWith("No local disk found");
+        vm.ImagingCardDescription.Should().StartWith("No local disk detected");
         vm.IsAutopilotSelectable.Should().BeTrue("registering a hash never touches the disk");
         vm.SelectedOperation.Should().BeNull();
 

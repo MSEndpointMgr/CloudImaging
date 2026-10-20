@@ -23,4 +23,7 @@ public sealed class LatestBootImageInfo
     /// <summary>Boot image architecture. Null when the catalog entry predates architecture tracking;
     /// the Client treats a null value as <see cref="MachineArchitecture.X64"/> (todo/arm64-support.md #8).</summary>
     public MachineArchitecture? Architecture { get; init; }
+
+    /// <summary>Windows PE or Windows RE. Null from gateways that predate it; treated as Windows PE.</summary>
+    public BootImageBase? Base { get; init; }
 }

@@ -1,3 +1,4 @@
+using CloudImaging.Client.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
@@ -47,12 +48,12 @@ public sealed partial class SessionHeartbeatCoordinator : IDisposable
                 await _gatewayClient.GetSessionStatusAsync(_sessionId, ct);
                 LogHeartbeatSent(_logger, _sessionId);
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (Exception ex)
             {
                 // A missed heartbeat is recoverable (the backend tolerates several), and imaging
                 // must never be interrupted by a liveness call.
-                LogHeartbeatFailed(_logger, ex, _sessionId);
+                LogHeartbeatFailed(_logger, LoggedFailure.StackTrace(ex), _sessionId, LoggedFailure.Reason(ex));
             }
         }
     }
@@ -73,6 +74,6 @@ public sealed partial class SessionHeartbeatCoordinator : IDisposable
     [LoggerMessage(Level = LogLevel.Debug, Message = "Heartbeat sent for session {SessionId}.")]
     private static partial void LogHeartbeatSent(ILogger logger, Guid sessionId);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Heartbeat failed for session {SessionId}.")]
-    private static partial void LogHeartbeatFailed(ILogger logger, Exception ex, Guid sessionId);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Heartbeat failed for session {SessionId}: {Reason}")]
+    private static partial void LogHeartbeatFailed(ILogger logger, Exception? ex, Guid sessionId, string reason);
 }

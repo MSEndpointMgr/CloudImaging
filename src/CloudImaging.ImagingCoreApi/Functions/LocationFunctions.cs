@@ -14,21 +14,30 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 ///
 /// GET    /api/internal/locations: lists all locations
 /// POST   /api/internal/locations: creates a new location
-/// PUT    /api/internal/locations/{id}: updates a location's name, region and country
-/// DELETE /api/internal/locations/{id}: deletes a location
+/// PUT    /api/internal/locations/{id}: updates a location's name and country
+/// DELETE /api/internal/locations/{id}: deletes a location and removes it from Wi-Fi networks
+///
+/// A location's region comes from its country (<see cref="RegionConfiguration"/>). Saving a location
+/// clears any region typed before that, so responses carry the resolved <c>effectiveRegion</c>.
 /// </summary>
 public sealed partial class LocationFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly LocationRepository _repo;
+    private readonly RegionConfigurationRepository _regions;
+    private readonly WifiNetworkRepository _wifiNetworks;
     private readonly ILogger<LocationFunctions> _logger;
 
     /// <param name="repo">Location repository.</param>
+    /// <param name="regions">Region configuration, used to resolve each location's region.</param>
+    /// <param name="wifiNetworks">Wi-Fi networks, cleaned up when a location is deleted.</param>
     /// <param name="logger">Logger for this function group.</param>
-    public LocationFunctions(LocationRepository repo, ILogger<LocationFunctions> logger)
+    public LocationFunctions(LocationRepository repo, RegionConfigurationRepository regions, WifiNetworkRepository wifiNetworks, ILogger<LocationFunctions> logger)
     {
         _repo = repo;
+        _regions = regions;
+        _wifiNetworks = wifiNetworks;
         _logger = logger;
     }
 
@@ -47,9 +56,10 @@ public sealed partial class LocationFunctions
         }
         locations.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
 
+        var regions = await _regions.GetAsync(context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(locations, JsonOptions), context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(locations.Select(l => LocationView.From(l, regions)), JsonOptions), context.CancellationToken);
         return response;
     }
 
@@ -91,7 +101,6 @@ public sealed partial class LocationFunctions
         {
             LocationId = payload.LocationId is null || payload.LocationId == Guid.Empty ? Guid.NewGuid() : payload.LocationId.Value,
             Name = payload.Name.Trim(),
-            Region = NormalizeCode(payload.Region),
             CountryCode = NormalizeCode(payload.CountryCode),
             CreatedAt = DateTimeOffset.UtcNow,
         };
@@ -99,15 +108,16 @@ public sealed partial class LocationFunctions
         var created = await _repo.CreateAsync(toCreate, context.CancellationToken);
         LogCreated(_logger, created.LocationId, created.Name);
 
+        var regions = await _regions.GetAsync(context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.Created);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(created, JsonOptions), context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(LocationView.From(created, regions), JsonOptions), context.CancellationToken);
         return response;
     }
 
     // ── PUT /api/internal/locations/{id} ───────────────────────────────────────
 
-    /// <summary>PUT internal/locations/{id}. Updates a location's name, region and country.</summary>
+    /// <summary>PUT internal/locations/{id}. Updates a location's name and country, clearing any typed region.</summary>
     [Function("UpdateLocation")]
     public async Task<HttpResponseData> UpdateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "internal/locations/{id}")] HttpRequestData req,
@@ -144,7 +154,6 @@ public sealed partial class LocationFunctions
         {
             LocationId = locationId,
             Name = payload!.Name!.Trim(),
-            Region = NormalizeCode(payload.Region),
             CountryCode = NormalizeCode(payload.CountryCode),
             CreatedAt = existing.CreatedAt,
         };
@@ -154,9 +163,10 @@ public sealed partial class LocationFunctions
         }
         LogUpdated(_logger, locationId);
 
+        var regions = await _regions.GetAsync(context.CancellationToken);
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(JsonSerializer.Serialize(updated, JsonOptions), context.CancellationToken);
+        await response.WriteStringAsync(JsonSerializer.Serialize(LocationView.From(updated, regions), JsonOptions), context.CancellationToken);
         return response;
     }
 
@@ -175,21 +185,16 @@ public sealed partial class LocationFunctions
         }
 
         await _repo.DeleteAsync(locationId, context.CancellationToken);
-        LogDeleted(_logger, locationId);
+        var networks = await _wifiNetworks.RemoveLocationAsync(locationId, context.CancellationToken);
+        LogDeleted(_logger, locationId, networks.Count);
 
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
 
     internal static string? ValidateAttributes(CreateLocationRequest payload)
     {
-        var region = NormalizeCode(payload.Region);
-        if (region is not null && (region.Length > 16 || !region.All(c => char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_')))
-        {
-            return "Region must be up to 16 letters, digits, hyphens or underscores.";
-        }
-
         var country = NormalizeCode(payload.CountryCode);
-        return country is not null && (country.Length != 2 || !country.All(char.IsAsciiLetterUpper))
+        return country is not null && !CountryRegionDefaults.IsKnownCountry(country)
             ? "Country code must be a two-letter ISO-3166 code."
             : null;
     }
@@ -203,8 +208,8 @@ public sealed partial class LocationFunctions
     [LoggerMessage(Level = LogLevel.Information, Message = "Location {LocationId} updated.")]
     private static partial void LogUpdated(ILogger logger, Guid locationId);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Location {LocationId} deleted.")]
-    private static partial void LogDeleted(ILogger logger, Guid locationId);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Location {LocationId} deleted and removed from {NetworkCount} Wi-Fi networks.")]
+    private static partial void LogDeleted(ILogger logger, Guid locationId, int networkCount);
 }
 
 /// <summary>Request body accepted by <see cref="LocationFunctions.CreateLocation"/>: <c>{ "name": "..." }</c>.
@@ -213,6 +218,18 @@ internal sealed class CreateLocationRequest
 {
     public Guid? LocationId { get; init; }
     public string? Name { get; init; }
-    public string? Region { get; init; }
     public string? CountryCode { get; init; }
+}
+
+/// <summary>A location as returned to callers: the stored fields plus the region it resolves to.</summary>
+internal sealed record LocationView(Guid LocationId, string Name, string? Region, string? CountryCode, DateTimeOffset CreatedAt, string? EffectiveRegion, bool RegionIsLegacy)
+{
+    public static LocationView From(Location location, RegionConfiguration regions) => new(
+        location.LocationId,
+        location.Name,
+        location.Region,
+        location.CountryCode,
+        location.CreatedAt,
+        regions.EffectiveRegion(location),
+        !string.IsNullOrWhiteSpace(location.Region));
 }

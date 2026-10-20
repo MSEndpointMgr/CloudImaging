@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using CloudImaging.Client.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Win32;
@@ -84,7 +85,8 @@ public sealed partial class SystemClockSynchronizationService
             }
             catch (Exception ex)
             {
-                LogNtpServerFailed(_logger, server, ex);
+                var reason = LoggedFailure.Reason(ex);
+                LogNtpServerFailed(_logger, server, reason, LoggedFailure.IsExpected(ex) ? null : ex);
                 continue;
             }
 
@@ -238,8 +240,8 @@ public sealed partial class SystemClockSynchronizationService
     [LoggerMessage(Level = LogLevel.Debug, Message = "NTP server {Server} timed out.")]
     private static partial void LogNtpServerTimedOut(ILogger logger, string server);
 
-    [LoggerMessage(Level = LogLevel.Debug, Message = "NTP server {Server} query failed.")]
-    private static partial void LogNtpServerFailed(ILogger logger, string server, Exception ex);
+    [LoggerMessage(Level = LogLevel.Debug, Message = "NTP server {Server} query failed: {Reason}")]
+    private static partial void LogNtpServerFailed(ILogger logger, string server, string reason, Exception? ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "All configured NTP servers failed. Proceeding with the current (uncorrected) system clock.")]
     private static partial void LogAllServersFailed(ILogger logger);

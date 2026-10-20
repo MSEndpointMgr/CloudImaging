@@ -89,7 +89,7 @@ Begin {
     # Keeps the operator's output to what this script reports. Az otherwise prints SDK
     # breaking-change banners, survey prompts, and performs a gallery version check that
     # raises its own confirmation prompt. Process scope, so the machine config is untouched.
-    Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process | Out-Null
+    Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process -WhatIf:$false | Out-Null
 
     $GraphAppId = "00000003-0000-0000-c000-000000000000"
     $OperatorApiRole = "CloudImaging.PortalAccess"
@@ -180,13 +180,13 @@ Process {
         $AzContext = Get-AzContext -ErrorAction SilentlyContinue
         if ($null -eq $AzContext) {
             Write-Output "No Azure session found, a browser sign-in will open"
-            Connect-AzAccount -SubscriptionId $SubscriptionId | Out-Null
+            Connect-AzAccount -SubscriptionId $SubscriptionId -WhatIf:$false | Out-Null
             $AzContext = Get-AzContext
         }
 
         if ($AzContext.Subscription.Id -ne $SubscriptionId) {
             Write-Output "Selecting subscription $($SubscriptionId)"
-            $AzContext = (Set-AzContext -SubscriptionId $SubscriptionId).Context
+            $AzContext = (Set-AzContext -SubscriptionId $SubscriptionId -WhatIf:$false).Context
         }
 
         if ($AzContext.Subscription.Id -ne $SubscriptionId) {

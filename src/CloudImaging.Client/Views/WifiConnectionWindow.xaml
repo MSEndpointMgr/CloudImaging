@@ -104,14 +104,30 @@
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="{Binding SignalSymbol}"
                                            FontSize="18" Margin="0,0,10,0" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Ssid}" VerticalAlignment="Center" />
-                            <ui:SymbolIcon Symbol="LockClosed16" FontSize="13" Margin="6,0,0,0"
-                                           VerticalAlignment="Center"
+                            <StackPanel VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Ssid}" VerticalAlignment="Center" />
+                                    <ui:SymbolIcon Symbol="LockClosed16" FontSize="13" Margin="6,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Visibility="{Binding IsSecured, Converter={StaticResource BoolToVisibility}}" />
+                                    <TextBlock Text="{Binding NotSupportedLabel}"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               VerticalAlignment="Center" />
+                                    <!-- Saved by the organization: joined with the stored password. -->
+                                    <Border Margin="8,0,0,0" Padding="6,1" CornerRadius="8" VerticalAlignment="Center"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource SystemAccentColorBrush}"
+                                            Visibility="{Binding IsManaged, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="Managed" FontSize="11"
+                                                   Foreground="{DynamicResource SystemAccentColorBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Subtitle}"
+                                           Style="{StaticResource CaptionTextBlockStyle}"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Visibility="{Binding IsSecured, Converter={StaticResource BoolToVisibility}}" />
-                            <TextBlock Text="{Binding NotSupportedLabel}"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       VerticalAlignment="Center" />
+                                           Visibility="{Binding HasSubtitle, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
                         </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -134,6 +150,11 @@
                         <TextBlock Text="{Binding SelectedNetwork.Ssid}" VerticalAlignment="Center"
                                    Style="{StaticResource BodyStrongTextBlockStyle}" />
                     </StackPanel>
+
+                    <TextBlock Text="{Binding ManagedNote}" Margin="0,4,0,0" TextWrapping="Wrap"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Visibility="{Binding IsManagedSelection, Converter={StaticResource BoolToVisibility}}" />
 
                     <StackPanel Visibility="{Binding ShowPasswordField, Converter={StaticResource BoolToVisibility}}"
                                 Margin="0,8,0,4">

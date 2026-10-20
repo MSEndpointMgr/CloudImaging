@@ -59,7 +59,7 @@ Begin {
     # Keeps the operator's output to what this script reports. Az otherwise prints SDK
     # breaking-change banners, survey prompts, and performs a gallery version check that
     # raises its own confirmation prompt. Process scope, so the machine config is untouched.
-    Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process | Out-Null
+    Update-AzConfig -DisplayBreakingChangeWarning $false -DisplaySurveyMessage $false -CheckForUpgrade $false -Scope Process -WhatIf:$false | Out-Null
 
     # This script lives in scripts\, everything it publishes sits at the bundle root above it.
     $BundleRoot = Split-Path -Path $PSScriptRoot -Parent
@@ -96,7 +96,7 @@ Process {
         $AzContext = Get-AzContext -ErrorAction SilentlyContinue
         if ($null -eq $AzContext) {
             Write-Output "No Azure session found, a browser sign-in will open"
-            Connect-AzAccount | Out-Null
+            Connect-AzAccount -WhatIf:$false | Out-Null
             $AzContext = Get-AzContext
         }
 
