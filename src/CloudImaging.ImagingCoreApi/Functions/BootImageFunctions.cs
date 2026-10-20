@@ -163,6 +163,7 @@ public sealed partial class BootImageFunctions
         manifestVersion = b.ManifestVersion,
         sha256Hash = b.Sha256Hash,
         architecture = MachineArchitecturePlatform.Slug(b.Architecture),
+        @base = b.Base.ToString(),
         isLatestPublished = b.IsLatestPublished,
         isProduction = b.IsProduction,
         promotedAt = b.PromotedAt,

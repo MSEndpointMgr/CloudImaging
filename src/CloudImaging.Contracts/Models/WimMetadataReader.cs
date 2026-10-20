@@ -57,23 +57,8 @@ public static class WimMetadataReader
     /// </summary>
     public static int? ParseProcessorArchitecture(ReadOnlySpan<byte> xmlData, int imageIndex = 1)
     {
-        var text = DecodeXml(xmlData);
-        if (text is null)
-            return null;
-
-        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
-        try
-        {
-            using var reader = XmlReader.Create(new StringReader(text), settings);
-            var document = new XmlDocument { XmlResolver = null };
-            document.Load(reader);
-            var arch = document.SelectSingleNode($"/WIM/IMAGE[@INDEX='{imageIndex}']/WINDOWS/ARCH")?.InnerText;
-            return int.TryParse(arch, out var value) ? value : null;
-        }
-        catch (XmlException)
-        {
-            return null;
-        }
+        var arch = LoadXml(xmlData)?.SelectSingleNode($"/WIM/IMAGE[@INDEX='{imageIndex}']/WINDOWS/ARCH")?.InnerText;
+        return int.TryParse(arch, out var value) ? value : null;
     }
 
     /// <summary>Maps a raw PROCESSOR_ARCHITECTURE value to a supported architecture; null for x86/other.</summary>
@@ -84,8 +69,71 @@ public static class WimMetadataReader
         _ => null,
     };
 
-    /// <summary>Reads the raw architecture of image 1 from a seekable WIM stream; null when undeterminable.</summary>
-    public static async Task<int?> ReadProcessorArchitectureAsync(Stream stream, CancellationToken ct = default)
+    /// <summary>
+    /// Whether image <paramref name="imageIndex"/> is built on Windows RE. Both bases report the
+    /// WindowsPE edition, so the image name is what tells them apart: Windows RE keeps "Microsoft
+    /// Windows Recovery Environment" through mount and commit, ADK images say "Microsoft Windows PE".
+    /// </summary>
+    public static BootImageBase ParseBootImageBase(ReadOnlySpan<byte> xmlData, int imageIndex = 1)
+    {
+        var document = LoadXml(xmlData);
+        var image = document?.SelectSingleNode($"/WIM/IMAGE[@INDEX='{imageIndex}']");
+        var text = $"{image?.SelectSingleNode("NAME")?.InnerText} {image?.SelectSingleNode("DESCRIPTION")?.InnerText}";
+        return text.Contains("Recovery Environment", StringComparison.OrdinalIgnoreCase) ? BootImageBase.WindowsRE : BootImageBase.WindowsPE;
+    }
+
+    /// <summary>Reads the base of image 1 from a WIM file; Windows PE when it cannot be determined.</summary>
+    public static async Task<BootImageBase> ReadBootImageBaseAsync(string wimPath, CancellationToken ct = default)
+    {
+        await using var stream = new FileStream(wimPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+        var xml = await ReadXmlDataAsync(stream, ct);
+        return xml is null ? BootImageBase.WindowsPE : ParseBootImageBase(xml);
+    }
+
+    /// <summary>Architecture, build and default language of image <paramref name="imageIndex"/>; null when the XML is unreadable.</summary>
+    public static WimImageInfo? ParseImageInfo(ReadOnlySpan<byte> xmlData, int imageIndex = 1)
+    {
+        var image = LoadXml(xmlData)?.SelectSingleNode($"/WIM/IMAGE[@INDEX='{imageIndex}']");
+        if (image is null)
+            return null;
+
+        static int? Number(string? text) => int.TryParse(text, out var value) ? value : null;
+        return new WimImageInfo(
+            Number(image.SelectSingleNode("WINDOWS/ARCH")?.InnerText),
+            Number(image.SelectSingleNode("WINDOWS/VERSION/BUILD")?.InnerText),
+            Number(image.SelectSingleNode("WINDOWS/VERSION/SPBUILD")?.InnerText),
+            image.SelectSingleNode("WINDOWS/LANGUAGES/DEFAULT")?.InnerText);
+    }
+
+    /// <summary>Reads <see cref="ParseImageInfo"/> for image 1 of a WIM file; null when it is not a readable WIM.</summary>
+    public static async Task<WimImageInfo?> ReadImageInfoAsync(string wimPath, CancellationToken ct = default)
+    {
+        await using var stream = new FileStream(wimPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+        var xml = await ReadXmlDataAsync(stream, ct);
+        return xml is null ? null : ParseImageInfo(xml);
+    }
+
+    private static XmlDocument? LoadXml(ReadOnlySpan<byte> xmlData)
+    {
+        var text = DecodeXml(xmlData);
+        if (text is null)
+            return null;
+
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
+        try
+        {
+            using var reader = XmlReader.Create(new StringReader(text), settings);
+            var document = new XmlDocument { XmlResolver = null };
+            document.Load(reader);
+            return document;
+        }
+        catch (XmlException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<byte[]?> ReadXmlDataAsync(Stream stream, CancellationToken ct)
     {
         var header = new byte[HeaderSize];
         stream.Seek(0, SeekOrigin.Begin);
@@ -97,10 +145,14 @@ public static class WimMetadataReader
 
         var xml = new byte[length];
         stream.Seek(offset, SeekOrigin.Begin);
-        if (await ReadFullyAsync(stream, xml, ct) < length)
-            return null;
+        return await ReadFullyAsync(stream, xml, ct) < length ? null : xml;
+    }
 
-        return ParseProcessorArchitecture(xml);
+    /// <summary>Reads the raw architecture of image 1 from a seekable WIM stream; null when undeterminable.</summary>
+    public static async Task<int?> ReadProcessorArchitectureAsync(Stream stream, CancellationToken ct = default)
+    {
+        var xml = await ReadXmlDataAsync(stream, ct);
+        return xml is null ? null : ParseProcessorArchitecture(xml);
     }
 
     /// <summary>File-path convenience over <see cref="ReadProcessorArchitectureAsync(Stream, CancellationToken)"/>.</summary>

@@ -23,7 +23,8 @@ public sealed partial class ImageApplyService
     /// <param name="wimPath">Local path of the downloaded WIM file.</param>
     /// <param name="expectedHash">Expected SHA-256 hash (hex string, case-insensitive).</param>
     /// <param name="targetVolume">Drive letter for the target volume (e.g. "C:").</param>
-    /// <param name="onProgress">Callback receiving 0–100 progress.</param>
+    /// <param name="onProgress">Callback receiving 0–100 progress of the DISM apply.</param>
+    /// <param name="onVerifyProgress">Callback receiving 0–100 progress of the hash verification that precedes the apply.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="InvalidDataException">SHA-256 mismatch.</exception>
     /// <exception cref="InvalidOperationException">DISM returned a non-zero exit code.</exception>
@@ -32,13 +33,14 @@ public sealed partial class ImageApplyService
         string expectedHash,
         string targetVolume,
         Action<int>? onProgress,
+        Action<int>? onVerifyProgress = null,
         CancellationToken ct = default)
     {
         WinPeEnvironmentGuard.EnsureRunningInWinPe("Applying the operating system image");
 
         // Step 1: SHA-256 verification before invoking DISM (FR-006)
         LogVerifyingHash(_logger, wimPath);
-        var actualHash = await ComputeSha256Async(wimPath, ct);
+        var actualHash = await ImageHasher.ComputeAsync(wimPath, onVerifyProgress, ct);
         if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
         {
             LogHashMismatch(_logger, expectedHash, actualHash);
@@ -117,12 +119,6 @@ public sealed partial class ImageApplyService
         LogApplyCompleted(_logger, targetVolume);
     }
 
-    private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
-    {
-        await using var stream = File.OpenRead(filePath);
-        var hash = await SHA256.HashDataAsync(stream, ct);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Verifying SHA-256 hash for {FilePath}…")]
     private static partial void LogVerifyingHash(ILogger logger, string filePath);

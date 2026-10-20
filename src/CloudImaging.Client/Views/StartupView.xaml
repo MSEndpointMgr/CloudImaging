@@ -34,7 +34,7 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
-                                <Grid VerticalAlignment="Top" Margin="0,2,0,0">
+                                <Grid VerticalAlignment="Center">
                                     <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16"
                                                      Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibility}}" />
                                     <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="18"

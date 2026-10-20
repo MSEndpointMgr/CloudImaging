@@ -13,8 +13,10 @@ namespace CloudImaging.OperatorApi.Functions;
 /// GET    /api/locations: lists all locations; also allowed for CloudImaging.MediaBuilderAccess
 ///        so Media Builder can populate the location picker
 /// POST   /api/locations: creates a location (PortalAccess only; portal server gates Administrator)
-/// PUT    /api/locations/{id}: updates a location's name, region and country (PortalAccess only)
+/// PUT    /api/locations/{id}: updates a location's name and country (PortalAccess only)
 /// DELETE /api/locations/{id}: deletes a location (PortalAccess only)
+/// GET    /api/regions: the country-to-region mapping (PortalAccess only)
+/// PUT    /api/regions: replaces the mapping (PortalAccess only; portal server gates Administrator)
 /// </summary>
 public sealed partial class LocationFunctions
 {
@@ -52,7 +54,7 @@ public sealed partial class LocationFunctions
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 
-    /// <summary>PUT locations/{id}. Updates a location label's name, region and country.</summary>
+    /// <summary>PUT locations/{id}. Updates a location label's name and country.</summary>
     [Function("UpdateLocation")]
     public async Task<HttpResponseData> UpdateLocation(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "locations/{id}")] HttpRequestData req,
@@ -83,6 +85,28 @@ public sealed partial class LocationFunctions
         }
 
         var coreResponse = await _coreClient.DeleteLocationAsync(locationId, context.CancellationToken);
+        return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    /// <summary>GET regions. Returns the regions, their usage and every country's mapping.</summary>
+    [Function("GetRegions")]
+    public async Task<HttpResponseData> GetRegions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "regions")] HttpRequestData req,
+        FunctionContext context)
+    {
+        var coreResponse = await _coreClient.GetRegionsAsync(context.CancellationToken);
+        return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    /// <summary>PUT regions. Replaces the regions and country overrides.</summary>
+    [Function("PutRegions")]
+    public async Task<HttpResponseData> PutRegions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "regions")] HttpRequestData req,
+        FunctionContext context)
+    {
+        using var doc = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+        var payload = JsonSerializer.Deserialize<object>(doc.RootElement.GetRawText());
+        var coreResponse = await _coreClient.PutRegionsAsync(payload!, context.CancellationToken);
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 

@@ -74,6 +74,10 @@ Relevant reports include, but are not limited to:
   Management"). Treat it, and the workstation used to build it, as sensitive.
   Loss or suspected compromise of boot media should be handled by rotating
   the boot media certificate, not reported here as a vulnerability.
+  The same applies to managed Wi-Fi passwords: a USB drive prepared with a
+  Windows RE boot image carries its location's networks encrypted to the
+  certificate it also holds, so its holder can recover them. Use a dedicated
+  imaging network, and rotate its password together with the certificate.
 - Misconfiguration of the deployer's own Azure subscription, network, or
   Entra ID tenant after deployment (role assignments, firewall rules,
   conditional access). MSEndpointMgr Cloud Imaging is deployed and administered

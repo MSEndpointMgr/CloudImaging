@@ -56,6 +56,24 @@ public sealed class GetLatestBootImageContractTests
     }
 
     [Fact]
+    public void FindLatestForArchitecture_KeepsWindowsReSticksOnWindowsRe()
+    {
+        using var doc = JsonDocument.Parse("""
+            [
+              { "bootImageId": "11111111-1111-1111-1111-111111111111", "version": "3.0", "isLatestPublished": true, "architecture": "x64" },
+              { "bootImageId": "22222222-2222-2222-2222-222222222222", "version": "2.0", "isLatestPublished": true, "architecture": "x64", "base": "WindowsRE" }
+            ]
+            """);
+
+        LatestImageSelector.FindLatestForArchitecture(doc.RootElement, "x64", "WindowsRE")!.Value.GetProperty("version").GetString().Should().Be("2.0");
+        LatestImageSelector.FindLatestForArchitecture(doc.RootElement, "x64")!.Value.GetProperty("version").GetString().Should().Be("3.0",
+            "a Client that never sends a base is a Windows PE stick");
+        LatestImageSelector.TryReadBase(null, out var missing).Should().BeTrue();
+        missing.Should().Be("WindowsPE");
+        LatestImageSelector.TryReadBase("WinRE", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public void IsPreProduction_IdentifiesATestStick_SoItIsNotUpdatedBackToProduction()
     {
         using var doc = JsonDocument.Parse("""

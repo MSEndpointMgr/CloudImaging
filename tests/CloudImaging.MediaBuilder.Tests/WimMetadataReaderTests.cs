@@ -59,4 +59,15 @@ public sealed class WimMetadataReaderTests
 
         WimMetadataReader.ParseProcessorArchitecture(xml).Should().BeNull("DTD processing is prohibited");
     }
+
+    [Theory]
+    [InlineData("Microsoft Windows Recovery Environment (amd64)", BootImageBase.WindowsRE)]
+    [InlineData("Microsoft Windows PE (amd64)", BootImageBase.WindowsPE)]
+    [InlineData("", BootImageBase.WindowsPE)]
+    public void ReadsTheBootImageBaseFromTheImageName(string name, BootImageBase expected)
+    {
+        var xml = System.Text.Encoding.Unicode.GetBytes($"\uFEFF<WIM><IMAGE INDEX=\"1\"><NAME>{name}</NAME><WINDOWS><ARCH>9</ARCH><EDITIONID>WindowsPE</EDITIONID></WINDOWS></IMAGE></WIM>");
+
+        WimMetadataReader.ParseBootImageBase(xml).Should().Be(expected);
+    }
 }

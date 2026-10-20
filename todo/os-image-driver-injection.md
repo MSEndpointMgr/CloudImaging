@@ -4,6 +4,11 @@ Status: **not started, planning only**. This document captures the design/plan f
 version. It is deliberately separate from the [OS Image ISO extraction](../src/CloudImaging.ImagingCoreApi/Services/IsoExtractionService.cs)
 work (which only ever extracts `sources\install.wim`/`install.esd` as-is and never modifies it).
 
+Priority: **highest open gap**, jointly with
+[os-customisation-stage.md](os-customisation-stage.md). Driver injection is the first consumer of
+the offline servicing mechanism described there, and the two should be designed together: both act
+on the applied volume in WinPE, between `ApplyImage` and `ConfigureBoot`.
+
 ## Context / why this doesn't already exist
 
 Today the OS image pipeline is intentionally minimal end-to-end:

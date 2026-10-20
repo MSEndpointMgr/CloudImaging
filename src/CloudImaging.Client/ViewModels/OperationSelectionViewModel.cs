@@ -6,8 +6,11 @@ using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Windows.Input;
+using CloudImaging.Client.Logging;
 using CloudImaging.Contracts.Models;
 using CloudImaging.Client.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CloudImaging.Client.ViewModels;
 
@@ -15,7 +18,7 @@ namespace CloudImaging.Client.ViewModels;
 /// View model for the OperationSelectionView (T032).
 /// Collects device hardware metadata silently before session registration (FR-001a).
 /// </summary>
-public sealed class OperationSelectionViewModel : INotifyPropertyChanged
+public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
 {
     /// <summary>Maximum time to wait for a routable network adapter before giving up and proceeding anyway.</summary>
     private static readonly TimeSpan NetworkWaitTimeout = TimeSpan.FromSeconds(20);
@@ -30,6 +33,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     private readonly Action? _navigateToAutopilot;
     private readonly StartupReadiness? _readiness;
     private readonly Action? _recheck;
+    private readonly ILogger _logger;
     private AutopilotAvailabilityState _autopilotAvailability = AutopilotAvailabilityState.Checking;
     // Decommissioning card is hidden (not implemented for the first release), so Imaging is
     // pre-selected rather than requiring an operator click before Continue is enabled.
@@ -59,6 +63,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// <param name="autopilotAvailability">Current Autopilot registration availability state, refining the Autopilot tile's enabled/disabled reason.</param>
     /// <param name="readiness">What the startup checks found. Null skips the gating (screens opened without startup checks).</param>
     /// <param name="recheck">Runs the startup checks again. Null hides Check again.</param>
+    /// <param name="managedWifi">The portal's Wi-Fi networks, listed first in the Wi-Fi window; null on Windows PE.</param>
+    /// <param name="logger">Defaults to a no-op logger.</param>
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
         Action<CreateSessionResponse, string> navigate,
@@ -72,7 +78,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         bool startImagingImmediately = false,
         AutopilotAvailabilityState? autopilotAvailability = null,
         StartupReadiness? readiness = null,
-        Action? recheck = null)
+        Action? recheck = null,
+        ManagedWifiService? managedWifi = null,
+        ILogger<OperationSelectionViewModel>? logger = null)
     {
         _gatewayClient          = gatewayClient;
         _navigate               = navigate;
@@ -84,6 +92,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         _navigateToAutopilot = navigateToAutopilot;
         _readiness = readiness;
         _recheck = recheck;
+        ManagedWifi = managedWifi;
+        IsWifiAvailable = readiness?.WifiSupported ?? BootImageCapabilities.SupportsWifi();
+        _logger = logger ?? NullLogger<OperationSelectionViewModel>.Instance;
         IsAutopilotOptionVisible = autopilotToolingPresent && navigateToAutopilot is not null;
 
         SelectOperationCommand   = new RelayCommand(op => SelectOperation(op?.ToString()));
@@ -122,33 +133,62 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// <summary>Helper text on the Imaging card.</summary>
     public string ImagingCardDescription => _readiness?.LocalDiskCount switch
     {
-        0 => "No local disk found. The boot image may be missing this device's storage driver.",
-        > 1 and var count => $"{count} local disks found. Imaging needs exactly one.",
+        0 => "No local disk detected. Add the storage driver to the boot image.",
+        > 1 and var count => $"{count} local disks detected. Imaging requires exactly one.",
         _ => "Apply a fresh OS image to this device.",
     };
 
     /// <summary>Heading of the connectivity banner.</summary>
     public string ConnectivityTitle => _readiness?.Gateway switch
     {
-        GatewayReachability.NoNetwork => "Network connection required",
-        GatewayReachability.ServiceUnavailable => "Cloud Imaging service unavailable",
-        GatewayReachability.CertificateRejected => "Boot media not accepted",
-        GatewayReachability.NotConfigured => "Service address missing",
-        _ => "Cannot reach the Cloud Imaging service",
+        GatewayReachability.NoNetwork when _readiness.WifiJoin?.Outcome == ManagedWifiOutcome.PasswordRejected => "Wi-Fi password rejected",
+        GatewayReachability.NoNetwork => "No network connection",
+        GatewayReachability.ServiceUnavailable => "Cloud Imaging service error",
+        GatewayReachability.CertificateRejected => "Boot media certificate rejected",
+        GatewayReachability.NotConfigured => "Service URL missing",
+        _ => "Cloud Imaging service unreachable",
     };
 
     /// <summary>What went wrong and what to do about it.</summary>
     public string ConnectivityMessage => _readiness?.Gateway switch
     {
-        GatewayReachability.NoNetwork => "Every operation needs the network. Connect a network cable, then select Check again. If a cable is already connected, the boot image may be missing this device's network driver.",
-        GatewayReachability.ServiceUnavailable => "The service is not responding. Wait a few minutes, then select Check again.",
-        GatewayReachability.CertificateRejected => "The service did not accept this boot media's certificate. Generate a new boot image in Media Builder and prepare the USB drive again.",
-        GatewayReachability.NotConfigured => "This boot image does not contain the Cloud Imaging service address. Generate a new boot image in Media Builder.",
-        _ => "The device is online but could not reach the service. Check that the network allows outbound HTTPS, then select Check again.",
+        GatewayReachability.NoNetwork when IsWifiAvailable => _readiness.WifiJoin?.Outcome switch
+        {
+            ManagedWifiOutcome.PasswordRejected => $"{_readiness.WifiJoin.Ssid} rejected the saved password. It may have changed since this USB media was prepared. Connect to Ethernet once to refresh it, or enter the password.",
+            ManagedWifiOutcome.NoAdapter => "No Ethernet and no Wi-Fi adapter was found. Connect to Ethernet, or add the Wi-Fi driver to the boot image.",
+            ManagedWifiOutcome.NoIpAddress => $"{_readiness.WifiJoin.Ssid} accepted the device but gave it no IP address. Connect to Ethernet, or choose another Wi-Fi network.",
+            _ => "No Ethernet, and none of the saved Wi-Fi networks are in range. Connect to Ethernet, or choose a Wi-Fi network.",
+        },
+        GatewayReachability.NoNetwork => "No adapter has an IP address. Connect to Ethernet. If Ethernet is already connected, add the network adapter driver to the boot image.",
+        GatewayReachability.ServiceUnavailable => "The service returned a server error. Retry in a few minutes; if it persists, contact your Cloud Imaging administrator.",
+        GatewayReachability.CertificateRejected => "The service rejected the boot media certificate. Rebuild the boot image in Media Builder and re-prepare the USB drive.",
+        GatewayReachability.NotConfigured => "The boot image has no Cloud Imaging service URL. Rebuild it in Media Builder.",
+        _ => "The network is up but the service did not respond. Check DNS, proxy and outbound HTTPS (TCP 443).",
     };
 
     /// <summary>True when Check again is offered.</summary>
     public bool CanRecheck => _recheck is not null;
+
+    /// <summary>True on a Windows RE boot image. Windows PE has no Wi-Fi, so the button is not shown at all.</summary>
+    public bool IsWifiAvailable { get; }
+
+    /// <summary>The portal's Wi-Fi networks, handed to the Wi-Fi window; null on Windows PE.</summary>
+    public ManagedWifiService? ManagedWifi { get; }
+
+    /// <summary>The managed network startup joined, or null.</summary>
+    public string? ConnectedWifiSsid => _readiness?.ConnectedWifiSsid;
+
+    /// <summary>True while on a managed Wi-Fi network; the footer button then shows its name.</summary>
+    public bool IsOnWifi => ConnectedWifiSsid is not null;
+
+    /// <summary>Footer Wi-Fi button label: the network in use, or the action.</summary>
+    public string WifiButtonLabel => ConnectedWifiSsid ?? "Connect to Wi-Fi";
+
+    /// <summary>On a Wi-Fi image without a network, the banner offers Connect to Wi-Fi instead of only Check again.</summary>
+    public bool ShowBannerWifiAction => IsWifiAvailable && _readiness?.Gateway == GatewayReachability.NoNetwork;
+
+    /// <summary>Check again is shown when Connect to Wi-Fi is not the better way out.</summary>
+    public bool ShowBannerRecheck => CanRecheck && !ShowBannerWifiAction;
 
     /// <summary>Runs the startup checks again.</summary>
     public ICommand RecheckCommand { get; }
@@ -176,10 +216,10 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// <summary>Helper text shown on the Autopilot card for the current <see cref="AutopilotAvailability"/>.</summary>
     public string AutopilotCardDescription => _autopilotAvailability switch
     {
-        AutopilotAvailabilityState.Checking => "Checking whether registration is available…",
-        AutopilotAvailabilityState.Disabled => "Turned off in the Cloud Imaging portal.",
-        AutopilotAvailabilityState.Unreachable => "Send the hardware hash for approval. The imaging service could not be reached yet.",
-        _ => "Send this device's hardware hash for approval. The disk is not changed.",
+        AutopilotAvailabilityState.Checking => "Checking availability…",
+        AutopilotAvailabilityState.Disabled => "Disabled in the Cloud Imaging portal.",
+        AutopilotAvailabilityState.Unreachable => "Submit the hardware hash for approval. Availability could not be confirmed.",
+        _ => "Submit the hardware hash for approval. The disk is not modified.",
     };
 
     private void SelectOperation(string? operation)
@@ -365,7 +405,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
             var sessionResponse = await _gatewayClient.CreateSessionAsync(payload);
             if (sessionResponse is null)
             {
-                StatusMessage = "Session creation failed. Please restart.";
+                StatusMessage = "Session registration returned no session. Restart the device.";
                 return;
             }
 
@@ -379,12 +419,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         }
         catch (HttpRequestException ex)
         {
-            // The raw .NET text ("the target machine actively refused it") reads as a fault in the
-            // device, when the actionable step is almost always the network path.
-            StatusMessage = $"Could not reach the Cloud Imaging service. Check the network connection, then try again. ({ex.Message})";
+            LogRegistrationFailed(_logger, LoggedFailure.Reason(ex), null);
+            StatusMessage = $"Cloud Imaging service unreachable: {ex.Message}";
         }
         catch (Exception ex)
         {
+            LogRegistrationFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
             StatusMessage = $"Error: {ex.Message}";
         }
         finally
@@ -561,6 +601,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         }
         catch { return []; }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Session registration failed: {Reason}")]
+    private static partial void LogRegistrationFailed(ILogger logger, string reason, Exception? ex);
 
     // ── INotifyPropertyChanged ────────────────────────────────────────────────
 

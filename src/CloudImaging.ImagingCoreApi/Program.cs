@@ -44,6 +44,8 @@ var host = new HostBuilder()
         services.AddSingleton<SessionHistoryRepository>();
         services.AddSingleton<PreFlightOverrideRepository>();
         services.AddSingleton<LocationRepository>();
+        services.AddSingleton<RegionConfigurationRepository>();
+        services.AddSingleton<WifiNetworkRepository>();
         services.AddSingleton<UserLocationPreferenceRepository>();
         services.AddSingleton<UploadJobRepository>();
         services.AddSingleton<AutopilotRegistrationRepository>();
@@ -51,6 +53,8 @@ var host = new HostBuilder()
 
         // Key Vault certificate service (FR-068)
         services.AddSingleton<KeyVaultCertificateService>();
+        services.AddSingleton<WifiPasswordStore>();
+        services.AddSingleton<WifiNetworkCatalog>();
 
         // Device pre-flight authorization (FR-026) — Microsoft Graph via managed identity
         // Scopes are read-only at startup — use a static field to avoid CA1861
@@ -125,6 +129,8 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<SessionHistoryRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<PreFlightOverrideRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<LocationRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<RegionConfigurationRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<WifiNetworkRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<UserLocationPreferenceRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<UploadJobRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<AutopilotRegistrationRepository>().EnsureTableExistsAsync(ct);

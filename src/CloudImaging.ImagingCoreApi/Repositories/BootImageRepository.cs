@@ -8,7 +8,8 @@ namespace CloudImaging.ImagingCoreApi.Repositories;
 /// Table Storage repository for boot image catalog (FR-063).
 /// PartitionKey: "catalog" | RowKey: bootImageId.
 /// Uploads land in pre-production; <see cref="PromoteAsync"/> makes one production and latest.
-/// Capacity and "latest" are scoped per architecture, so ARM64 never demotes or un-latests x64.
+/// Capacity is scoped per architecture, so ARM64 never demotes x64. "Latest" is scoped per
+/// architecture and base, so a Windows RE (Wi-Fi) stick always has a Windows RE image to update to.
 /// </summary>
 public sealed class BootImageRepository
 {
@@ -39,20 +40,20 @@ public sealed class BootImageRepository
             : [];
     }
 
-    /// <summary>Same-architecture entries that lose the latest flag when <paramref name="promoted"/> is promoted.</summary>
+    /// <summary>Same-architecture, same-base entries that lose the latest flag when <paramref name="promoted"/> is promoted.</summary>
     public static IReadOnlyList<BootImage> PlanPromote(IEnumerable<BootImage> activeEntries, BootImage promoted) =>
         activeEntries
-            .Where(b => b.Architecture == promoted.Architecture && b.IsLatestPublished && b.BootImageId != promoted.BootImageId)
+            .Where(b => b.Architecture == promoted.Architecture && b.Base == promoted.Base && b.IsLatestPublished && b.BootImageId != promoted.BootImageId)
             .ToList();
 
     /// <summary>
     /// The production image that becomes latest again when <paramref name="demoted"/> (the current
-    /// latest) is demoted: the most recently promoted other one of the same architecture, or null.
+    /// latest) is demoted: the most recently promoted other one of the same architecture and base, or null.
     /// </summary>
     public static BootImage? PlanDemote(IEnumerable<BootImage> activeEntries, BootImage demoted) =>
         demoted.IsLatestPublished
             ? activeEntries
-                .Where(b => b.Architecture == demoted.Architecture && b.IsProduction && b.BootImageId != demoted.BootImageId)
+                .Where(b => b.Architecture == demoted.Architecture && b.Base == demoted.Base && b.IsProduction && b.BootImageId != demoted.BootImageId)
                 .OrderByDescending(b => b.PromotedAt ?? b.CreatedAt)
                 .FirstOrDefault()
             : null;
@@ -79,6 +80,7 @@ public sealed class BootImageRepository
             ManifestVersion = image.ManifestVersion,
             Sha256Hash = image.Sha256Hash,
             Architecture = image.Architecture,
+            Base = image.Base,
             IsLatestPublished = false,
             IsProduction = false,
             IsActive = true,
@@ -182,6 +184,7 @@ public sealed class BootImageRepository
         ["ManifestVersion"] = b.ManifestVersion,
         ["Sha256Hash"] = b.Sha256Hash,
         ["Architecture"] = MachineArchitecturePlatform.Slug(b.Architecture),
+        ["Base"] = b.Base.ToString(),
         ["IsLatestPublished"] = b.IsLatestPublished,
         ["IsProduction"] = b.IsProduction,
         ["PromotedAt"] = b.PromotedAt,
@@ -204,6 +207,8 @@ public sealed class BootImageRepository
             "arm64" => MachineArchitecture.Arm64,
             _ => MachineArchitecture.X64,
         },
+        // Rows written before the base was tracked are Windows PE: Windows RE images did not exist yet.
+        Base = e.GetString("Base") == nameof(BootImageBase.WindowsRE) ? BootImageBase.WindowsRE : BootImageBase.WindowsPE,
         IsLatestPublished = e.GetBoolean("IsLatestPublished") ?? false,
         // Rows written before the pre-production stage existed were already live in production.
         IsProduction = e.GetBoolean("IsProduction") ?? true,

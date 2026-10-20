@@ -15,9 +15,9 @@ namespace CloudImaging.Contracts.Models;
 /// </summary>
 public sealed class BootImageManifest
 {
-    /// <summary>Bumped to 1.1 when <see cref="Architecture"/> was added (todo/arm64-support.md), and to
-    /// 1.2 for <see cref="AutopilotToolingIncluded"/>. Manifests at 1.0 are treated as x64.</summary>
-    public const string ManifestSchemaVersion = "1.2";
+    /// <summary>Bumped to 1.1 when <see cref="Architecture"/> was added (todo/arm64-support.md), to
+    /// 1.2 for <see cref="AutopilotToolingIncluded"/>, and to 1.3 for <see cref="Base"/>. Manifests at 1.0 are treated as x64.</summary>
+    public const string ManifestSchemaVersion = "1.3";
 
     /// <summary>Schema version this manifest was written with.</summary>
     public required string ManifestVersion { get; init; }
@@ -52,4 +52,7 @@ public sealed class BootImageManifest
 
     /// <summary>Whether OA3Tool and its TPM provider were staged so the Client can capture an Autopilot hardware hash.</summary>
     public bool AutopilotToolingIncluded { get; init; }
+
+    /// <summary>Windows PE or Windows RE. Manifests before 1.3 are Windows PE.</summary>
+    public BootImageBase Base { get; init; } = BootImageBase.WindowsPE;
 }

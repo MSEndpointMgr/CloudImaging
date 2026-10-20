@@ -19,6 +19,9 @@ public partial class App : Application
     // Covers the 20-second network wait plus the 15-second gateway probe.
     private static readonly TimeSpan StartupChecksTimeout = TimeSpan.FromSeconds(40);
 
+    // A Windows RE image may also scan and try each saved Wi-Fi network before the probe.
+    private static readonly TimeSpan WifiStartupChecksTimeout = TimeSpan.FromMinutes(2);
+
     // Long enough that Getting ready reads as a step rather than a flicker when there is nothing to load.
     private static readonly TimeSpan StartupMinimumDisplay = TimeSpan.FromSeconds(1);
 
@@ -29,6 +32,9 @@ public partial class App : Application
 
     /// <summary>Re-runs the startup checks from Operation Selection's Check again.</summary>
     private static Action? s_recheck;
+
+    /// <summary>The portal's Wi-Fi networks; null on a Windows PE image, which has no Wi-Fi.</summary>
+    private static ManagedWifiService? s_managedWifi;
 
     /// <summary>Wires up fatal-exception reporting, configures logging, and shows the first view.</summary>
     protected override void OnStartup(StartupEventArgs e)
@@ -79,6 +85,16 @@ public partial class App : Application
                 new HttpClient(),
                 loggerFactory.CreateLogger<BootImageSelfUpdateService>());
             _ = selfUpdateService.CheckAndUpdateAsync();
+
+            // Decided from the image itself, so no setting can disagree with what the image can do.
+            if (BootImageCapabilities.SupportsWifi())
+            {
+                s_managedWifi = new ManagedWifiService(
+                    startupResult.Certificate,
+                    new WirelessConnectionService(loggerFactory.CreateLogger<WirelessConnectionService>()),
+                    loggerFactory.CreateLogger<ManagedWifiService>());
+                s_managedWifi.LoadFromMedia();
+            }
 
             var mainWindow = new MainWindow();
 
@@ -157,12 +173,17 @@ public partial class App : Application
         StartupViewModel? startupChecks = null)
     {
         autopilotCapture ??= new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
-        startupChecks ??= new StartupViewModel(gateway.ProbeAsync, autopilotCapture.IsToolingPresent, logger: lf.CreateLogger<StartupViewModel>());
+        startupChecks ??= new StartupViewModel(gateway.ProbeAsync, autopilotCapture.IsToolingPresent, logger: lf.CreateLogger<StartupViewModel>(),
+            managedWifi: s_managedWifi, wifiSupported: s_managedWifi is not null);
         window.NavigateTo(new StartupView { DataContext = startupChecks });
         var minimumDisplay = Task.Delay(StartupMinimumDisplay);
 
-        using var timeout = new CancellationTokenSource(StartupChecksTimeout);
+        using var timeout = new CancellationTokenSource(s_managedWifi is null ? StartupChecksTimeout : WifiStartupChecksTimeout);
         var readiness = await startupChecks.RunAsync(timeout.Token);
+
+        // Once online, fetch the current networks so a password changed in the portal reaches the USB copy.
+        if (readiness.CanReachService && s_managedWifi is not null)
+            _ = s_managedWifi.RefreshFromGatewayAsync(gateway);
         Action recheck = () => _ = ShowOperationSelectionAsync(window, gateway, lf, autopilotCapture, autopilotPollInterval, rememberReadiness);
         if (rememberReadiness)
         {
@@ -298,7 +319,9 @@ public partial class App : Application
             startImagingImmediately: startImagingImmediately,
             autopilotAvailability: autopilotAvailability,
             readiness: readiness,
-            recheck: recheck);
+            recheck: recheck,
+            managedWifi: s_managedWifi,
+            logger: lf.CreateLogger<OperationSelectionViewModel>());
         return view;
     }
 
@@ -344,7 +367,8 @@ public partial class App : Application
             navigateToBlocked: (status, serialNumber) =>
                 window.NavigateTo(BuildBlockedResultsView(window, gateway, lf, status, serialNumber)),
             navigateToStart: () =>
-                window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)));
+                window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
+            logger: lf.CreateLogger<SessionInitViewModel>());
         view.DataContext = viewModel;
 
         // Without this the poll loop outlives the page and keeps touching the abandoned session,

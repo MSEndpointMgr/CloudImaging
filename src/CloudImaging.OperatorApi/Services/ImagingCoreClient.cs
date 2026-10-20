@@ -254,13 +254,51 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> CreateLocationAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/locations", payload, JsonOptions, ct);
 
-    /// <summary>Updates a location label's name, region and country.</summary>
+    /// <summary>Updates a location label's name and country.</summary>
     public Task<HttpResponseMessage> UpdateLocationAsync(Guid locationId, object payload, CancellationToken ct = default) =>
         _http.PutAsJsonAsync($"/api/internal/locations/{locationId}", payload, JsonOptions, ct);
 
     /// <summary>Deletes a location label.</summary>
     public Task<HttpResponseMessage> DeleteLocationAsync(Guid locationId, CancellationToken ct = default) =>
         _http.DeleteAsync($"/api/internal/locations/{locationId}", ct);
+
+    /// <summary>Returns the regions, their usage and every country's mapping.</summary>
+    public Task<HttpResponseMessage> GetRegionsAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/regions", ct);
+
+    /// <summary>Replaces the regions and country overrides.</summary>
+    public Task<HttpResponseMessage> PutRegionsAsync(object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync("/api/internal/regions", payload, JsonOptions, ct);
+
+    // ── Wi-Fi networks ───────────────────────────────────────────────────────────
+
+    /// <summary>Lists saved Wi-Fi networks, without passwords.</summary>
+    public Task<HttpResponseMessage> GetWifiNetworksAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/wifi-networks", ct);
+
+    /// <summary>Creates a Wi-Fi network.</summary>
+    public Task<HttpResponseMessage> CreateWifiNetworkAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/wifi-networks", payload, JsonOptions, ct);
+
+    /// <summary>Updates a Wi-Fi network.</summary>
+    public Task<HttpResponseMessage> UpdateWifiNetworkAsync(Guid networkId, object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/wifi-networks/{networkId}", payload, JsonOptions, ct);
+
+    /// <summary>Deletes a Wi-Fi network and its password.</summary>
+    public Task<HttpResponseMessage> DeleteWifiNetworkAsync(Guid networkId, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/wifi-networks/{networkId}", ct);
+
+    /// <summary>Sets the order devices try Wi-Fi networks in.</summary>
+    public Task<HttpResponseMessage> SetWifiNetworkOrderAsync(object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync("/api/internal/wifi-networks/order", payload, JsonOptions, ct);
+
+    /// <summary>Sets which Wi-Fi networks a location receives.</summary>
+    public Task<HttpResponseMessage> SetLocationWifiNetworksAsync(Guid locationId, object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/locations/{locationId}/wifi-networks", payload, JsonOptions, ct);
+
+    /// <summary>A location's networks with passwords, for writing to USB media.</summary>
+    public Task<HttpResponseMessage> GetManagedWifiNetworksForMediaBuilderAsync(Guid? locationId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/wifi-networks/managed?purpose=media-builder{(locationId is { } id ? $"&locationId={id}" : string.Empty)}", ct);
 
     // ── User location preference ─────────────────────────────────────────────────
 

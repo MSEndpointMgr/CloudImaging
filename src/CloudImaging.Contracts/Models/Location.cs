@@ -16,10 +16,13 @@ public sealed class Location
     /// <summary>Display name shown in the portal and Media Builder.</summary>
     public required string Name { get; init; }
 
-    /// <summary>Admin-chosen region code (e.g. EMEA, APAC), used by Autopilot group tag templates.</summary>
+    /// <summary>
+    /// Region typed before regions came from countries. Kept until the location is saved again;
+    /// use <see cref="RegionConfiguration.EffectiveRegion"/> for the region a location resolves to.
+    /// </summary>
     public string? Region { get; init; }
 
-    /// <summary>ISO-3166 alpha-2 country code (e.g. SE), used by Autopilot group tag templates.</summary>
+    /// <summary>ISO-3166 alpha-2 country code (e.g. SE). Determines the location's region.</summary>
     public string? CountryCode { get; init; }
 
     /// <summary>When the location was created.</summary>

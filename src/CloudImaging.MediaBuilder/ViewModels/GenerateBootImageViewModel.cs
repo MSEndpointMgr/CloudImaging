@@ -41,6 +41,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>Label of the one step that is skipped (not done) when no tools path is given.</summary>
     private const string ToolsInjectionStepLabel = "Copy support tools (optional)";
 
+    /// <summary>Label of the step that only runs for a Windows RE base.</summary>
+    private const string WindowsReStepLabel = "Extract Windows RE";
+
     private bool _useGitHubSource = true;
     private string _localSourcePath = string.Empty;
     private string _outputFolderPath = GetDefaultOutputFolder();
@@ -51,6 +54,12 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private string? _autopilotToolingUnavailableReason;
     private readonly Func<MachineArchitecture, string?> _autopilotToolingCheck;
     private bool _isArm64Selected;
+    private bool _useWindowsRe;
+    private string _windowsSourcePath = string.Empty;
+    private bool _isCheckingSource;
+    private SourceCheckResult? _sourceCheck;
+    private int _sourceCheckVersion;
+    private readonly Func<string, MachineArchitecture, CancellationToken, Task<SourceCheckResult>> _checkSource;
     private bool _isGenerating;
     private bool _isCancelling;
     private bool _isComplete;
@@ -58,8 +67,11 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private int _progressPercent;
     private string _progressMessage = string.Empty;
     private string _elapsedTimeText = string.Empty;
-    private string? _outputWimPath;
+    private string? _resultFilePath;
     private string? _errorMessage;
+    private string? _errorReference;
+    private string _statusMessage = string.Empty;
+    private bool _isResultDialogOpen;
 
     /// <summary>Builds the view model over the generation service, Entra auth, and GitHub releases client.</summary>
     public GenerateBootImageViewModel(
@@ -67,13 +79,15 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         EntraAuthenticationService authService,
         GitHubReleasesClient gitHubReleasesClient,
         Action navigateBack,
-        Func<MachineArchitecture, string?>? autopilotToolingCheck = null)
+        Func<MachineArchitecture, string?>? autopilotToolingCheck = null,
+        Func<string, MachineArchitecture, CancellationToken, Task<SourceCheckResult>>? sourceCheck = null)
     {
         _genService           = genService;
         _authService          = authService;
         _gitHubReleasesClient = gitHubReleasesClient;
         _navigateBack         = navigateBack;
         _autopilotToolingCheck = autopilotToolingCheck ?? AutopilotTooling.GetUnavailableReason;
+        _checkSource = sourceCheck ?? WindowsRecoverySource.CheckAsync;
         RefreshAutopilotToolingAvailability();
 
         Steps = new ObservableCollection<GenerationStep>(CreateSteps());
@@ -114,9 +128,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         BrowseOutputCommand = new RelayCommand(_ => BrowseOutputFolder());
         BrowseDriverRootCommand = new RelayCommand(_ => BrowseDriverRoot());
         BrowseToolsRootCommand = new RelayCommand(_ => BrowseToolsRoot());
+        BrowseWindowsSourceCommand = new RelayCommand(_ => BrowseWindowsSource(), _ => !IsGenerating && !IsCheckingSource);
         BackCommand        = new RelayCommand(_ => _navigateBack(), _ => !IsGenerating);
         NewGenerationCommand = new RelayCommand(_ => ResetToConfiguration(), _ => !IsGenerating);
-        OpenOutputFolderCommand = new RelayCommand(_ => OpenOutputFolder(), _ => HasOutputWimPath);
+        OpenResultFolderCommand = new RelayCommand(_ => OpenOutputFolder(), _ => HasResultFilePath);
+        CopyResultPathCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ResultFilePath), _ => HasResultFilePath);
+        CopyErrorDetailsCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ErrorDetails), _ => HasError);
+        DismissResultCommand = new RelayCommand(_ => IsResultDialogOpen = false);
     }
 
     /// <summary>True when the client binaries are downloaded from the latest GitHub release (mutually exclusive with <see cref="UseLocalSource"/>).</summary>
@@ -225,6 +243,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged(nameof(IsArm64Selected));
             OnPropertyChanged(nameof(SelectedArchitecture));
             RefreshAutopilotToolingAvailability();
+            _ = CheckWindowsSourceAsync();
         }
     }
 
@@ -239,7 +258,109 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged(nameof(IsX64Selected));
             OnPropertyChanged(nameof(SelectedArchitecture));
             RefreshAutopilotToolingAvailability();
+            _ = CheckWindowsSourceAsync();
         }
+    }
+
+    /// <summary>Build on the ADK's Windows PE: wired network only, smallest image (default).</summary>
+    public bool IsWindowsPeSelected
+    {
+        get => !_useWindowsRe;
+        set => SetWindowsRe(!value);
+    }
+
+    /// <summary>Build on the Windows RE inside <see cref="WindowsSourcePath"/>, which adds Wi-Fi.</summary>
+    public bool IsWindowsReSelected
+    {
+        get => _useWindowsRe;
+        set => SetWindowsRe(value);
+    }
+
+    /// <summary>Windows ISO or install.wim the Windows RE base is taken from.</summary>
+    public string WindowsSourcePath
+    {
+        get => _windowsSourcePath;
+        set
+        {
+            _windowsSourcePath = value;
+            OnPropertyChanged();
+            _ = CheckWindowsSourceAsync();
+        }
+    }
+
+    /// <summary>True while the Windows source is being checked; Generate stays disabled meanwhile.</summary>
+    public bool IsCheckingSource
+    {
+        get => _isCheckingSource;
+        private set { _isCheckingSource = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsSourceEditable)); OnPropertyChanged(nameof(CanGenerate)); OnPropertyChanged(nameof(SourceCheckPassed)); OnPropertyChanged(nameof(SourceCheckFailed)); }
+    }
+
+    /// <summary>False while the source is being checked, so the base and path cannot change mid-check.</summary>
+    public bool IsSourceEditable => !IsCheckingSource;
+
+    /// <summary>True when the source passed every check (green check in the path field).</summary>
+    public bool SourceCheckPassed => !IsCheckingSource && _sourceCheck is { IsValid: true };
+
+    /// <summary>True when the source has a blocking problem (red cross in the path field).</summary>
+    public bool SourceCheckFailed => !IsCheckingSource && _sourceCheck is { IsValid: false };
+
+    /// <summary>What was found, or every problem with its fix, one per line. Shown when hovering the check.</summary>
+    public string SourceCheckDetails => _sourceCheck switch
+    {
+        null => string.Empty,
+        { IsValid: true } ok => ok.Summary,
+        var failed => string.Join(Environment.NewLine, failed.Problems.Select(p => $"{p.Problem} {p.Fix}")),
+    };
+
+    private void SetWindowsRe(bool value)
+    {
+        if (_useWindowsRe == value)
+            return;
+        _useWindowsRe = value;
+        OnPropertyChanged(nameof(IsWindowsPeSelected));
+        OnPropertyChanged(nameof(IsWindowsReSelected));
+        OnPropertyChanged(nameof(CanGenerate));
+        _ = CheckWindowsSourceAsync();
+    }
+
+    /// <summary>
+    /// Re-checks the Windows source against the ADK and the target architecture. A newer check
+    /// (path or architecture changed again) supersedes one still running.
+    /// </summary>
+    private async Task CheckWindowsSourceAsync()
+    {
+        var version = ++_sourceCheckVersion;
+        if (!_useWindowsRe || string.IsNullOrWhiteSpace(_windowsSourcePath))
+        {
+            SetSourceCheck(null);
+            IsCheckingSource = false;
+            return;
+        }
+
+        IsCheckingSource = true;
+        SourceCheckResult result;
+        try
+        {
+            result = await _checkSource(_windowsSourcePath, SelectedArchitecture, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            result = new SourceCheckResult(string.Empty, [new SourceProblem($"The source could not be checked: {ex.Message}", "Choose another Windows installation source.")]);
+        }
+
+        if (version != _sourceCheckVersion)
+            return;
+        SetSourceCheck(result);
+        IsCheckingSource = false;
+    }
+
+    private void SetSourceCheck(SourceCheckResult? result)
+    {
+        _sourceCheck = result;
+        OnPropertyChanged(nameof(SourceCheckPassed));
+        OnPropertyChanged(nameof(SourceCheckFailed));
+        OnPropertyChanged(nameof(SourceCheckDetails));
+        OnPropertyChanged(nameof(CanGenerate));
     }
 
     /// <summary>The architecture the generated boot image targets, derived from <see cref="IsArm64Selected"/>.</summary>
@@ -328,16 +449,33 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     }
 
     /// <summary>Full path of the generated WIM once generation completes successfully; <c>null</c> otherwise.</summary>
-    public string? OutputWimPath
+    public string? ResultFilePath
     {
-        get => _outputWimPath;
-        private set { _outputWimPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressSubtitle)); OnPropertyChanged(nameof(HasOutputWimPath)); }
+        get => _resultFilePath;
+        private set
+        {
+            _resultFilePath = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasResultFilePath));
+            OnPropertyChanged(nameof(ResultFileName));
+            OnPropertyChanged(nameof(ResultFolder));
+            CommandManager.InvalidateRequerySuggested();
+        }
     }
 
     /// <summary>Whether a finished WIM path is available to display/reveal (i.e. generation completed successfully).</summary>
-    public bool HasOutputWimPath => OutputWimPath is not null;
+    public bool HasResultFilePath => ResultFilePath is not null;
 
-    /// <summary>User-facing error message when generation fails; <c>null</c> while generation hasn't failed.</summary>
+    /// <summary>File name part of <see cref="ResultFilePath"/>.</summary>
+    public string? ResultFileName => ResultFilePath is null ? null : Path.GetFileName(ResultFilePath);
+
+    /// <summary>Folder part of <see cref="ResultFilePath"/>.</summary>
+    public string? ResultFolder => ResultFilePath is null ? null : Path.GetDirectoryName(ResultFilePath);
+
+    /// <summary>Icon for the output file row in the result dialog.</summary>
+    public Wpf.Ui.Controls.SymbolRegular ResultFileSymbol { get; } = Wpf.Ui.Controls.SymbolRegular.Archive24;
+
+    /// <summary>User-facing reason when generation fails, without the support reference; <c>null</c> while generation hasn't failed.</summary>
     public string? ErrorMessage
     {
         get => _errorMessage;
@@ -350,8 +488,51 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged(nameof(ProgressTitle));
             OnPropertyChanged(nameof(ProgressSubtitle));
             OnPropertyChanged(nameof(CanRetry));
+            CommandManager.InvalidateRequerySuggested();
         }
     }
+
+    /// <summary>Support reference code for the failure, shown on its own line in the result dialog.</summary>
+    public string? ErrorReference
+    {
+        get => _errorReference;
+        private set { _errorReference = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasErrorReference)); }
+    }
+
+    /// <summary>True when <see cref="ErrorReference"/> has a value.</summary>
+    public bool HasErrorReference => ErrorReference is not null;
+
+    /// <summary>Result dialog title on failure.</summary>
+    public string ErrorTitle { get; } = "Generation failed";
+
+    /// <summary>Title, message and reference as one block, for pasting into a support ticket.</summary>
+    public string ErrorDetails => OperationResultText.ErrorDetails(ErrorTitle, ErrorMessage, ErrorReference);
+
+    /// <summary>Result dialog title on success.</summary>
+    public string SuccessTitle { get; } = "Boot image generated";
+
+    /// <summary>Result dialog summary on success: architecture, size and the publish hint.</summary>
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set { _statusMessage = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Result dialog title when cancelled.</summary>
+    public string CancelledTitle { get; } = "Generation cancelled";
+
+    /// <summary>Result dialog message when cancelled.</summary>
+    public string CancelledMessage { get; } = "No boot image was saved. Temporary files were cleaned up.";
+
+    /// <summary>True while the result dialog is open; closing it leaves the log and steps visible.</summary>
+    public bool IsResultDialogOpen
+    {
+        get => _isResultDialogOpen;
+        private set { _isResultDialogOpen = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowResultDialog)); }
+    }
+
+    /// <summary>True when a finished run's result dialog should be shown.</summary>
+    public bool ShowResultDialog => IsResultDialogOpen && (IsComplete || HasError || WasCancelled);
 
     /// <summary>
     /// True once a generation has ended in failure or cancellation — the only cases worth
@@ -413,14 +594,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         "Generating Boot Image";
 
     /// <summary>
-    /// Progress-view subheading. Carries the same information the old colored success/error/
-    /// cancelled InfoBars used to (output path + upload hint, error detail, cancellation note)
-    /// now that <see cref="ProgressTitle"/> and its icon convey the state itself.
+    /// Short progress-view subheading. Outcome details (path, error, reference) live in the
+    /// result dialog, so the header stays one line once generation has finished.
     /// </summary>
     public string ProgressSubtitle =>
-        IsComplete    ? "Boot image generated successfully. Upload the WIM to the Cloud Imaging Portal (Boot Images) to publish it." :
-        HasError      ? ErrorMessage ?? "The boot image generation failed." :
-        WasCancelled  ? "The boot image generation was cancelled and temporary files were cleaned up." :
+        IsComplete    ? "Upload the WIM in the portal under Boot Images to publish it." :
+        HasError      ? "The log below shows where generation stopped." :
+        WasCancelled  ? "Temporary files were cleaned up." :
         "Mounting the WinPE image and injecting the Cloud Imaging Client. This can take a few minutes.";
 
     /// <summary>True when the current configuration is valid enough to start generation.</summary>
@@ -428,7 +608,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         && !string.IsNullOrWhiteSpace(OutputFolderPath)
         && (!UseLocalSource || Directory.Exists(LocalSourcePath))
         && (string.IsNullOrWhiteSpace(DriverRootPath) || Directory.Exists(DriverRootPath))
-        && (string.IsNullOrWhiteSpace(ToolsRootPath) || Directory.Exists(ToolsRootPath));
+        && (string.IsNullOrWhiteSpace(ToolsRootPath) || Directory.Exists(ToolsRootPath))
+        && (!IsWindowsReSelected || SourceCheckPassed);
 
     /// <summary>Starts boot image generation.</summary>
     public ICommand GenerateCommand     { get; }
@@ -442,33 +623,42 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public ICommand BrowseDriverRootCommand { get; }
     /// <summary>Browses for the support tools root folder.</summary>
     public ICommand BrowseToolsRootCommand { get; }
+    /// <summary>Browses for the Windows ISO or install.wim a Windows RE base is built from.</summary>
+    public ICommand BrowseWindowsSourceCommand { get; }
     /// <summary>Navigates back without starting generation.</summary>
     public ICommand BackCommand         { get; }
     /// <summary>Resets the view model back to the configuration screen for another generation.</summary>
     public ICommand NewGenerationCommand { get; }
     /// <summary>Opens File Explorer with the generated WIM pre-selected.</summary>
-    public ICommand OpenOutputFolderCommand { get; }
+    public ICommand OpenResultFolderCommand { get; }
+    /// <summary>Copies the generated WIM's full path to the clipboard.</summary>
+    public ICommand CopyResultPathCommand { get; }
+    /// <summary>Copies the failure title, message and reference to the clipboard.</summary>
+    public ICommand CopyErrorDetailsCommand { get; }
+    /// <summary>Closes the result dialog, leaving the log and steps visible.</summary>
+    public ICommand DismissResultCommand { get; }
 
     /// <summary>
-    /// Opens File Explorer with the generated WIM pre-selected (same UX as
-    /// PrepareStorageDeviceViewModel.OpenResultFolder), rather than requiring the technician to
-    /// read/copy the full path from the subtitle text. Best-effort — a failure here is never
-    /// fatal, since FR-051b's output path is still shown (selectable) below the log.
+    /// Opens File Explorer with the generated WIM pre-selected. Best-effort: the path stays
+    /// visible and copyable in the result dialog regardless.
     /// </summary>
     private void OpenOutputFolder()
     {
-        if (OutputWimPath is null)
+        if (ResultFilePath is null)
             return;
 
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{OutputWimPath}\"")
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{ResultFilePath}\"")
             {
                 UseShellExecute = true,
             });
         }
         catch { /* best-effort */ }
     }
+
+    private static string FormatSize(long bytes) =>
+        bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):0.0} GB" : $"{bytes / (double)(1L << 20):0.0} MB";
 
     private async Task GenerateAsync()
     {
@@ -477,11 +667,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         OnPropertyChanged(nameof(StepProgressLabel));
         ProgressPercent = 0;
         ProgressMessage = "Starting";
-        OutputWimPath   = null;
+        ResultFilePath  = null;
+        IsResultDialogOpen = false;
         IsGenerating  = true;
         IsCancelling  = false;
         IsComplete    = false;
         WasCancelled  = false;
+        ErrorReference = null;
         ErrorMessage  = null;
 
         _generationStartedAtUtc = DateTime.UtcNow;
@@ -517,10 +709,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 enableCommandPromptAccess: _enableCommandPromptAccess,
                 architecture: SelectedArchitecture,
                 includeAutopilotTooling: IncludeAutopilotTooling,
+                windowsSourcePath: IsWindowsReSelected ? WindowsSourcePath : null,
                 ct: _cts.Token);
 
-            OutputWimPath = result.WimPath;
-            IsComplete    = true;
+            ResultFilePath = result.WimPath;
+            StatusMessage  = string.Create(CultureInfo.CurrentCulture,
+                $"{(SelectedArchitecture == MachineArchitecture.Arm64 ? "ARM64" : "x64")}{(IsWindowsReSelected ? " \u00B7 Windows RE (Wi-Fi)" : string.Empty)} \u00B7 {FormatSize(new FileInfo(result.WimPath).Length)}. Upload it in the portal under Boot Images to publish it.");
+            IsComplete     = true;
         }
         catch (OperationCanceledException)
         {
@@ -539,15 +734,19 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             // shown alongside it.
             // T160/FR-058: every failure path surfaces a support reference code so a technician
             // can quote it to support without needing log access.
-            var code = SupportReferenceCode.ForMediaBuilder("GENBOOT", _currentStage);
-            ErrorMessage = string.Create(CultureInfo.InvariantCulture, $"{OperatorApiErrorDescription.Describe(ex)} (Error reference: {code})");
-            AppendLogLine($"FAILED: {ErrorMessage}");
+            var (reason, reference) = OperationResultText.SplitSupportReference(
+                OperatorApiErrorDescription.Describe(ex),
+                () => SupportReferenceCode.ForMediaBuilder("GENBOOT", _currentStage).ToString());
+            ErrorReference = reference;
+            ErrorMessage   = reason;
+            AppendLogLine($"FAILED: {reason} (Error reference: {reference})");
             MarkActiveStepFailed();
         }
         finally
         {
             IsGenerating = false;
             IsCancelling = false;
+            IsResultDialogOpen = true;
             _elapsedTimer.Stop();
             UpdateElapsedTimeText(); // one final tick so the frozen caption reflects the exact stop time
             _cts.Dispose();
@@ -633,6 +832,17 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             DriverRootPath = dialog.FolderName;
     }
 
+    private void BrowseWindowsSource()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select a Windows ISO or install.wim",
+            Filter = "Windows installation source (*.iso;*.wim)|*.iso;*.wim",
+        };
+        if (dialog.ShowDialog() == true)
+            WindowsSourcePath = dialog.FileName;
+    }
+
     private void BrowseToolsRoot()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select support tools folder (optional)" };
@@ -643,9 +853,12 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>Returns to the configuration view to start a fresh generation.</summary>
     private void ResetToConfiguration()
     {
+        IsResultDialogOpen = false;
         IsComplete   = false;
         WasCancelled = false;
+        ErrorReference = null;
         ErrorMessage = null;
+        ResultFilePath = null;
         ProgressPercent = 0;
         ProgressMessage = string.Empty;
         ClearLog();
@@ -714,6 +927,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     [
         new("Verify ADK installation", 5),
         new("Copy WinPE base files", 15),
+        new(WindowsReStepLabel, 22, "Skipped (Windows PE base)"),
         new("Mount WIM for customization", 30),
         new("Inject Cloud Imaging Client", 50),
         new(DriverInjectionStepLabel, 61, "Skipped (no drivers to inject)"),
@@ -743,7 +957,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 // as Skipped rather than Done.
                 var noDriversToInject = step.Label == DriverInjectionStepLabel && string.IsNullOrWhiteSpace(_driverRootPath);
                 var noToolsToCopy = step.Label == ToolsInjectionStepLabel && string.IsNullOrWhiteSpace(_toolsRootPath);
-                step.State = (noDriversToInject || noToolsToCopy) ? GenerationStepState.Skipped : GenerationStepState.Done;
+                var windowsPeBase = step.Label == WindowsReStepLabel && !_useWindowsRe;
+                step.State = (noDriversToInject || noToolsToCopy || windowsPeBase) ? GenerationStepState.Skipped : GenerationStepState.Done;
             }
             else if (percent >= step.StartPercent)
                 step.State = GenerationStepState.Active;

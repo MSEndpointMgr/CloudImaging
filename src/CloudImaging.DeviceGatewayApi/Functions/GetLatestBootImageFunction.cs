@@ -20,7 +20,8 @@ namespace CloudImaging.DeviceGatewayApi.Functions;
 ///
 /// Forwards to ImagingCoreApi's existing boot image catalog endpoints (T066/T067), finds the
 /// entry flagged <c>isLatestPublished</c> for the requested <c>?architecture=x64|arm64</c>
-/// (x64 when omitted, since older Clients never send it), and issues a SAS URL for it.
+/// (x64 when omitted, since older Clients never send it) and <c>?base=WindowsPE|WindowsRE</c>
+/// (WindowsPE when omitted), and issues a SAS URL for it. Matching the base keeps a Wi-Fi stick on Wi-Fi.
 ///
 /// <c>?currentBootImageId=</c> is sent only by a stick prepared for testing. When that image is
 /// still in pre-production, the answer is 204 No Content so the test stick is never "updated"
@@ -60,6 +61,12 @@ public sealed partial class GetLatestBootImageFunction
             await bad.WriteStringAsync("architecture must be \"x64\" or \"arm64\".", context.CancellationToken);
             return bad;
         }
+        if (!LatestImageSelector.TryReadBase(req.Query["base"], out var requestedBase))
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("base must be \"WindowsPE\" or \"WindowsRE\".", context.CancellationToken);
+            return bad;
+        }
 
         var listResponse = await _coreClient.GetBootImagesAsync(context.CancellationToken);
         if (!listResponse.IsSuccessStatusCode)
@@ -79,7 +86,7 @@ public sealed partial class GetLatestBootImageFunction
             return req.CreateResponse(HttpStatusCode.NoContent);
         }
 
-        var latest = LatestImageSelector.FindLatestForArchitecture(listDoc.RootElement, requestedArchitecture);
+        var latest = LatestImageSelector.FindLatestForArchitecture(listDoc.RootElement, requestedArchitecture, requestedBase);
 
         if (latest is null)
         {
@@ -112,6 +119,7 @@ public sealed partial class GetLatestBootImageFunction
             sha256Hash = sasRoot.GetProperty("sha256Hash").GetString(),
             sasTokenUrl = sasRoot.GetProperty("sasTokenUrl").GetString(),
             architecture,
+            @base = requestedBase,
         }), context.CancellationToken);
         return response;
     }

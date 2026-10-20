@@ -34,5 +34,67 @@
                         FocusVisualStyle="{x:Null}"
                         HorizontalContentAlignment="Stretch"
                         VerticalContentAlignment="Stretch" />
+
+        <!--
+            Close confirmation while an operation is running. Same card as OperationResultDialog
+            (caution strip); the dimmed backdrop blocks the form underneath. "Cancel and close"
+            switches to a cleaning-up state and the window closes once the operation has stopped.
+        -->
+        <Grid x:Name="CloseGuardOverlay" Grid.Row="1" Background="#66000000" Visibility="Collapsed">
+            <Border MaxWidth="480" Margin="24"
+                    CornerRadius="8"
+                    Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid MinWidth="400">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="4" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" CornerRadius="8,8,0,0" Background="{DynamicResource SystemFillColorCautionBrush}" />
+
+                    <StackPanel Grid.Row="1" Margin="24,18,24,18">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Warning24" FontSize="20" Margin="0,0,8,0"
+                                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                           VerticalAlignment="Center" />
+                            <TextBlock x:Name="CloseGuardTitle" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock x:Name="CloseGuardMessage"
+                                   Style="{StaticResource BodyTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0" />
+                    </StackPanel>
+
+                    <Border Grid.Row="2"
+                            BorderThickness="0,1,0,0"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            Padding="24,16">
+                        <Grid>
+                            <StackPanel x:Name="CloseGuardButtons" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <ui:Button Content="Keep running"
+                                           Appearance="Secondary"
+                                           Style="{StaticResource AppButtonStyle}"
+                                           Margin="0,0,8,0"
+                                           Click="OnKeepRunningClick" />
+                                <ui:Button Content="Cancel and close"
+                                           Appearance="Primary"
+                                           Style="{StaticResource AppButtonStyle}"
+                                           Click="OnCancelAndCloseClick" />
+                            </StackPanel>
+                            <StackPanel x:Name="CloseGuardProgress" Orientation="Horizontal" Visibility="Collapsed">
+                                <ui:ProgressRing IsIndeterminate="True" Width="20" Height="20" Margin="0,0,10,0" />
+                                <TextBlock Text="Cleaning up…" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

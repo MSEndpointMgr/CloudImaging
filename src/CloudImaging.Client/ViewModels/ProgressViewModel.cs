@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Threading;
 using CloudImaging.Contracts.Enums;
 
 namespace CloudImaging.Client.ViewModels;
@@ -83,6 +84,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     private const int MaxActivityLines = 30;
 
     private readonly DateTime _startedAtUtc = DateTime.UtcNow;
+    private readonly DispatcherTimer _elapsedTimer;
     private readonly Dictionary<ImagingStepName, DateTime> _stepStartedAtUtc = new();
     private readonly List<string> _activityLines = new();
 
@@ -105,6 +107,17 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
             new(ImagingStepName.ConfigureBoot,      "Configure Boot"),
             new(ImagingStepName.ApplyRecoveryImage, "Apply Recovery Image"),
         };
+
+        // Elapsed time used to refresh only when OverallPercent changed, so during a long quiet
+        // stretch (verifying a cached image, a slow DISM phase) the clock froze and the operator
+        // could not tell a slow step from a hung one.
+        _elapsedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _elapsedTimer.Tick += (_, _) =>
+        {
+            OnPropertyChanged(nameof(ElapsedText));
+            OnPropertyChanged(nameof(StepSubtitle));
+        };
+        _elapsedTimer.Start();
     }
 
     /// <summary>The 5-node step pipeline shown in ProgressView's sidebar.</summary>

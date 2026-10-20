@@ -26,6 +26,7 @@ public sealed class AutopilotRegistrationLifecycleTests
     private readonly AutopilotRegistrationRepository _requests;
     private readonly AutopilotGroupTagRepository _tags;
     private readonly LocationRepository _locations;
+    private readonly RegionConfigurationRepository _regions;
     private readonly AutopilotRegistrationService _service;
 
     public AutopilotRegistrationLifecycleTests()
@@ -35,7 +36,8 @@ public sealed class AutopilotRegistrationLifecycleTests
         _requests = new AutopilotRegistrationRepository(tableService);
         _tags = new AutopilotGroupTagRepository(tableService);
         _locations = new LocationRepository(tableService);
-        _service = new AutopilotRegistrationService(_requests, _tags, _locations, _config, _graph.Object, NullLogger<AutopilotRegistrationService>.Instance, _time);
+        _regions = new RegionConfigurationRepository(tableService, NullLogger<RegionConfigurationRepository>.Instance);
+        _service = new AutopilotRegistrationService(_requests, _tags, _locations, _regions, _config, _graph.Object, NullLogger<AutopilotRegistrationService>.Instance, _time);
         _graph.Setup(g => g.IsSerialRegisteredAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
     }
 
@@ -214,6 +216,26 @@ public sealed class AutopilotRegistrationLifecycleTests
         stored.GroupTag.Should().Be("EMEA-SE-STD");
         stored.ImportedIdentityId.Should().Be("import-1");
         stored.DecidedByUpn.Should().Be("approver@contoso.com");
+    }
+
+    [Fact]
+    public async Task Approve_TakesTheRegionFromTheLocationsCountry_WhenNoRegionWasTyped()
+    {
+        await EnableAsync();
+        await _regions.UpsertAsync(new RegionConfiguration
+        {
+            Regions = [new RegionDefinition { RegionId = CountryRegionDefaults.EmeaRegionId, Code = "EUR" }],
+        });
+        var location = await _locations.CreateAsync(new Location { LocationId = Guid.NewGuid(), Name = "Stockholm HQ", CountryCode = "SE" });
+        var tag = new AutopilotGroupTagDefinition { Id = Guid.NewGuid(), Name = "Regional", Kind = AutopilotGroupTagKind.Template, Value = "E-R-{Region}-C-{CountryCode}-P-PAW" };
+        await _tags.AddAsync(tag);
+        var response = await SubmitAsync(Submission(locationId: location.LocationId, locationName: location.Name));
+        _graph.Setup(g => g.ImportAsync("SN-001", ValidHash, "E-R-EUR-C-SE-P-PAW", It.IsAny<CancellationToken>())).ReturnsAsync("import-1");
+
+        var result = await _service.ApproveAsync(response.RequestId, Decision(tag.Id), CancellationToken.None);
+
+        result.Outcome.Should().Be(AutopilotOutcome.Ok);
+        (await StoredAsync(response.RequestId)).GroupTag.Should().Be("E-R-EUR-C-SE-P-PAW");
     }
 
     [Fact]

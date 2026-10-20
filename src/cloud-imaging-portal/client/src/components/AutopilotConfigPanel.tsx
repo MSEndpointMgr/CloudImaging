@@ -22,7 +22,7 @@ import { ConfirmImpactDialog } from './ConfirmImpactDialog.tsx';
 interface LocationEntry {
   locationId: string;
   name: string;
-  region?: string | null;
+  effectiveRegion?: string | null;
   countryCode?: string | null;
 }
 
@@ -153,7 +153,7 @@ function GroupTagManager(): React.ReactElement {
       if (locRes.ok) {
         const data = await locRes.json() as LocationEntry[];
         setLocations(data);
-        setPreviewLocationId((current) => current || data.find((l) => l.region && l.countryCode)?.locationId || data[0]?.locationId || '');
+        setPreviewLocationId((current) => current || data.find((l) => l.effectiveRegion && l.countryCode)?.locationId || data[0]?.locationId || '');
       }
       setLoadError(null);
     } catch (err) {
@@ -169,7 +169,7 @@ function GroupTagManager(): React.ReactElement {
   const draftPreview = useMemo(() => {
     if (!draft || draft.kind !== 'Template' || !draft.value.trim()) return null;
     return resolveTemplate(draft.value.trim(), {
-      name: previewLocation?.name, region: previewLocation?.region, countryCode: previewLocation?.countryCode,
+      name: previewLocation?.name, region: previewLocation?.effectiveRegion, countryCode: previewLocation?.countryCode,
     });
   }, [draft, previewLocation]);
 
@@ -231,8 +231,8 @@ function GroupTagManager(): React.ReactElement {
               <CardTitle>Group tags</CardTitle>
             </div>
             <CardDescription>
-              The only tags approvers can choose. Templates resolve from the device&apos;s location (region and country are set on
-              the Locations page). Changes apply immediately.
+              The only tags approvers can choose. Templates resolve from the device&apos;s location (country is set on the
+              Locations page, and the region follows from it). Changes apply immediately.
             </CardDescription>
           </div>
           {!draft && (
@@ -291,7 +291,7 @@ function GroupTagManager(): React.ReactElement {
                     id="tag-preview-location"
                     value={previewLocationId}
                     onValueChange={setPreviewLocationId}
-                    options={locations.map((l) => ({ value: l.locationId, label: l.name, description: [l.region, l.countryCode].filter(Boolean).join(' \u00b7 ') || 'No region or country set' }))}
+                    options={locations.map((l) => ({ value: l.locationId, label: l.name, description: [l.effectiveRegion, l.countryCode].filter(Boolean).join(' \u00b7 ') || 'No region or country set' }))}
                     placeholder={locations.length === 0 ? 'No locations defined' : 'Choose a location'}
                     disabled={locations.length === 0}
                     wrapperClassName="w-64"

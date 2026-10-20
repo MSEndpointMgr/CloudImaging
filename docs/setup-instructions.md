@@ -515,6 +515,11 @@ without them; the rest are optional and can be revisited any time from **Configu
    - Navigate to **Locations** to define site labels technicians can tag onto boot media and
      filter devices by.
    - See [roles-and-access.md](roles-and-access.md) for how locations interact with access.
+   - Add **Wi-Fi networks** *(optional)* under **Wi-Fi Networks** for sites without Ethernet.
+     Each network has an SSID, a security type (WPA2-Personal, WPA3-Personal or WPA2/WPA3-Personal),
+     a password, a hidden flag and either all locations or selected ones. Devices try them in the
+     order shown. Passwords are stored in Key Vault and never shown again after saving. Wi-Fi
+     works only on boot images built on Windows RE (see [Phase 5, Step 1](#step-1-generate-your-first-boot-image)).
 5. **Configure device pre-flight authorization** *(optional, off by default)*.
    - Before enabling it, confirm the Microsoft Graph permission script above ended with `[OK]`.
    - Add at least one test device to Windows Autopilot, or add its exact manufacturer, model, and
@@ -742,10 +747,20 @@ the above.
 2. Sign in with your Entra ID credentials (must have `CloudImaging.Administrator` or `CloudImaging.Technician` role)
 3. Select **Generate Boot Image**
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path
-5. Optionally check **Enable command prompt access** under **Support Tools** (see
+5. Under **Boot Image Base**, choose:
+   - **Windows PE** (default): built from the ADK. Ethernet only.
+   - **Windows RE**: adds Wi-Fi. Point it at a Windows 11 ISO, or a folder with the extracted
+     ISO, whose build, architecture and language match the installed ADK. Media Builder checks the
+     source as soon as you pick it and shows why it does not fit. It takes Winre.wim plus the two
+     DLLs the WLAN service needs from `install.wim`. Add the Wi-Fi adapter drivers for your
+     hardware as usual. The file name gets a `-winre` suffix.
+6. Optionally check **Enable command prompt access** under **Support Tools** (see
    [Client support tools](#client-support-tools) below); off by default
-6. Click **Generate**; the wizard produces a `.wim` file
-7. Upload the WIM to the portal: **Boot Images** → **Upload**
+7. Click **Generate**; the wizard produces a `.wim` file
+8. Upload the WIM to the portal: **Boot Images** → **Upload**. The portal detects the base and
+   shows a **Wi-Fi** badge on Windows RE images. Windows PE and Windows RE are separate streams:
+   each has its own production image per architecture, and USB media only self-updates within
+   its own stream.
 
 > **Device Gateway URL is resolved automatically.** The Media Builder looks up the live Device
 > Gateway API URL from the Operator API and stamps it into the Client's `appsettings.json` while
@@ -758,14 +773,18 @@ the above.
 The Operation Selection screen offers two troubleshooting tools, both accessible without leaving
 the always-on-top Cloud Imaging Client window:
 
-- **Connect to Wi-Fi**: always available (no opt-in required). Opens a dedicated window that
-  scans for visible networks via `netsh wlan` and lets the technician connect to an
-  Open or WPA2/WPA3-Personal network by SSID + passphrase. Enterprise/802.1X networks are shown
-  (greyed out, labeled "Not supported") but cannot be connected to via this flow. No Wi-Fi
-  credential is ever persisted; the temporary WLAN profile (which embeds the passphrase in
-  plain text, per the netsh profile schema) is deleted immediately after the connect attempt.
-  The ADK's WinPE supports wired networking only, so on boot images built by Media Builder the
-  window reports that the boot image has no Wi-Fi support.
+- **Connect to Wi-Fi**: shown only on Windows RE boot images; Windows PE has no Wi-Fi, so the
+  button is not there at all. Lists the location's managed networks first (marked **Managed**,
+  joined without a password, hidden ones included), then every other visible network. Open and
+  WPA2/WPA3-Personal networks can be joined by SSID and passphrase; Enterprise/802.1X networks
+  are shown as "Not supported". A password typed here is used for this session only. The
+  temporary WLAN profile (which embeds the passphrase in plain text, per the netsh profile
+  schema) is deleted immediately after each connect attempt.
+- **Managed Wi-Fi at startup**: on a Windows RE boot image, when Ethernet has no address after
+  the usual wait, the Client tries the managed networks in portal order and shows the network it
+  joined on the startup screen and on the Wi-Fi button. Once online it fetches the current list
+  from the Device Gateway and rewrites the USB copy, so a password changed in the portal reaches
+  the stick the next time it is online.
 - **Command Prompt**: hidden unless the boot image was built with **Enable command prompt
   access** checked (off by default, per boot image). Launches an interactive `cmd.exe` for
   advanced troubleshooting, temporarily dropping the Client window's always-on-top behavior so
@@ -785,6 +804,12 @@ the always-on-top Cloud Imaging Client window:
 2. Select the boot image to deploy
 3. Insert a USB drive (8 GB minimum, 32 GB+ recommended, USB 3.x). Under 32 GB, a warning explains that larger OS images won't be cached on the drive; preparation can still continue.
 4. Click **Prepare**; the drive will be partitioned and the WIM deployed
+
+With a Windows RE boot image selected, the **Wi-Fi Networks** card lists the networks the chosen
+location receives. Media Builder writes them to `cloudimaging-wifi.json` on the BOOT partition,
+encrypted to the boot media certificate, so a device can get online without Ethernet the first
+time. Anyone holding the stick and its certificate can recover these passwords; use a dedicated
+imaging network (see [SECURITY.md](../SECURITY.md)).
 
 ---
 
@@ -819,7 +844,12 @@ Imaging is never blocked by a pending request. The feature is off by default.
    `{Region}-{CountryCode}-STD`. Group tags may contain letters, digits, spaces, hyphens,
    underscores and periods, up to 128 characters. Microsoft does not document a limit; this set is
    safe in Intune CSV imports, Microsoft Graph and Entra dynamic group rules.
-5. If you use templates, fill in **Region** and **Country** on each location under **Locations**.
+5. If you use templates, choose a **Country** on each location under **Locations**. The region
+   follows from the country: the Portal ships an ISO 3166 map that puts every country in EMEA,
+   AMER or APAC. Under **Locations** → **Regions** you can rename those regions (for example AMER
+   to AMCS), add your own, and move a country to another region or to no region. A template such
+   as `E-R-{Region}-C-{CountryCode}-P-PAW-B-PRD` then resolves to `E-R-EMEA-C-SE-P-PAW-B-PRD` for a
+   location in Sweden. Locations that had a region typed in by hand keep it until they are edited.
 
 **Boot media**
 

@@ -251,6 +251,7 @@ public sealed partial class UploadPublishService
 
         var finalBlobName = $"published/{Guid.NewGuid():N}/{job.Version.Replace(' ', '-')}{extension}";
         await MoveBlobAsync(container, staged, finalBlobName, ct);
+        var bootImageBase = await _validator.ReadWimBootImageBaseAsync(container.GetBlobClient(finalBlobName), ct);
 
         var published = await _bootImageRepo.PublishAsync(new BootImage
         {
@@ -264,6 +265,7 @@ public sealed partial class UploadPublishService
             // A job predating architecture tracking (or one where the operator left the picker
             // unset) still defaults to x64 (see MachineArchitecture's own doc comment).
             Architecture = job.Architecture ?? MachineArchitecture.X64,
+            Base = bootImageBase,
         }, ct);
 
         await _jobRepo.CompleteAsync(job.UploadId, published.BootImageId, ct);

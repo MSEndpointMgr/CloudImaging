@@ -112,6 +112,21 @@ public sealed partial class OperatorApiClient
             ?? [];
     }
 
+    // ── Wi-Fi networks ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The managed Wi-Fi networks for a location, with passwords, for writing to USB media. The
+    /// caller must encrypt the result straight away (<see cref="ManagedWifiEnvelope"/>) and never log it.
+    /// </summary>
+    public async Task<ManagedWifiNetworkSet> GetManagedWifiNetworksAsync(Guid? locationId, CancellationToken ct = default)
+    {
+        var path = locationId is { } id ? $"/api/wifi-networks/managed?locationId={id}" : "/api/wifi-networks/managed";
+        var response = await _http.GetAsync(path, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ManagedWifiNetworkSet>(JsonOptions, ct)
+            ?? new ManagedWifiNetworkSet { LocationId = locationId };
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Operator API request: {Method} {Path}.")]
     private static partial void LogRequest(ILogger logger, string method, string path);
 }
@@ -137,6 +152,9 @@ public sealed class BootImageDto
 
     /// <summary>Defaults to x64 for catalog entries that predate architecture tracking (todo/arm64-support.md).</summary>
     public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
+
+    /// <summary>Windows PE or Windows RE. Entries that predate Windows RE images are Windows PE.</summary>
+    public BootImageBase Base { get; init; } = BootImageBase.WindowsPE;
 }
 
 /// <summary>SAS URL and integrity hash for downloading a boot image's WIM.</summary>

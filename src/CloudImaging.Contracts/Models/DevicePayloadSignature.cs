@@ -46,4 +46,17 @@ public static class DevicePayloadSignature
         var hashDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(hardwareHash)));
         return Encoding.UTF8.GetBytes($"autopilot\n{serialNumber}\n{hashDigest}\n{timestampUtc}\n{nonce}");
     }
+
+    /// <summary>
+    /// Builds the challenge for a managed Wi-Fi network request.
+    /// Format: <c>wifi \n serialNumber \n locationId (D format, empty when none) \n timestampUtc \n nonce</c>.
+    /// </summary>
+    public static byte[] BuildWifiChallenge(string serialNumber, Guid? locationId, string timestampUtc, string nonce)
+    {
+        ArgumentNullException.ThrowIfNull(serialNumber);
+        ArgumentNullException.ThrowIfNull(timestampUtc);
+        ArgumentNullException.ThrowIfNull(nonce);
+
+        return Encoding.UTF8.GetBytes($"wifi\n{serialNumber}\n{locationId?.ToString("D") ?? string.Empty}\n{timestampUtc}\n{nonce}");
+    }
 }

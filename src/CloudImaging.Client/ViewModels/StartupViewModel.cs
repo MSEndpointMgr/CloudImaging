@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using CloudImaging.Client.Logging;
 using CloudImaging.Client.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -87,10 +88,15 @@ public sealed class StartupCheckRow : INotifyPropertyChanged
 /// <param name="LocalDiskCount">Non-USB disks found; null when they could not be read.</param>
 /// <param name="Gateway">Whether the Device Gateway API can be used.</param>
 /// <param name="AutopilotAvailability">The portal's Autopilot setting; null when this boot image cannot register.</param>
-public sealed record StartupReadiness(int? LocalDiskCount, GatewayReachability Gateway, AutopilotAvailabilityState? AutopilotAvailability)
+/// <param name="WifiSupported">True on a Windows RE boot image, which can join Wi-Fi.</param>
+/// <param name="WifiJoin">How joining the managed Wi-Fi networks ended; null when it was not needed or not possible.</param>
+public sealed record StartupReadiness(int? LocalDiskCount, GatewayReachability Gateway, AutopilotAvailabilityState? AutopilotAvailability, bool WifiSupported = false, ManagedWifiJoinResult? WifiJoin = null)
 {
     /// <summary>Every operation needs the Device Gateway.</summary>
     public bool CanReachService => Gateway == GatewayReachability.Reachable;
+
+    /// <summary>The managed network startup joined, or null.</summary>
+    public string? ConnectedWifiSsid => WifiJoin is { Outcome: ManagedWifiOutcome.Connected, Ssid: var ssid } ? ssid : null;
 }
 
 /// <summary>
@@ -109,7 +115,10 @@ public sealed partial class StartupViewModel
     private readonly Func<IReadOnlyList<LocalDisk>> _findLocalDisks;
     private readonly Func<string?> _findNetworkAdapter;
     private readonly TimeSpan _networkWait;
+    private readonly ManagedWifiService? _managedWifi;
+    private readonly bool _wifiSupported;
     private readonly ILogger _logger;
+    private ManagedWifiJoinResult? _wifiJoin;
 
     /// <param name="probeGateway">Asks the Device Gateway whether it can be used; normally <see cref="DeviceGatewayApiClient.ProbeAsync"/>.</param>
     /// <param name="autopilotToolingPresent">Whether this boot image can register devices with Autopilot.</param>
@@ -117,19 +126,25 @@ public sealed partial class StartupViewModel
     /// <param name="findNetworkAdapter">Test seam; defaults to the first adapter with a routable IPv4 address.</param>
     /// <param name="networkWait">How long to wait for a network adapter to come up.</param>
     /// <param name="logger">Defaults to a no-op logger.</param>
+    /// <param name="managedWifi">Joins the portal's Wi-Fi networks when Ethernet has no address; null on a Windows PE image.</param>
+    /// <param name="wifiSupported">True on a Windows RE boot image.</param>
     public StartupViewModel(
         Func<CancellationToken, Task<GatewayProbeResult>> probeGateway,
         bool autopilotToolingPresent,
         Func<IReadOnlyList<LocalDisk>>? findLocalDisks = null,
         Func<string?>? findNetworkAdapter = null,
         TimeSpan? networkWait = null,
-        ILogger<StartupViewModel>? logger = null)
+        ILogger<StartupViewModel>? logger = null,
+        ManagedWifiService? managedWifi = null,
+        bool wifiSupported = false)
     {
         _probeGateway = probeGateway;
         _autopilotToolingPresent = autopilotToolingPresent;
         _findLocalDisks = findLocalDisks ?? DiskFormatService.FindLocalDisks;
         _findNetworkAdapter = findNetworkAdapter ?? NetworkReadiness.FindRoutableAdapter;
         _networkWait = networkWait ?? DefaultNetworkWait;
+        _managedWifi = managedWifi;
+        _wifiSupported = wifiSupported;
         _logger = logger ?? NullLogger<StartupViewModel>.Instance;
         Checks = new ReadOnlyCollection<StartupCheckRow>([DiskCheck, NetworkCheck, ServiceCheck]);
     }
@@ -137,9 +152,9 @@ public sealed partial class StartupViewModel
     /// <summary>The rows shown on the Getting ready screen, in display order.</summary>
     public IReadOnlyList<StartupCheckRow> Checks { get; }
 
-    internal StartupCheckRow DiskCheck { get; } = new("Local disk", "Looking for a disk to image…");
+    internal StartupCheckRow DiskCheck { get; } = new("Local disk", "Detecting disks…");
 
-    internal StartupCheckRow NetworkCheck { get; } = new("Network connection", "Waiting for a network connection…");
+    internal StartupCheckRow NetworkCheck { get; } = new("Network connection", "Waiting for an IP address…");
 
     internal StartupCheckRow ServiceCheck { get; } = new("Cloud Imaging service", "Waiting for the network…");
 
@@ -148,7 +163,7 @@ public sealed partial class StartupViewModel
     {
         var diskCount = CheckLocalDisksAsync();
         var (gateway, autopilotEnabled) = await CheckConnectivityAsync(ct);
-        var readiness = new StartupReadiness(await diskCount, gateway, ResolveAutopilot(gateway, autopilotEnabled));
+        var readiness = new StartupReadiness(await diskCount, gateway, ResolveAutopilot(gateway, autopilotEnabled), _wifiSupported, _wifiJoin);
         LogReadiness(_logger, readiness.LocalDiskCount, readiness.Gateway, readiness.AutopilotAvailability);
         return readiness;
     }
@@ -161,13 +176,13 @@ public sealed partial class StartupViewModel
             switch (disks.Count)
             {
                 case 0:
-                    DiskCheck.Complete(StartupCheckState.Failed, "No local disk found. The boot image may be missing this device's storage driver.");
+                    DiskCheck.Complete(StartupCheckState.Failed, "None detected. Add the storage driver to the boot image.");
                     break;
                 case 1:
                     DiskCheck.Complete(StartupCheckState.Passed, DescribeDisk(disks[0]));
                     break;
                 default:
-                    DiskCheck.Complete(StartupCheckState.Warning, $"{disks.Count} local disks found. Imaging needs exactly one.");
+                    DiskCheck.Complete(StartupCheckState.Warning, $"{disks.Count} detected. Imaging requires exactly one.");
                     break;
             }
 
@@ -177,13 +192,17 @@ public sealed partial class StartupViewModel
         {
             // Unreadable disks must not block the screen; formatting reports its own error later.
             LogDiskCheckFailed(_logger, ex);
-            DiskCheck.Complete(StartupCheckState.Warning, "Could not read the local disks.");
+            DiskCheck.Complete(StartupCheckState.Warning, "Disk query failed. See the log.");
             return null;
         }
     }
 
     private async Task<(GatewayReachability Gateway, bool? AutopilotEnabled)> CheckConnectivityAsync(CancellationToken ct)
     {
+        // Check again re-runs this; the Wi-Fi association from an earlier run survives, a failure does not.
+        var previousJoin = _wifiJoin;
+        _wifiJoin = null;
+
         // A freshly booted NIC can take several seconds to get a DHCP lease.
         var adapter = FindAdapter();
         var deadline = DateTime.UtcNow + _networkWait;
@@ -201,7 +220,31 @@ public sealed partial class StartupViewModel
             adapter = FindAdapter();
         }
 
-        ServiceCheck.Complete(StartupCheckState.Running, "Contacting the service…");
+        // Ethernet always wins: Wi-Fi is only tried once the usual wait found no address.
+        string? wifiSsid = null;
+        if (adapter is not null && previousJoin?.Outcome == ManagedWifiOutcome.Connected)
+        {
+            _wifiJoin = previousJoin;
+            wifiSsid = previousJoin.Ssid;
+        }
+        else if (adapter is null && _wifiSupported && _managedWifi is not null)
+        {
+            try
+            {
+                _wifiJoin = await _managedWifi.JoinAsync(detail => NetworkCheck.Complete(StartupCheckState.Running, detail), ct);
+            }
+            catch (Exception ex)
+            {
+                LogWifiJoinFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
+            }
+            if (_wifiJoin?.Outcome == ManagedWifiOutcome.Connected)
+            {
+                wifiSsid = _wifiJoin.Ssid;
+                adapter = FindAdapter();
+            }
+        }
+
+        ServiceCheck.Complete(StartupCheckState.Running, "Connecting…");
 
         // Probe even without an IPv4 adapter: an IPv6-only network can still reach the gateway.
         using var probeTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -213,7 +256,7 @@ public sealed partial class StartupViewModel
         }
         catch (Exception ex)
         {
-            LogProbeFailed(_logger, ex);
+            LogProbeFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
             probe = new GatewayProbeResult(GatewayReachability.Unreachable, null);
         }
 
@@ -222,9 +265,9 @@ public sealed partial class StartupViewModel
             reachability = GatewayReachability.NoNetwork;
 
         if (adapter is not null)
-            NetworkCheck.Complete(StartupCheckState.Passed, adapter);
+            NetworkCheck.Complete(StartupCheckState.Passed, wifiSsid is null ? adapter : $"Wi-Fi {wifiSsid}: {adapter}");
         else if (reachability is GatewayReachability.NoNetwork or GatewayReachability.NotConfigured)
-            NetworkCheck.Complete(StartupCheckState.Failed, "No network connection. The boot image may be missing this device's network driver.");
+            NetworkCheck.Complete(StartupCheckState.Failed, _wifiSupported ? DescribeWifiFailure(_wifiJoin) : "No IP address. If Ethernet is connected, add the network adapter driver to the boot image.");
         else
             NetworkCheck.Complete(StartupCheckState.Passed, "Connected");
 
@@ -233,11 +276,11 @@ public sealed partial class StartupViewModel
             reachability switch
             {
                 GatewayReachability.Reachable => "Connected",
-                GatewayReachability.NotConfigured => "This boot image has no service address.",
-                GatewayReachability.NoNetwork => "Needs a network connection.",
-                GatewayReachability.ServiceUnavailable => "The service is not responding.",
-                GatewayReachability.CertificateRejected => "The service did not accept this boot media.",
-                _ => "Could not reach the service.",
+                GatewayReachability.NotConfigured => "No service URL in the boot image.",
+                GatewayReachability.NoNetwork => "Skipped: no network.",
+                GatewayReachability.ServiceUnavailable => "Server error.",
+                GatewayReachability.CertificateRejected => "Boot media certificate rejected.",
+                _ => "No response. Check DNS, proxy and outbound HTTPS.",
             });
 
         return (reachability, probe.AutopilotEnabled);
@@ -268,6 +311,16 @@ public sealed partial class StartupViewModel
         };
     }
 
+    /// <summary>Why a Windows RE image is still offline, for the Network connection row.</summary>
+    internal static string DescribeWifiFailure(ManagedWifiJoinResult? join) => join?.Outcome switch
+    {
+        ManagedWifiOutcome.PasswordRejected => $"No Ethernet. {join.Ssid} rejected the saved password.",
+        ManagedWifiOutcome.NoIpAddress => $"No Ethernet. {join.Ssid} gave no IP address.",
+        ManagedWifiOutcome.NoAdapter => "No Ethernet and no Wi-Fi adapter. Add the Wi-Fi driver to the boot image.",
+        ManagedWifiOutcome.NoNetworksSaved => "No Ethernet, and no Wi-Fi networks are saved for this location.",
+        _ => "No Ethernet, and none of the saved Wi-Fi networks are in range.",
+    };
+
     private static string DescribeDisk(LocalDisk disk)
     {
         var model = string.IsNullOrWhiteSpace(disk.Model) ? $"Disk {disk.Index}" : disk.Model;
@@ -282,6 +335,9 @@ public sealed partial class StartupViewModel
     [LoggerMessage(Level = LogLevel.Warning, Message = "Startup check could not read the local disks.")]
     private static partial void LogDiskCheckFailed(ILogger logger, Exception ex);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Startup check could not probe the Device Gateway.")]
-    private static partial void LogProbeFailed(ILogger logger, Exception ex);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Startup check could not probe the Device Gateway: {Reason}")]
+    private static partial void LogProbeFailed(ILogger logger, string reason, Exception? ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Startup could not join the managed Wi-Fi networks: {Reason}")]
+    private static partial void LogWifiJoinFailed(ILogger logger, string reason, Exception? ex);
 }

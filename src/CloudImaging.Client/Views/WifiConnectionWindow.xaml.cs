@@ -14,7 +14,8 @@ namespace CloudImaging.Client.Views;
 public partial class WifiConnectionWindow : FluentWindow
 {
     /// <summary>Builds the window and loads its XAML.</summary>
-    public WifiConnectionWindow()
+    /// <param name="managedWifi">The portal's Wi-Fi networks, listed first; null when there are none.</param>
+    public WifiConnectionWindow(ManagedWifiService? managedWifi = null)
     {
         InitializeComponent();
 
@@ -27,7 +28,7 @@ public partial class WifiConnectionWindow : FluentWindow
 
         // Scan and connect failures belong in the Client log, which is the only diagnostic a technician can send.
         var logger = new Serilog.Extensions.Logging.SerilogLoggerFactory(Serilog.Log.Logger).CreateLogger<WirelessConnectionService>();
-        var viewModel = new WifiConnectionViewModel(new WirelessConnectionService(logger), closeRequested: Close);
+        var viewModel = new WifiConnectionViewModel(new WirelessConnectionService(logger), closeRequested: Close, managedWifi: managedWifi);
         // The inline connect panel's PasswordBox is now a single persistent element (not
         // re-created per list item), so it must be cleared explicitly whenever the selected
         // network changes — otherwise a password typed for one network would silently carry

@@ -26,7 +26,7 @@ import { useWimArchitecture } from '../lib/useWimArchitecture.ts';
 import { ArchitectureField } from '../components/ArchitectureField.tsx';
 import { ArchitectureCapacityCard } from '../components/ArchitectureCapacityCard.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
-import { BOOT_IMAGE_STAGE_LABELS, bootImageStage, demoteFallback } from '../lib/bootImageStage.ts';
+import { BOOT_IMAGE_STAGE_LABELS, bootImageStage, demoteFallback, sameStream } from '../lib/bootImageStage.ts';
 import type { BadgeProps } from '../components/ui/badge';
 import {
   startBootImageUpload,
@@ -47,6 +47,8 @@ interface BootImage {
   sizeBytes: number;
   sha256Hash: string;
   architecture: 'x64' | 'arm64';
+  /** Absent on entries that predate Windows RE images. */
+  base?: 'WindowsPE' | 'WindowsRE';
   isLatestPublished: boolean;
   isProduction?: boolean;
   promotedAt?: string | null;
@@ -74,6 +76,11 @@ const STAGE_BADGE: Record<ReturnType<typeof bootImageStage>, BadgeProps['variant
 const MAX_BOOT_IMAGES = 5;
 
 const archLabel = architectureLabel;
+
+/** "x64" or "x64 Windows RE": the stream an image is latest in and USB devices update within. */
+function streamLabel(image: Pick<BootImage, 'architecture' | 'base'>): string {
+  return image.base === 'WindowsRE' ? `${archLabel(image.architecture)} Windows RE` : archLabel(image.architecture);
+}
 
 function fmtSize(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
@@ -141,7 +148,7 @@ export default function BootImagesPage(): React.ReactElement {
         notify({
           status: 'success',
           title: action === 'promote'
-            ? `v${image.version} is now the latest ${archLabel(image.architecture)} boot image.`
+            ? `v${image.version} is now the latest ${streamLabel(image)} boot image.`
             : `v${image.version} is back in pre-production.`,
         });
         setStageChange(null);
@@ -161,7 +168,7 @@ export default function BootImagesPage(): React.ReactElement {
   };
 
   const demoteCopy = (candidate: BootImage): ConfirmImpactCopy => {
-    const arch = archLabel(candidate.architecture);
+    const arch = streamLabel(candidate);
     const title = `Demote v${candidate.version} to pre-production?`;
     if (!candidate.isLatestPublished) {
       return {
@@ -188,8 +195,8 @@ export default function BootImagesPage(): React.ReactElement {
   };
 
   const promoteCopy = (candidate: BootImage): ConfirmImpactCopy => {
-    const arch = archLabel(candidate.architecture);
-    const current = images.find(img => img.isLatestPublished && img.architecture === candidate.architecture);
+    const arch = streamLabel(candidate);
+    const current = images.find(img => img.isLatestPublished && sameStream(img, candidate));
     const replaces = current ? ` It replaces v${current.version} as the latest ${arch} image.` : '';
     return bootImageStage(candidate) === 'preProduction'
       ? {
@@ -260,7 +267,14 @@ export default function BootImagesPage(): React.ReactElement {
               <TableRow key={img.bootImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
                 <TableCell>
-                  <Badge variant="outline">{archLabel(img.architecture)}</Badge>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant="outline">{archLabel(img.architecture)}</Badge>
+                    {img.base === 'WindowsRE' && (
+                      <Tooltip content="Built on Windows RE, so devices can join Wi-Fi.">
+                        <Badge variant="info">Wi-Fi</Badge>
+                      </Tooltip>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell>
@@ -279,7 +293,7 @@ export default function BootImagesPage(): React.ReactElement {
                   <TableCell className="w-px whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       {!img.isLatestPublished && (
-                        <Tooltip content={bootImageStage(img) === 'preProduction' ? 'Promote to production' : `Make latest ${archLabel(img.architecture)} image`}>
+                        <Tooltip content={bootImageStage(img) === 'preProduction' ? 'Promote to production' : `Make latest ${streamLabel(img)} image`}>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -305,7 +319,7 @@ export default function BootImagesPage(): React.ReactElement {
                         </Tooltip>
                       )}
                       {/* The latest entry cannot be deleted (Imaging Core returns 409) until another is promoted. */}
-                      <Tooltip content={img.isLatestPublished ? `Promote another ${archLabel(img.architecture)} boot image before deleting` : 'Delete'}>
+                      <Tooltip content={img.isLatestPublished ? `Promote another ${streamLabel(img)} boot image before deleting` : 'Delete'}>
                         <Button
                           variant="ghost"
                           size="icon"

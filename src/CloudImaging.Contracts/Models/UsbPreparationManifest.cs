@@ -52,6 +52,12 @@ public sealed class UsbPreparationManifest
     /// existed; the Client treats a null value as <see cref="MachineArchitecture.X64"/> (todo/arm64-support.md #8).</summary>
     public MachineArchitecture? Architecture { get; init; }
 
+    /// <summary>Windows PE or Windows RE. Null on manifests written before it existed; treated as Windows PE.</summary>
+    public BootImageBase? BootImageBase { get; init; }
+
+    /// <summary>True when Media Builder wrote <see cref="ManagedWifiEnvelope.FileName"/> next to this manifest.</summary>
+    public bool ManagedWifiIncluded { get; init; }
+
     /// <summary>
     /// Admin-defined location label selected in Media Builder when this media was prepared
     /// (e.g. "Seattle HQ"). Null when no location catalog entry was selected — the Client and

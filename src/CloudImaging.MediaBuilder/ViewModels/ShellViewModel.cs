@@ -16,7 +16,7 @@ namespace CloudImaging.MediaBuilder.ViewModels;
 /// about after selection, when the Windows ADK is not installed (FR-050a) or the signed-in
 /// user lacks the Administrator role (FR-050b).
 /// </summary>
-public sealed class ShellViewModel : INotifyPropertyChanged
+public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
 {
     private readonly EntraAuthenticationService _authService;
     private readonly OperatorApiClient _operatorApiClient;
@@ -35,6 +35,8 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     private bool _canNavigate = true;
     private INotifyPropertyChanged? _trackedContentViewModel;
     private Func<bool>? _isTrackedContentBusy;
+    private Action? _cancelTrackedContent;
+    private Func<(string Name, string CloseWarning)>? _trackedOperation;
     /// <summary>
     /// Whether an active boot media certificate is configured (T151, FR-050a). Starts true
     /// (optimistic) so the nav item isn't spuriously disabled before the async check below
@@ -177,9 +179,22 @@ public sealed class ShellViewModel : INotifyPropertyChanged
             if (_canNavigate == value) return;
             _canNavigate = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsOperationRunning));
             CommandManager.InvalidateRequerySuggested();
         }
     }
+
+    /// <summary>True while the hosted section runs a generation, USB write or ISO build; closing the window must ask first.</summary>
+    public bool IsOperationRunning => !CanNavigate;
+
+    /// <summary>Name of the running operation for the close confirmation, e.g. "Boot image generation".</summary>
+    public string RunningOperationName => _trackedOperation?.Invoke().Name ?? "An operation";
+
+    /// <summary>What cancelling the running operation leaves behind, shown in the close confirmation.</summary>
+    public string RunningOperationCloseWarning => _trackedOperation?.Invoke().CloseWarning ?? "Closing cancels it.";
+
+    /// <summary>Requests cancellation of the running operation; its own cleanup runs before it stops.</summary>
+    public void CancelRunningOperation() => _cancelTrackedContent?.Invoke();
 
     /// <summary>Current section's display name, used as the bold trailing crumb in the shell's breadcrumb bar.</summary>
     public string SectionLabel => CurrentSection switch
@@ -246,7 +261,8 @@ public sealed class ShellViewModel : INotifyPropertyChanged
         var viewModel = new GenerateBootImageViewModel(_genService, _authService, _gitHubReleasesClient, GoHome);
         CurrentContent = new GenerateBootImageView { DataContext = viewModel };
         CurrentSection = ShellSection.Generate;
-        TrackBusyState(viewModel, () => viewModel.IsGenerating);
+        TrackBusyState(viewModel, () => viewModel.IsGenerating, () => Execute(viewModel.CancelCommand),
+            () => ("Boot image generation", "Closing cancels it. The mounted image and temporary files are cleaned up first."));
     }
 
     /// <summary>Navigates to Prepare USB Device. Public so dev-mode tooling can jump here directly.</summary>
@@ -257,7 +273,10 @@ public sealed class ShellViewModel : INotifyPropertyChanged
             _isoGeneration, isAdkInstalled: () => AdkAvailable);
         CurrentContent = new PrepareStorageDeviceView { DataContext = viewModel };
         CurrentSection = ShellSection.PrepareUsb;
-        TrackBusyState(viewModel, () => viewModel.IsBusy);
+        TrackBusyState(viewModel, () => viewModel.IsBusy, () => Execute(viewModel.CancelCommand),
+            () => viewModel.PrepareAsIso
+                ? ("ISO generation", "Closing cancels it. No ISO file is saved and temporary files are cleaned up first.")
+                : ("USB preparation", "Closing cancels it. The USB device may be left partly written and need preparing again."));
     }
 
     /// <summary>
@@ -301,13 +320,21 @@ public sealed class ShellViewModel : INotifyPropertyChanged
     /// from it) so <see cref="CanNavigate"/> tracks whether the just-navigated-to section is
     /// mid-operation. Replaces any previously tracked view model.
     /// </summary>
-    private void TrackBusyState(INotifyPropertyChanged viewModel, Func<bool> isBusy)
+    private void TrackBusyState(INotifyPropertyChanged viewModel, Func<bool> isBusy, Action cancel, Func<(string Name, string CloseWarning)> operation)
     {
         StopTrackingBusyState();
         _trackedContentViewModel = viewModel;
         _isTrackedContentBusy = isBusy;
+        _cancelTrackedContent = cancel;
+        _trackedOperation = operation;
         viewModel.PropertyChanged += OnTrackedContentPropertyChanged;
         CanNavigate = !isBusy();
+    }
+
+    private static void Execute(ICommand command)
+    {
+        if (command.CanExecute(null))
+            command.Execute(null);
     }
 
     /// <summary>Unsubscribes from the currently tracked content view model, if any, and unlocks the nav pane.</summary>
@@ -317,6 +344,8 @@ public sealed class ShellViewModel : INotifyPropertyChanged
             _trackedContentViewModel.PropertyChanged -= OnTrackedContentPropertyChanged;
         _trackedContentViewModel = null;
         _isTrackedContentBusy = null;
+        _cancelTrackedContent = null;
+        _trackedOperation = null;
         CanNavigate = true;
     }
 

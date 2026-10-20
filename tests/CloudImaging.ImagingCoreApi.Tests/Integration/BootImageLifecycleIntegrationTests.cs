@@ -102,6 +102,34 @@ public sealed class BootImageLifecycleIntegrationTests
     }
 
     [Fact]
+    public void PlanPromote_KeepsWindowsPeAndWindowsReLatestApart()
+    {
+        var peLatest = Image(MachineArchitecture.X64, daysAgo: 5, latest: true);
+        var reLatest = WithBase(Image(MachineArchitecture.X64, daysAgo: 5, latest: true), BootImageBase.WindowsRE);
+        var reCandidate = WithBase(Image(MachineArchitecture.X64, daysAgo: 0, latest: false), BootImageBase.WindowsRE);
+
+        BootImageRepository.PlanPromote([peLatest, reLatest, reCandidate], reCandidate)
+            .Should().ContainSingle().Which.Should().BeSameAs(reLatest, "a Wi-Fi stick must keep a Windows RE image to update to");
+        BootImageRepository.PlanDemote([peLatest, reLatest], reLatest).Should().BeNull("a Windows PE image never becomes a Windows RE stick's latest");
+    }
+
+    private static BootImage WithBase(BootImage image, BootImageBase bootImageBase) => new()
+    {
+        BootImageId = image.BootImageId,
+        Version = image.Version,
+        CreatedAt = image.CreatedAt,
+        StoragePath = image.StoragePath,
+        ManifestVersion = image.ManifestVersion,
+        Sha256Hash = image.Sha256Hash,
+        Architecture = image.Architecture,
+        IsLatestPublished = image.IsLatestPublished,
+        IsProduction = image.IsProduction,
+        PromotedAt = image.PromotedAt,
+        IsActive = image.IsActive,
+        Base = bootImageBase,
+    };
+
+    [Fact]
     public void PlanPromote_IsIdempotentForTheCurrentLatest()
     {
         var x64Latest = Image(MachineArchitecture.X64, daysAgo: 5, latest: true);

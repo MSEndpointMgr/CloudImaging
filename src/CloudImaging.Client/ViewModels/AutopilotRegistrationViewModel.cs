@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using CloudImaging.Client.Logging;
 using CloudImaging.Client.Services;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
@@ -307,7 +308,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         }
         catch (Exception ex)
         {
-            LogFailed(_logger, ex);
+            LogFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
             ErrorMessage = ex.Message;
             Stage = AutopilotFlowStage.Failed;
         }
@@ -356,7 +357,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
             catch (Exception ex)
             {
                 // Keep waiting through transient outages; the operator can always go back.
-                LogPollFailed(_logger, ex);
+                LogPollFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
                 _lastPollFailed = true;
                 OnPropertyChanged(nameof(Subtitle));
             }
@@ -395,14 +396,14 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         _cts.Dispose();
     }
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Autopilot registration failed before the request was submitted.")]
-    private static partial void LogFailed(ILogger logger, Exception ex);
+    [LoggerMessage(Level = LogLevel.Error, Message = "Autopilot registration failed before the request was submitted: {Reason}")]
+    private static partial void LogFailed(ILogger logger, string reason, Exception? ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Autopilot hardware hash has no usable TPM 2.0 data (TPM version {TpmVersion}, endorsement key present {HasEkPub}).")]
     private static partial void LogNoTpmData(ILogger logger, string tpmVersion, bool hasEkPub);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Autopilot status check failed; retrying.")]
-    private static partial void LogPollFailed(ILogger logger, Exception ex);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Autopilot status check failed, retrying: {Reason}")]
+    private static partial void LogPollFailed(ILogger logger, string reason, Exception? ex);
 
     /// <inheritdoc/>
     public event PropertyChangedEventHandler? PropertyChanged;

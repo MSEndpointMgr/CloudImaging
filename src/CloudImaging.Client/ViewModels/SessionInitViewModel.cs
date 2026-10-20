@@ -2,8 +2,11 @@ using System.ComponentModel;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using CloudImaging.Client.Logging;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Client.Services;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CloudImaging.Client.ViewModels;
 
@@ -14,7 +17,7 @@ namespace CloudImaging.Client.ViewModels;
 /// SessionExpired — a passcode that timed out before an operator coupled it (FR-021).
 /// Handles cert-error state for mTLS failures (FR-071).
 /// </summary>
-public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
+public sealed partial class SessionInitViewModel : INotifyPropertyChanged, IDisposable
 {
     // FR-003: server-side polling cadence is 30s; the Client must match it rather than
     // polling 6x more often than necessary.
@@ -27,6 +30,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     private readonly Action<SessionStatusResponse, string?> _navigateToProgress;
     private readonly Action<SessionStatusResponse, string?>? _navigateToBlocked;
     private readonly Action? _navigateToStart;
+    private readonly ILogger _logger;
     private readonly CancellationTokenSource _cts = new();
 
     private bool _isPolling = true;
@@ -62,6 +66,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
     /// <param name="navigateToProgress">Hands off to the imaging pipeline once imaging starts.</param>
     /// <param name="navigateToBlocked">Shows the blocked screen when pre-flight authorization refused the device.</param>
     /// <param name="navigateToStart">Abandons this session and returns to operation selection to request a new passcode.</param>
+    /// <param name="logger">Defaults to a no-op logger.</param>
     public SessionInitViewModel(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
@@ -70,7 +75,8 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         Action<ResultsViewModel.Outcome, string?, string?, string?> navigateToResults,
         Action<SessionStatusResponse, string?> navigateToProgress,
         Action<SessionStatusResponse, string?>? navigateToBlocked = null,
-        Action? navigateToStart = null)
+        Action? navigateToStart = null,
+        ILogger<SessionInitViewModel>? logger = null)
     {
         _gatewayClient      = gatewayClient;
         _sessionId          = sessionId;
@@ -80,6 +86,7 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         _navigateToProgress = navigateToProgress;
         _navigateToBlocked  = navigateToBlocked;
         _navigateToStart    = navigateToStart;
+        _logger             = logger ?? NullLogger<SessionInitViewModel>.Instance;
 
         RefreshCommand = new RelayCommand(async _ => await PollOnceAsync());
         StartOverCommand = new RelayCommand(_ => StartOver());
@@ -267,9 +274,8 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
         catch (HttpRequestException ex) when
             (ex.InnerException is System.Security.Authentication.AuthenticationException)
         {
-            ShowCertError("The boot media certificate was rejected by the server. " +
-                          "Regenerate the boot image using Cloud Imaging Media Builder " +
-                          "and re-prepare the USB drive with the new image.");
+            LogPollFailed(_logger, LoggedFailure.Reason(ex), null);
+            ShowCertError("TLS handshake failed: the service rejected the boot media certificate. Rebuild the boot image in Media Builder and re-prepare the USB drive.");
         }
         catch (DeviceGatewayApiException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
@@ -278,20 +284,26 @@ public sealed class SessionInitViewModel : INotifyPropertyChanged, IDisposable
             // server includes, instead of always showing the (often wrong) cert-mismatch text.
             if (string.Equals(ex.ProblemType, DeviceGatewayApiException.TokenProblemType, StringComparison.Ordinal))
             {
-                ShowCertError("The device session token was rejected or has expired. " +
-                              "Restart the Cloud Imaging Client to begin a new session.");
+                ShowCertError("Session token rejected or expired (HTTP 401). Select Start over to register a new session.");
             }
             else
             {
-                ShowCertError("Certificate mismatch (HTTP 401). " +
-                              "Regenerate the boot image and re-prepare USB media.");
+                ShowCertError("Boot media certificate rejected (HTTP 401). Rebuild the boot image in Media Builder and re-prepare the USB drive.");
             }
+        }
+        catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+        {
+            // Start over was pressed while a poll was in flight.
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Could not check the session status. {ex.Message}";
+            LogPollFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
+            StatusMessage = $"Status check failed: {ex.Message}";
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Session status check failed: {Reason}")]
+    private static partial void LogPollFailed(ILogger logger, string reason, Exception? ex);
 
     private void ShowCertError(string message)
     {

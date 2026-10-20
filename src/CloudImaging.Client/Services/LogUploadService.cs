@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using CloudImaging.Client.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
@@ -92,7 +93,7 @@ public sealed partial class LogUploadService
         }
         catch (Exception ex)
         {
-            LogUploadException(_logger, sessionId, ex);
+            LogUploadException(_logger, sessionId, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
         }
     }
 
@@ -108,6 +109,6 @@ public sealed partial class LogUploadService
     [LoggerMessage(Level = LogLevel.Warning, Message = "Log upload for session {SessionId} failed with HTTP {StatusCode}.")]
     private static partial void LogUploadFailed(ILogger logger, Guid sessionId, int statusCode);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Log upload for session {SessionId} threw an exception.")]
-    private static partial void LogUploadException(ILogger logger, Guid sessionId, Exception exception);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Log upload for session {SessionId} failed: {Reason}")]
+    private static partial void LogUploadException(ILogger logger, Guid sessionId, string reason, Exception? exception);
 }

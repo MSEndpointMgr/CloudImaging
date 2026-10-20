@@ -235,12 +235,8 @@ public sealed partial class RecoveryImageService
         }
     }
 
-    private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
-    {
-        await using var stream = File.OpenRead(filePath);
-        var hash = await SHA256.HashDataAsync(stream, ct);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
+    private static Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
+        => ImageHasher.ComputeAsync(filePath, onProgress: null, ct);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Verifying SHA-256 hash for {FilePath}…")]
     private static partial void LogVerifyingHash(ILogger logger, string filePath);

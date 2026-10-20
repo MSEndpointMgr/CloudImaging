@@ -33,7 +33,35 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
             "GetBootMediaCertificatePfx",
             "GetEndpointConfiguration",
             "GetLocations",
+            "GetManagedWifiNetworksForMediaBuilder",
         };
+
+    // Wi-Fi passwords leave the service only for USB media, so the portal's full-access role cannot read them.
+    private static readonly HashSet<string> MediaBuilderOnlyFunctions =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "GetManagedWifiNetworksForMediaBuilder",
+        };
+
+    /// <summary>Returns why <paramref name="roles"/> may not call <paramref name="functionName"/>, or null when allowed.</summary>
+    public static string? Deny(IReadOnlySet<string> roles, string functionName)
+    {
+        bool hasPortalAccess = roles.Contains(PortalAccessRole);
+        bool hasMediaBuilderAccess = roles.Contains(MediaBuilderAccessRole);
+        if (!hasPortalAccess && !hasMediaBuilderAccess)
+        {
+            return "Caller does not hold any recognised Operator API app role.";
+        }
+        if (MediaBuilderOnlyFunctions.Contains(functionName) && !hasMediaBuilderAccess)
+        {
+            return $"'{functionName}' is only available to CloudImaging.MediaBuilderAccess.";
+        }
+        if (!hasPortalAccess && !MediaBuilderAllowedFunctions.Contains(functionName))
+        {
+            return $"CloudImaging.MediaBuilderAccess does not permit access to '{functionName}'. CloudImaging.PortalAccess is required.";
+        }
+        return null;
+    }
 
     /// <summary>Validates the resolved role has access to the invoked function, or short-circuits with 403.</summary>
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
@@ -53,23 +81,14 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var functionName = context.FunctionDefinition.Name;
-        bool hasPortalAccess = roles.Contains(PortalAccessRole);
-        bool hasMediaBuilderAccess = roles.Contains(MediaBuilderAccessRole);
-
-        if (!hasPortalAccess && !hasMediaBuilderAccess)
+        var denial = Deny(roles, functionName);
+        if (denial is not null)
         {
-            await WriteForbiddenAsync(context, "Caller does not hold any recognised Operator API app role.");
+            await WriteForbiddenAsync(context, denial);
             return;
         }
 
-        if (!hasPortalAccess && !MediaBuilderAllowedFunctions.Contains(functionName))
-        {
-            await WriteForbiddenAsync(context,
-                $"CloudImaging.MediaBuilderAccess does not permit access to '{functionName}'. CloudImaging.PortalAccess is required.");
-            return;
-        }
-
-        context.Items[ResolvedRoleKey] = hasPortalAccess ? PortalAccessRole : MediaBuilderAccessRole;
+        context.Items[ResolvedRoleKey] = roles.Contains(PortalAccessRole) ? PortalAccessRole : MediaBuilderAccessRole;
         await next(context);
     }
 

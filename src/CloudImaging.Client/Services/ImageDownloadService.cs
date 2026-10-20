@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using CloudImaging.Client.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services;
@@ -134,7 +135,7 @@ public sealed partial class ImageDownloadService
             catch (Exception ex) when (ex is not OperationCanceledException and not InsufficientDiskSpaceException)
             {
                 lastError = ex;
-                LogAttemptFailed(_logger, attempt, ex);
+                LogAttemptFailed(_logger, attempt, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
                 try { File.Delete(destinationPath); } catch { /* best-effort */ }
 
                 if (attempt < MaxAttempts)
@@ -225,8 +226,8 @@ public sealed partial class ImageDownloadService
     [LoggerMessage(Level = LogLevel.Information, Message = "Image download complete: {Bytes} bytes written.")]
     private static partial void LogCompleted(ILogger logger, long bytes);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Download attempt {Attempt} failed.")]
-    private static partial void LogAttemptFailed(ILogger logger, int attempt, Exception ex);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Download attempt {Attempt} failed: {Reason}")]
+    private static partial void LogAttemptFailed(ILogger logger, int attempt, string reason, Exception? ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Cache write failed for image {ImageId}: hash mismatch.")]
     private static partial void LogCacheWriteFailed(ILogger logger, Exception ex, string imageId);

@@ -12,17 +12,25 @@ public static class LatestImageSelector
         return architecture is "x64" or "arm64";
     }
 
+    /// <summary>Returns true and the requested base; missing means WindowsPE (Clients that predate Windows RE never send it).</summary>
+    public static bool TryReadBase(string? query, out string bootImageBase)
+    {
+        bootImageBase = string.IsNullOrEmpty(query) ? "WindowsPE" : query;
+        return bootImageBase is "WindowsPE" or "WindowsRE";
+    }
+
     /// <summary>
-    /// First entry flagged latest for <paramref name="architecture"/>. An entry with no
-    /// "architecture" property predates architecture tracking and reads as x64.
+    /// First entry flagged latest for <paramref name="architecture"/> and <paramref name="bootImageBase"/>.
+    /// An entry with no "architecture" reads as x64, and one with no "base" as WindowsPE.
     /// </summary>
-    public static JsonElement? FindLatestForArchitecture(JsonElement catalog, string architecture)
+    public static JsonElement? FindLatestForArchitecture(JsonElement catalog, string architecture, string bootImageBase = "WindowsPE")
     {
         foreach (var image in catalog.EnumerateArray())
         {
             var isLatest = image.TryGetProperty("isLatestPublished", out var flag) && flag.GetBoolean();
             var imageArchitecture = image.TryGetProperty("architecture", out var archProp) && archProp.GetString() == "arm64" ? "arm64" : "x64";
-            if (isLatest && imageArchitecture == architecture)
+            var imageBase = image.TryGetProperty("base", out var baseProp) && baseProp.GetString() == "WindowsRE" ? "WindowsRE" : "WindowsPE";
+            if (isLatest && imageArchitecture == architecture && imageBase == bootImageBase)
             {
                 return image;
             }

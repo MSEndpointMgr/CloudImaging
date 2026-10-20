@@ -41,7 +41,8 @@ public static class BootImageManifestService
         int toolsInjectedCount = 0,
         string? toolsRootPath = null,
         MachineArchitecture architecture = MachineArchitecture.X64,
-        bool autopilotToolingIncluded = false)
+        bool autopilotToolingIncluded = false,
+        BootImageBase bootImageBase = BootImageBase.WindowsPE)
     {
         var componentChecksums = new Dictionary<string, string>();
         string? clientVersion = null;
@@ -77,6 +78,7 @@ public static class BootImageManifestService
             },
             SupportToolsEnabled = commandPromptEnabled,
             AutopilotToolingIncluded = autopilotToolingIncluded,
+            Base = bootImageBase,
         };
     }
 

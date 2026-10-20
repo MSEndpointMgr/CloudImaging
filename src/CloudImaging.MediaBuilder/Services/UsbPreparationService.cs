@@ -92,7 +92,11 @@ public sealed partial class UsbPreparationService
         // Defaults to x64 for callers/tests that predate architecture tracking (todo/arm64-support.md).
         MachineArchitecture Architecture = MachineArchitecture.X64,
         Guid? BootImageId = null,
-        bool PreparedForTesting = false);
+        bool PreparedForTesting = false,
+        BootImageBase BootImageBase = BootImageBase.WindowsPE,
+        // Already encrypted to the boot media certificate before elevation, so the IPC file never
+        // holds a plain-text Wi-Fi password. Null for Windows PE images.
+        string? ManagedWifiEnvelopeBase64 = null);
 
     /// <summary>Outcome of a successful USB preparation.</summary>
     /// <param name="BootDriveLetter">Drive letter of the deployed WinPE boot partition.</param>
@@ -122,6 +126,11 @@ public sealed partial class UsbPreparationService
     /// </summary>
     public async Task<PreparationResult> PrepareAsync(PreparationParams p, CancellationToken ct)
     {
+        // Undo mounts an interrupted run left behind before touching the disk; this runs elevated.
+        if (MountCleanup.FindOrphanedWorkDirs().Count > 0)
+            ReportProgress("Cleaning up after an interrupted run…", 59);
+        await MountCleanup.SweepAsync();
+
         ReportProgress("Partitioning USB device…", 60);
         void OnProvisionProgress(string message, int percent) =>
             ReportProgress(message, 60 + (int)(0.10 * percent));
@@ -148,6 +157,13 @@ public sealed partial class UsbPreparationService
 
         // T071a/FR-059: persist the preparation manifest to the BOOT partition so the Client
         // can later detect a newer published boot image (T071b/FR-059a).
+        var wifiIncluded = p.ManagedWifiEnvelopeBase64 is not null;
+        if (wifiIncluded)
+        {
+            ReportProgress("Saving Wi-Fi networks to USB…", 99);
+            await BootImageDeploymentService.WriteManagedWifiAsync(bootDrive, Convert.FromBase64String(p.ManagedWifiEnvelopeBase64!), ct);
+        }
+
         ReportProgress("Writing USB preparation manifest…", 99);
         var manifest = new UsbPreparationManifest
         {
@@ -161,6 +177,8 @@ public sealed partial class UsbPreparationService
             LocationId       = p.SelectedLocationId,
             LocationName     = p.SelectedLocationName,
             Architecture     = p.Architecture,
+            BootImageBase    = p.BootImageBase,
+            ManagedWifiIncluded = wifiIncluded,
             PartitionSchema  = new Dictionary<string, object>
             {
                 ["bootDriveLetter"]  = bootDrive,
@@ -316,7 +334,7 @@ public sealed partial class UsbPreparationService
         string paramsFile, string progressFile, string resultFile, string cancelFile, ILoggerFactory loggerFactory)
     {
         using var cts = new CancellationTokenSource();
-        var cancelWatcherTask = WatchForCancelSignalAsync(cancelFile, cts);
+        var cancelWatcherTask = ElevationHelper.WatchForCancelOrParentExitAsync(cancelFile, cts);
 
         try
         {
@@ -358,31 +376,6 @@ public sealed partial class UsbPreparationService
         {
             cts.Cancel();
             try { await cancelWatcherTask; } catch { /* ignore */ }
-        }
-    }
-
-    /// <summary>
-    /// Polls for the parent-created <paramref name="cancelFile"/> and cancels
-    /// <paramref name="cts"/> once it appears — the cooperative half of the elevated-worker
-    /// cancellation handshake described on <see cref="RunElevatedWorkerAsync"/>.
-    /// </summary>
-    private static async Task WatchForCancelSignalAsync(string cancelFile, CancellationTokenSource cts)
-    {
-        try
-        {
-            while (!cts.IsCancellationRequested)
-            {
-                if (File.Exists(cancelFile))
-                {
-                    cts.Cancel();
-                    return;
-                }
-                await Task.Delay(300, cts.Token);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected once preparation finishes and the caller cancels cts in its finally.
         }
     }
 

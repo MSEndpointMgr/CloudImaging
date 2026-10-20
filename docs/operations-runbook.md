@@ -118,7 +118,7 @@ the interruption as a diagnosable outcome. See [Session lifecycle](session-lifec
 
 ---
 
-### Symptom: Operation Selection is disabled with "Network connection required" or a similar banner
+### Symptom: Operation Selection is disabled with "No network connection" or a similar banner
 
 **Cause**: When the Client starts, the **Getting ready** screen checks for a local disk, a network
 connection and the Device Gateway API. Every operation needs the Device Gateway, so if it cannot be
@@ -126,20 +126,23 @@ used, Operation Selection opens with every option disabled and a banner naming t
 
 | Banner | Meaning |
 |---|---|
-| Network connection required | No adapter got a routable address and the gateway could not be reached. Either no cable is connected, or the boot image has no driver for this device's network adapter. |
-| Cannot reach the Cloud Imaging service | The device is online, but DNS, routing, a proxy or a firewall stops it reaching the Device Gateway. |
-| Cloud Imaging service unavailable | The Device Gateway host answered with a server error. |
-| Boot media not accepted | The Device Gateway rejected the boot-media certificate. |
-| Service address missing | The boot image has no Device Gateway URL. |
+| No network connection | No adapter got a routable address and the gateway could not be reached. Either Ethernet is not connected, or the boot image has no driver for this device's network adapter. On a Windows RE image the text says whether no saved Wi-Fi network was in range, or no Wi-Fi adapter was found. |
+| Wi-Fi password rejected | Windows RE only: a saved network was in range but refused its password, usually because it changed after the USB drive was prepared. |
+| Cloud Imaging service unreachable | The device is online, but DNS, routing, a proxy or a firewall stops it reaching the Device Gateway. |
+| Cloud Imaging service error | The Device Gateway host answered with a server error. |
+| Boot media certificate rejected | The Device Gateway rejected the boot-media certificate. |
+| Service URL missing | The boot image has no Device Gateway URL. |
 
 **Resolution**: Fix the cause, then select **Check again** to repeat the checks without restarting.
+On a Windows RE image with no network, the banner offers **Connect to Wi-Fi** instead, which rechecks
+by itself after a successful connect.
 For a missing network driver, add the driver package under **Drivers** in Media Builder → Generate
 Boot Image, regenerate the boot image and prepare the USB drive again. The Client log (**View Log**)
 records each check's outcome on a `Startup checks:` line.
 
 ---
 
-### Symptom: Imaging card says "No local disk found" or "local disks found"
+### Symptom: Imaging card says "No local disk detected" or "local disks detected"
 
 **Cause**: Imaging formats exactly one non-USB disk. No disk usually means the boot image has no
 driver for the storage controller (common with Intel VMD/RST NVMe). Several disks are refused
@@ -152,18 +155,40 @@ since it never touches the disk.
 
 ---
 
-### Symptom: Device has no wired network or needs Wi-Fi to reach the Device Gateway
+### Symptom: Device has no Ethernet or needs Wi-Fi to reach the Device Gateway
 
-**Cause**: Boot images built by Media Builder are based on the ADK's WinPE, which supports wired
-networking only. It does not include the WLAN service or the `netsh wlan` commands, so
-**Connect to Wi-Fi** reports "This boot image has no Wi-Fi support".
+**Cause**: Windows PE boot images support Ethernet only. They have no WLAN service, so the
+**Connect to Wi-Fi** button is not shown. Wi-Fi needs a boot image built on **Windows RE**.
 
-**Resolution**: Use a wired connection (a USB Ethernet adapter works if its driver is in the boot
-image). On a boot image that does include WLAN support, **Connect to Wi-Fi** scans and connects to
-an Open or WPA2/WPA3-Personal network via `netsh wlan`, and explains when the list is empty (no
-wireless adapter, WLAN service stopped). Enterprise/802.1X networks are listed but cannot be
-connected to via this flow. No credential is persisted; see
+**Resolution**: Use Ethernet (a USB Ethernet adapter works if its driver is in the boot image), or
+build a Windows RE boot image (Media Builder → Generate Boot Image → **Boot Image Base**), add the
+Wi-Fi adapter driver, and add the site's network under **Wi-Fi Networks** in the portal. See
 [setup-instructions.md](setup-instructions.md#client-support-tools).
+
+---
+
+### Symptom: Device does not join the managed Wi-Fi network
+
+The startup screen's network line says what happened.
+
+| Startup text | Resolution |
+|---|---|
+| No Wi-Fi networks are saved for this location | The USB drive carries no networks for its location. Check the network's locations under **Wi-Fi Networks**, then prepare the USB drive again or connect to Ethernet once so the Client fetches the current list. |
+| None of the saved networks are in range | The network is out of range, or its SSID differs from the portal. Hidden networks are always tried. |
+| *SSID* rejected the saved password | The password changed after the USB drive was prepared. Update it under **Wi-Fi Networks**, then connect to Ethernet once (the Client then rewrites the USB copy), or prepare the USB drive again. A password typed in **Connect to Wi-Fi** works for that session only. |
+| No Wi-Fi adapter | Add the adapter's driver under **Drivers** and regenerate the boot image. |
+| *SSID* gave no IP address | The network accepted the device but DHCP did not answer. Check the network's DHCP scope and client isolation. |
+
+The Client log records each attempt; passwords are never logged.
+
+### Rotating a Wi-Fi password
+
+1. Under **Wi-Fi Networks**, edit the network, select **Replace** next to the password, and save.
+2. USB drives that come online (Ethernet, or another managed network) fetch the new password at
+   startup and rewrite their copy.
+3. Prepare the USB drive again for drives that never get another network.
+4. Rotating the boot media certificate also means preparing every USB drive again, which writes a
+   fresh Wi-Fi file encrypted to the new certificate.
 
 ---
 

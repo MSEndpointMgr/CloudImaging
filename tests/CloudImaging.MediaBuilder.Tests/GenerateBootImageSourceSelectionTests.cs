@@ -83,7 +83,7 @@ public sealed class GenerateBootImageSourceSelectionTests
         // FR-051b: output folder path is displayed on success — no portal upload initiated
         var vm = CreateViewModel();
         vm.IsComplete.Should().BeFalse("generation has not started; completion state is false initially");
-        vm.OutputWimPath.Should().BeNull("no output WIM path is shown until generation completes");
+        vm.ResultFilePath.Should().BeNull("no output WIM path is shown until generation completes");
     }
 
     // ── Optional driver injection (FR-051c) ───────────────────────────────────

@@ -47,4 +47,15 @@ router.delete('/:locationId', requireRole('CloudImaging.Administrator'), require
   }
 });
 
+/** Sets which saved Wi-Fi networks devices at the location join; only network location lists change. */
+router.put('/:locationId/wifi-networks', requireRole('CloudImaging.Administrator'), requireGuidParams('locationId'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const networkIds = (req.body as { networkIds?: unknown } | undefined)?.networkIds;
+    await operatorApiClient.setLocationWifiNetworks(req.params['locationId'] as string, { networkIds: Array.isArray(networkIds) ? networkIds : [] });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
 export { router as locationsRouter };
