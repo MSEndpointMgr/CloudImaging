@@ -38,7 +38,7 @@ public sealed class AutopilotRegistrationLifecycleTests
         _locations = new LocationRepository(tableService);
         _regions = new RegionConfigurationRepository(tableService, NullLogger<RegionConfigurationRepository>.Instance);
         _service = new AutopilotRegistrationService(_requests, _tags, _locations, _regions, _config, _graph.Object, NullLogger<AutopilotRegistrationService>.Instance, _time);
-        _graph.Setup(g => g.IsSerialRegisteredAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        _graph.Setup(g => g.FindDeviceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((AutopilotDeviceRecord?)null);
     }
 
     private Task EnableAsync(bool groupTagRequired = false, int expiryDays = 7, int retentionDays = 365) =>
@@ -137,22 +137,91 @@ public sealed class AutopilotRegistrationLifecycleTests
     }
 
     [Fact]
-    public async Task Submit_RecordsAlreadyRegistered_WithoutKeepingTheHash()
+    public async Task Submit_RecordsAlreadyRegistered_WithoutKeepingTheHash_WhenNoGroupTagsExist()
     {
         await EnableAsync();
-        _graph.Setup(g => g.IsSerialRegisteredAsync("SN-001", It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _graph.Setup(g => g.FindDeviceAsync("SN-001", It.IsAny<CancellationToken>())).ReturnsAsync(new AutopilotDeviceRecord("dev-1", null));
 
         var response = await SubmitAsync();
 
         response.State.Should().Be(AutopilotRegistrationState.AlreadyRegistered);
+        response.ExistingDevice.Should().BeTrue();
         (await StoredAsync(response.RequestId)).HardwareHash.Should().BeNull();
+    }
+
+    private async Task<AutopilotGroupTagDefinition> StaticTagAsync(string value = "KIOSK")
+    {
+        var tag = new AutopilotGroupTagDefinition { Id = Guid.NewGuid(), Name = value, Kind = AutopilotGroupTagKind.Static, Value = value };
+        await _tags.AddAsync(tag);
+        return tag;
+    }
+
+    [Fact]
+    public async Task Submit_QueuesAGroupTagChange_ForADeviceAlreadyInAutopilot()
+    {
+        await EnableAsync();
+        await StaticTagAsync();
+        _graph.Setup(g => g.FindDeviceAsync("SN-001", It.IsAny<CancellationToken>())).ReturnsAsync(new AutopilotDeviceRecord("dev-1", "OLD"));
+
+        var response = await SubmitAsync();
+
+        response.State.Should().Be(AutopilotRegistrationState.PendingApproval);
+        response.ExistingDevice.Should().BeTrue();
+        var stored = await StoredAsync(response.RequestId);
+        stored.ExistingDevice.Should().BeTrue();
+        stored.PreviousGroupTag.Should().Be("OLD");
+        stored.HardwareHash.Should().BeNull("nothing is imported, so the hash is not kept");
+    }
+
+    [Fact]
+    public async Task Approve_ChangesOnlyTheGroupTag_OfADeviceAlreadyInAutopilot()
+    {
+        await EnableAsync();
+        var tag = await StaticTagAsync();
+        _graph.Setup(g => g.FindDeviceAsync("SN-001", It.IsAny<CancellationToken>())).ReturnsAsync(new AutopilotDeviceRecord("dev-1", "OLD"));
+        var response = await SubmitAsync();
+
+        var noTag = await _service.ApproveAsync(response.RequestId, Decision(), CancellationToken.None);
+        noTag.Outcome.Should().Be(AutopilotOutcome.Invalid, "changing the tag is the only thing approval does here");
+
+        var result = await _service.ApproveAsync(response.RequestId, Decision(tag.Id), CancellationToken.None);
+
+        result.Outcome.Should().Be(AutopilotOutcome.Ok, result.Error);
+        var stored = await StoredAsync(response.RequestId);
+        stored.State.Should().Be(AutopilotRegistrationState.GroupTagUpdated);
+        stored.PreviousGroupTag.Should().Be("OLD");
+        stored.GroupTag.Should().Be("KIOSK");
+        _graph.Verify(g => g.UpdateGroupTagAsync("dev-1", "KIOSK", It.IsAny<CancellationToken>()), Times.Once);
+        _graph.Verify(g => g.ImportAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+        (await _service.GetDeviceStatusAsync(response.RequestId, response.StatusToken, CancellationToken.None))!.ExistingDevice.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Approve_RecordsARetryableFailure_WhenTheTagChangeFails()
+    {
+        await EnableAsync();
+        var tag = await StaticTagAsync();
+        _graph.Setup(g => g.FindDeviceAsync("SN-001", It.IsAny<CancellationToken>())).ReturnsAsync(new AutopilotDeviceRecord("dev-1", null));
+        var response = await SubmitAsync();
+        _graph.Setup(g => g.UpdateGroupTagAsync("dev-1", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new AutopilotGraphException("Throttled", HttpStatusCode.TooManyRequests));
+
+        var result = await _service.ApproveAsync(response.RequestId, Decision(tag.Id), CancellationToken.None);
+
+        result.Outcome.Should().Be(AutopilotOutcome.GraphFailed);
+        (await StoredAsync(response.RequestId)).State.Should().Be(AutopilotRegistrationState.ImportFailed);
+
+        _graph.Setup(g => g.UpdateGroupTagAsync("dev-1", It.IsAny<string>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var retry = await _service.RetryAsync(response.RequestId, Decision(tag.Id), CancellationToken.None);
+        retry.Outcome.Should().Be(AutopilotOutcome.Ok, retry.Error);
+        (await StoredAsync(response.RequestId)).State.Should().Be(AutopilotRegistrationState.GroupTagUpdated);
     }
 
     [Fact]
     public async Task Submit_StillQueues_WhenTheRegisteredLookupFails()
     {
         await EnableAsync();
-        _graph.Setup(g => g.IsSerialRegisteredAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _graph.Setup(g => g.FindDeviceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new AutopilotGraphException("Forbidden", HttpStatusCode.Forbidden));
 
         var response = await SubmitAsync();
@@ -333,6 +402,45 @@ public sealed class AutopilotRegistrationLifecycleTests
         await _service.ProcessAsync(CancellationToken.None);
 
         (await StoredAsync(id)).State.Should().Be(AutopilotRegistrationState.AlreadyRegistered);
+    }
+
+    [Fact]
+    public async Task Process_AppliesTheApprovedTag_WhenIntuneSaysTheDeviceIsAlreadyAssigned()
+    {
+        await EnableAsync();
+        var tag = await StaticTagAsync();
+        var response = await SubmitAsync();
+        ImportReturns("import-1");
+        await _service.ApproveAsync(response.RequestId, Decision(tag.Id), CancellationToken.None);
+        _graph.Setup(g => g.GetImportStatusAsync("import-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AutopilotImportStatus("error", "806", "ZtdDeviceAlreadyAssigned"));
+        _graph.Setup(g => g.FindDeviceAsync("SN-001", It.IsAny<CancellationToken>())).ReturnsAsync(new AutopilotDeviceRecord("dev-1", "OLD"));
+
+        await _service.ProcessAsync(CancellationToken.None);
+
+        var stored = await StoredAsync(response.RequestId);
+        stored.State.Should().Be(AutopilotRegistrationState.GroupTagUpdated);
+        stored.ExistingDevice.Should().BeTrue();
+        stored.PreviousGroupTag.Should().Be("OLD");
+        _graph.Verify(g => g.UpdateGroupTagAsync("dev-1", "KIOSK", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Retry_UsesTheGroupTagPickedNow()
+    {
+        var id = await ImportingRequestAsync();
+        var tag = await StaticTagAsync("FIXED");
+        _graph.Setup(g => g.GetImportStatusAsync("import-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AutopilotImportStatus("error", "808", "ZtdDeviceAssignedToOtherTenant"));
+        await _service.ProcessAsync(CancellationToken.None);
+        _graph.Setup(g => g.ImportAsync("SN-001", ValidHash, "FIXED", It.IsAny<CancellationToken>())).ReturnsAsync("import-2");
+
+        var retry = await _service.RetryAsync(id, Decision(tag.Id), CancellationToken.None);
+
+        retry.Outcome.Should().Be(AutopilotOutcome.Ok, retry.Error);
+        var stored = await StoredAsync(id);
+        stored.GroupTag.Should().Be("FIXED");
+        stored.GroupTagDefinitionId.Should().Be(tag.Id);
     }
 
     [Fact]

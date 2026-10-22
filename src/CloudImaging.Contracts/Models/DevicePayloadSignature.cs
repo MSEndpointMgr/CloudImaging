@@ -32,20 +32,39 @@ public static class DevicePayloadSignature
     }
 
     /// <summary>
-    /// Builds the challenge for an Autopilot hardware hash submission.
-    /// Format: <c>autopilot \n serialNumber \n sha256(hardwareHash) \n timestampUtc \n nonce</c>.
-    /// The purpose prefix keeps it from ever verifying as a session registration challenge.
+    /// Builds the challenge for an Autopilot hardware hash submission. It covers the location too,
+    /// since the location picks the group tag and so the device's Intune groups.
+    /// Format: <c>autopilot/2 \n serialNumber \n sha256(hardwareHash) \n locationId (D format, empty when none) \n sha256(locationName) \n timestampUtc \n nonce</c>.
     /// </summary>
-    public static byte[] BuildAutopilotChallenge(string serialNumber, string hardwareHash, string timestampUtc, string nonce)
+    public static byte[] BuildAutopilotChallenge(string serialNumber, string hardwareHash, Guid? locationId, string? locationName, string timestampUtc, string nonce)
     {
         ArgumentNullException.ThrowIfNull(serialNumber);
         ArgumentNullException.ThrowIfNull(hardwareHash);
         ArgumentNullException.ThrowIfNull(timestampUtc);
         ArgumentNullException.ThrowIfNull(nonce);
 
-        var hashDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(hardwareHash)));
-        return Encoding.UTF8.GetBytes($"autopilot\n{serialNumber}\n{hashDigest}\n{timestampUtc}\n{nonce}");
+        var hashDigest = Sha256Hex(hardwareHash);
+        var nameDigest = Sha256Hex(locationName ?? string.Empty);
+        return Encoding.UTF8.GetBytes($"autopilot/2\n{serialNumber}\n{hashDigest}\n{locationId?.ToString("D") ?? string.Empty}\n{nameDigest}\n{timestampUtc}\n{nonce}");
     }
+
+    /// <summary>
+    /// The original Autopilot challenge, without the location, still signed by boot media that has
+    /// not self-updated. The Device Gateway drops the location from such a submission.
+    /// Format: <c>autopilot \n serialNumber \n sha256(hardwareHash) \n timestampUtc \n nonce</c>.
+    /// </summary>
+    public static byte[] BuildLegacyAutopilotChallenge(string serialNumber, string hardwareHash, string timestampUtc, string nonce)
+    {
+        ArgumentNullException.ThrowIfNull(serialNumber);
+        ArgumentNullException.ThrowIfNull(hardwareHash);
+        ArgumentNullException.ThrowIfNull(timestampUtc);
+        ArgumentNullException.ThrowIfNull(nonce);
+
+        return Encoding.UTF8.GetBytes($"autopilot\n{serialNumber}\n{Sha256Hex(hardwareHash)}\n{timestampUtc}\n{nonce}");
+    }
+
+    private static string Sha256Hex(string value) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
     /// <summary>
     /// Builds the challenge for a managed Wi-Fi network request.

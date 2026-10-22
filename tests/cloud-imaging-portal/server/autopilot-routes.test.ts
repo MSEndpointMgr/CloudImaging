@@ -133,9 +133,27 @@ describe('Portal backend: Autopilot registration routes', () => {
     expect((await request(app).post('/api/autopilot/group-tags').send({ name: 'EMEA', kind: 'Static', value: 'EMEA' })).status).toBe(writeStatus);
   });
 
-  it('forwards only group tag fields to the Operator API', async () => {
-    await request(appFor(admin)).post('/api/autopilot/group-tags').send({ name: 'Site', kind: 'Template', value: '{CountryCode}-STD', description: 'Per site', tagId: TAG_ID, createdBy: 'x' });
-    expect(operatorApi.createAutopilotGroupTag).toHaveBeenCalledWith({ name: 'Site', kind: 'Template', value: '{CountryCode}-STD', description: 'Per site' });
+  it('forwards only group tag fields to the Operator API, with the editor taken from the token', async () => {
+    await request(appFor(admin)).post('/api/autopilot/group-tags').send({ name: 'Site', kind: 'Template', value: '{CountryCode}-STD', description: 'Per site', tagId: TAG_ID, createdBy: 'x', changedBy: 'someone-else@contoso.com' });
+    expect(operatorApi.createAutopilotGroupTag).toHaveBeenCalledWith({ name: 'Site', kind: 'Template', value: '{CountryCode}-STD', description: 'Per site', changedBy: 'admin@contoso.com' });
+  });
+
+  it('records who deleted a group tag', async () => {
+    const res = await request(appFor(admin)).delete(`/api/autopilot/group-tags/${TAG_ID}`);
+    expect(res.status).toBe(204);
+    expect(operatorApi.deleteAutopilotGroupTag).toHaveBeenCalledWith(TAG_ID, 'admin@contoso.com');
+  });
+
+  it('retries with the group tag picked now', async () => {
+    await request(appFor(approver)).post(`/api/autopilot/registrations/${REQUEST_ID}/retry`).send({ groupTagDefinitionId: TAG_ID });
+    expect(operatorApi.decideAutopilotRegistration).toHaveBeenCalledWith(REQUEST_ID, 'retry', {
+      decidedByUpn: 'approver@contoso.com',
+      decidedByObjectId: 'oid-approver',
+      groupTagDefinitionId: TAG_ID,
+    });
+
+    const bad = await request(appFor(approver)).post(`/api/autopilot/registrations/${REQUEST_ID}/retry`).send({ groupTagDefinitionId: 'EMEA' });
+    expect(bad.status).toBe(400);
   });
 });
 

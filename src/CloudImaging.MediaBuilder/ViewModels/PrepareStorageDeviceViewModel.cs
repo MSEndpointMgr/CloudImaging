@@ -865,7 +865,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             // pattern UsbPreparationService's partition/deploy steps already use.
             void OnIsoProgress(string message, int percent) =>
                 SetProgress(message, 30 + (int)(0.70 * percent));
-            await _isoGeneration.GenerateElevatedAsync(wimPath, IsoOutputPath, SelectedBootImage.Dto.Architecture, OnIsoProgress, ct);
+            await _isoGeneration.GenerateElevatedAsync(wimPath, IsoOutputPath, SelectedBootImage.Dto.Architecture, OnIsoProgress, BuildIsoManifestJson(), ct);
 
             var isoSizeBytes = new FileInfo(IsoOutputPath).Length;
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
@@ -891,6 +891,33 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             IsBusy = false;
         }
     }
+
+    /// <summary>
+    /// The manifest an ISO carries when a location is chosen, so devices booted from it register at
+    /// that location just like a USB device would. Null when there is no location to carry.
+    /// </summary>
+    internal string? BuildIsoManifestJson()
+    {
+        if (SelectedLocation is null || SelectedBootImage is null)
+            return null;
+
+        var manifest = new UsbPreparationManifest
+        {
+            ManifestVersion  = UsbPreparationManifest.ManifestSchemaVersion,
+            PreparedAt       = DateTimeOffset.UtcNow,
+            ToolVersion      = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown",
+            BootImageVersion = SelectedBootImage.Dto.Version,
+            BootImageId      = SelectedBootImage.Dto.BootImageId,
+            SelectedDiskId   = "iso",
+            Architecture     = SelectedBootImage.Dto.Architecture,
+            BootImageBase    = SelectedBootImage.Dto.Base,
+            LocationId       = SelectedLocation.Id,
+            LocationName     = SelectedLocation.Name,
+        };
+        return System.Text.Json.JsonSerializer.Serialize(manifest, IsoManifestJsonOptions);
+    }
+
+    private static readonly System.Text.Json.JsonSerializerOptions IsoManifestJsonOptions = new() { WriteIndented = true };
 
     /// <summary>Prompts for the ISO output file path via the standard Windows Save dialog.</summary>
     private void BrowseIsoOutput()

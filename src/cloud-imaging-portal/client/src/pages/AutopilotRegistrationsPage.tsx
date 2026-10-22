@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, History, RefreshCw, RotateCcw, Tag, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, History, Info, RefreshCw, RotateCcw, Tag, X, XCircle } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { countryName } from '../lib/countries.ts';
 import {
-  preProvisioningLabel, stateLabel, stateVariant,
+  groupTagChange, preProvisioningLabel, stateLabel, stateVariant,
   type AutopilotDetail, type AutopilotRequest, type AutopilotState,
 } from '../lib/autopilot.ts';
 import { useAuth } from '../context/authContext.tsx';
@@ -168,6 +168,7 @@ function PendingTable({ rows, canDecide, onOpen }: {
                 <span className="text-sm">{deviceLabel(r)}</span>
                 {r.architecture === 'arm64' && <Badge variant="outline" className="ml-2">ARM64</Badge>}
                 {r.preProvisioningReady === false && <Badge variant="warning" className="ml-2">No TPM data</Badge>}
+                {r.existingDevice && <Badge variant="info" className="ml-2">Group tag only</Badge>}
               </TableCell>
               <TableCell className="text-sm">{r.locationName ?? <span className="text-muted-foreground">-</span>}</TableCell>
               <TableCell className="text-xs text-muted-foreground"><RelativeTime value={r.submittedAt} /></TableCell>
@@ -210,7 +211,10 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
         const res = await apiFetchWithRetry(`/api/autopilot/registrations/${requestId}`, { credentials: 'include' });
         if (cancelled) return;
         if (!res.ok) { setError(await extractErrorDetail(res, 'Could not load the request.')); return; }
-        setDetail(await res.json() as AutopilotDetail);
+        const loaded = await res.json() as AutopilotDetail;
+        setDetail(loaded);
+        // A retry starts from the tag chosen at approval, so fixing it is a deliberate change.
+        if (loaded.request.state === 'ImportFailed') setTagId(loaded.request.groupTagDefinitionId ?? '');
       } catch {
         if (!cancelled) setError('Could not reach the server.');
       }
@@ -228,8 +232,10 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
   const state: AutopilotState | undefined = request?.state;
   const decidable = canDecide && state === 'PendingApproval';
   const retryable = canDecide && state === 'ImportFailed';
+  const tagOnly = !!request?.existingDevice;
+  const tagRequired = !!detail?.groupTagRequired || tagOnly;
   const selectedOption = detail?.groupTagOptions.find((o) => o.definitionId === tagId);
-  const tagMissing = !!detail?.groupTagRequired && !selectedOption;
+  const tagMissing = tagRequired && !selectedOption;
 
   const tagOptions = (detail?.groupTagOptions ?? []).map((o) => ({
     value: o.definitionId,
@@ -242,25 +248,42 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
 
   const copy = (action: PendingAction): ConfirmImpactCopy => {
     const serial = request?.serialNumber ?? '';
+    const newTag = selectedOption?.resolvedValue;
+    const tagChange = `from ${request?.previousGroupTag ?? 'no group tag'} to ${newTag ?? ''}`;
     switch (action) {
       case 'approve':
+        if (tagOnly) {
+          return {
+            confirmTitle: 'Change this device\u2019s group tag?',
+            impact: `Device ${serial} is already in Windows Autopilot. Only its group tag changes, ${tagChange}. Nothing is imported. Groups that use the group tag pick up the change after the next Intune sync.`,
+            confirmLabel: 'Update group tag',
+            destructive: false,
+          };
+        }
         return {
           confirmTitle: 'Import this device into Autopilot?',
-          impact: `Device ${serial} is imported into Windows Autopilot for the whole tenant${selectedOption?.resolvedValue ? ` with group tag ${selectedOption.resolvedValue}` : ' without a group tag'}. Autopilot profiles targeting it apply the next time the device runs Windows setup.${request?.preProvisioningReady === false ? ' Its hardware hash has no TPM 2.0 data, so pre-provisioning and self-deploying profiles will fail on it.' : ''} Undoing this requires deleting the device in Intune.`,
+          impact: `Device ${serial} is imported into Windows Autopilot for the whole tenant${newTag ? ` with group tag ${newTag}` : ' without a group tag'}. Autopilot profiles targeting it apply the next time the device runs Windows setup.${request?.preProvisioningReady === false ? ' Its hardware hash has no TPM 2.0 data, so pre-provisioning and self-deploying profiles will fail on it.' : ''} Undoing this requires deleting the device in Intune.`,
           confirmLabel: 'Approve and import',
           destructive: false,
         };
       case 'retry':
-        return {
-          confirmTitle: 'Retry the import?',
-          impact: `The hardware hash for ${serial} is submitted to Intune again${request?.groupTag ? ` with group tag ${request.groupTag}` : ''}.`,
-          confirmLabel: 'Retry import',
-          destructive: false,
-        };
+        return tagOnly
+          ? {
+            confirmTitle: 'Retry the group tag change?',
+            impact: `The group tag of ${serial} is changed ${tagChange}. Nothing is imported.`,
+            confirmLabel: 'Retry',
+            destructive: false,
+          }
+          : {
+            confirmTitle: 'Retry the import?',
+            impact: `The hardware hash for ${serial} is submitted to Intune again${newTag ? ` with group tag ${newTag}` : ' without a group tag'}.`,
+            confirmLabel: 'Retry import',
+            destructive: false,
+          };
       case 'reject':
         return {
           confirmTitle: 'Reject this request?',
-          impact: `Device ${serial} is not imported and its hardware hash is deleted. The technician sees the rejection${reason.trim() ? ' and your reason' : ''} on the device. A new request needs a fresh submission from the boot media.`,
+          impact: `${tagOnly ? `Device ${serial} keeps its current group tag.` : `Device ${serial} is not imported and its hardware hash is deleted.`} The technician sees the rejection${reason.trim() ? ' and your reason' : ''} on the device. A new request needs a fresh submission from the boot media.`,
           confirmLabel: 'Reject',
           destructive: true,
         };
@@ -270,9 +293,7 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
   const act = async (action: PendingAction) => {
     setBusy(true);
     try {
-      const body = action === 'approve' ? { groupTagDefinitionId: tagId || undefined }
-        : action === 'reject' ? { reason: reason.trim() || undefined }
-        : {};
+      const body = action === 'reject' ? { reason: reason.trim() || undefined } : { groupTagDefinitionId: tagId || undefined };
       const res = await apiFetch(`/api/autopilot/registrations/${requestId}/${action}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -286,9 +307,11 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
       }
       const updated = await res.json() as AutopilotDetail['request'];
       if (updated.state === 'ImportFailed') {
-        notify({ status: 'error', title: 'Import could not start', description: updated.importErrorName ?? 'Microsoft Graph rejected the import.' });
+        notify({ status: 'error', title: tagOnly ? 'Group tag not changed' : 'Import could not start', description: updated.importErrorName ?? 'Microsoft Graph rejected the request.' });
       } else if (action === 'reject') {
         notify({ status: 'success', title: `Rejected ${updated.serialNumber}` });
+      } else if (updated.state === 'GroupTagUpdated') {
+        notify({ status: 'success', title: `Group tag updated for ${updated.serialNumber}`, description: groupTagChange(updated) ?? undefined });
       } else {
         notify({ status: 'success', title: `Importing ${updated.serialNumber}`, description: 'Intune usually finishes processing within a few minutes.' });
       }
@@ -343,11 +366,26 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
                   {request.tpmVersion && <span className="block text-xs text-muted-foreground">TPM {request.tpmVersion}</span>}
                 </Meta>
                 {state === 'PendingApproval' && <Meta label="Expires">{formatDateTime(request.expiresAt)}</Meta>}
-                {request.groupTag && <Meta label="Group tag">{request.groupTag}</Meta>}
+                {tagOnly && state !== 'GroupTagUpdated' && <Meta label="Current group tag">{request.previousGroupTag ?? 'None'}</Meta>}
+                {request.groupTag && <Meta label={state === 'GroupTagUpdated' ? 'Group tag change' : 'Group tag'}>{groupTagChange(request)}</Meta>}
                 {request.decidedByUpn && <Meta label="Decided by">{request.decidedByUpn}{request.decidedAt ? `, ${formatDateTime(request.decidedAt)}` : ''}</Meta>}
                 {request.rejectionReason && <Meta label="Rejection reason">{request.rejectionReason}</Meta>}
                 {request.clientVersion && <Meta label="Client version">{request.clientVersion}</Meta>}
               </dl>
+
+              {tagOnly && (
+                <div className="flex items-start gap-3 rounded-md border border-border bg-muted/30 p-4">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Already in Windows Autopilot</p>
+                    <p className="text-sm text-muted-foreground">
+                      {state === 'GroupTagUpdated'
+                        ? 'Only the group tag was changed. The device was not imported again.'
+                        : 'Approving changes only the group tag. Nothing is imported and the hardware hash is not used.'}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {decidable && request.preProvisioningReady === false && (
                 <div className="flex items-start gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4">
@@ -366,7 +404,7 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
                 <div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
                   <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
                   <div className="space-y-1">
-                    <p className="text-sm font-medium">The import failed</p>
+                    <p className="text-sm font-medium">{tagOnly ? 'The group tag was not changed' : 'The import failed'}</p>
                     <p className="text-sm text-muted-foreground break-words">{request.importErrorName ?? 'Intune did not accept the device.'}</p>
                   </div>
                 </div>
@@ -379,16 +417,16 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
                 </p>
               )}
 
-              {decidable && (
+              {(decidable || retryable) && (
                 <div className="space-y-4 rounded-md border border-border bg-muted/30 p-4">
                   <div className="space-y-2">
                     <Label htmlFor="autopilot-group-tag" className="flex items-center gap-2">
                       <Tag className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                      Group tag {detail.groupTagRequired ? '(required)' : '(optional)'}
+                      {tagOnly ? 'New group tag (required)' : `Group tag ${tagRequired ? '(required)' : '(optional)'}`}
                     </Label>
                     {detail.groupTagOptions.length === 0 ? (
                       <p className="text-sm text-muted-foreground">
-                        {detail.groupTagRequired
+                        {tagRequired
                           ? 'A group tag is required, but none are defined. An administrator adds them under Configuration, Autopilot.'
                           : 'No group tags are defined. The device is imported without one.'}
                       </p>
@@ -398,8 +436,8 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
                         value={tagId}
                         onValueChange={setTagId}
                         options={tagOptions}
-                        placeholder={detail.groupTagRequired ? 'Select a group tag' : 'No group tag'}
-                        allowEmpty={!detail.groupTagRequired}
+                        placeholder={tagRequired ? 'Select a group tag' : 'No group tag'}
+                        allowEmpty={!tagRequired}
                       />
                     )}
                   </div>
@@ -427,12 +465,12 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
             </Button>
             {decidable && (
               <Button onClick={() => setConfirming('approve')} disabled={busy || tagMissing}>
-                <CheckCircle2 /> Approve
+                {tagOnly ? <><Tag /> Update group tag</> : <><CheckCircle2 /> Approve</>}
               </Button>
             )}
             {retryable && (
-              <Button onClick={() => setConfirming('retry')} disabled={busy}>
-                <RotateCcw /> Retry import
+              <Button onClick={() => setConfirming('retry')} disabled={busy || tagMissing}>
+                <RotateCcw /> {tagOnly ? 'Retry' : 'Retry import'}
               </Button>
             )}
           </div>

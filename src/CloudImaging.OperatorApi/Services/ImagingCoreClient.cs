@@ -348,9 +348,9 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> UpdateAutopilotGroupTagAsync(Guid id, object payload, CancellationToken ct = default) =>
         _http.PutAsJsonAsync($"/api/internal/autopilot/group-tags/{id}", payload, JsonOptions, ct);
 
-    /// <summary>Deletes an Autopilot group tag.</summary>
-    public Task<HttpResponseMessage> DeleteAutopilotGroupTagAsync(Guid id, CancellationToken ct = default) =>
-        _http.DeleteAsync($"/api/internal/autopilot/group-tags/{id}", ct);
+    /// <summary>Deletes an Autopilot group tag, recording which portal user did it.</summary>
+    public Task<HttpResponseMessage> DeleteAutopilotGroupTagAsync(Guid id, string? changedBy, CancellationToken ct = default) =>
+        _http.DeleteAsync($"/api/internal/autopilot/group-tags/{id}" + (string.IsNullOrWhiteSpace(changedBy) ? string.Empty : $"?changedBy={Uri.EscapeDataString(changedBy)}"), ct);
 
     // ── Pre-flight overrides ───────────────────────────────────────────────────────
 

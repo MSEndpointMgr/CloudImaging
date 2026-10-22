@@ -82,6 +82,9 @@ public sealed class AutopilotGroupTagRepository
         ["Value"] = d.Value,
         ["Description"] = d.Description,
         ["CreatedAt"] = d.CreatedAt,
+        ["CreatedBy"] = d.CreatedBy,
+        ["UpdatedAt"] = d.UpdatedAt,
+        ["UpdatedBy"] = d.UpdatedBy,
     };
 
     private static AutopilotGroupTagDefinition FromEntity(TableEntity e) => new()
@@ -92,5 +95,8 @@ public sealed class AutopilotGroupTagRepository
         Value = e.GetString("Value") ?? string.Empty,
         Description = e.GetString("Description"),
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.MinValue,
+        CreatedBy = e.GetString("CreatedBy"),
+        UpdatedAt = e.GetDateTimeOffset("UpdatedAt"),
+        UpdatedBy = e.GetString("UpdatedBy"),
     };
 }

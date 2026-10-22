@@ -143,15 +143,13 @@
                 </StackPanel>
             </ui:Card>
 
-            <!-- Location (Location Labels feature) — only meaningful for the USB target, since
-                 ISO-generated media never carries a UsbPreparationManifest. -->
-            <ui:Card Margin="0,0,0,16" Padding="20"
-                     Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">
+            <!-- Location (Location Labels feature): written into the manifest on USB media and on an ISO alike. -->
+            <ui:Card Margin="0,0,0,16" Padding="20">
                 <StackPanel>
                     <TextBlock Text="Location (optional)"
                                Style="{StaticResource BodyStrongTextBlockStyle}"
                                Margin="0,0,0,4" />
-                    <TextBlock Text="Tag this USB boot media with the site it will be used at, so devices imaged with it are labeled with a location in the portal."
+                    <TextBlock Text="The site this boot media will be used at. Devices booted from it are labeled with this location in the portal, and Autopilot group tag templates are built from it."
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap"

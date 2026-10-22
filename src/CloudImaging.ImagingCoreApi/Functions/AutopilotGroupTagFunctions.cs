@@ -62,9 +62,10 @@ public sealed partial class AutopilotGroupTagFunctions
             Value = payload.Value!.Trim(),
             Description = string.IsNullOrWhiteSpace(payload.Description) ? null : payload.Description.Trim(),
             CreatedAt = DateTimeOffset.UtcNow,
+            CreatedBy = ChangedBy(payload.ChangedBy),
         };
         await _repo.AddAsync(definition, context.CancellationToken);
-        LogChanged(_logger, definition.Id, "created");
+        LogChanged(_logger, definition.Id, "created", definition.CreatedBy ?? "(unknown)");
         return await AutopilotRegistrationFunctions.JsonAsync(req, HttpStatusCode.Created, definition, context.CancellationToken);
     }
 
@@ -100,9 +101,12 @@ public sealed partial class AutopilotGroupTagFunctions
             Value = payload.Value!.Trim(),
             Description = string.IsNullOrWhiteSpace(payload.Description) ? null : payload.Description.Trim(),
             CreatedAt = existing.CreatedAt,
+            CreatedBy = existing.CreatedBy,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            UpdatedBy = ChangedBy(payload.ChangedBy),
         };
         await _repo.UpdateAsync(updated, context.CancellationToken);
-        LogChanged(_logger, definitionId, "updated");
+        LogChanged(_logger, definitionId, "updated", updated.UpdatedBy ?? "(unknown)");
         return await AutopilotRegistrationFunctions.JsonAsync(req, HttpStatusCode.OK, updated, context.CancellationToken);
     }
 
@@ -120,8 +124,15 @@ public sealed partial class AutopilotGroupTagFunctions
 
         // Requests already approved keep the resolved tag string, so deleting a definition never rewrites history.
         await _repo.DeleteAsync(definitionId, context.CancellationToken);
-        LogChanged(_logger, definitionId, "deleted");
+        var deletedBy = ChangedBy(System.Web.HttpUtility.ParseQueryString(req.Url.Query).Get("changedBy"));
+        LogChanged(_logger, definitionId, "deleted", deletedBy ?? "(unknown)");
         return req.CreateResponse(HttpStatusCode.NoContent);
+    }
+
+    private static string? ChangedBy(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed.Length <= 256 ? trimmed : trimmed[..256];
     }
 
     private static async Task<(GroupTagPayload? Payload, string? Error)> ReadValidAsync(HttpRequestData req, CancellationToken ct)
@@ -154,8 +165,8 @@ public sealed partial class AutopilotGroupTagFunctions
         return (payload, AutopilotGroupTagTemplate.ValidateDefinition(payload.Kind.Value, payload.Value?.Trim()));
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot group tag {DefinitionId} {Action}.")]
-    private static partial void LogChanged(ILogger logger, Guid definitionId, string action);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot group tag {DefinitionId} {Action} by {ChangedBy}.")]
+    private static partial void LogChanged(ILogger logger, Guid definitionId, string action, string changedBy);
 
     private sealed class GroupTagPayload
     {
@@ -163,5 +174,7 @@ public sealed partial class AutopilotGroupTagFunctions
         public AutopilotGroupTagKind? Kind { get; init; }
         public string? Value { get; init; }
         public string? Description { get; init; }
+
+        public string? ChangedBy { get; init; }
     }
 }

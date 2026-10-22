@@ -1,7 +1,8 @@
 /**
  * Shared types and pure helpers for the Autopilot registration feature. Kept free of React so the
  * rules the portal shows (template preview, state labels) are unit-testable and match the
- * server-side resolver in CloudImaging.Contracts (AutopilotGroupTagTemplate).
+ * server-side resolver in CloudImaging.Contracts (AutopilotGroupTagTemplate). Both are tested
+ * against tests/fixtures/autopilot-group-tag-cases.json, so a rule change must update both.
  */
 
 export type AutopilotState =
@@ -11,7 +12,8 @@ export type AutopilotState =
   | 'ImportFailed'
   | 'Rejected'
   | 'Expired'
-  | 'AlreadyRegistered';
+  | 'AlreadyRegistered'
+  | 'GroupTagUpdated';
 
 export type GroupTagKind = 'Static' | 'Template';
 
@@ -33,6 +35,10 @@ export interface AutopilotRequest {
   /** True when the hash has TPM 2.0 data; false when it lacks it; null when it could not be read. */
   preProvisioningReady?: boolean | null;
   groupTag?: string | null;
+  groupTagDefinitionId?: string | null;
+  /** True when the device was already in Autopilot, so approving it only changes its group tag. */
+  existingDevice?: boolean;
+  previousGroupTag?: string | null;
   decidedByUpn?: string | null;
   decidedAt?: string | null;
   rejectionReason?: string | null;
@@ -67,6 +73,9 @@ export interface GroupTagDefinition {
   value: string;
   description?: string | null;
   createdAt: string;
+  createdBy?: string | null;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
 }
 
 export type BadgeVariant = 'success' | 'warning' | 'info' | 'negative' | 'muted';
@@ -79,6 +88,7 @@ const STATE_PRESENTATION: Record<AutopilotState, { label: string; variant: Badge
   Rejected: { label: 'Rejected', variant: 'muted' },
   Expired: { label: 'Expired', variant: 'muted' },
   AlreadyRegistered: { label: 'Already registered', variant: 'success' },
+  GroupTagUpdated: { label: 'Group tag updated', variant: 'success' },
 };
 
 export function stateLabel(state: AutopilotState): string {
@@ -87,6 +97,14 @@ export function stateLabel(state: AutopilotState): string {
 
 export function stateVariant(state: AutopilotState): BadgeVariant {
   return STATE_PRESENTATION[state]?.variant ?? 'muted';
+}
+
+/** The tag change for a device already in Autopilot (previous tag, arrow, new tag), or just the tag otherwise. */
+export function groupTagChange(r: Pick<AutopilotRequest, 'groupTag' | 'previousGroupTag' | 'existingDevice' | 'state'>): string | null {
+  if (!r.groupTag) return null;
+  return r.existingDevice && r.state === 'GroupTagUpdated'
+    ? `${r.previousGroupTag ?? '(none)'} \u2192 ${r.groupTag}`
+    : r.groupTag;
 }
 
 /** How the hash's TPM data affects Autopilot deployment modes, for display. */

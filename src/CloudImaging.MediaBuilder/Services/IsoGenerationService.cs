@@ -57,7 +57,7 @@ public sealed partial class IsoGenerationService
     private readonly Func<bool> _isElevated;
     private readonly Func<string, string, Process> _startElevatedProcess;
 
-    private sealed record IsoGenerationParams(string WimPath, string OutputIsoPath, MachineArchitecture Architecture);
+    private sealed record IsoGenerationParams(string WimPath, string OutputIsoPath, MachineArchitecture Architecture, string? ManifestJson);
     private sealed record ElevatedIsoGenerationResult(bool Success, string? Error);
 
     /// <param name="logger">Logger for this service's diagnostic output.</param>
@@ -90,33 +90,37 @@ public sealed partial class IsoGenerationService
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
     /// <param name="architecture">Target processor architecture of <paramref name="wimPath"/> (todo/arm64-support.md). Defaults to x64.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
+    /// <param name="manifestJson">Preparation manifest written to the ISO root, carrying the location; null for none.</param>
     /// <param name="ct">Cancellation token to abort generation.</param>
     public async Task GenerateElevatedAsync(
         string wimPath,
         string outputIsoPath,
         MachineArchitecture architecture = MachineArchitecture.X64,
         Action<string, int>? onProgress = null,
+        string? manifestJson = null,
         CancellationToken ct = default)
     {
         if (_isElevated())
         {
-            await GenerateAsync(wimPath, outputIsoPath, architecture, onProgress, ct);
+            await GenerateAsync(wimPath, outputIsoPath, architecture, onProgress, manifestJson, ct);
             return;
         }
 
-        await RunElevatedChildProcessAsync(wimPath, outputIsoPath, architecture, onProgress, ct);
+        await RunElevatedChildProcessAsync(wimPath, outputIsoPath, architecture, onProgress, manifestJson, ct);
     }
 
     /// <param name="wimPath">Path to the already-downloaded/hash-verified boot WIM.</param>
     /// <param name="outputIsoPath">Full path (including file name) the finished ISO is written to. Overwritten if it already exists.</param>
     /// <param name="architecture">Target processor architecture of <paramref name="wimPath"/> (todo/arm64-support.md). Defaults to x64.</param>
     /// <param name="onProgress">Optional callback: (message, percent 0-100).</param>
+    /// <param name="manifestJson">Preparation manifest written to the ISO root, carrying the location; null for none.</param>
     /// <param name="ct">Cancellation token to abort generation.</param>
     public async Task GenerateAsync(
         string wimPath,
         string outputIsoPath,
         MachineArchitecture architecture = MachineArchitecture.X64,
         Action<string, int>? onProgress = null,
+        string? manifestJson = null,
         CancellationToken ct = default)
     {
         var adkPath = BootImageGenerationService.FindAdkPath()
@@ -142,6 +146,10 @@ public sealed partial class IsoGenerationService
             var mediaWimPath = Path.Combine(winPeRoot, "media", "sources", "boot.wim");
             DiskSpaceGuard.EnsureFreeSpace(winPeRoot, new FileInfo(wimPath).Length, "stage the boot image for ISO packaging");
             File.Copy(wimPath, mediaWimPath, overwrite: true);
+
+            // The Client reads the location from this file on whichever volume it booted from.
+            if (manifestJson is not null)
+                await File.WriteAllTextAsync(Path.Combine(winPeRoot, "media", UsbPreparationManifest.FileName), manifestJson, ct);
 
             ct.ThrowIfCancellationRequested();
             onProgress?.Invoke("Building bootable ISO…", 55);
@@ -243,7 +251,7 @@ public sealed partial class IsoGenerationService
     private static bool TryDeleteDirectoryRecursive(string path) => ElevationHelper.TryDeleteDirectoryRecursive(path);
 
     private async Task RunElevatedChildProcessAsync(
-        string wimPath, string outputIsoPath, MachineArchitecture architecture, Action<string, int>? onProgress, CancellationToken ct)
+        string wimPath, string outputIsoPath, MachineArchitecture architecture, Action<string, int>? onProgress, string? manifestJson, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran. These folders
@@ -261,7 +269,7 @@ public sealed partial class IsoGenerationService
 
         try
         {
-            var request = new IsoGenerationParams(wimPath, outputIsoPath, architecture);
+            var request = new IsoGenerationParams(wimPath, outputIsoPath, architecture, manifestJson);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -397,7 +405,7 @@ public sealed partial class IsoGenerationService
                 }
             }
 
-            await svc.GenerateAsync(p.WimPath, p.OutputIsoPath, p.Architecture, OnProgress, cts.Token);
+            await svc.GenerateAsync(p.WimPath, p.OutputIsoPath, p.Architecture, OnProgress, p.ManifestJson, cts.Token);
 
             await File.WriteAllTextAsync(resultFile, JsonSerializer.Serialize(new ElevatedIsoGenerationResult(true, null)));
         }

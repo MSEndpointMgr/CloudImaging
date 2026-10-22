@@ -3,6 +3,8 @@ import { RefreshCw, ExternalLink } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card.tsx';
 import { Switch } from './ui/switch.tsx';
 import { Button, type ButtonStatus } from './ui/button.tsx';
+import { Skeleton } from './ui/skeleton.tsx';
+import { cn } from '../lib/utils.ts';
 import { fetchUpdateStatus, triggerUpdateCheck, displayVersion, type UpdateStatus, type UpdateCheckStatus } from '../lib/updateCheck.ts';
 
 /** Plain-language explanation for each non-`ok` status, so the panel never shows a bare code. */
@@ -18,6 +20,25 @@ interface Props {
   enabled: boolean;
   onChange: (enabled: boolean) => void;
   disabled?: boolean;
+}
+
+/**
+ * One metadata value, with a placeholder of the same height while it loads.
+ *
+ * `Skeleton` is a div, so it replaces the paragraph rather than sitting inside it. The widths are
+ * per value: a single shared width would make three unrelated fields look like one repeated bar.
+ */
+function MetadataValue({
+  loading,
+  width,
+  children,
+}: {
+  loading: boolean;
+  width: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  if (loading) return <Skeleton className={cn('mt-1 h-4', width)} />;
+  return <p className="mt-0.5 font-mono text-sm">{children}</p>;
 }
 
 /**
@@ -109,21 +130,21 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
         <div className="grid grid-cols-1 gap-4 rounded-md border border-border bg-muted/30 p-4 sm:grid-cols-3">
           <div>
             <p className="text-xs text-muted-foreground">Environment type</p>
-            <p className="mt-0.5 font-mono text-sm">
-              {loading ? '…' : status?.environmentLabel ?? 'Unknown'}
-            </p>
+            <MetadataValue loading={loading} width="w-28">
+              {status?.environmentLabel ?? 'Unknown'}
+            </MetadataValue>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Current version</p>
-            <p className="mt-0.5 font-mono text-sm">
-              {loading ? '…' : status?.current ? displayVersion(status.current) : 'Unknown'}
-            </p>
+            <MetadataValue loading={loading} width="w-16">
+              {status?.current ? displayVersion(status.current) : 'Unknown'}
+            </MetadataValue>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Latest available</p>
-            <p className="mt-0.5 font-mono text-sm">
-              {loading ? '…' : status?.latest ? displayVersion(status.latest) : 'Not available'}
-            </p>
+            <MetadataValue loading={loading} width="w-20">
+              {status?.latest ? displayVersion(status.latest) : 'Not available'}
+            </MetadataValue>
           </div>
         </div>
 

@@ -86,11 +86,18 @@ public sealed partial class AutopilotRegistrationFunctions
             return await ProblemAsync(req, HttpStatusCode.Unauthorized, "Client certificate context is missing.", context.CancellationToken);
         }
 
-        var popResult = DevicePayloadSignatureVerifier.VerifyAutopilot(clientCert, submission, _maxSignatureSkew, DateTimeOffset.UtcNow);
+        var popResult = DevicePayloadSignatureVerifier.VerifyAutopilot(clientCert, submission, _maxSignatureSkew, DateTimeOffset.UtcNow, out var locationSigned);
         if (popResult != DevicePayloadSignatureVerifier.Result.Valid)
         {
             LogProofOfPossessionRejected(_logger, popResult, submission.SerialNumber);
             return await ProblemAsync(req, HttpStatusCode.Unauthorized, $"Proof-of-possession verification failed ({popResult}).", context.CancellationToken);
+        }
+
+        // An unsigned location could steer the device into another site's group tag, so it is not passed on.
+        if (!locationSigned && (submission.LocationId is not null || submission.LocationName is not null))
+        {
+            LogUnsignedLocationDropped(_logger, submission.SerialNumber);
+            submission = WithoutLocation(submission);
         }
 
         bool firstUse;
@@ -136,6 +143,17 @@ public sealed partial class AutopilotRegistrationFunctions
         return await ProxyAsync(req, coreResponse, context.CancellationToken);
     }
 
+    private static AutopilotHashSubmission WithoutLocation(AutopilotHashSubmission s) => new()
+    {
+        SerialNumber = s.SerialNumber,
+        Manufacturer = s.Manufacturer,
+        Model = s.Model,
+        HardwareHash = s.HardwareHash,
+        Architecture = s.Architecture,
+        ClientVersion = s.ClientVersion,
+        ProofOfPossession = s.ProofOfPossession,
+    };
+
     private static async Task<HttpResponseData> ProxyAsync(HttpRequestData req, HttpResponseMessage upstream, CancellationToken ct)
     {
         // Upstream outages surface as 503 so the device shows a retryable error rather than a Core internals leak.
@@ -162,6 +180,9 @@ public sealed partial class AutopilotRegistrationFunctions
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Autopilot proof-of-possession rejected ({Reason}) for device {SerialNumber}.")]
     private static partial void LogProofOfPossessionRejected(ILogger logger, DevicePayloadSignatureVerifier.Result reason, string serialNumber);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Autopilot submission for serial {SerialNumber} was signed without its location (boot media not yet updated); the location was dropped.")]
+    private static partial void LogUnsignedLocationDropped(ILogger logger, string serialNumber);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Client certificate missing from context for Autopilot submission from {SerialNumber}; failing closed.")]
     private static partial void LogClientCertificateMissing(ILogger logger, string serialNumber);

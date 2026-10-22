@@ -24,5 +24,6 @@ Start with the symptom visible to the technician or administrator. The linked ru
 | Autopilot hash capture fails on the device | [Hash capture fails on the device](operations-runbook.md#symptom-hash-capture-fails-on-the-device) |
 | Autopilot import fails with "Microsoft Graph denied the request" | [Graph denied the request](operations-runbook.md#symptom-autopilot-import-fails-with-microsoft-graph-denied-the-request) |
 | Autopilot import fails with an Intune error such as `ZtdDeviceAssignedToOtherTenant` | [Intune rejected the import](operations-runbook.md#symptom-autopilot-import-fails-with-an-intune-error-such-as-ztddeviceassignedtoothertenant) |
+| A template group tag is unavailable when approving | [Template group tag unavailable](operations-runbook.md#symptom-a-template-group-tag-is-unavailable-for-a-device) |
 
 When investigating session behavior, record the session ID and current state first. Use [Session lifecycle](session-lifecycle.md) to identify the expected next transition, then correlate the same session ID across Client logs and Application Insights. Log locations and starter queries are listed in the [Operations runbook](operations-runbook.md#4-log-locations).
