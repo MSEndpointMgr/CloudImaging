@@ -30,6 +30,8 @@ const ReportAutopilotRegistrationsPage = lazyWithReload(() => import('./pages/Re
 const LocationsPage = lazyWithReload(() => import('./pages/LocationsPage.tsx'));
 const WifiNetworksPage = lazyWithReload(() => import('./pages/WifiNetworksPage.tsx'));
 const AutopilotRegistrationsPage = lazyWithReload(() => import('./pages/AutopilotRegistrationsPage.tsx'));
+const SetupProfilesPage = lazyWithReload(() => import('./pages/SetupProfilesPage.tsx'));
+const SetupProfileEditorPage = lazyWithReload(() => import('./pages/SetupProfileEditorPage.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
@@ -51,6 +53,12 @@ function RequireImagingAccess({ children }: { children: React.ReactElement }): R
 function RequireManageLocations({ children }: { children: React.ReactElement }): React.ReactElement {
   const { canManageLocations } = useAuth();
   return canManageLocations ? children : <Navigate to="/" replace />;
+}
+
+/** Route guard for the Setup Profiles pages (Administrator, Operator, read-only Technician). */
+function RequireSetupProfilesAccess({ children, manage = false }: { children: React.ReactElement; manage?: boolean }): React.ReactElement {
+  const { canViewSetupProfiles, canManageSetupProfiles } = useAuth();
+  return canViewSetupProfiles && (!manage || canManageSetupProfiles) ? children : <Navigate to="/" replace />;
 }
 
 /** Route guard for the Reports pages (Administrator, Operator, Reader); Technician stays out. */
@@ -97,6 +105,9 @@ export default function App(): React.ReactElement {
                         <Route path="os-images"        element={<RequireImagingAccess><OsImagesPage /></RequireImagingAccess>} />
                         <Route path="boot-images"      element={<RequireImagingAccess><BootImagesPage /></RequireImagingAccess>} />
                         <Route path="recovery-images"  element={<RequireImagingAccess><RecoveryImagesPage /></RequireImagingAccess>} />
+                        <Route path="setup-profiles"   element={<RequireSetupProfilesAccess><SetupProfilesPage /></RequireSetupProfilesAccess>} />
+                        <Route path="setup-profiles/new" element={<RequireSetupProfilesAccess manage><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
+                        <Route path="setup-profiles/:profileId" element={<RequireSetupProfilesAccess><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
                         <Route path="autopilot"        element={<RequireAutopilotAccess><AutopilotRegistrationsPage /></RequireAutopilotAccess>} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />

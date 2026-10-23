@@ -9,6 +9,7 @@ const SECTION_TITLES: Record<string, string> = {
   '/os-images': 'OS Images',
   '/boot-images': 'Boot Images',
   '/recovery-images': 'Recovery Images',
+  '/setup-profiles': 'Setup Profiles',
   '/autopilot': 'Autopilot Registrations',
   '/reports': 'Reports',
   '/reports/device-outcomes': 'Device Outcomes',

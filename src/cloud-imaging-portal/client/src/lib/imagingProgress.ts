@@ -1,3 +1,5 @@
+import type { ImagingStepItemCount } from './setupProfiles.ts';
+
 export interface ImagingStepDetails {
   stepName: string;
   status: string;
@@ -5,15 +7,25 @@ export interface ImagingStepDetails {
   startedAt?: string | null;
   completedAt?: string | null;
   errorDetail?: string | null;
+  /** Items that failed in a step that still completed, for example under Complete with warnings. */
+  warningCount?: number | null;
+  itemCounts?: ImagingStepItemCount[] | null;
+  /** The device reported more items than are kept. */
+  itemsTruncated?: boolean | null;
 }
 
-export const PIPELINE_STEPS = [
-  { name: 'FormatDisk', label: 'Prepare disk' },
-  { name: 'DownloadImage', label: 'Download image' },
-  { name: 'ApplyImage', label: 'Apply Windows image' },
-  { name: 'ConfigureBoot', label: 'Configure boot' },
-  { name: 'ApplyRecoveryImage', label: 'Configure recovery' },
-] as const;
+/**
+ * Pipeline steps in order. An optional step only appears on the timeline when the device reported
+ * it or the session expects it, so a session without a setup profile keeps its five columns.
+ */
+export const PIPELINE_STEPS: readonly { name: string; label: string; optional: boolean }[] = [
+  { name: 'FormatDisk', label: 'Prepare disk', optional: false },
+  { name: 'DownloadImage', label: 'Download image', optional: false },
+  { name: 'ApplyImage', label: 'Apply Windows image', optional: false },
+  { name: 'PrepareSetup', label: 'Prepare setup', optional: true },
+  { name: 'ConfigureBoot', label: 'Configure boot', optional: false },
+  { name: 'ApplyRecoveryImage', label: 'Configure recovery', optional: false },
+];
 
 /**
  * Shorter labels for the horizontal stepper, where five labels share one row and the full

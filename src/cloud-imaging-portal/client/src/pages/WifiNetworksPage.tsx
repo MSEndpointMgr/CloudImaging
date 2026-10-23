@@ -8,7 +8,9 @@ import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { ConfirmImpactDialog } from '../components/ConfirmImpactDialog.tsx';
-import { WifiNetworkDialog, type PickerLocation } from '../components/WifiNetworkDialog.tsx';
+import { TargetingBadges } from '../components/TargetingBadges.tsx';
+import { WifiNetworkDialog } from '../components/WifiNetworkDialog.tsx';
+import type { PickerLocation } from '../components/LocationPicker.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { describeNames } from '../lib/regions.ts';
@@ -53,23 +55,7 @@ function InfoPopover(): React.ReactElement {
 }
 
 function LocationsCell({ network, locations }: { network: WifiNetwork; locations: PickerLocation[] }): React.ReactElement {
-  if (network.allLocations) return <Badge variant="outline">All locations</Badge>;
-  const names = network.locationIds
-    .map((id) => locations.find((l) => l.locationId === id)?.name)
-    .filter((n): n is string => Boolean(n))
-    .sort((a, b) => a.localeCompare(b));
-  if (names.length === 0) return <span className="text-sm text-muted-foreground">No locations</span>;
-  const rest = names.slice(1);
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <Badge variant="outline">{names[0]}</Badge>
-      {rest.length > 0 && (
-        <Tooltip content={`${describeNames(rest.slice(0, 5))}${rest.length > 5 ? ` and ${String(rest.length - 5)} more` : ''}. Edit the network to see and search all ${String(names.length)}.`}>
-          <Badge variant="muted" tabIndex={0} className="focus-visible:ring-2 focus-visible:ring-ring">+{rest.length} more</Badge>
-        </Tooltip>
-      )}
-    </div>
-  );
+  return <TargetingBadges all={network.allLocations} locationIds={network.locationIds} locations={locations} allLabel="All locations" editNoun="network" />;
 }
 
 /**

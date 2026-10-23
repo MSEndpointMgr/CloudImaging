@@ -23,6 +23,7 @@ import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
 import { assignableImages, compatibleSessions } from '../lib/assignmentCompatibility.ts';
 import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
+import type { SetupProfilePin } from '../lib/setupProfiles.ts';
 import { cn, formatDateTime } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
@@ -52,6 +53,8 @@ interface Session {
   overallProgressPercent: number;
   currentStep: string | null;
   steps?: ImagingStepDetails[];
+  /** The setup profile pinned when imaging started; null when none applies. */
+  setupProfile?: SetupProfilePin | null;
   createdAt: string;
   // Already present on the Operator API's session summary; the portal simply was not reading
   // them. Optional so a cached/older response cannot blank the table.
@@ -971,6 +974,9 @@ function SessionsPageImpl(): React.ReactElement {
                         overallPercent={s.overallProgressPercent}
                         currentStep={s.currentStep}
                         steps={s.steps}
+                        sessionId={s.sessionId}
+                        setupProfile={s.setupProfile}
+                        terminal={Boolean(s.terminalAt)}
                       />
                     </TableCell>
                   </TableRow>
@@ -1058,6 +1064,9 @@ function SessionsPageImpl(): React.ReactElement {
                           overallPercent={s.overallProgressPercent}
                           currentStep={s.currentStep}
                           steps={s.steps}
+                          sessionId={s.sessionId}
+                          setupProfile={s.setupProfile}
+                          terminal={Boolean(s.terminalAt)}
                         />
                       </TableCell>
                     </TableRow>
@@ -1163,6 +1172,9 @@ function SessionsPageImpl(): React.ReactElement {
                           overallPercent={s.overallProgressPercent}
                           currentStep={s.currentStep}
                           steps={s.steps}
+                          sessionId={s.sessionId}
+                          setupProfile={s.setupProfile}
+                          terminal={Boolean(s.terminalAt)}
                         />
                       </TableCell>
                     </TableRow>
