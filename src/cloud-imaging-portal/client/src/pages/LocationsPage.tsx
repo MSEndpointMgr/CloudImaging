@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, MapPin, Plus, Pencil, Check, X, Wifi } from 'lucide-react';
+import { Trash2, MapPin, Plus, Pencil, Check, X, Wifi, Upload } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -13,6 +13,7 @@ import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { ConfirmImpactDialog } from '../components/ConfirmImpactDialog.tsx';
+import { LocationImportDialog } from '../components/LocationImportDialog.tsx';
 import { RegionsPanel } from '../components/RegionsPanel.tsx';
 import { LocationWifiDialog } from '../components/LocationWifiDialog.tsx';
 import { useToast } from '../context/toastContext.tsx';
@@ -96,6 +97,7 @@ export default function LocationsPage(): React.ReactElement {
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
   const [wifiFor, setWifiFor] = useState<{ location: LocationEntry; afterAdd: boolean } | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const countries = countryOptions().map((c) => ({ value: c.code, label: c.name, description: c.code }));
   const previewRegion = (countryCode: string) =>
@@ -144,19 +146,28 @@ export default function LocationsPage(): React.ReactElement {
 
   useEffect(() => { void loadLocations(); void loadRegions(); void loadWifiNetworks(); }, []);
 
-  const handleCreate = async () => {
-    const trimmed = newLocation.name.trim();
-    if (!trimmed || creating) return;
-    setCreating(true);
+  // Shared by the add form and the importer, so both go through the same endpoint and validation.
+  const createLocation = async (name: string, countryCode: string | null): Promise<LocationEntry | null> => {
     try {
       const res = await apiFetch('/api/locations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(toPayload(newLocation)),
+        body: JSON.stringify({ name: name.trim(), countryCode: countryCode || null }),
       });
-      if (res.ok || res.status === 201) {
-        const created = await res.json() as LocationEntry;
+      return res.ok || res.status === 201 ? await res.json() as LocationEntry : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleCreate = async () => {
+    const trimmed = newLocation.name.trim();
+    if (!trimmed || creating) return;
+    setCreating(true);
+    try {
+      const created = await createLocation(trimmed, newLocation.countryCode || null);
+      if (created) {
         setNewLocation(EMPTY_DRAFT);
         await loadLocations();
         void loadRegions();
@@ -166,10 +177,8 @@ export default function LocationsPage(): React.ReactElement {
         const networks = await loadWifiNetworks();
         if (networks.some(n => !n.allLocations)) setWifiFor({ location: created, afterAdd: true });
       } else {
-        notify({ status: 'error', title: 'Failed to add location.', description: await extractErrorDetail(res, 'The location was not added.') });
+        notify({ status: 'error', title: 'Failed to add location.', description: 'The location was not added.' });
       }
-    } catch {
-      notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' });
     } finally {
       setCreating(false);
     }
@@ -321,6 +330,10 @@ export default function LocationsPage(): React.ReactElement {
           </div>
           <div className="flex-1" />
           <SearchInput value={search} onValueChange={setSearch} placeholder="Search locations" aria-label="Search locations" wrapperClassName="w-64" />
+          <Button variant="outline" onClick={() => setImporting(true)}>
+            <Upload />
+            Import
+          </Button>
         </div>
         <Table className="table-fixed">
           <TableHeader>
@@ -436,6 +449,20 @@ export default function LocationsPage(): React.ReactElement {
         </Table>
       </div>
       </div>
+      )}
+
+      {importing && (
+        <LocationImportDialog
+          existingNames={locations.map(l => l.name)}
+          regionsView={regionsView}
+          onCreate={async (name, countryCode) => await createLocation(name, countryCode) !== null}
+          onClose={() => setImporting(false)}
+          onImported={() => {
+            void loadLocations();
+            void loadRegions();
+            void refreshLocations();
+          }}
+        />
       )}
 
       {deleting && (

@@ -141,7 +141,7 @@ public sealed partial class AutopilotRegistrationService
                 : existing.Request with
                 {
                     State = AutopilotRegistrationState.PendingApproval,
-                    HardwareHash = submission.HardwareHash.Trim(),
+                    HardwareHash = existing.Request.ExistingDevice ? null : submission.HardwareHash.Trim(),
                     StatusTokenHash = statusTokenHash,
                     Model = submission.Model.Trim(),
                     Architecture = submission.Architecture ?? MachineArchitecture.X64,
@@ -173,16 +173,19 @@ public sealed partial class AutopilotRegistrationService
             return AutopilotResult.Ok(ToSubmissionResponse(refreshed, statusToken));
         }
 
-        var alreadyRegistered = false;
+        AutopilotDeviceRecord? registered = null;
         try
         {
-            alreadyRegistered = await _graph.IsSerialRegisteredAsync(serial, ct);
+            registered = await _graph.FindDeviceAsync(serial, ct);
         }
         catch (Exception ex) when (IsGraphFailure(ex))
         {
             // The approver can still see a failed import, so a lookup outage must not block the submission.
             LogRegisteredLookupFailed(_logger, ex, serial);
         }
+
+        // A device already in Autopilot only needs an approver when there is a group tag to give it.
+        var tagOnly = registered is not null && (await _groupTags.ListAsync(ct)).Count > 0;
 
         var request = new AutopilotRegistrationRequest
         {
@@ -194,9 +197,11 @@ public sealed partial class AutopilotRegistrationService
             Architecture = submission.Architecture ?? MachineArchitecture.X64,
             LocationId = submission.LocationId,
             LocationName = submission.LocationName,
-            HardwareHash = alreadyRegistered ? null : submission.HardwareHash.Trim(),
+            HardwareHash = registered is null ? submission.HardwareHash.Trim() : null,
             StatusTokenHash = statusTokenHash,
-            State = alreadyRegistered ? AutopilotRegistrationState.AlreadyRegistered : AutopilotRegistrationState.PendingApproval,
+            State = registered is null || tagOnly ? AutopilotRegistrationState.PendingApproval : AutopilotRegistrationState.AlreadyRegistered,
+            ExistingDevice = registered is not null,
+            PreviousGroupTag = registered?.GroupTag,
             SubmittedAt = now,
             UpdatedAt = now,
             ExpiresAt = expiresAt,
@@ -226,6 +231,7 @@ public sealed partial class AutopilotRegistrationService
             ReferenceCode = r.ReferenceCode,
             State = r.State,
             GroupTag = r.GroupTag,
+            ExistingDevice = r.ExistingDevice,
             RejectionReason = r.RejectionReason,
             ImportErrorName = r.ImportErrorName,
             UpdatedAt = r.UpdatedAt,
@@ -306,32 +312,16 @@ public sealed partial class AutopilotRegistrationService
             return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Conflict, $"The request is {entry.Request.State} and can no longer be approved.");
         }
 
-        if (string.IsNullOrWhiteSpace(entry.Request.HardwareHash))
+        if (string.IsNullOrWhiteSpace(entry.Request.HardwareHash) && !entry.Request.ExistingDevice)
         {
             return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Conflict, "The request has no hardware hash. Ask the technician to submit the device again.");
         }
 
         var config = await _config.GetAsync(ct);
-        string? groupTag = null;
-        if (decision.GroupTagDefinitionId is { } definitionId)
+        var (groupTag, tagError) = await ResolveDecisionTagAsync(entry.Request, decision, config, ct);
+        if (tagError is not null)
         {
-            var definition = await _groupTags.GetAsync(definitionId, ct);
-            if (definition is null)
-            {
-                return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Invalid, "The selected group tag no longer exists.");
-            }
-
-            var (locationName, region, country) = await ResolveLocationAsync(entry.Request, ct);
-            var option = ToOption(definition, locationName, region, country);
-            if (option.ResolvedValue is null)
-            {
-                return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Invalid, option.UnavailableReason ?? "The selected group tag cannot be used for this device.");
-            }
-            groupTag = option.ResolvedValue;
-        }
-        else if (config.AutopilotGroupTagRequired)
-        {
-            return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Invalid, "A group tag is required.");
+            return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Invalid, tagError);
         }
 
         var now = _time.GetUtcNow();
@@ -358,10 +348,10 @@ public sealed partial class AutopilotRegistrationService
         }
 
         LogApproved(_logger, claimed.RequestId, decision.DecidedByUpn, groupTag ?? "(none)");
-        return await StartImportAsync(claimed, etag.Value, config, ct);
+        return await StartAsync(claimed, etag.Value, config, ct);
     }
 
-    /// <summary>Retries a previously failed Autopilot Graph import.</summary>
+    /// <summary>Retries a previously failed import or group tag change, with the group tag the approver picks now.</summary>
     public async Task<AutopilotResult<AutopilotRegistrationRequest>> RetryAsync(Guid requestId, AutopilotDecision decision, CancellationToken ct)
     {
         var found = await _requests.GetAsync(requestId, ct);
@@ -370,15 +360,24 @@ public sealed partial class AutopilotRegistrationService
             return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.NotFound, "Request not found.");
         }
 
-        if (entry.Request.State != AutopilotRegistrationState.ImportFailed || string.IsNullOrWhiteSpace(entry.Request.HardwareHash))
+        if (entry.Request.State != AutopilotRegistrationState.ImportFailed || (string.IsNullOrWhiteSpace(entry.Request.HardwareHash) && !entry.Request.ExistingDevice))
         {
             return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Conflict, $"Only a failed import can be retried. The request is {entry.Request.State}.");
+        }
+
+        var config = await _config.GetAsync(ct);
+        var (groupTag, tagError) = await ResolveDecisionTagAsync(entry.Request, decision, config, ct);
+        if (tagError is not null)
+        {
+            return AutopilotResult.Fail<AutopilotRegistrationRequest>(AutopilotOutcome.Invalid, tagError);
         }
 
         var now = _time.GetUtcNow();
         var claimed = entry.Request with
         {
             State = AutopilotRegistrationState.Importing,
+            GroupTag = groupTag,
+            GroupTagDefinitionId = decision.GroupTagDefinitionId,
             UpdatedAt = now,
             ImportStartedAt = now,
             ImportAttempts = entry.Request.ImportAttempts + 1,
@@ -394,7 +393,7 @@ public sealed partial class AutopilotRegistrationService
         }
 
         LogRetried(_logger, claimed.RequestId, decision.DecidedByUpn);
-        return await StartImportAsync(claimed, etag.Value, await _config.GetAsync(ct), ct);
+        return await StartAsync(claimed, etag.Value, config, ct);
     }
 
     /// <summary>Rejects a pending or failed registration request.</summary>
@@ -496,7 +495,7 @@ public sealed partial class AutopilotRegistrationService
             }
 
             changed++;
-            anyImported |= updated.State == AutopilotRegistrationState.Imported;
+            anyImported |= updated.State is AutopilotRegistrationState.Imported or AutopilotRegistrationState.GroupTagUpdated;
             LogStateAdvanced(_logger, updated.RequestId, request.State, updated.State);
         }
 
@@ -560,11 +559,17 @@ public sealed partial class AutopilotRegistrationService
             // Intune reports a device that is already registered in this tenant as an import error; it is the outcome the approver wanted.
             if (string.Equals(status.ErrorName, "ZtdDeviceAlreadyAssigned", StringComparison.OrdinalIgnoreCase))
             {
-                return request with
+                var existing = request with { ExistingDevice = true, HardwareHash = null, ImportedIdentityId = null };
+
+                // The approver chose a tag, so the existing record must carry it too.
+                if (request.GroupTag is not null)
+                {
+                    return await ApplyGroupTagAsync(existing, config, now, ct);
+                }
+
+                return existing with
                 {
                     State = AutopilotRegistrationState.AlreadyRegistered,
-                    HardwareHash = null,
-                    ImportedIdentityId = null,
                     ImportCompletedAt = now,
                     UpdatedAt = now,
                 };
@@ -580,6 +585,91 @@ public sealed partial class AutopilotRegistrationService
         }
 
         return null;
+    }
+
+    private async Task<AutopilotResult<AutopilotRegistrationRequest>> StartAsync(AutopilotRegistrationRequest claimed, ETag etag, PortalConfiguration config, CancellationToken ct)
+    {
+        if (!claimed.ExistingDevice)
+        {
+            return await StartImportAsync(claimed, etag, config, ct);
+        }
+
+        var next = await ApplyGroupTagAsync(claimed, config, _time.GetUtcNow(), ct);
+        await _requests.TryReplaceAsync(next, etag, ct);
+        if (next.State != AutopilotRegistrationState.GroupTagUpdated)
+        {
+            return new AutopilotResult<AutopilotRegistrationRequest>(AutopilotOutcome.GraphFailed, next, next.ImportErrorName);
+        }
+
+        await TrySyncAsync(ct);
+        return AutopilotResult.Ok(next);
+    }
+
+    /// <summary>Sets the chosen group tag on the device's existing Autopilot record. Graph failures become a retryable failed state.</summary>
+    private async Task<AutopilotRegistrationRequest> ApplyGroupTagAsync(AutopilotRegistrationRequest request, PortalConfiguration config, DateTimeOffset now, CancellationToken ct)
+    {
+        try
+        {
+            var device = await _graph.FindDeviceAsync(request.SerialNumber, ct);
+            if (device is null)
+            {
+                return Failed(request, config, now, null, "The device is no longer registered in Windows Autopilot. Reject this request and submit the device again.");
+            }
+
+            await _graph.UpdateGroupTagAsync(device.Id, request.GroupTag!, ct);
+            LogGroupTagUpdated(_logger, request.RequestId, device.GroupTag ?? "(none)", request.GroupTag!);
+            return request with
+            {
+                State = AutopilotRegistrationState.GroupTagUpdated,
+                PreviousGroupTag = device.GroupTag,
+                HardwareHash = null,
+                ImportCompletedAt = now,
+                UpdatedAt = now,
+            };
+        }
+        catch (Exception ex) when (IsGraphFailure(ex))
+        {
+            LogImportFailed(_logger, ex, request.RequestId);
+            return Failed(request, config, now, null, Truncate(ex.Message, MaxReasonLength));
+        }
+    }
+
+    private async Task TrySyncAsync(CancellationToken ct)
+    {
+        try
+        {
+            await _graph.SyncAsync(ct);
+        }
+        catch (Exception ex) when (IsGraphFailure(ex))
+        {
+            LogSyncFailed(_logger, ex);
+        }
+    }
+
+    /// <summary>
+    /// The group tag for an approve or retry decision. An existing Autopilot device always needs
+    /// one, since changing it is the only thing approval does for it.
+    /// </summary>
+    private async Task<(string? Tag, string? Error)> ResolveDecisionTagAsync(AutopilotRegistrationRequest request, AutopilotDecision decision, PortalConfiguration config, CancellationToken ct)
+    {
+        if (decision.GroupTagDefinitionId is not { } definitionId)
+        {
+            return request.ExistingDevice ? (null, "Choose the group tag to set on this device.")
+                : config.AutopilotGroupTagRequired ? (null, "A group tag is required.")
+                : (null, null);
+        }
+
+        var definition = await _groupTags.GetAsync(definitionId, ct);
+        if (definition is null)
+        {
+            return (null, "The selected group tag no longer exists.");
+        }
+
+        var (locationName, region, country) = await ResolveLocationAsync(request, ct);
+        var option = ToOption(definition, locationName, region, country);
+        return option.ResolvedValue is null
+            ? (null, option.UnavailableReason ?? "The selected group tag cannot be used for this device.")
+            : (option.ResolvedValue, null);
     }
 
     private async Task<AutopilotResult<AutopilotRegistrationRequest>> StartImportAsync(AutopilotRegistrationRequest claimed, ETag etag, PortalConfiguration config, CancellationToken ct)
@@ -714,6 +804,7 @@ public sealed partial class AutopilotRegistrationService
         ReferenceCode = request.ReferenceCode,
         State = request.State,
         StatusToken = statusToken,
+        ExistingDevice = request.ExistingDevice,
         ExpiresAt = request.ExpiresAt,
     };
 
@@ -734,8 +825,11 @@ public sealed partial class AutopilotRegistrationService
     [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot request {RequestId} approved by {DecidedBy} with group tag {GroupTag}.")]
     private static partial void LogApproved(ILogger logger, Guid requestId, string decidedBy, string groupTag);
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot request {RequestId} import retried by {DecidedBy}.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot request {RequestId} retried by {DecidedBy}.")]
     private static partial void LogRetried(ILogger logger, Guid requestId, string decidedBy);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot request {RequestId} changed the existing device's group tag from {PreviousGroupTag} to {GroupTag}.")]
+    private static partial void LogGroupTagUpdated(ILogger logger, Guid requestId, string previousGroupTag, string groupTag);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Autopilot request {RequestId} rejected by {DecidedBy}.")]
     private static partial void LogRejected(ILogger logger, Guid requestId, string decidedBy);

@@ -26,6 +26,9 @@ public enum AutopilotRegistrationState
 
     /// <summary>The serial number was already registered in Autopilot at submission time. Terminal.</summary>
     AlreadyRegistered,
+
+    /// <summary>The device was already an Autopilot device; only its group tag was changed. Terminal.</summary>
+    GroupTagUpdated,
 }
 
 /// <summary>How an Autopilot group tag definition produces its value.</summary>

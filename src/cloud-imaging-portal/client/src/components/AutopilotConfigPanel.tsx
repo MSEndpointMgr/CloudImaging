@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
+import { formatDateTime } from '../lib/utils.ts';
 import {
   TEMPLATE_TOKENS, resolveTemplate, validateGroupTagDefinition,
   type GroupTagDefinition, type GroupTagKind,
@@ -322,15 +323,16 @@ function GroupTagManager(): React.ReactElement {
                 <TableHead>Name</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Value</TableHead>
+                <TableHead>Last changed</TableHead>
                 <TableHead className="w-[96px]"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {tags === null && <TableSkeletonRows columns={4} rows={2} />}
+              {tags === null && <TableSkeletonRows columns={5} rows={2} />}
               {tags?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={4} className="p-0">
-                    <EmptyState icon={Tag} title="No group tags yet" description="Without group tags, approvers can only import devices untagged." />
+                  <TableCell colSpan={5} className="p-0">
+                    <EmptyState icon={Tag} title="No group tags yet" description="Without group tags, approvers can only import devices untagged, and devices already in Autopilot are not sent for approval." />
                   </TableCell>
                 </TableRow>
               )}
@@ -342,6 +344,10 @@ function GroupTagManager(): React.ReactElement {
                   </TableCell>
                   <TableCell><Badge variant={t.kind === 'Template' ? 'info' : 'muted'}>{t.kind}</Badge></TableCell>
                   <TableCell className="font-mono text-sm">{t.value}</TableCell>
+                  <TableCell className="text-sm">
+                    {formatDateTime(t.updatedAt ?? t.createdAt)}
+                    {(t.updatedBy ?? t.createdBy) && <span className="block text-xs text-muted-foreground">{t.updatedBy ?? t.createdBy}</span>}
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Tooltip content="Edit group tag">

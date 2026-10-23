@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { preProvisioningLabel, resolveTemplate, stateLabel, stateVariant, validateGroupTagDefinition, validateResolvedTag } from '../../../src/cloud-imaging-portal/client/src/lib/autopilot.ts';
+import { groupTagChange, preProvisioningLabel, resolveTemplate, stateLabel, stateVariant, validateGroupTagDefinition, validateResolvedTag, type GroupTagKind } from '../../../src/cloud-imaging-portal/client/src/lib/autopilot.ts';
+import sharedCases from '../../fixtures/autopilot-group-tag-cases.json';
 import { countryName, countryOptions } from '../../../src/cloud-imaging-portal/client/src/lib/countries.ts';
 import { resolveSectionTitle } from '../../../src/cloud-imaging-portal/client/src/lib/routeTitles.ts';
 
@@ -43,6 +44,25 @@ describe('Portal frontend: Autopilot group tag templates', () => {
     expect(stateLabel('PendingApproval')).toBe('Pending approval');
     expect(stateVariant('ImportFailed')).toBe('negative');
     expect(stateVariant('AlreadyRegistered')).toBe('success');
+    expect(stateLabel('GroupTagUpdated')).toBe('Group tag updated');
+  });
+
+  it('shows a tag change on an existing Autopilot device as old to new', () => {
+    expect(groupTagChange({ state: 'GroupTagUpdated', existingDevice: true, previousGroupTag: 'OLD', groupTag: 'NEW' })).toBe('OLD \u2192 NEW');
+    expect(groupTagChange({ state: 'GroupTagUpdated', existingDevice: true, previousGroupTag: null, groupTag: 'NEW' })).toBe('(none) \u2192 NEW');
+    expect(groupTagChange({ state: 'Imported', existingDevice: false, groupTag: 'NEW' })).toBe('NEW');
+    expect(groupTagChange({ state: 'Rejected', groupTag: null })).toBeNull();
+  });
+});
+
+/** The same cases Imaging Core's tests run, so the preview and the server can never disagree. */
+describe('Portal frontend: group tag cases shared with Imaging Core', () => {
+  it.each(sharedCases.definitions)('definition $kind "$value" valid=$valid', ({ kind, value, valid }) => {
+    expect(validateGroupTagDefinition(kind as GroupTagKind, value) === null).toBe(valid);
+  });
+
+  it.each(sharedCases.resolutions)('resolves "$template"', ({ template, locationName, region, countryCode, value, reason }) => {
+    expect(resolveTemplate(template, { name: locationName, region, countryCode })).toEqual({ value, reason });
   });
 });
 

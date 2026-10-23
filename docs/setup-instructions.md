@@ -871,18 +871,31 @@ WinPE add-on. The checkbox is disabled, with the reason shown, when either is mi
    hash then carries the TPM endorsement key those modes attest against. A hash without it is
    flagged on the device and marked **No TPM data** in the portal; submitting again after turning
    the TPM on replaces it.
-2. The Client captures the hash and submits it. It shows a reference code such as `AP-7K3Q9`.
-3. Either return to the menu and image the device, or wait on the screen for the decision.
+2. The Client captures the hash and submits it. It shows a reference code such as `AP-7K3Q9`, and
+   the location the boot media was prepared for, since template group tags are built from it.
+3. Either return to the menu and image the device, or stay on the screen: it checks for the
+   decision by itself and shows the outcome and group tag when they arrive.
 4. The approver opens **Autopilot** in the portal, reviews the request, picks a group tag and
    approves. Import usually completes within a few minutes.
 
-A device that is already registered in Autopilot is reported as **Already registered** and is
-not imported again.
+A device that is already registered in Autopilot is not imported again. When group tags are
+defined, its request still goes to an approver, marked **Group tag only**: approving it changes
+only the device's group tag, and the history shows the old and new tag as **Group tag updated**.
+Without group tags there is nothing to change, and the request closes as **Already registered**.
 
-Handled requests (imported, already registered, rejected or expired) leave the approval queue
-straight away. **Reports** → **Autopilot Registration History** lists them with the approver,
-group tag and outcome, and exports them to CSV. Approvers open it from the Autopilot page with
-**Handled requests**. Requests are deleted once they are older than the retention period.
+If an import fails, **Retry import** lets the approver pick the group tag again, so a wrong tag can
+be fixed without a new submission.
+
+The location also reaches devices booted from an ISO: choose it on **Prepare USB Storage Device**
+before **Generate ISO File**. Boot media signs the location with its certificate. Media that has not
+yet self-updated to this release signs without it, so its submissions arrive with no location until
+the stick updates.
+
+Handled requests (imported, already registered, group tag updated, rejected or expired) leave the
+approval queue straight away. **Reports** → **Autopilot Registration History** lists them with the
+approver, group tag and outcome, and exports them to CSV. Approvers open it from the Autopilot page
+with **Handled requests**. Requests are deleted once they are older than the retention period.
+The group tag list records who last changed each tag.
 
 ---
 

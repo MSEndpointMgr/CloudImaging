@@ -217,8 +217,11 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
         toast.leaving ? 'animate-toast-out' : 'animate-toast-in',
       )}
     >
-      <div className="flex items-start gap-3 py-3 pl-4 pr-3">
-        <span className="mt-0.5 shrink-0">{STATUS_ICON[toast.status]}</span>
+      {/* The 32px dismiss button is the tallest thing in this row, so a title-only toast has to be
+          centred against it or it sits high. With a description the block is taller than the
+          button and the icon belongs beside the title, not in the middle of two lines. */}
+      <div className={cn('flex gap-3 py-3 pl-4 pr-3', toast.description ? 'items-start' : 'items-center')}>
+        <span className={cn('shrink-0', toast.description && 'mt-0.5')}>{STATUS_ICON[toast.status]}</span>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium leading-snug">{toast.title}</p>
           {toast.description && (

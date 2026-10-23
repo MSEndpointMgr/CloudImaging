@@ -467,11 +467,8 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     {
         try
         {
-            var bootDrive = FindBootVolumeDriveLetter();
-            if (bootDrive is null) return (null, null);
-
-            var manifestPath = Path.Combine(bootDrive, UsbPreparationManifest.FileName);
-            if (!File.Exists(manifestPath)) return (null, null);
+            var manifestPath = FindManifestPath();
+            if (manifestPath is null) return (null, null);
 
             var manifest = JsonSerializer.Deserialize<UsbPreparationManifest>(File.ReadAllText(manifestPath));
             return manifest is null ? (null, null) : (manifest.LocationId, manifest.LocationName);
@@ -480,6 +477,25 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         {
             return (null, null);
         }
+    }
+
+    /// <summary>The manifest on the USB BOOT volume, or else on the root of a CD/DVD drive for media booted from an ISO.</summary>
+    private static string? FindManifestPath()
+    {
+        var bootDrive = FindBootVolumeDriveLetter();
+        if (bootDrive is not null)
+        {
+            var usbManifest = Path.Combine(bootDrive.TrimEnd('\\') + "\\", UsbPreparationManifest.FileName);
+            if (File.Exists(usbManifest)) return usbManifest;
+        }
+
+        foreach (var drive in DriveInfo.GetDrives())
+        {
+            if (drive.DriveType != DriveType.CDRom || !drive.IsReady) continue;
+            var isoManifest = Path.Combine(drive.RootDirectory.FullName, UsbPreparationManifest.FileName);
+            if (File.Exists(isoManifest)) return isoManifest;
+        }
+        return null;
     }
 
     /// <summary>

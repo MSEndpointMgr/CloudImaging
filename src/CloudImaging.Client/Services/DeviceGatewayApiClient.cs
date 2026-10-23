@@ -504,7 +504,7 @@ public sealed partial class DeviceGatewayApiClient
 
         var timestampUtc = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        var challenge = DevicePayloadSignature.BuildAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, timestampUtc, nonce);
+        var challenge = DevicePayloadSignature.BuildAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, submission.LocationId, submission.LocationName, timestampUtc, nonce);
         var signature = rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
         return new AutopilotHashSubmission

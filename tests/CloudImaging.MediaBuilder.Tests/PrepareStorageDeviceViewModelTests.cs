@@ -18,6 +18,22 @@ namespace CloudImaging.MediaBuilder.Tests;
 public sealed class PrepareStorageDeviceViewModelTests
 {
     [Fact]
+    public void IsoManifest_CarriesTheChosenLocation_SoIsoBootedDevicesRegisterThere()
+    {
+        var vm = CreateViewModel();
+        vm.SelectedBootImage = CreateBootImage();
+        vm.BuildIsoManifestJson().Should().BeNull("an ISO without a location needs no manifest");
+
+        var locationId = Guid.NewGuid();
+        vm.SelectedLocation = new PrepareStorageDeviceViewModel.LocationChoice(locationId, "Stockholm HQ", new LocationDto { LocationId = locationId, Name = "Stockholm HQ" });
+
+        var manifest = System.Text.Json.JsonSerializer.Deserialize<UsbPreparationManifest>(vm.BuildIsoManifestJson()!)!;
+        manifest.LocationId.Should().Be(locationId);
+        manifest.LocationName.Should().Be("Stockholm HQ");
+        manifest.SelectedDiskId.Should().Be("iso");
+    }
+
+    [Fact]
     public void CanPrepare_IsFalse_WhenNothingSelected()
     {
         var vm = CreateViewModel();

@@ -73,6 +73,15 @@ public sealed record AutopilotRegistrationRequest
     /// <summary>Group tag definition the approver selected, if any.</summary>
     public Guid? GroupTagDefinitionId { get; init; }
 
+    /// <summary>
+    /// True when the serial was already a Windows Autopilot device, so approving it only changes its
+    /// group tag and nothing is imported.
+    /// </summary>
+    public bool ExistingDevice { get; init; }
+
+    /// <summary>Group tag the existing Autopilot device had before it was changed; null when it had none.</summary>
+    public string? PreviousGroupTag { get; init; }
+
     /// <summary>UPN of the approver who decided this request.</summary>
     public string? DecidedByUpn { get; init; }
 
@@ -108,7 +117,8 @@ public sealed record AutopilotRegistrationRequest
         AutopilotRegistrationState.Imported
         or AutopilotRegistrationState.Rejected
         or AutopilotRegistrationState.Expired
-        or AutopilotRegistrationState.AlreadyRegistered;
+        or AutopilotRegistrationState.AlreadyRegistered
+        or AutopilotRegistrationState.GroupTagUpdated;
 }
 
 /// <summary>Hardware hash submission sent by the Cloud Imaging Client through the Device Gateway.</summary>
@@ -140,7 +150,7 @@ public sealed class AutopilotHashSubmission
 
     /// <summary>
     /// Signature over <see cref="DevicePayloadSignature.BuildAutopilotChallenge"/>, which binds the
-    /// hardware hash itself so a captured request cannot be replayed with a different hash.
+    /// hardware hash and the location, so a captured request cannot be replayed with different content.
     /// </summary>
     public DeviceProofOfPossession? ProofOfPossession { get; init; }
 }
@@ -160,6 +170,9 @@ public sealed class AutopilotSubmissionResponse
     /// <summary>Bearer token the device presents to poll this request's status. Returned once.</summary>
     public required string StatusToken { get; init; }
 
+    /// <summary>True when the device is already in Autopilot and only its group tag can be changed.</summary>
+    public bool ExistingDevice { get; init; }
+
     /// <summary>When a <see cref="AutopilotRegistrationState.PendingApproval"/> request expires.</summary>
     public DateTimeOffset ExpiresAt { get; init; }
 }
@@ -178,6 +191,9 @@ public sealed class AutopilotRegistrationStatus
 
     /// <summary>Group tag the device was, or will be, imported with.</summary>
     public string? GroupTag { get; init; }
+
+    /// <summary>True when the device is already in Autopilot and only its group tag can be changed.</summary>
+    public bool ExistingDevice { get; init; }
 
     /// <summary>Reason the approver rejected the request, if rejected.</summary>
     public string? RejectionReason { get; init; }
@@ -216,6 +232,15 @@ public sealed class AutopilotGroupTagDefinition
 
     /// <summary>When the definition was created.</summary>
     public DateTimeOffset CreatedAt { get; init; }
+
+    /// <summary>Portal user who created the definition; null on definitions created before this was recorded.</summary>
+    public string? CreatedBy { get; init; }
+
+    /// <summary>When the definition was last changed; null when it never was.</summary>
+    public DateTimeOffset? UpdatedAt { get; init; }
+
+    /// <summary>Portal user who last changed the definition.</summary>
+    public string? UpdatedBy { get; init; }
 }
 
 /// <summary>A group tag definition evaluated against one request, as offered to the approver.</summary>

@@ -6,7 +6,7 @@ import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { resolvePreset, type DateRange } from '../lib/dateRange.ts';
 import { sortRows, useSort } from '../lib/tableSort.ts';
 import { useDebouncedValue } from '../hooks/useDebouncedValue.ts';
-import { preProvisioningLabel, stateLabel, stateVariant, type AutopilotRequest } from '../lib/autopilot.ts';
+import { groupTagChange, preProvisioningLabel, stateLabel, stateVariant, type AutopilotRequest } from '../lib/autopilot.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent } from '../components/ui/card.tsx';
 import { DateRangeSelect } from '../components/ui/date-range-select.tsx';
@@ -24,6 +24,7 @@ const OUTCOME_FILTERS: { value: string; label: string }[] = [
   { value: '', label: 'All outcomes' },
   { value: 'Imported', label: 'Imported' },
   { value: 'AlreadyRegistered', label: 'Already registered' },
+  { value: 'GroupTagUpdated', label: 'Group tag updated' },
   { value: 'Rejected', label: 'Rejected' },
   { value: 'Expired', label: 'Expired' },
 ];
@@ -110,11 +111,12 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
   }, [search, outcome]);
 
   const counts = useMemo(() => {
-    const c = { total: 0, imported: 0, alreadyRegistered: 0, rejected: 0, expired: 0 };
+    const c = { total: 0, imported: 0, alreadyRegistered: 0, tagUpdated: 0, rejected: 0, expired: 0 };
     for (const r of records ?? []) {
       c.total++;
       if (r.state === 'Imported') c.imported++;
       else if (r.state === 'AlreadyRegistered') c.alreadyRegistered++;
+      else if (r.state === 'GroupTagUpdated') c.tagUpdated++;
       else if (r.state === 'Rejected') c.rejected++;
       else if (r.state === 'Expired') c.expired++;
     }
@@ -133,6 +135,7 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
       { header: 'Pre-provisioning', accessor: (r) => preProvisioningLabel(r.preProvisioningReady) },
       { header: 'Location', accessor: (r) => r.locationName },
       { header: 'Group Tag', accessor: (r) => r.groupTag },
+      { header: 'Previous Group Tag', accessor: (r) => (r.state === 'GroupTagUpdated' ? r.previousGroupTag ?? '' : null) },
       { header: 'Decided By', accessor: (r) => r.decidedByUpn },
       { header: 'Decided At', accessor: (r) => r.decidedAt },
       { header: 'Rejection Reason', accessor: (r) => r.rejectionReason },
@@ -203,11 +206,12 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
 
       {!loadError && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
             {[
               { label: 'Handled requests', value: counts.total },
               { label: 'Imported', value: counts.imported },
               { label: 'Already registered', value: counts.alreadyRegistered },
+              { label: 'Group tag updated', value: counts.tagUpdated },
               { label: 'Rejected', value: counts.rejected },
               { label: 'Expired', value: counts.expired },
             ].map((stat) => (
@@ -244,7 +248,7 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
                       <EmptyState
                         icon={BadgeCheck}
                         title={records.length === 0 ? 'No handled requests in this period' : 'No requests match these filters'}
-                        description={records.length === 0 ? 'Imported, already registered, rejected and expired requests are listed here once they leave the approval queue.' : undefined}
+                        description={records.length === 0 ? 'Imported, already registered, group tag updated, rejected and expired requests are listed here once they leave the approval queue.' : undefined}
                       />
                     </TableCell>
                   </TableRow>
@@ -258,7 +262,7 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
                       <TableCell><CopyableId value={r.serialNumber} label="device serial number" className="font-mono text-sm" /></TableCell>
                       <TableCell className="text-sm">{deviceLabel(r)}</TableCell>
                       <TableCell className="text-sm">{r.locationName ?? <span className="text-muted-foreground">-</span>}</TableCell>
-                      <TableCell className="text-sm">{r.groupTag ?? <span className="text-muted-foreground">-</span>}</TableCell>
+                      <TableCell className="text-sm">{groupTagChange(r) ?? <span className="text-muted-foreground">-</span>}</TableCell>
                       <TableCell className="text-sm">
                         {r.decidedByUpn ?? <span className="text-muted-foreground">-</span>}
                         {note && <span className="block max-w-xs break-words text-xs text-muted-foreground">{note}</span>}

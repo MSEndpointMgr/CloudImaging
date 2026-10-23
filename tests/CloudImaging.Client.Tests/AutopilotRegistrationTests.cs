@@ -250,25 +250,53 @@ public sealed class AutopilotRegistrationTests : IDisposable
             pollInterval: TimeSpan.FromMilliseconds(10));
 
         vm.Start();
-        await WaitUntilAsync(() => vm.Stage == AutopilotFlowStage.Submitted);
+        await WaitUntilAsync(() => vm.Stage == AutopilotFlowStage.Finished);
 
         vm.ReferenceCode.Should().Be("AP-7K3Q9");
         vm.SerialNumber.Should().Be("SN-1");
+        vm.LocationLabel.Should().Be("Stockholm HQ");
         using (var body = JsonDocument.Parse(handler.Bodies["POST /api/v1/autopilot/registrations"]))
         {
             body.RootElement.GetProperty("hardwareHash").GetString().Should().Be(Hash);
             body.RootElement.GetProperty("locationName").GetString().Should().Be("Stockholm HQ");
         }
 
-        vm.WaitForDecisionCommand.Execute(null);
-        await WaitUntilAsync(() => vm.Stage == AutopilotFlowStage.Finished);
-
+        // Nobody selected "Wait for decision": the quiet background check still brings the outcome and tag.
         vm.RequestState.Should().Be(AutopilotRegistrationState.Imported);
         vm.IsPositiveOutcome.Should().BeTrue();
         vm.GroupTag.Should().Be("EMEA-SE-STD");
         vm.HasGroupTag.Should().BeTrue();
         vm.HasDetail.Should().BeFalse();
         handler.Authorizations[$"GET /api/v1/autopilot/registrations/{requestId}"].Should().Be("Bearer status-token");
+    }
+
+    [Fact]
+    public async Task Flow_ExplainsAGroupTagOnlyRequest_ForADeviceAlreadyInAutopilot()
+    {
+        StageTooling();
+        var requestId = Guid.NewGuid();
+        var handler = new ScriptedHandler();
+        handler.Respond("POST /api/v1/autopilot/registrations", HttpStatusCode.Created, new { requestId, referenceCode = "AP-7K3Q9", state = "PendingApproval", statusToken = "t", existingDevice = true });
+        var vm = new AutopilotRegistrationViewModel(
+            new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") }),
+            Capture(WritesReport),
+            navigateBack: () => { },
+            new SystemClockSynchronizationService(ntpServers: []),
+            readIdentity: () => new DeviceIdentity("SN-1", "Contoso", "Laptop 7", null, null),
+            pollInterval: TimeSpan.FromMilliseconds(10));
+
+        vm.Start();
+        await WaitUntilAsync(() => vm.Stage == AutopilotFlowStage.Submitted);
+
+        vm.Subtitle.Should().Contain("only change its group tag");
+        vm.LocationLabel.Should().Be("None");
+
+        handler.Respond($"GET /api/v1/autopilot/registrations/{requestId}", HttpStatusCode.OK, new { requestId, referenceCode = "AP-7K3Q9", state = "GroupTagUpdated", groupTag = "KIOSK", existingDevice = true });
+        await WaitUntilAsync(() => vm.Stage == AutopilotFlowStage.Finished);
+
+        vm.Title.Should().Be("Group tag updated");
+        vm.IsPositiveOutcome.Should().BeTrue();
+        vm.GroupTag.Should().Be("KIOSK");
     }
 
     [Fact]

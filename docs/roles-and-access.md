@@ -85,7 +85,7 @@ Portal backend's managed identity.
 | Area | Reader | Technician | Autopilot Approver | Administrator |
 |---|---|---|---|---|
 | **Autopilot**: view the approval queue | ❌ | ✅ (read-only) | ✅ | ✅ |
-| **Autopilot**: approve, reject, retry a failed import | ❌ | ❌ | ✅ | ✅ |
+| **Autopilot**: approve, reject, retry a failed import, change the group tag of a device already in Autopilot | ❌ | ❌ | ✅ | ✅ |
 | **Reports** → **Autopilot Registration History**: handled requests, CSV export | ✅ | ❌ | ✅ | ✅ |
 | **Configuration** → **Autopilot**: turn the feature on, manage group tags, set retention | ❌ | ❌ | ❌ | ✅ |
 

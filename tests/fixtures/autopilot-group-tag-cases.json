@@ -1,0 +1,27 @@
+{
+  "definitions": [
+    { "kind": "Static", "value": "Kiosk", "valid": true },
+    { "kind": "Static", "value": "EMEA-SE_Std.1", "valid": true },
+    { "kind": "Static", "value": "  ", "valid": false },
+    { "kind": "Static", "value": "Bad/Tag", "valid": false },
+    { "kind": "Static", "value": "Malm\u00f6", "valid": false },
+    { "kind": "Static", "value": "{Region}", "valid": false },
+    { "kind": "Template", "value": "{Region}-{CountryCode}-STD", "valid": true },
+    { "kind": "Template", "value": "{LocationName}", "valid": true },
+    { "kind": "Template", "value": "E-R-{Region}-C-{CountryCode}-P-PAW", "valid": true },
+    { "kind": "Template", "value": "Plain text", "valid": false },
+    { "kind": "Template", "value": "{Department}-STD", "valid": false },
+    { "kind": "Template", "value": "{region}-STD", "valid": false },
+    { "kind": "Template", "value": "{Region}/STD", "valid": false },
+    { "kind": "Template", "value": "{Region}{", "valid": false }
+  ],
+  "resolutions": [
+    { "template": "{Region}-{CountryCode}-STD", "locationName": "Stockholm HQ", "region": "EMEA", "countryCode": "SE", "value": "EMEA-SE-STD", "reason": null },
+    { "template": "{LocationName}", "locationName": "Stockholm HQ", "region": null, "countryCode": null, "value": "Stockholm HQ", "reason": null },
+    { "template": "{LocationName}-{CountryCode}", "locationName": "  Oslo  ", "region": "EMEA", "countryCode": " NO ", "value": "Oslo-NO", "reason": null },
+    { "template": "{Region}-STD", "locationName": "Lab", "region": null, "countryCode": "SE", "value": null, "reason": "The location has no value for {Region}." },
+    { "template": "{Region}-{CountryCode}", "locationName": "Lab", "region": "", "countryCode": null, "value": null, "reason": "The location has no value for {Region}, {CountryCode}." },
+    { "template": "{Region}-STD", "locationName": null, "region": null, "countryCode": null, "value": null, "reason": "The device has no location." },
+    { "template": "{LocationName}", "locationName": "Malm\u00f6/Lund", "region": null, "countryCode": null, "value": null, "reason": "Group tags may only contain letters, digits, spaces, hyphens, underscores and periods." }
+  ]
+}

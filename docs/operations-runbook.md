@@ -244,12 +244,25 @@ for replication, then click **Retry import** on the request.
 means another tenant, or an OEM or reseller on its behalf, already registered the device. Other
 errors, such as a malformed hash or an invalid group tag, are shown the same way. A device already
 registered in this tenant (`ZtdDeviceAlreadyAssigned`) is not a failure: the request is recorded as
-**Already registered**.
+**Group tag updated** when the approver chose a tag (the tag is applied to the existing device), or
+**Already registered** otherwise.
 
 **Resolution**: For devices assigned to another tenant, ask the previous owner or the reseller to
-deregister the device. For other errors, correct the cause and click **Retry import**, or reject
-the request and have the technician submit the device again. Requests that are not decided expire
-after the configured number of days.
+deregister the device. For other errors, correct the cause and click **Retry import**, picking a
+different group tag if the tag was the problem, or reject the request and have the technician
+submit the device again. Requests that are not decided expire after the configured number of days.
+
+---
+
+### Symptom: A template group tag is unavailable for a device
+
+**Cause**: The template needs a value the device's location does not have. The approval dialog
+names it: no location at all, or no region or country on the location.
+
+**Resolution**: The device screen shows the location its boot media carries. If it shows **None**,
+prepare the USB drive or ISO again with a location. If the location lacks a country, set it under
+**Locations**. Media that has not self-updated yet submits without a location even when it has
+one; boot it online once so it updates.
 
 ---
 

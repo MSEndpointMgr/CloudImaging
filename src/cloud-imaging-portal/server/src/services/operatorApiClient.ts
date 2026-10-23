@@ -420,8 +420,8 @@ export class OperatorApiClient {
     return data;
   }
 
-  async deleteAutopilotGroupTag(id: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/autopilot/group-tags/${encodeURIComponent(id)}`);
+  async deleteAutopilotGroupTag(id: string, changedBy?: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/autopilot/group-tags/${encodeURIComponent(id)}`, changedBy ? { params: { changedBy } } : undefined);
   }
 }
 

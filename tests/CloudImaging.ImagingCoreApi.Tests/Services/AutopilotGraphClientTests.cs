@@ -106,16 +106,33 @@ public sealed class AutopilotGraphClientTests
     }
 
     [Theory]
-    [InlineData("""{"value":[{"serialNumber":"SN-1"}]}""", true)]
-    [InlineData("""{"value":[{"serialNumber":"SN-10"}]}""", false)]
+    [InlineData("""{"value":[{"id":"dev-1","serialNumber":"SN-1","groupTag":"OLD"}]}""", true)]
+    [InlineData("""{"value":[{"id":"dev-10","serialNumber":"SN-10"}]}""", false)]
     [InlineData("""{"value":[]}""", false)]
     public async Task SerialLookup_RequiresAnExactMatch(string json, bool expected)
     {
         var handler = new RecordingHandler(HttpStatusCode.OK, json);
         var client = new AutopilotGraphClient(new HttpClient(handler) { BaseAddress = new Uri("https://graph.microsoft.com/") }, new StubTokenCredential());
 
-        (await client.IsSerialRegisteredAsync("SN-1", CancellationToken.None)).Should().Be(expected);
-        Uri.UnescapeDataString(handler.Query!).Should().Contain("contains(serialNumber,'SN-1')");
+        var device = await client.FindDeviceAsync("SN-1", CancellationToken.None);
+
+        (device is not null).Should().Be(expected);
+        if (expected) device.Should().Be(new AutopilotDeviceRecord("dev-1", "OLD"));
+        Uri.UnescapeDataString(handler.Query!).Should().Contain("contains(serialNumber,'SN-1')").And.Contain("groupTag");
+    }
+
+    [Fact]
+    public async Task UpdateGroupTag_PostsTheNewTagToTheExistingDevice()
+    {
+        var handler = new RecordingHandler(HttpStatusCode.NoContent, string.Empty);
+        var client = new AutopilotGraphClient(new HttpClient(handler) { BaseAddress = new Uri("https://graph.microsoft.com/") }, new StubTokenCredential());
+
+        await client.UpdateGroupTagAsync("dev-1", "EMEA-SE-STD", CancellationToken.None);
+
+        handler.Method.Should().Be(HttpMethod.Post);
+        handler.Path.Should().Be("/v1.0/deviceManagement/windowsAutopilotDeviceIdentities/dev-1/updateDeviceProperties");
+        using var body = JsonDocument.Parse(handler.Body!);
+        body.RootElement.GetProperty("groupTag").GetString().Should().Be("EMEA-SE-STD");
     }
 
     [Theory]
@@ -128,6 +145,39 @@ public sealed class AutopilotGraphClientTests
     public void TemplateDefinitions_AreValidated(AutopilotGroupTagKind kind, string value, bool valid)
     {
         (AutopilotGroupTagTemplate.ValidateDefinition(kind, value) is null).Should().Be(valid);
+    }
+
+    public static TheoryData<string, string, bool> SharedDefinitionCases()
+    {
+        var data = new TheoryData<string, string, bool>();
+        foreach (var c in SharedCases().GetProperty("definitions").EnumerateArray())
+            data.Add(c.GetProperty("kind").GetString()!, c.GetProperty("value").GetString()!, c.GetProperty("valid").GetBoolean());
+        return data;
+    }
+
+    public static TheoryData<string, string?, string?, string?, string?, string?> SharedResolutionCases()
+    {
+        var data = new TheoryData<string, string?, string?, string?, string?, string?>();
+        foreach (var c in SharedCases().GetProperty("resolutions").EnumerateArray())
+            data.Add(c.GetProperty("template").GetString()!, c.GetProperty("locationName").GetString(), c.GetProperty("region").GetString(), c.GetProperty("countryCode").GetString(), c.GetProperty("value").GetString(), c.GetProperty("reason").GetString());
+        return data;
+    }
+
+    private static JsonElement SharedCases() =>
+        JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "autopilot-group-tag-cases.json"))).RootElement;
+
+    [Theory]
+    [MemberData(nameof(SharedDefinitionCases))]
+    public void SharedCases_DefinitionValidity(string kind, string value, bool valid)
+    {
+        (AutopilotGroupTagTemplate.ValidateDefinition(Enum.Parse<AutopilotGroupTagKind>(kind), value) is null).Should().Be(valid);
+    }
+
+    [Theory]
+    [MemberData(nameof(SharedResolutionCases))]
+    public void SharedCases_Resolution(string template, string? locationName, string? region, string? countryCode, string? value, string? reason)
+    {
+        AutopilotGroupTagTemplate.Resolve(template, locationName, region, countryCode).Should().Be((value, reason));
     }
 
     [Fact]
@@ -143,12 +193,15 @@ public sealed class AutopilotGraphClientTests
     }
 
     [Fact]
-    public void AutopilotChallenge_BindsTheHashAndDiffersFromTheSessionChallenge()
+    public void AutopilotChallenge_BindsTheHashAndLocation_AndDiffersFromOtherChallenges()
     {
-        var a = DevicePayloadSignature.BuildAutopilotChallenge("SN", "aGFzaA==", "t", "n");
-        var b = DevicePayloadSignature.BuildAutopilotChallenge("SN", "b3RoZXI=", "t", "n");
+        var location = Guid.NewGuid();
+        var a = DevicePayloadSignature.BuildAutopilotChallenge("SN", "aGFzaA==", location, "Stockholm", "t", "n");
 
-        a.Should().NotEqual(b);
+        a.Should().NotEqual(DevicePayloadSignature.BuildAutopilotChallenge("SN", "b3RoZXI=", location, "Stockholm", "t", "n"));
+        a.Should().NotEqual(DevicePayloadSignature.BuildAutopilotChallenge("SN", "aGFzaA==", Guid.NewGuid(), "Stockholm", "t", "n"));
+        a.Should().NotEqual(DevicePayloadSignature.BuildAutopilotChallenge("SN", "aGFzaA==", location, "Oslo", "t", "n"));
+        a.Should().NotEqual(DevicePayloadSignature.BuildLegacyAutopilotChallenge("SN", "aGFzaA==", "t", "n"));
         a.Should().NotEqual(DevicePayloadSignature.BuildChallenge("SN", "t", "n"));
     }
 

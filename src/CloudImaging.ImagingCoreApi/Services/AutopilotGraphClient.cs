@@ -15,6 +15,11 @@ public sealed record AutopilotImportStatus(string DeviceImportStatus, string? Er
     public bool IsError => string.Equals(DeviceImportStatus, "error", StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>A device already registered in Windows Autopilot.</summary>
+/// <param name="Id">Graph id of the windowsAutopilotDeviceIdentity.</param>
+/// <param name="GroupTag">Its current group tag; null when it has none.</param>
+public sealed record AutopilotDeviceRecord(string Id, string? GroupTag);
+
 /// <summary>A Graph call failed in a way the operator should see verbatim.</summary>
 public sealed class AutopilotGraphException : Exception
 {
@@ -67,21 +72,40 @@ public class AutopilotGraphClient
         _credential = credential;
     }
 
-    /// <summary>True when a Windows Autopilot device with this exact serial number already exists in the tenant.</summary>
-    public virtual async Task<bool> IsSerialRegisteredAsync(string serialNumber, CancellationToken ct)
+    /// <summary>The Windows Autopilot device with this exact serial number, or null when the tenant has none.</summary>
+    public virtual async Task<AutopilotDeviceRecord?> FindDeviceAsync(string serialNumber, CancellationToken ct)
     {
         // contains() is the filter the Autopilot devices endpoint reliably supports; the exact match is checked locally.
         var escaped = serialNumber.Trim().Replace("'", "''", StringComparison.Ordinal);
         var filter = Uri.EscapeDataString($"contains(serialNumber,'{escaped}')");
-        using var response = await SendAsync(HttpMethod.Get, $"v1.0/deviceManagement/windowsAutopilotDeviceIdentities?$filter={filter}&$select=serialNumber", null, ct);
+        using var response = await SendAsync(HttpMethod.Get, $"v1.0/deviceManagement/windowsAutopilotDeviceIdentities?$filter={filter}&$select=id,serialNumber,groupTag", null, ct);
         await EnsureSuccessAsync(response, "look up existing Autopilot devices", ct);
 
         using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-        return document.RootElement.TryGetProperty("value", out var entries)
-            && entries.ValueKind == JsonValueKind.Array
-            && entries.EnumerateArray().Any(entry =>
-                entry.TryGetProperty("serialNumber", out var serial)
-                && string.Equals(serial.GetString(), serialNumber.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (!document.RootElement.TryGetProperty("value", out var entries) || entries.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (entry.TryGetProperty("serialNumber", out var serial)
+                && string.Equals(serial.GetString(), serialNumber.Trim(), StringComparison.OrdinalIgnoreCase)
+                && entry.TryGetProperty("id", out var id) && id.GetString() is { Length: > 0 } deviceId)
+            {
+                var tag = entry.TryGetProperty("groupTag", out var t) ? t.GetString() : null;
+                return new AutopilotDeviceRecord(deviceId, string.IsNullOrWhiteSpace(tag) ? null : tag);
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Changes the group tag of a device that is already registered in Windows Autopilot.</summary>
+    public virtual async Task UpdateGroupTagAsync(string deviceId, string groupTag, CancellationToken ct)
+    {
+        var body = new Dictionary<string, object?> { ["groupTag"] = groupTag };
+        using var response = await SendAsync(HttpMethod.Post, $"v1.0/deviceManagement/windowsAutopilotDeviceIdentities/{Uri.EscapeDataString(deviceId)}/updateDeviceProperties", JsonContent.Create(body, options: JsonOptions), ct);
+        await EnsureSuccessAsync(response, "update the Autopilot group tag", ct);
     }
 
     /// <summary>

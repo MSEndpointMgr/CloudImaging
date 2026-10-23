@@ -74,7 +74,9 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     private string? _referenceCode;
     private string? _serialNumber;
     private string? _deviceDescription;
+    private string? _locationName;
     private string? _groupTag;
+    private bool _existingDevice;
     private string? _detail;
     private string? _errorMessage;
     private string? _tpmWarning;
@@ -82,6 +84,8 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     private string? _statusToken;
     private DateTimeOffset? _lastCheckedAt;
     private bool _lastPollFailed;
+    private Task? _pollTask;
+    private CancellationToken _pollToken;
     private bool _disposed;
 
     internal AutopilotRegistrationViewModel(
@@ -168,7 +172,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
 
     /// <summary>True once finished with an outcome that counts as a successful registration.</summary>
     public bool IsPositiveOutcome => Stage == AutopilotFlowStage.Finished
-        && RequestState is AutopilotRegistrationState.Imported or AutopilotRegistrationState.AlreadyRegistered;
+        && RequestState is AutopilotRegistrationState.Imported or AutopilotRegistrationState.AlreadyRegistered or AutopilotRegistrationState.GroupTagUpdated;
 
     /// <summary>True once finished with an outcome that is not <see cref="IsPositiveOutcome"/>.</summary>
     public bool IsNegativeOutcome => Stage == AutopilotFlowStage.Finished && !IsPositiveOutcome;
@@ -181,6 +185,12 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
 
     /// <summary>Manufacturer and model, formatted for display.</summary>
     public string? DeviceDescription { get => _deviceDescription; private set { _deviceDescription = value; OnPropertyChanged(); } }
+
+    /// <summary>
+    /// The location this boot media was prepared for, or "None". Group tag templates are built from
+    /// it, so the technician must be able to see it before the approver does.
+    /// </summary>
+    public string LocationLabel => string.IsNullOrWhiteSpace(_locationName) ? "None" : _locationName;
 
     /// <summary>Group tag the device was, or will be, imported with; null until the service reports one.</summary>
     public string? GroupTag { get => _groupTag; private set { _groupTag = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasGroupTag)); } }
@@ -216,6 +226,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         {
             AutopilotRegistrationState.Imported => "Registered with Autopilot",
             AutopilotRegistrationState.AlreadyRegistered => "Already registered",
+            AutopilotRegistrationState.GroupTagUpdated => "Group tag updated",
             AutopilotRegistrationState.Rejected => "Request rejected",
             AutopilotRegistrationState.Expired => "Request expired",
             AutopilotRegistrationState.ImportFailed => "Import failed",
@@ -228,13 +239,16 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
     {
         AutopilotFlowStage.Capturing => "Collecting the device's Windows Autopilot hardware hash.\nThis might take some time.",
         AutopilotFlowStage.Submitting => "Sending the hardware hash to the Cloud Imaging service.",
-        AutopilotFlowStage.Submitted => "Approval is required. You can image this device in the meantime.",
+        AutopilotFlowStage.Submitted => _existingDevice
+            ? "This device is already in Windows Autopilot, so an approver can only change its group tag. You can image this device in the meantime."
+            : "Approval is required. You can image this device in the meantime.",
         AutopilotFlowStage.Waiting => WaitingSubtitle(),
         AutopilotFlowStage.Failed => "Nothing was submitted. Check the network connection and try again.",
         _ => RequestState switch
         {
             AutopilotRegistrationState.Imported => "The device has been imported into Windows Autopilot.",
             AutopilotRegistrationState.AlreadyRegistered => "This device is already a Windows Autopilot device. Nothing else to do.",
+            AutopilotRegistrationState.GroupTagUpdated => "This device was already a Windows Autopilot device. Only its group tag was changed.",
             AutopilotRegistrationState.Rejected => "The approver did not import this device.",
             AutopilotRegistrationState.Expired => "Nobody decided in time. Submit the device again to create a new request.",
             AutopilotRegistrationState.ImportFailed => "An approver can retry the import from the portal.",
@@ -264,12 +278,15 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         Detail = null;
         GroupTag = null;
         TpmWarning = null;
+        _existingDevice = false;
         try
         {
             Stage = AutopilotFlowStage.Capturing;
             var identity = await Task.Run(_readIdentity, ct);
             SerialNumber = identity.SerialNumber;
             DeviceDescription = $"{identity.Manufacturer} {identity.Model}".Trim();
+            _locationName = identity.LocationName;
+            OnPropertyChanged(nameof(LocationLabel));
 
             var hash = await _capture.CaptureAsync(ct);
 
@@ -298,9 +315,15 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
 
             _requestId = response.RequestId;
             _statusToken = response.StatusToken;
+            _existingDevice = response.ExistingDevice;
             ReferenceCode = response.ReferenceCode;
             RequestState = response.State;
-            Stage = AutopilotRegistrationRequest.IsTerminal(response.State) ? AutopilotFlowStage.Finished : AutopilotFlowStage.Submitted;
+            var finished = AutopilotRegistrationRequest.IsTerminal(response.State);
+            Stage = finished ? AutopilotFlowStage.Finished : AutopilotFlowStage.Submitted;
+
+            // Keep checking quietly, so the decision and its group tag still show if the technician stays on this screen.
+            if (!finished)
+                StartPolling(delayFirst: true, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -319,11 +342,22 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
         if (_statusToken is null)
             return;
         Stage = AutopilotFlowStage.Waiting;
-        _ = PollAsync(_cts.Token);
+        StartPolling(delayFirst: false, _cts.Token);
     }
 
-    private async Task PollAsync(CancellationToken ct)
+    private void StartPolling(bool delayFirst, CancellationToken ct)
     {
+        if (_pollTask is { IsCompleted: false } && _pollToken == ct)
+            return;
+        _pollToken = ct;
+        _pollTask = PollAsync(delayFirst, ct);
+    }
+
+    private async Task PollAsync(bool delayFirst, CancellationToken ct)
+    {
+        if (delayFirst && !await DelayAsync(ct))
+            return;
+
         while (!ct.IsCancellationRequested)
         {
             try
@@ -331,6 +365,7 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
                 var status = await _gateway.GetAutopilotStatusAsync(_requestId, _statusToken!, ct);
                 _lastCheckedAt = DateTimeOffset.Now;
                 _lastPollFailed = false;
+                _existingDevice = status.ExistingDevice;
                 GroupTag = status.GroupTag;
                 RequestState = status.State;
                 OnPropertyChanged(nameof(Title));
@@ -362,14 +397,21 @@ public sealed partial class AutopilotRegistrationViewModel : INotifyPropertyChan
                 OnPropertyChanged(nameof(Subtitle));
             }
 
-            try
-            {
-                await Task.Delay(_pollInterval, ct);
-            }
-            catch (OperationCanceledException)
-            {
+            if (!await DelayAsync(ct))
                 return;
-            }
+        }
+    }
+
+    private async Task<bool> DelayAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(_pollInterval, ct);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 

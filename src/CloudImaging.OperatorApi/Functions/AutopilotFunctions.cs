@@ -144,7 +144,7 @@ public sealed partial class AutopilotFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        using var coreResponse = await _coreClient.DeleteAutopilotGroupTagAsync(tagId, context.CancellationToken);
+        using var coreResponse = await _coreClient.DeleteAutopilotGroupTagAsync(tagId, System.Web.HttpUtility.ParseQueryString(req.Url.Query).Get("changedBy"), context.CancellationToken);
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 

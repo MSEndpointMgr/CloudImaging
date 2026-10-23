@@ -72,19 +72,25 @@ router.get('/registrations/:requestId', canView, requireGuidParams('requestId'),
   } catch (err) { next(err); }
 });
 
+/** Reads an optional group tag definition id from a decision body. Returns false when it is present but not a GUID. */
+function tagIdParam(body: Record<string, unknown>): string | undefined | false {
+  const tagId = body['groupTagDefinitionId'];
+  if (tagId === undefined || tagId === null) return undefined;
+  return typeof tagId === 'string' && GUID_PATTERN.test(tagId) ? tagId : false;
+}
+
 router.post('/registrations/:requestId/approve', canDecide, requireGuidParams('requestId'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const user = decidingUser(req);
     if (!user) { res.status(401).json({ title: 'Unauthorized', status: 401, detail: 'Missing user identity claim.' }); return; }
 
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    const tagId = body['groupTagDefinitionId'];
-    if (tagId !== undefined && tagId !== null && (typeof tagId !== 'string' || !GUID_PATTERN.test(tagId))) {
+    const tagId = tagIdParam((req.body ?? {}) as Record<string, unknown>);
+    if (tagId === false) {
       badRequest(res, 'groupTagDefinitionId must be a GUID.');
       return;
     }
 
-    const decision: Decision = { ...user, groupTagDefinitionId: typeof tagId === 'string' ? tagId : undefined };
+    const decision: Decision = { ...user, groupTagDefinitionId: tagId };
     res.json(await operatorApiClient.decideAutopilotRegistration(req.params['requestId'] as string, 'approve', decision));
   } catch (err) { next(err); }
 });
@@ -109,7 +115,14 @@ router.post('/registrations/:requestId/retry', canDecide, requireGuidParams('req
   try {
     const user = decidingUser(req);
     if (!user) { res.status(401).json({ title: 'Unauthorized', status: 401, detail: 'Missing user identity claim.' }); return; }
-    res.json(await operatorApiClient.decideAutopilotRegistration(req.params['requestId'] as string, 'retry', user));
+
+    // Retry applies the group tag picked now, so a wrong tag can be fixed without a new submission.
+    const tagId = tagIdParam((req.body ?? {}) as Record<string, unknown>);
+    if (tagId === false) {
+      badRequest(res, 'groupTagDefinitionId must be a GUID.');
+      return;
+    }
+    res.json(await operatorApiClient.decideAutopilotRegistration(req.params['requestId'] as string, 'retry', { ...user, groupTagDefinitionId: tagId }));
   } catch (err) { next(err); }
 });
 
@@ -120,26 +133,29 @@ router.get('/group-tags', requireRole('CloudImaging.AutopilotApprover', 'CloudIm
 });
 
 /** Copies only the fields a group tag definition has, so nothing else in the body reaches the backend. */
-function groupTagPayload(body: unknown): Record<string, unknown> {
-  const source = (body ?? {}) as Record<string, unknown>;
-  return { name: source['name'], kind: source['kind'], value: source['value'], description: source['description'] };
+function groupTagPayload(req: AuthenticatedRequest): Record<string, unknown> {
+  const source = (req.body ?? {}) as Record<string, unknown>;
+  return {
+    name: source['name'], kind: source['kind'], value: source['value'], description: source['description'],
+    changedBy: decidingUser(req)?.decidedByUpn ?? null,
+  };
 }
 
 router.post('/group-tags', requireRole('CloudImaging.Administrator'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    res.status(201).json(await operatorApiClient.createAutopilotGroupTag(groupTagPayload(req.body)));
+    res.status(201).json(await operatorApiClient.createAutopilotGroupTag(groupTagPayload(req)));
   } catch (err) { next(err); }
 });
 
 router.put('/group-tags/:tagId', requireRole('CloudImaging.Administrator'), requireGuidParams('tagId'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    res.json(await operatorApiClient.updateAutopilotGroupTag(req.params['tagId'] as string, groupTagPayload(req.body)));
+    res.json(await operatorApiClient.updateAutopilotGroupTag(req.params['tagId'] as string, groupTagPayload(req)));
   } catch (err) { next(err); }
 });
 
 router.delete('/group-tags/:tagId', requireRole('CloudImaging.Administrator'), requireGuidParams('tagId'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    await operatorApiClient.deleteAutopilotGroupTag(req.params['tagId'] as string);
+    await operatorApiClient.deleteAutopilotGroupTag(req.params['tagId'] as string, decidingUser(req)?.decidedByUpn);
     res.status(204).send();
   } catch (err) { next(err); }
 });

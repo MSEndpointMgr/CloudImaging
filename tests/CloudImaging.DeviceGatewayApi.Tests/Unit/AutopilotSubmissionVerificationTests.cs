@@ -23,15 +23,16 @@ public sealed class AutopilotSubmissionVerificationTests
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddYears(1));
     }
 
-    private static AutopilotHashSubmission Sign(X509Certificate2 cert, DateTimeOffset timestamp, string signedHash, string sentHash, bool useSessionChallenge = false)
+    private static AutopilotHashSubmission Sign(X509Certificate2 cert, DateTimeOffset timestamp, string signedHash, string sentHash, bool useSessionChallenge = false, bool legacy = false, Guid? signedLocation = null, Guid? sentLocation = null)
     {
         var timestampUtc = timestamp.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
         var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
-        var challenge = useSessionChallenge
-            ? DevicePayloadSignature.BuildChallenge("SN-1", timestampUtc, nonce)
-            : DevicePayloadSignature.BuildAutopilotChallenge("SN-1", signedHash, timestampUtc, nonce);
+        var challenge = useSessionChallenge ? DevicePayloadSignature.BuildChallenge("SN-1", timestampUtc, nonce)
+            : legacy ? DevicePayloadSignature.BuildLegacyAutopilotChallenge("SN-1", signedHash, timestampUtc, nonce)
+            : DevicePayloadSignature.BuildAutopilotChallenge("SN-1", signedHash, signedLocation, signedLocation is null ? null : "Stockholm", timestampUtc, nonce);
         using var rsa = cert.GetRSAPrivateKey()!;
         var signature = rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var location = sentLocation ?? signedLocation;
 
         return new AutopilotHashSubmission
         {
@@ -39,6 +40,8 @@ public sealed class AutopilotSubmissionVerificationTests
             Manufacturer = "Contoso",
             Model = "Laptop",
             HardwareHash = sentHash,
+            LocationId = location,
+            LocationName = location is null ? null : "Stockholm",
             ProofOfPossession = new DeviceProofOfPossession { Nonce = nonce, TimestampUtc = timestampUtc, Signature = Convert.ToBase64String(signature) },
         };
     }
@@ -49,8 +52,30 @@ public sealed class AutopilotSubmissionVerificationTests
         using var cert = CreateCertificate();
         var now = DateTimeOffset.UtcNow;
 
-        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "aGFzaA=="), MaxSkew, now)
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "aGFzaA==", signedLocation: Guid.NewGuid()), MaxSkew, now, out var locationSigned)
             .Should().Be(DevicePayloadSignatureVerifier.Result.Valid);
+        locationSigned.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ASwappedLocation_IsRejected()
+    {
+        using var cert = CreateCertificate();
+        var now = DateTimeOffset.UtcNow;
+
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "aGFzaA==", signedLocation: Guid.NewGuid(), sentLocation: Guid.NewGuid()), MaxSkew, now, out _)
+            .Should().Be(DevicePayloadSignatureVerifier.Result.InvalidSignature);
+    }
+
+    [Fact]
+    public void ALegacySignature_IsAccepted_ButItsLocationIsNotSigned()
+    {
+        using var cert = CreateCertificate();
+        var now = DateTimeOffset.UtcNow;
+
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "aGFzaA==", legacy: true, sentLocation: Guid.NewGuid()), MaxSkew, now, out var locationSigned)
+            .Should().Be(DevicePayloadSignatureVerifier.Result.Valid);
+        locationSigned.Should().BeFalse("media that has not self-updated signs no location, so the gateway must drop it");
     }
 
     [Fact]
@@ -59,7 +84,9 @@ public sealed class AutopilotSubmissionVerificationTests
         using var cert = CreateCertificate();
         var now = DateTimeOffset.UtcNow;
 
-        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "b3RoZXI="), MaxSkew, now)
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "b3RoZXI="), MaxSkew, now, out _)
+            .Should().Be(DevicePayloadSignatureVerifier.Result.InvalidSignature);
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "b3RoZXI=", legacy: true), MaxSkew, now, out _)
             .Should().Be(DevicePayloadSignatureVerifier.Result.InvalidSignature);
     }
 
@@ -69,7 +96,7 @@ public sealed class AutopilotSubmissionVerificationTests
         using var cert = CreateCertificate();
         var now = DateTimeOffset.UtcNow;
 
-        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "aGFzaA==", useSessionChallenge: true), MaxSkew, now)
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now, "aGFzaA==", "aGFzaA==", useSessionChallenge: true), MaxSkew, now, out _)
             .Should().Be(DevicePayloadSignatureVerifier.Result.InvalidSignature);
     }
 
@@ -79,7 +106,7 @@ public sealed class AutopilotSubmissionVerificationTests
         using var cert = CreateCertificate();
         var now = DateTimeOffset.UtcNow;
 
-        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now.AddMinutes(-10), "aGFzaA==", "aGFzaA=="), MaxSkew, now)
+        DevicePayloadSignatureVerifier.VerifyAutopilot(cert, Sign(cert, now.AddMinutes(-10), "aGFzaA==", "aGFzaA=="), MaxSkew, now, out _)
             .Should().Be(DevicePayloadSignatureVerifier.Result.Expired);
     }
 

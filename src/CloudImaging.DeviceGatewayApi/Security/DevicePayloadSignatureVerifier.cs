@@ -68,21 +68,37 @@ public static class DevicePayloadSignatureVerifier
 
     /// <summary>
     /// Verifies the proof-of-possession on an Autopilot hardware hash submission. The challenge
-    /// covers the hash itself, so the signed request cannot be replayed with different content.
+    /// covers the hash and the location, so the signed request cannot be replayed with different
+    /// content. Boot media that has not self-updated still signs the older challenge without the
+    /// location; <paramref name="locationSigned"/> is then false and the caller must drop the location.
     /// </summary>
     public static Result VerifyAutopilot(
         X509Certificate2 clientCertificate,
         AutopilotHashSubmission submission,
         TimeSpan maxSkew,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        out bool locationSigned)
     {
         ArgumentNullException.ThrowIfNull(clientCertificate);
         ArgumentNullException.ThrowIfNull(submission);
 
+        locationSigned = true;
+        var result = Verify(
+            clientCertificate,
+            submission.ProofOfPossession,
+            pop => DevicePayloadSignature.BuildAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, submission.LocationId, submission.LocationName, pop.TimestampUtc, pop.Nonce),
+            maxSkew,
+            now);
+        if (result != Result.InvalidSignature)
+        {
+            return result;
+        }
+
+        locationSigned = false;
         return Verify(
             clientCertificate,
             submission.ProofOfPossession,
-            pop => DevicePayloadSignature.BuildAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, pop.TimestampUtc, pop.Nonce),
+            pop => DevicePayloadSignature.BuildLegacyAutopilotChallenge(submission.SerialNumber, submission.HardwareHash, pop.TimestampUtc, pop.Nonce),
             maxSkew,
             now);
     }
