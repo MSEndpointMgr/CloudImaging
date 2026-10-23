@@ -542,6 +542,34 @@ export function readOnlyVersionBanner(version: number, currentVersion: number): 
   return `Version ${String(version)}, read-only. The current version is ${String(currentVersion)}.`;
 }
 
+// ── Start imaging ────────────────────────────────────────────────────────────
+
+/**
+ * One line per group of selected devices for the Start imaging overlay, for example "3 devices:
+ * Stockholm and Gothenburg", "1 device started from media without a location: Nordics standard"
+ * and "2 devices: No setup profile". No version numbers: the version that ran is on the timeline.
+ * Empty when no profiles exist.
+ */
+export function groupDevicesBySetupProfile(sessions: { locationId?: string | null }[], profiles: SetupProfileSummary[]): string[] {
+  if (profiles.length === 0 || sessions.length === 0) return [];
+  const devices = (n: number) => plural(n, 'device', 'devices');
+  const byProfile = new Map<string, number>();
+  let withoutLocation = 0;
+  let unresolved = 0;
+  const allDevices = profiles.find((p) => p.targeting.allDevices);
+  for (const session of sessions) {
+    const own = session.locationId ? profiles.find((p) => !p.targeting.allDevices && p.targeting.locationIds.includes(session.locationId!)) : undefined;
+    if (own) byProfile.set(own.name, (byProfile.get(own.name) ?? 0) + 1);
+    else if (allDevices && session.locationId) byProfile.set(allDevices.name, (byProfile.get(allDevices.name) ?? 0) + 1);
+    else if (allDevices) withoutLocation++;
+    else unresolved++;
+  }
+  const lines = [...byProfile.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, n]) => `${devices(n)}: ${name}`);
+  if (withoutLocation > 0) lines.push(`${devices(withoutLocation)} started from media without a location: ${allDevices!.name}`);
+  if (unresolved > 0) lines.push(`${devices(unresolved)}: No setup profile`);
+  return lines;
+}
+
 // ── Deployment timeline ──────────────────────────────────────────────────────
 
 function plural(count: number, one: string, many: string): string {

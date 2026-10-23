@@ -320,13 +320,13 @@ description: "Task list for the Setup Profiles feature"
 
 ### Tests for User Story 5 (write first, must fail)
 
-- [ ] T141 [P] [US5] Extend tests/cloud-imaging-portal/client/setup-profiles.test.ts for `groupDevicesBySetupProfile(sessions, profiles)`: a session whose `locationId` a profile targets goes to that profile; otherwise to the All devices profile; otherwise to "No setup profile"; lines read "<profile name>: N devices" (singular "1 device") followed by "No setup profile: N devices" when some resolve to none; no version numbers; an empty array when no profiles exist
-- [ ] T142 [P] [US5] Extend tests/cloud-imaging-portal/client/bulk-assignment-flow.test.tsx: the Start imaging overlay renders the profile lines in the `details` slot for a mixed selection and renders no profile lines when the profile list is empty or fails to load (the overlay still works)
+- [X] T141 [P] [US5] Extend tests/cloud-imaging-portal/client/setup-profiles.test.ts for `groupDevicesBySetupProfile(sessions, profiles)`: a session whose `locationId` a profile targets goes to that profile; otherwise to the All devices profile; otherwise to "No setup profile"; lines read "<profile name>: N devices" (singular "1 device") followed by "No setup profile: N devices" when some resolve to none; no version numbers; an empty array when no profiles exist
+- [X] T142 [P] [US5] Extend tests/cloud-imaging-portal/client/bulk-assignment-flow.test.tsx: the Start imaging overlay renders the profile lines in the `details` slot for a mixed selection and renders no profile lines when the profile list is empty or fails to load (the overlay still works)
 
 ### Implementation for User Story 5
 
-- [ ] T143 [US5] Add `groupDevicesBySetupProfile` to src/cloud-imaging-portal/client/src/lib/setupProfiles.ts (T141 goes green)
-- [ ] T144 [US5] In src/cloud-imaging-portal/client/src/pages/SessionsPage.tsx load the setup profile list (route 1) when the Start imaging overlay opens, for users with `canViewSetupProfiles`, and pass the grouped lines to `ConfirmImpactDialog` `details`; a failed load shows no lines and does not block imaging (depends on T068, T143; T142 goes green)
+- [X] T143 [US5] Add `groupDevicesBySetupProfile` to src/cloud-imaging-portal/client/src/lib/setupProfiles.ts (T141 goes green)
+- [X] T144 [US5] In src/cloud-imaging-portal/client/src/pages/SessionsPage.tsx load the setup profile list (route 1) when the Start imaging overlay opens, for users with `canViewSetupProfiles`, and pass the grouped lines to `ConfirmImpactDialog` `details`; a failed load shows no lines and does not block imaging (depends on T068, T143; T142 goes green)
 
 **Checkpoint**: All user stories are complete.
 

@@ -668,6 +668,7 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Extracting Windows RE", 22);
                 recoveryFilesDir = Path.Combine(workDir, "WinRE");
                 var winre = await WindowsRecoverySource.ExtractAsync(windowsSourcePath, workDir, recoveryFilesDir, RunDismAsync, ct);
+                await WindowsRecoverySource.EnsureRecoveryMatchesAdkAsync(winre, adkPath, architecture, ct);
                 File.Copy(winre, wimPath, overwrite: true);
                 LogWindowsRecoveryExtracted(_logger, windowsSourcePath);
             }

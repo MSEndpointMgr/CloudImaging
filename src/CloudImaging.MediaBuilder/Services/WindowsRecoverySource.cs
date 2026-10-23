@@ -22,8 +22,10 @@ public sealed record SourceCheckResult(string Summary, IReadOnlyList<SourceProbl
 /// <summary>
 /// A Windows RE boot image is built from the <c>Winre.wim</c> inside a Windows installation source
 /// (an ISO or its <c>sources\install.wim</c>), plus the two DLLs Windows RE needs for Wi-Fi, which
-/// only the full OS carries. The source must match the Windows ADK, because the ADK's optional
-/// components are added to it.
+/// only the full OS carries. The ADK's optional components are added to that Windows RE, so its
+/// build must equal the ADK build. Newer Windows releases on the same base (e.g. 25H2 and 26H2 on
+/// 26100) report a higher install.wim build but keep a base-build Windows RE, so the source check
+/// only rejects older builds and the exact match is enforced after extraction.
 /// </summary>
 public static class WindowsRecoverySource
 {
@@ -37,11 +39,11 @@ public static class WindowsRecoverySource
     public static IReadOnlyList<SourceProblem> Evaluate(WimImageInfo source, WimImageInfo? adk, IReadOnlyCollection<string> adkLanguages, MachineArchitecture target)
     {
         var problems = new List<SourceProblem>();
-        if (source.Build is { } build && adk?.Build is { } adkBuild && build != adkBuild)
+        if (source.Build is { } build && adk?.Build is { } adkBuild && build < adkBuild)
         {
             problems.Add(new SourceProblem(
-                string.Create(CultureInfo.InvariantCulture, $"Windows image build {build} doesn't match Windows ADK build {adkBuild}."),
-                string.Create(CultureInfo.InvariantCulture, $"Use a build {adkBuild} source.")));
+                string.Create(CultureInfo.InvariantCulture, $"Windows image build {build} is older than Windows ADK build {adkBuild}."),
+                string.Create(CultureInfo.InvariantCulture, $"Use a build {adkBuild} or newer source.")));
         }
 
         var sourceArchitecture = source.ProcessorArchitecture is { } raw ? WimMetadataReader.ToMachineArchitecture(raw) : null;
@@ -64,6 +66,32 @@ public static class WindowsRecoverySource
     }
 
     /// <summary>
+    /// The extracted Windows RE must be the ADK's build exactly; a newer base (e.g. 28000) needs its
+    /// own ADK. Pure, so it can be tested without an ISO. Null when it matches or a build is unknown.
+    /// </summary>
+    public static SourceProblem? EvaluateRecovery(WimImageInfo recovery, WimImageInfo? adk)
+    {
+        if (recovery.Build is not { } build || adk?.Build is not { } adkBuild || build == adkBuild)
+            return null;
+
+        return new SourceProblem(
+            string.Create(CultureInfo.InvariantCulture, $"Windows RE build {build} in this source doesn't match Windows ADK build {adkBuild}."),
+            build > adkBuild
+                ? string.Create(CultureInfo.InvariantCulture, $"Install the Windows ADK for build {build}, or use an older source.")
+                : string.Create(CultureInfo.InvariantCulture, $"Use a build {adkBuild} or newer source."));
+    }
+
+    /// <summary>Fails generation before any other work when the extracted Windows RE doesn't match the ADK.</summary>
+    public static async Task EnsureRecoveryMatchesAdkAsync(string winrePath, string adkPath, MachineArchitecture architecture, CancellationToken ct)
+    {
+        var recovery = await WimMetadataReader.ReadImageInfoAsync(winrePath, ct);
+        var adkWim = AdkWinPeWimPath(adkPath, architecture);
+        var adk = adkWim is not null ? await WimMetadataReader.ReadImageInfoAsync(adkWim, ct) : null;
+        if (recovery is not null && EvaluateRecovery(recovery, adk) is { } problem)
+            throw new InvalidOperationException($"{problem.Problem} {problem.Fix}");
+    }
+
+    /// <summary>
     /// Checks an ISO or install.wim. Mounts an ISO read-only for the duration of the check and
     /// detaches it again unless it was already attached.
     /// </summary>
@@ -82,7 +110,7 @@ public static class WindowsRecoverySource
             if (source.InstallWimPath is null)
             {
                 return Fail(
-                    source.HasInstallEsd ? "This ISO has only sources\\install.esd, which cannot be mounted." : "This ISO has no sources\\install.wim.",
+                    "This ISO has no sources\\install.wim.",
                     "Use an ISO that includes install.wim, such as a volume licensing or Visual Studio download.");
             }
 
@@ -191,12 +219,11 @@ public static class WindowsRecoverySource
     private static async Task<OpenedSource> OpenAsync(string sourcePath, CancellationToken ct)
     {
         if (!sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
-            return new OpenedSource(sourcePath, null, false, false);
+            return new OpenedSource(sourcePath, null, false);
 
         var (root, wasAttached) = await AttachIsoAsync(sourcePath, ct);
         var wim = Path.Combine(root, "sources", "install.wim");
-        var esd = Path.Combine(root, "sources", "install.esd");
-        return new OpenedSource(File.Exists(wim) ? wim : null, wasAttached ? null : sourcePath, wasAttached, File.Exists(esd));
+        return new OpenedSource(File.Exists(wim) ? wim : null, wasAttached ? null : sourcePath, wasAttached);
     }
 
     private static async Task<(string Root, bool WasAttached)> AttachIsoAsync(string isoPath, CancellationToken ct)
@@ -231,13 +258,11 @@ public static class WindowsRecoverySource
         return await stdout;
     }
 
-    private sealed class OpenedSource(string? installWimPath, string? isoToDetach, bool wasAlreadyAttached, bool hasInstallEsd) : IAsyncDisposable
+    private sealed class OpenedSource(string? installWimPath, string? isoToDetach, bool wasAlreadyAttached) : IAsyncDisposable
     {
         public string? InstallWimPath { get; } = installWimPath;
 
         public bool WasAlreadyAttached { get; } = wasAlreadyAttached;
-
-        public bool HasInstallEsd { get; } = hasInstallEsd;
 
         public async ValueTask DisposeAsync()
         {

@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff, Play } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -17,6 +17,7 @@ import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { RelativeTime } from '../components/ui/relative-time.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
+import { StartImagingProfileLines } from '../components/setup-profiles/StartImagingProfileLines.tsx';
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
 import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
@@ -206,7 +207,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
 
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
-  const { isAdministrator } = useAuth();
+  const { isAdministrator, canViewSetupProfiles } = useAuth();
   const { preferredLocationId, preferredLocationName } = useUserPreferences();
   const [sessions, setSessions]         = useState<Session[]>([]);
   // Active pre-flight overrides, and whether pre-flight authorization is on at all. Both come from
@@ -1354,11 +1355,13 @@ function SessionsPageImpl(): React.ReactElement {
 
       {pendingBulkAssign && (
         <ConfirmImpactDialog
+          icon={Play}
           copy={bulkAssignCopy}
           busy={startingImages}
           onCancel={() => setPendingBulkAssign(false)}
           onConfirm={() => { void handleStartImaging(); }}
           titleId="bulk-assign-confirm-title"
+          details={canViewSetupProfiles ? <StartImagingProfileLines sessions={targetSessions} /> : undefined}
         />
       )}
     </div>

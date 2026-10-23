@@ -6,6 +6,7 @@ import {
   draftChanges,
   duplicateName,
   emptyContent,
+  groupDevicesBySetupProfile,
   itemCountsSummary,
   itemStatusText,
   itemTooltip,
@@ -232,6 +233,31 @@ describe('Portal frontend: setup profile helpers', () => {
       { index: 3, outcome: 'Queued' as const },
     ]);
     expect(sorted.map((i) => i.index)).toEqual([2, 1, 0, 3]);
+  });
+
+  describe('Start imaging overlay', () => {
+    it('groups devices by the profile their location resolves to, without versions', () => {
+      const lines = groupDevicesBySetupProfile(
+        [{ locationId: 'sto' }, { locationId: 'sto' }, { locationId: 'got' }, { locationId: 'mal' }, { locationId: null }],
+        profiles,
+      );
+      expect(lines).toEqual([
+        '1 device: Default profile',
+        '1 device: Gothenburg lab',
+        '2 devices: Stockholm',
+        '1 device started from media without a location: Default profile',
+      ]);
+      expect(lines.join(' ')).not.toMatch(/version/i);
+    });
+
+    it('reads No setup profile when nothing targets a device', () => {
+      const located = profiles.filter((p) => !p.targeting.allDevices);
+      expect(groupDevicesBySetupProfile([{ locationId: 'sto' }, { locationId: 'mal' }, { locationId: null }], located)).toEqual(['1 device: Stockholm', '2 devices: No setup profile']);
+    });
+
+    it('shows nothing when no profiles exist', () => {
+      expect(groupDevicesBySetupProfile([{ locationId: 'sto' }], [])).toEqual([]);
+    });
   });
 
   describe('scripts', () => {

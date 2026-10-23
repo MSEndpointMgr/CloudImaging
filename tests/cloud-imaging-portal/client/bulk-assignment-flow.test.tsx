@@ -1,4 +1,71 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+
+const api = vi.hoisted(() => ({
+  apiFetch: vi.fn(),
+  apiFetchWithRetry: vi.fn(),
+  extractErrorDetail: vi.fn(async (_res: Response, fallback: string) => fallback),
+}));
+
+vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => api);
+
+import { ConfirmImpactDialog } from '../../../src/cloud-imaging-portal/client/src/components/ConfirmImpactDialog.tsx';
+import { StartImagingProfileLines } from '../../../src/cloud-imaging-portal/client/src/components/setup-profiles/StartImagingProfileLines.tsx';
+
+/**
+ * The Start imaging overlay says which setup profile each group of devices gets, so media prepared
+ * for the wrong location is caught before the disk is wiped. Without profiles, or when they cannot
+ * be loaded, the overlay works as before.
+ */
+describe('Portal frontend: Start imaging setup profile lines', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks(); });
+
+  const profile = (name: string, allDevices: boolean, locationIds: string[]) => ({
+    profileId: name, name, targeting: { allDevices, locationIds }, registryValueCount: 0, scriptCount: 0, hasAnswerFile: false,
+    failureHandling: 'CompleteWithWarnings', currentVersion: 3, lastModifiedAt: '2026-10-22T10:00:00Z',
+  });
+
+  const overlay = (sessions: { locationId: string | null }[]) => render(
+    <ConfirmImpactDialog
+      copy={{ confirmTitle: 'Start imaging on 4 devices?', impact: 'This assigns the image.', confirmLabel: 'Start Imaging', destructive: false }}
+      busy={false}
+      onCancel={() => undefined}
+      onConfirm={() => undefined}
+      details={<StartImagingProfileLines sessions={sessions} />}
+    />,
+  );
+
+  it('lists the profile lines for a mixed selection', async () => {
+    api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([profile('Stockholm and Gothenburg', false, ['sto']), profile('Nordics standard', true, [])]), { status: 200 }));
+
+    overlay([{ locationId: 'sto' }, { locationId: 'sto' }, { locationId: 'sto' }, { locationId: null }]);
+
+    expect(await screen.findByText("Setup profile, by the location on each device's USB media:")).toBeTruthy();
+    expect(screen.getByText('3 devices: Stockholm and Gothenburg')).toBeTruthy();
+    expect(screen.getByText('1 device started from media without a location: Nordics standard')).toBeTruthy();
+    expect(api.apiFetchWithRetry).toHaveBeenCalledWith('/api/setup-profiles', { credentials: 'include' });
+  });
+
+  it('shows no lines when there are no profiles', async () => {
+    api.apiFetchWithRetry.mockResolvedValue(new Response('[]', { status: 200 }));
+
+    overlay([{ locationId: 'sto' }]);
+
+    await vi.waitFor(() => expect(api.apiFetchWithRetry).toHaveBeenCalled());
+    expect(screen.queryByText(/Setup profile, by the location/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Start Imaging' })).toBeTruthy();
+  });
+
+  it('shows no lines and keeps the overlay working when the profiles cannot be loaded', async () => {
+    api.apiFetchWithRetry.mockResolvedValue(new Response('boom', { status: 500 }));
+
+    overlay([{ locationId: 'sto' }]);
+
+    await vi.waitFor(() => expect(api.apiFetchWithRetry).toHaveBeenCalled());
+    expect(screen.queryByText(/Setup profile, by the location/)).toBeNull();
+    expect((screen.getByRole('button', { name: 'Start Imaging' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
 
 /**
  * Portal frontend bulk assignment UI tests (T074, FR-035).
