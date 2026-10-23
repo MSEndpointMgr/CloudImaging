@@ -416,6 +416,18 @@ export function validateScript(script: SetupScript, others: SetupScript[]): stri
   return problems;
 }
 
+// ── Answer file ──────────────────────────────────────────────────────────────
+
+/** "2.4 KB" in the answer file row. */
+export function answerFileSizeLabel(content: string): string {
+  return `${(utf8Length(content) / 1024).toFixed(1)} KB`;
+}
+
+/** Answer file problems from a refused save, with a missing line read as the whole file. */
+export function answerFileProblems(errors: SetupProfileApiError['errors']): { code: string; line: number; message: string }[] {
+  return errors.map((e) => ({ code: e.code, line: e.line ?? 0, message: e.message }));
+}
+
 // ── Deployment timeline ──────────────────────────────────────────────────────
 
 function plural(count: number, one: string, many: string): string {

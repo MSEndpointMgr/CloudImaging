@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using CloudImaging.Contracts.Models.SetupProfiles;
@@ -36,13 +37,13 @@ public static class AnswerFileValidator
         ["notWellFormed"] = "This is not well-formed XML. Check for a missing closing tag or an unescaped & or < on or before this line.",
         ["dtdNotAllowed"] = "Document type declarations are not allowed. Remove the DOCTYPE line.",
         ["notAnswerFile"] = "This is not an answer file. The root element must be unattend in the urn:schemas-microsoft-com:unattend namespace.",
-        ["windowsPePass"] = "The windowsPE pass is not allowed, because Windows is already installed when this file is used. Remove this settings element.",
-        ["offlineServicingPass"] = "The offlineServicing pass is not allowed. Remove this settings element and use registry values or scripts instead.",
-        ["domainJoin"] = "Domain join is not allowed, because it breaks Windows Autopilot. Remove the Microsoft-Windows-UnattendedJoin component.",
-        ["skipMachineOobe"] = "SkipMachineOOBE is not allowed, because it skips Windows Autopilot. Remove this element.",
-        ["skipUserOobe"] = "SkipUserOOBE is not allowed, because it skips Windows Autopilot. Remove this element.",
-        ["autoLogon"] = "AutoLogon is not allowed, because it signs in with a stored account. Remove the AutoLogon element.",
-        ["plainTextPassword"] = "Plain-text passwords are not allowed. Remove this password.",
+        ["windowsPePass"] = "The windowsPE pass never runs, because the image is already applied. Move its settings to specialize or oobeSystem, or remove it.",
+        ["offlineServicingPass"] = "The offlineServicing pass never runs, because the image is already applied. Use registry values or scripts instead, or remove it.",
+        ["domainJoin"] = "Domain join is not supported. Devices join Entra ID through Autopilot. Remove the UnattendedJoin component.",
+        ["skipMachineOobe"] = "SkipMachineOOBE skips OOBE, so Autopilot never starts. Remove this element.",
+        ["skipUserOobe"] = "SkipUserOOBE skips OOBE, so Autopilot never starts. Remove this element.",
+        ["autoLogon"] = "AutoLogon signs in a local account before Autopilot can run. Remove the AutoLogon element.",
+        ["plainTextPassword"] = "Plain-text passwords are not allowed, because everyone who can read the profile could read them. Remove this password.",
         ["runnerCommandPresent"] = "This file already contains the Cloud Imaging setup runner command. Remove that RunSynchronousCommand; Cloud Imaging adds it to each device.",
         ["tooManySpecializeCommands"] = "The specialize pass has more than 499 commands. Remove at least one, because Cloud Imaging adds its own.",
     };
@@ -58,12 +59,13 @@ public static class AnswerFileValidator
     /// <summary>Applies every rule to <paramref name="content"/>.</summary>
     public static AnswerFileValidationResult Validate(string content)
     {
-        if (Encoding.UTF8.GetByteCount(content) > SetupProfileContent.MaxAnswerFileBytes)
+        // A leading BOM is accepted and does not count towards the size.
+        var text = content.Length > 0 && content[0] == '\uFEFF' ? content[1..] : content;
+        if (Encoding.UTF8.GetByteCount(text) > SetupProfileContent.MaxAnswerFileBytes)
         {
             return Single("tooLarge", 0);
         }
 
-        var text = content.Length > 0 && content[0] == '\uFEFF' ? content[1..] : content;
         XDocument document;
         try
         {
@@ -79,8 +81,12 @@ public static class AnswerFileValidator
         }
         catch (XmlException ex)
         {
-            var line = Math.Max(1, ex.LineNumber);
-            return Single(IsDoctypeLine(text, line) ? "dtdNotAllowed" : "notWellFormed", line);
+            // A prohibited DTD comes without a usable line, so the declaration is found in the text.
+            if (DoctypeLine(text) is { } doctype && (ex.LineNumber == 0 || ex.LineNumber >= doctype))
+            {
+                return Single("dtdNotAllowed", doctype);
+            }
+            return Single("notWellFormed", Math.Max(1, ex.LineNumber));
         }
 
         var problems = new List<AnswerFileProblem>();
@@ -137,11 +143,11 @@ public static class AnswerFileValidator
         {
             Add(problems, "autoLogon", element);
         }
-        else if (Is(element, "PlainText") && string.Equals(element.Value.Trim(), "true", StringComparison.OrdinalIgnoreCase))
+        else if (Is(element, "PlainText") && string.Equals(Text(element).Trim(), "true", StringComparison.OrdinalIgnoreCase))
         {
             Add(problems, "plainTextPassword", element);
         }
-        else if (Is(element, "Path") && element.Value.Contains(RunnerScriptName, StringComparison.OrdinalIgnoreCase))
+        else if (Is(element, "Path") && Text(element).Contains(RunnerScriptName, StringComparison.OrdinalIgnoreCase))
         {
             Add(problems, "runnerCommandPresent", element);
         }
@@ -151,19 +157,19 @@ public static class AnswerFileValidator
             Add(problems, "tooManySpecializeCommands", element);
         }
 
-        // A password with a Value but without PlainText false is treated as plain text by Windows.
-        // A PlainText true child is already reported on its own line.
+        // A password with a Value and no PlainText child is treated as plain text by Windows. A
+        // PlainText child decides on its own line instead.
         if (element.Name.LocalName.EndsWith("Password", StringComparison.OrdinalIgnoreCase)
             && element.Elements().Any(e => Is(e, "Value"))
-            && !element.Elements().Any(e => Is(e, "PlainText") && IsBoolean(e.Value)))
+            && !element.Elements().Any(e => Is(e, "PlainText")))
         {
             Add(problems, "plainTextPassword", element);
         }
     }
 
-    private static bool IsBoolean(string value) =>
-        string.Equals(value.Trim(), "false", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(value.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+    /// <summary>The element's own text; CDATA is ignored by every rule.</summary>
+    private static string Text(XElement element) =>
+        string.Concat(element.Nodes().OfType<XText>().Where(t => t is not XCData).Select(t => t.Value));
 
     private static bool IsSpecializeDeployment(XElement? component) =>
         component is not null
@@ -185,9 +191,10 @@ public static class AnswerFileValidator
     private static AnswerFileValidationResult Single(string code, int line) =>
         new([new AnswerFileProblem(code, line, Messages[code])], []);
 
-    private static bool IsDoctypeLine(string text, int line)
+    private static int? DoctypeLine(string text)
     {
-        var lines = text.Split('\n');
-        return line - 1 < lines.Length && lines[line - 1].Contains("<!DOCTYPE", StringComparison.OrdinalIgnoreCase);
+        var blanked = Regex.Replace(text, "<!--.*?-->", m => Regex.Replace(m.Value, "[^\n]", " "), RegexOptions.Singleline, TimeSpan.FromSeconds(1));
+        var index = blanked.IndexOf("<!DOCTYPE", StringComparison.Ordinal);
+        return index < 0 ? null : blanked.AsSpan(0, index).Count('\n') + 1;
     }
 }

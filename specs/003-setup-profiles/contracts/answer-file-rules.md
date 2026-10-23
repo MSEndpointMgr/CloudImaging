@@ -50,7 +50,7 @@ Server response on violation: 400 problem with `detail` "The answer file has N p
 
 | Code | Matches | Line | Message |
 |---|---|---|---|
-| `tooLarge` | More than 262,144 bytes of UTF-8 | 0 | The answer file is larger than 256 KB. Remove settings you do not need. |
+| `tooLarge` | More than 262,144 bytes of UTF-8, not counting a leading BOM | 0 | The answer file is larger than 256 KB. Remove settings you do not need. |
 | `notWellFormed` | Any XML well-formedness error | Line of the error | This is not well-formed XML. Check for a missing closing tag or an unescaped & or < on or before this line. |
 | `dtdNotAllowed` | A `<!DOCTYPE ...>` declaration | Line of the declaration | Document type declarations are not allowed. Remove the DOCTYPE line. |
 | `notAnswerFile` | Root element is not `unattend` in namespace `urn:schemas-microsoft-com:unattend` | Line of the root element | This is not an answer file. The root element must be unattend in the urn:schemas-microsoft-com:unattend namespace. |
@@ -60,7 +60,7 @@ Server response on violation: 400 problem with `detail` "The answer file has N p
 | `skipMachineOobe` | Element `SkipMachineOOBE` | Line of the element | SkipMachineOOBE skips OOBE, so Autopilot never starts. Remove this element. |
 | `skipUserOobe` | Element `SkipUserOOBE` | Line of the element | SkipUserOOBE skips OOBE, so Autopilot never starts. Remove this element. |
 | `autoLogon` | Element `AutoLogon` | Line of the element | AutoLogon signs in a local account before Autopilot can run. Remove the AutoLogon element. |
-| `plainTextPassword` | (a) Element `PlainText` whose trimmed text is `true`; (b) an element whose local name is `Password` or ends with `Password` and that has a `Value` child but no `PlainText` child with trimmed text `false` | Line of the `PlainText` element (a) or of the password element (b) | Plain-text passwords are not allowed, because everyone who can read the profile could read them. Remove this password. |
+| `plainTextPassword` | (a) Element `PlainText` whose trimmed text is `true` (case-insensitive); (b) an element whose local name ends with `Password` (case-insensitive, so `Password` itself too) that has a `Value` child and no `PlainText` child | Line of the `PlainText` element (a) or of the password element (b) | Plain-text passwords are not allowed, because everyone who can read the profile could read them. Remove this password. |
 | `runnerCommandPresent` | Element `Path` whose text contains `Invoke-CloudImagingSetup.ps1` | Line of `Path` | This file already contains the Cloud Imaging setup runner command. Remove that RunSynchronousCommand; Cloud Imaging adds it to each device. |
 | `tooManySpecializeCommands` | A `RunSynchronous` element inside a specialize `Microsoft-Windows-Deployment` component with more than 499 `RunSynchronousCommand` children | Line of `RunSynchronous` | The specialize pass has more than 499 commands. Remove at least one, because Cloud Imaging adds its own. |
 

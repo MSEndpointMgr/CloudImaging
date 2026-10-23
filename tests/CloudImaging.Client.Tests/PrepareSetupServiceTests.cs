@@ -352,6 +352,46 @@ public sealed class PrepareSetupServiceTests
     }
 
     [Fact]
+    public void TheProfileAnswerFile_IsTheStartDocument_WithTheRunnerBeforeItsOwnCommands()
+    {
+        var (service, _, _, files) = CreateWithScripts();
+        const string profileFile = """
+            <unattend xmlns="urn:schemas-microsoft-com:unattend">
+              <settings pass="specialize">
+                <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64">
+                  <RunSynchronous><RunSynchronousCommand><Order>1</Order><Path>own.cmd</Path></RunSynchronousCommand></RunSynchronous>
+                </component>
+                <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64"><TimeZone>W. Europe Standard Time</TimeZone></component>
+              </settings>
+            </unattend>
+            """;
+        var content = new SetupProfileContent { AnswerFile = new SetupAnswerFile { Content = profileFile }, Scripts = [Script("Setup", SetupScriptPhase.WindowsSetup, 1)] };
+
+        RunWith(service, content);
+
+        var written = UnattendComposer.Parse(Encoding.UTF8.GetString(files.Files[PrepareSetupService.AnswerFilePath]));
+        var u = UnattendComposer.Unattend;
+        written.Descendants(u + "TimeZone").Single().Value.Should().Be("W. Europe Standard Time");
+        written.Descendants(u + "RunSynchronousCommand").Select(c => ((string?)c.Element(u + "Order"), (string?)c.Element(u + "Path")))
+            .Should().Equal(("1", UnattendComposer.RunnerCommand), ("2", "own.cmd"));
+    }
+
+    [Fact]
+    public void WithoutWindowsSetupWork_TheProfileAnswerFileIsWrittenUnchanged()
+    {
+        var (service, _, _, files) = CreateWithScripts();
+        const string profileFile = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><settings pass=\"oobeSystem\"><component name=\"Microsoft-Windows-International-Core\"><InputLocale>sv-SE</InputLocale></component></settings></unattend>";
+
+        RunWith(service, new SetupProfileContent { AnswerFile = new SetupAnswerFile { Content = profileFile } });
+
+        var written = UnattendComposer.Parse(Encoding.UTF8.GetString(files.Files[PrepareSetupService.AnswerFilePath]));
+        var u = UnattendComposer.Unattend;
+        written.Descendants(u + "InputLocale").Single().Value.Should().Be("sv-SE");
+        written.Descendants().Select(e => e.Name.LocalName).Should().Equal("unattend", "settings", "component", "InputLocale");
+        UnattendComposer.CountRunnerCommands(written).Should().Be(0);
+    }
+
+    [Fact]
     public void StatusLines_CoverEveryPhase()
     {
         var (service, _, _, _) = CreateWithScripts();

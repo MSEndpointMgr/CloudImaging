@@ -209,6 +209,46 @@ public sealed class SetupProfileServiceTests
     }
 
     [Fact]
+    public async Task Save_RefusedAnswerFile_ReturnsEveryProblem_AndWritesNothing()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        const string file = "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"windowsPE\"/>\n  <settings pass=\"specialize\"><component name=\"Microsoft-Windows-UnattendedJoin\"/></settings>\n</unattend>";
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { AnswerFile = new SetupAnswerFile { Content = file } });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.BadRequest);
+        result.Detail.Should().Be("The answer file has 2 problems.");
+        result.Errors!.Select(e => (e.Code, e.Line)).Should().Equal(("windowsPePass", 3), ("domainJoin", 4));
+        (await _bed.Versions.ListAsync(detail.ProfileId)).Should().ContainSingle();
+
+        var one = await _bed.SaveAsync(detail, detail.Content with { AnswerFile = new SetupAnswerFile { Content = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><AutoLogon/></unattend>" } });
+        one.Detail.Should().Be("The answer file has 1 problem.");
+    }
+
+    [Fact]
+    public async Task Save_ValidAnswerFile_GetsPassesSizeHashAndModifiedFields_AndNullRemovesIt()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        const string file = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><settings pass=\"specialize\"/><settings pass=\"oobeSystem\"/></unattend>";
+        _bed.Time.Advance(TimeSpan.FromHours(1));
+
+        var saved = (SetupProfileDetail)(await _bed.SaveAsync(detail, detail.Content with { AnswerFile = new SetupAnswerFile { Content = file } }, upn: "ops2@contoso.com")).Value!;
+
+        var answerFile = saved.Content.AnswerFile!;
+        answerFile.Passes.Should().Equal("specialize", "oobeSystem");
+        answerFile.SizeBytes.Should().Be(Encoding.UTF8.GetByteCount(file));
+        answerFile.Sha256.Should().Be(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(file))));
+        answerFile.LastModifiedBy.Should().Be("ops2@contoso.com");
+        answerFile.LastModifiedAt.Should().Be(Start.AddHours(1));
+        saved.HasAnswerFile.Should().BeTrue();
+
+        var removed = (SetupProfileDetail)(await _bed.SaveAsync(saved, saved.Content with { AnswerFile = null })).Value!;
+        removed.Content.AnswerFile.Should().BeNull();
+        removed.HasAnswerFile.Should().BeFalse();
+        removed.CurrentVersion.Should().Be(3);
+    }
+
+    [Fact]
     public async Task Delete_TombstonesTheProfile_RemovesTargets_KeepsVersionBlobs()
     {
         var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));

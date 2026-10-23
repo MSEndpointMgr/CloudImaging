@@ -1,0 +1,187 @@
+{
+  "messages": {
+    "tooLarge": "The answer file is larger than 256 KB. Remove settings you do not need.",
+    "notWellFormed": "This is not well-formed XML. Check for a missing closing tag or an unescaped & or < on or before this line.",
+    "dtdNotAllowed": "Document type declarations are not allowed. Remove the DOCTYPE line.",
+    "notAnswerFile": "This is not an answer file. The root element must be unattend in the urn:schemas-microsoft-com:unattend namespace.",
+    "windowsPePass": "The windowsPE pass never runs, because the image is already applied. Move its settings to specialize or oobeSystem, or remove it.",
+    "offlineServicingPass": "The offlineServicing pass never runs, because the image is already applied. Use registry values or scripts instead, or remove it.",
+    "domainJoin": "Domain join is not supported. Devices join Entra ID through Autopilot. Remove the UnattendedJoin component.",
+    "skipMachineOobe": "SkipMachineOOBE skips OOBE, so Autopilot never starts. Remove this element.",
+    "skipUserOobe": "SkipUserOOBE skips OOBE, so Autopilot never starts. Remove this element.",
+    "autoLogon": "AutoLogon signs in a local account before Autopilot can run. Remove the AutoLogon element.",
+    "plainTextPassword": "Plain-text passwords are not allowed, because everyone who can read the profile could read them. Remove this password.",
+    "runnerCommandPresent": "This file already contains the Cloud Imaging setup runner command. Remove that RunSynchronousCommand; Cloud Imaging adds it to each device.",
+    "tooManySpecializeCommands": "The specialize pass has more than 499 commands. Remove at least one, because Cloud Imaging adds its own."
+  },
+  "generators": {
+    "specializeCommands": "Lines 1 to 5: the XML declaration, <unattend xmlns=\"urn:schemas-microsoft-com:unattend\">, two-space <settings pass=\"specialize\">, four-space <component name=\"Microsoft-Windows-Deployment\">, six-space <RunSynchronous>; then count lines of eight spaces and <RunSynchronousCommand><Order>N</Order><Path>a.cmd</Path></RunSynchronousCommand> for N from 1; then the closing tags with six, four, two and no spaces. Joined with LF.",
+    "repeat": "The XML declaration, <unattend xmlns=\"urn:schemas-microsoft-com:unattend\">, then count lines of two spaces and <E>true</E> for element E, then </unattend>. Joined with LF.",
+    "padToBytes": "Inserts <!-- followed by x characters and --> immediately before the last </unattend>, so the UTF-8 length is exactly the given number of bytes."
+  },
+  "cases": [
+    {
+      "name": "a valid file with every allowed pass",
+      "xml": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"generalize\"/>\n  <settings pass=\"specialize\">\n    <component name=\"Microsoft-Windows-Shell-Setup\" processorArchitecture=\"amd64\">\n      <TimeZone>W. Europe Standard Time</TimeZone>\n    </component>\n  </settings>\n  <settings pass=\"auditSystem\"/>\n  <settings pass=\"auditUser\"/>\n  <settings pass=\"oobeSystem\"/>\n  <settings pass=\"specialize\"/>\n</unattend>",
+      "expected": [],
+      "passes": ["generalize", "specialize", "auditSystem", "auditUser", "oobeSystem"]
+    },
+    {
+      "name": "exactly 256 KB is accepted",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\"/>\n</unattend>",
+      "padToBytes": 262144,
+      "expected": [],
+      "passes": ["oobeSystem"]
+    },
+    {
+      "name": "one byte over 256 KB is too large",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\"/>\n</unattend>",
+      "padToBytes": 262145,
+      "expected": [{ "code": "tooLarge", "line": 0 }]
+    },
+    {
+      "name": "an unclosed element",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"specialize\">",
+      "expected": [{ "code": "notWellFormed", "line": 3 }]
+    },
+    {
+      "name": "a mismatched end tag",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"specialize\"></setting>\n</unattend>",
+      "expected": [{ "code": "notWellFormed", "line": 3 }]
+    },
+    {
+      "name": "a bare ampersand",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\"><RegisteredOrganization>A & B</RegisteredOrganization></component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "notWellFormed", "line": 4 }]
+    },
+    {
+      "name": "a well-formedness error stops every other rule",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <SkipMachineOOBE>true</SkipMachineOOBE>\n  <settings pass=\"windowsPE\">\n</unattend>",
+      "expected": [{ "code": "notWellFormed", "line": 5 }]
+    },
+    {
+      "name": "a document type declaration stops every other rule",
+      "xml": "<?xml version=\"1.0\"?>\n<!DOCTYPE unattend>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><SkipMachineOOBE>true</SkipMachineOOBE></unattend>",
+      "expected": [{ "code": "dtdNotAllowed", "line": 2 }]
+    },
+    {
+      "name": "a root element that is not unattend",
+      "xml": "<?xml version=\"1.0\"?>\n<settings pass=\"oobeSystem\">\n</settings>",
+      "expected": [{ "code": "notAnswerFile", "line": 2 }]
+    },
+    {
+      "name": "unattend in the wrong namespace",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:example\">\n  <SkipUserOOBE>true</SkipUserOOBE>\n</unattend>",
+      "expected": [{ "code": "notAnswerFile", "line": 2 }, { "code": "skipUserOobe", "line": 3 }]
+    },
+    {
+      "name": "the windowsPE pass",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"windowsPE\">\n  </settings>\n</unattend>",
+      "expected": [{ "code": "windowsPePass", "line": 3 }]
+    },
+    {
+      "name": "the windowsPE pass in another case",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"windowspe\"/>\n</unattend>",
+      "expected": [{ "code": "windowsPePass", "line": 3 }]
+    },
+    {
+      "name": "the offlineServicing pass",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"offlineServicing\"/>\n</unattend>",
+      "expected": [{ "code": "offlineServicingPass", "line": 3 }]
+    },
+    {
+      "name": "domain join",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"specialize\">\n    <component name=\"Microsoft-Windows-UnattendedJoin\" processorArchitecture=\"amd64\">\n      <Identification><JoinDomain>corp.contoso.com</JoinDomain></Identification>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "domainJoin", "line": 4 }]
+    },
+    {
+      "name": "SkipMachineOOBE",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\">\n      <OOBE><SkipMachineOOBE>true</SkipMachineOOBE></OOBE>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "skipMachineOobe", "line": 5 }]
+    },
+    {
+      "name": "SkipMachineOOBE in another case",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <skipmachineoobe>true</skipmachineoobe>\n</unattend>",
+      "expected": [{ "code": "skipMachineOobe", "line": 3 }]
+    },
+    {
+      "name": "SkipMachineOOBE in another namespace",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <x:SkipMachineOOBE xmlns:x=\"urn:example\">true</x:SkipMachineOOBE>\n</unattend>",
+      "expected": [{ "code": "skipMachineOobe", "line": 3 }]
+    },
+    {
+      "name": "SkipUserOOBE",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\">\n      <OOBE>\n        <SkipUserOOBE>true</SkipUserOOBE>\n      </OOBE>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "skipUserOobe", "line": 6 }]
+    },
+    {
+      "name": "AutoLogon with a plain-text password",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\">\n      <AutoLogon>\n        <Username>admin</Username>\n        <Password>\n          <Value>secret</Value>\n          <PlainText>true</PlainText>\n        </Password>\n      </AutoLogon>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "autoLogon", "line": 5 }, { "code": "plainTextPassword", "line": 9 }]
+    },
+    {
+      "name": "a password without PlainText",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\">\n      <UserAccounts>\n        <AdministratorPassword>\n          <Value>secret</Value>\n        </AdministratorPassword>\n      </UserAccounts>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "plainTextPassword", "line": 6 }]
+    },
+    {
+      "name": "Windows SIM output with PlainText false",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\">\n      <UserAccounts>\n        <AdministratorPassword>\n          <Value>UABhAHMAcwB3AG8AcgBkAEEAZABtAGkAbgBpAHMAdAByAGEAdABvAHIAUABhAHMAcwB3AG8AcgBkAA==</Value>\n          <PlainText>false</PlainText>\n        </AdministratorPassword>\n      </UserAccounts>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [],
+      "passes": ["oobeSystem"]
+    },
+    {
+      "name": "the setup runner command",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"specialize\">\n    <component name=\"Microsoft-Windows-Deployment\">\n      <RunSynchronous>\n        <RunSynchronousCommand>\n          <Order>1</Order>\n          <Path>powershell.exe -File \"%WINDIR%\\Setup\\CloudImaging\\Invoke-CloudImagingSetup.ps1\"</Path>\n        </RunSynchronousCommand>\n      </RunSynchronous>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [{ "code": "runnerCommandPresent", "line": 8 }]
+    },
+    {
+      "name": "499 specialize commands are accepted",
+      "generate": { "kind": "specializeCommands", "count": 499 },
+      "expected": [],
+      "passes": ["specialize"]
+    },
+    {
+      "name": "500 specialize commands are too many",
+      "generate": { "kind": "specializeCommands", "count": 500 },
+      "expected": [{ "code": "tooManySpecializeCommands", "line": 5 }]
+    },
+    {
+      "name": "results are sorted and capped at 50",
+      "generate": { "kind": "repeat", "element": "SkipMachineOOBE", "count": 60 },
+      "expected": "first50",
+      "firstLine": 3
+    },
+    {
+      "name": "every rule at once, sorted by line then code",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"windowsPE\"/>\n  <settings pass=\"offlineServicing\"/>\n  <settings pass=\"specialize\">\n    <component name=\"Microsoft-Windows-UnattendedJoin\"/>\n    <component name=\"Microsoft-Windows-Deployment\">\n      <RunSynchronous><RunSynchronousCommand><Path>Invoke-CloudImagingSetup.ps1</Path></RunSynchronousCommand></RunSynchronous>\n    </component>\n  </settings>\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\">\n      <OOBE><SkipMachineOOBE>true</SkipMachineOOBE><SkipUserOOBE>true</SkipUserOOBE></OOBE>\n      <AutoLogon><Password><Value>x</Value></Password></AutoLogon>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [
+        { "code": "windowsPePass", "line": 3 },
+        { "code": "offlineServicingPass", "line": 4 },
+        { "code": "domainJoin", "line": 6 },
+        { "code": "runnerCommandPresent", "line": 8 },
+        { "code": "skipMachineOobe", "line": 13 },
+        { "code": "skipUserOobe", "line": 13 },
+        { "code": "autoLogon", "line": 14 },
+        { "code": "plainTextPassword", "line": 14 }
+      ]
+    },
+    {
+      "name": "CRLF line endings give the same lines",
+      "xml": "<?xml version=\"1.0\"?>\r\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\r\n  <settings pass=\"oobeSystem\"/>\r\n  <settings pass=\"windowsPE\"/>\r\n</unattend>",
+      "expected": [{ "code": "windowsPePass", "line": 4 }]
+    },
+    {
+      "name": "a leading byte order mark is accepted",
+      "xml": "\ufeff<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\"/>\n</unattend>",
+      "expected": [],
+      "passes": ["oobeSystem"]
+    },
+    {
+      "name": "CDATA and comments are ignored by the rules",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <!-- <SkipMachineOOBE>true</SkipMachineOOBE> -->\n  <settings pass=\"specialize\">\n    <component name=\"Microsoft-Windows-Deployment\">\n      <RunSynchronous><RunSynchronousCommand><Path><![CDATA[Invoke-CloudImagingSetup.ps1]]></Path></RunSynchronousCommand></RunSynchronous>\n    </component>\n  </settings>\n</unattend>",
+      "expected": [],
+      "passes": ["specialize"]
+    }
+  ]
+}

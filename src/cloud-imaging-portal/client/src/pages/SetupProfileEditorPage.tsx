@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, Crosshair, Database, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, Crosshair, Database, FileCode, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Select } from '../components/ui/select.tsx';
@@ -24,6 +24,8 @@ import {
   MAX_SCRIPTS,
   SCRIPT_PHASE_SHORT_LABELS,
   SetupProfileApiError,
+  answerFileProblems,
+  answerFileSizeLabel,
   createSetupProfile,
   deleteImpact,
   deleteSetupProfile,
@@ -56,6 +58,9 @@ const FAILURE_HANDLING_OPTIONS = (Object.keys(FAILURE_HANDLING_LABELS) as SetupF
 type RegistryDialog = { mode: 'add' } | { mode: 'edit'; index: number } | null;
 type ScriptDialogState = { mode: 'add' } | { mode: 'edit'; index: number } | null;
 
+// Its XML parser stays out of the editor's bundle until someone opens the answer file.
+const AnswerFileDialog = lazy(() => import('../components/setup-profiles/AnswerFileDialog.tsx'));
+
 /** Where a confirmed leave goes; Duplicate carries router state. */
 type PendingLeave = { to: string; state?: unknown } | null;
 
@@ -85,6 +90,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const [saveError, setSaveError] = useState<SetupProfileApiError | null>(null);
   const [registryDialog, setRegistryDialog] = useState<RegistryDialog>(null);
   const [scriptDialog, setScriptDialog] = useState<ScriptDialogState>(null);
+  const [answerDialog, setAnswerDialog] = useState<{ serverProblems: { code: string; line: number; message: string }[] } | null>(null);
   const [pendingLeave, setPendingLeave] = useState<PendingLeave>(null);
   const [targetingTouched, setTargetingTouched] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -205,7 +211,10 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       setDraft(draftFrom(result));
       setProfiles((list) => list.map((p) => (p.profileId === result.profileId ? result : p)));
     } catch (err) {
-      setSaveError(err instanceof SetupProfileApiError ? err : new SetupProfileApiError('Could not reach the server.', 0));
+      const error = err instanceof SetupProfileApiError ? err : new SetupProfileApiError('Could not reach the server.', 0);
+      setSaveError(error);
+      // Refused answer file problems belong next to the file, so the dialog opens with them.
+      if (error.errors.length > 0 && draft.content.answerFile) setAnswerDialog({ serverProblems: answerFileProblems(error.errors) });
     } finally {
       setSaving(false);
     }
@@ -235,6 +244,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
 
   const registryValues = draft.content.registryValues;
   const scripts = orderedScripts(draft.content.scripts);
+  const answerFile = draft.content.answerFile;
   const crumb = isNew ? 'New profile' : detail?.name ?? 'Setup profile';
 
   return (
@@ -425,6 +435,67 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         )}
       </SectionCard>
 
+      <SectionCard icon={FileCode} title="Answer file" description="Optional. Your own unattend.xml for Windows setup, for settings this profile has no control for.">
+        <div className="overflow-hidden rounded-md border border-border">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>File</TableHead>
+                <TableHead className="w-[220px]">Passes</TableHead>
+                <TableHead className="w-[100px] text-right">Size</TableHead>
+                <TableHead className="w-[160px]">Last modified</TableHead>
+                {!readOnly && <TableHead className="w-[96px]">Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {answerFile ? (
+                <TableRow>
+                  <TableCell className="font-mono text-xs">unattend.xml</TableCell>
+                  <TableCell><p className="truncate">{(answerFile.passes ?? []).join(', ')}</p></TableCell>
+                  <TableCell className="text-right tabular-nums">{answerFileSizeLabel(answerFile.content)}</TableCell>
+                  <TableCell>
+                    {answerFile.lastModifiedAt ? (
+                      <Tooltip content={answerFile.lastModifiedBy ? `By ${answerFile.lastModifiedBy}` : 'Author unknown'}>
+                        <span tabIndex={0} className="tabular-nums">{formatTimestamp(answerFile.lastModifiedAt)}</span>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-muted-foreground">Not saved yet</span>
+                    )}
+                  </TableCell>
+                  {!readOnly && (
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Tooltip content="Edit">
+                          <Button variant="ghost" size="icon" aria-label="Edit the answer file" onClick={() => setAnswerDialog({ serverProblems: [] })}><Pencil /></Button>
+                        </Tooltip>
+                        <Tooltip content="Remove">
+                          <Button variant="ghost" size="icon" aria-label="Remove the answer file" className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setContent({ answerFile: null })}>
+                            <Trash2 />
+                          </Button>
+                        </Tooltip>
+                      </div>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ) : (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell className="text-muted-foreground">No answer file</TableCell>
+                  <TableCell />
+                  <TableCell />
+                  <TableCell />
+                  {!readOnly && (
+                    <TableCell>
+                      <Button variant="outline" onClick={() => setAnswerDialog({ serverProblems: [] })}><Plus />Add</Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </SectionCard>
+
       <SectionCard icon={ShieldCheck} title="Failure handling" description="What happens when a registry value cannot be written, or a WinPE script fails or times out.">
         <SettingRow label="Deployment result" help="Windows setup scripts never change the result: they run after the portal stops tracking the device." htmlFor="setup-profile-failure-handling">
           {readOnly ? (
@@ -444,12 +515,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       {saveError && (
         <div role="alert" className="space-y-2 rounded-md border border-destructive/50 bg-destructive/10 p-4">
           <p className="text-sm font-medium text-destructive">{saveError.message}</p>
-          {saveError.errors.length > 0 && (
-            <ul className="space-y-1">
-              {saveError.errors.map((e, i) => (
-                <li key={`${e.code}-${String(i)}`} className="text-sm text-destructive">{e.line != null ? `Line ${String(e.line)}: ` : ''}{e.message}</li>
-              ))}
-            </ul>
+          {saveError.errors.length > 0 && answerFile && (
+            <Button variant="outline" onClick={() => setAnswerDialog({ serverProblems: answerFileProblems(saveError.errors) })}><FileCode />Show the problems</Button>
           )}
           {saveError.status === 409 && !isNew && (
             <Button variant="outline" onClick={() => void load()}><RefreshCw />Reload</Button>
@@ -465,6 +532,20 @@ export default function SetupProfileEditorPage(): React.ReactElement {
             {saveLabel(detail?.currentVersion ?? 0, contentChanged)}
           </Button>
         </div>
+      )}
+
+      {answerDialog && (
+        <Suspense fallback={null}>
+          <AnswerFileDialog
+            content={answerFile?.content ?? ''}
+            serverProblems={answerDialog.serverProblems}
+            onClose={() => setAnswerDialog(null)}
+            onApply={(content, passes) => {
+              setContent({ answerFile: content === answerFile?.content ? answerFile : { content, passes } });
+              setAnswerDialog(null);
+            }}
+          />
+        </Suspense>
       )}
 
       {scriptDialog && (
