@@ -14,7 +14,7 @@ namespace CloudImaging.OperatorApi.Functions;
 ///        so Media Builder can populate the location picker
 /// POST   /api/locations: creates a location (PortalAccess only; the Portal backend accepts Operator or Administrator)
 /// PUT    /api/locations/{id}: updates a location's name and country (PortalAccess only)
-/// DELETE /api/locations/{id}: deletes a location (PortalAccess only)
+/// DELETE /api/locations/{id}?changedBy=: deletes a location (PortalAccess only); refused when it is a setup profile's only target
 /// GET    /api/regions: the country-to-region mapping (PortalAccess only)
 /// PUT    /api/regions: replaces the mapping (PortalAccess only; the Portal backend accepts Operator or Administrator)
 /// </summary>
@@ -84,7 +84,9 @@ public sealed partial class LocationFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var coreResponse = await _coreClient.DeleteLocationAsync(locationId, context.CancellationToken);
+        // Recorded in the history of any setup profile that targeted the location.
+        var changedBy = System.Web.HttpUtility.ParseQueryString(req.Url.Query)["changedBy"];
+        var coreResponse = await _coreClient.DeleteLocationAsync(locationId, changedBy, context.CancellationToken);
         return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
     }
 

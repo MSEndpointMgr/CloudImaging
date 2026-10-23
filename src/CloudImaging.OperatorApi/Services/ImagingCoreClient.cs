@@ -177,10 +177,15 @@ public sealed class ImagingCoreClient
             ?? throw new InvalidOperationException("Null response from ImagingCoreApi portal-configuration endpoint.");
     }
 
-    /// <summary>Replaces the portal configuration with the supplied model.</summary>
-    public async Task UpsertPortalConfigurationAsync(PortalConfiguration config, CancellationToken ct = default)
+    /// <summary>Replaces the portal configuration; <paramref name="changedBy"/> is recorded when a tracked setting changes.</summary>
+    public async Task UpsertPortalConfigurationAsync(PortalConfiguration config, string? changedBy = null, CancellationToken ct = default)
     {
-        var response = await _http.PutAsJsonAsync("/api/internal/portal-configuration", config, JsonOptions, ct);
+        var body = JsonSerializer.SerializeToNode(config, JsonOptions)!.AsObject();
+        if (!string.IsNullOrEmpty(changedBy))
+        {
+            body["changedBy"] = changedBy;
+        }
+        var response = await _http.PutAsJsonAsync("/api/internal/portal-configuration", body, JsonOptions, ct);
         response.EnsureSuccessStatusCode();
     }
 
@@ -258,9 +263,9 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> UpdateLocationAsync(Guid locationId, object payload, CancellationToken ct = default) =>
         _http.PutAsJsonAsync($"/api/internal/locations/{locationId}", payload, JsonOptions, ct);
 
-    /// <summary>Deletes a location label.</summary>
-    public Task<HttpResponseMessage> DeleteLocationAsync(Guid locationId, CancellationToken ct = default) =>
-        _http.DeleteAsync($"/api/internal/locations/{locationId}", ct);
+    /// <summary>Deletes a location label; <paramref name="changedBy"/> is recorded on any setup profile that targeted it.</summary>
+    public Task<HttpResponseMessage> DeleteLocationAsync(Guid locationId, string? changedBy = null, CancellationToken ct = default) =>
+        _http.DeleteAsync(string.IsNullOrEmpty(changedBy) ? $"/api/internal/locations/{locationId}" : $"/api/internal/locations/{locationId}?changedBy={Uri.EscapeDataString(changedBy)}", ct);
 
     /// <summary>Returns the regions, their usage and every country's mapping.</summary>
     public Task<HttpResponseMessage> GetRegionsAsync(CancellationToken ct = default) =>
@@ -269,6 +274,48 @@ public sealed class ImagingCoreClient
     /// <summary>Replaces the regions and country overrides.</summary>
     public Task<HttpResponseMessage> PutRegionsAsync(object payload, CancellationToken ct = default) =>
         _http.PutAsJsonAsync("/api/internal/regions", payload, JsonOptions, ct);
+
+    // ── Setup profiles ───────────────────────────────────────────────────────────
+
+    /// <summary>Lists setup profiles.</summary>
+    public Task<HttpResponseMessage> GetSetupProfilesAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/setup-profiles", ct);
+
+    /// <summary>Returns a setup profile with its current content.</summary>
+    public Task<HttpResponseMessage> GetSetupProfileAsync(Guid profileId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/setup-profiles/{profileId}", ct);
+
+    /// <summary>Creates a setup profile.</summary>
+    public Task<HttpResponseMessage> CreateSetupProfileAsync(object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync("/api/internal/setup-profiles", payload, JsonOptions, ct);
+
+    /// <summary>Saves a setup profile's name, targeting and content.</summary>
+    public Task<HttpResponseMessage> UpdateSetupProfileAsync(Guid profileId, object payload, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/setup-profiles/{profileId}", payload, JsonOptions, ct);
+
+    /// <summary>Deletes a setup profile.</summary>
+    public Task<HttpResponseMessage> DeleteSetupProfileAsync(Guid profileId, string? changedBy, CancellationToken ct = default) =>
+        _http.DeleteAsync(string.IsNullOrEmpty(changedBy) ? $"/api/internal/setup-profiles/{profileId}" : $"/api/internal/setup-profiles/{profileId}?changedBy={Uri.EscapeDataString(changedBy)}", ct);
+
+    /// <summary>Restores a retained version as a new version.</summary>
+    public Task<HttpResponseMessage> RestoreSetupProfileVersionAsync(Guid profileId, object payload, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/setup-profiles/{profileId}/restore", payload, JsonOptions, ct);
+
+    /// <summary>Lists a setup profile's retained versions.</summary>
+    public Task<HttpResponseMessage> GetSetupProfileVersionsAsync(Guid profileId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/setup-profiles/{profileId}/versions", ct);
+
+    /// <summary>Returns one retained version with its content.</summary>
+    public Task<HttpResponseMessage> GetSetupProfileVersionAsync(Guid profileId, int version, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/setup-profiles/{profileId}/versions/{version}", ct);
+
+    /// <summary>Returns a setup profile's targeting and profile history.</summary>
+    public Task<HttpResponseMessage> GetSetupProfileHistoryAsync(Guid profileId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/setup-profiles/{profileId}/history", ct);
+
+    /// <summary>Returns the per-item results a device reported for one step of a session.</summary>
+    public Task<HttpResponseMessage> GetSessionStepItemsAsync(Guid sessionId, string stepName, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/sessions/{sessionId}/steps/{Uri.EscapeDataString(stepName)}/items", ct);
 
     // ── Wi-Fi networks ───────────────────────────────────────────────────────────
 

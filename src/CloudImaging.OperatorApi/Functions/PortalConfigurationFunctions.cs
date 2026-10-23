@@ -52,12 +52,14 @@ public sealed partial class PortalConfigurationFunctions
         FunctionContext context)
     {
         PortalConfiguration? config;
+        string? changedBy;
         try
         {
-            config = await JsonSerializer.DeserializeAsync<PortalConfiguration>(
-                req.Body,
-                JsonOptions,
-                context.CancellationToken);
+            using var document = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+            config = document.RootElement.Deserialize<PortalConfiguration>(JsonOptions);
+
+            // Not part of the model: who made the change, recorded by Core for tracked settings.
+            changedBy = document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("changedBy", out var by) && by.ValueKind == JsonValueKind.String ? by.GetString() : null;
         }
         catch (JsonException ex)
         {
@@ -96,7 +98,14 @@ public sealed partial class PortalConfigurationFunctions
             return bad;
         }
 
-        await _coreClient.UpsertPortalConfigurationAsync(config, context.CancellationToken);
+        if (config.SetupProfileVersionRetention is < PortalConfiguration.MinSetupProfileVersionRetention or > PortalConfiguration.MaxSetupProfileVersionRetention)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Keep between 5 and 100 versions per profile.", context.CancellationToken);
+            return bad;
+        }
+
+        await _coreClient.UpsertPortalConfigurationAsync(config, changedBy, context.CancellationToken);
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
 

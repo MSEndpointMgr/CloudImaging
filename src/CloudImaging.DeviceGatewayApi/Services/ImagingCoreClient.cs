@@ -27,6 +27,10 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> ReportProgressAsync(Guid sessionId, object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync($"/api/internal/sessions/{sessionId}/progress", payload, JsonOptions, ct);
 
+    /// <summary>Returns the setup profile version pinned on a session, with a short-lived read URL.</summary>
+    public Task<HttpResponseMessage> GetSessionSetupProfileAsync(Guid sessionId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/sessions/{sessionId}/setup-profile", ct);
+
     /// <summary>Forward SAS token refresh request to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> RefreshSasTokenAsync(Guid sessionId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/sessions/{sessionId}/sas/refresh", null, ct);

@@ -49,7 +49,7 @@ public sealed partial class GetSessionStatusFunction
         }
 
         // Validate that the requested session ID matches the token's embedded session ID
-        if (context.Items.TryGetValue("SessionIdKey", out var tokenSessionIdObj)
+        if (context.Items.TryGetValue(Middleware.DeviceSessionTokenValidationMiddleware.SessionIdKey, out var tokenSessionIdObj)
             && tokenSessionIdObj is Guid tokenSessionId
             && tokenSessionId != sessionGuid)
         {
