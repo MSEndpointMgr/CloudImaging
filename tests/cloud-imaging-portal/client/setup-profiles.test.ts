@@ -11,16 +11,25 @@ import {
   itemTooltip,
   locationDisabledReason,
   locationsTargetedElsewhere,
+  moveScript,
+  orderedScripts,
   profileForLocation,
   registryValuePath,
   registryValueTooltip,
+  renumberScripts,
   saveLabel,
+  scriptSizeLabel,
   sortItemsFailuresFirst,
   targetingProblem,
+  TIMEOUT_OPTIONS,
+  timeoutLabel,
+  upsertScript,
+  validateScript,
   validateRegistryValue,
   type SetupProfileDraft,
   type SetupProfileSummary,
   type SetupRegistryValue,
+  type SetupScript,
 } from '../../../src/cloud-imaging-portal/client/src/lib/setupProfiles.ts';
 
 /**
@@ -223,5 +232,54 @@ describe('Portal frontend: setup profile helpers', () => {
       { index: 3, outcome: 'Queued' as const },
     ]);
     expect(sorted.map((i) => i.index)).toEqual([2, 1, 0, 3]);
+  });
+
+  describe('scripts', () => {
+    const script = (name: string, runs: SetupScript['runs'], order: number, extra: Partial<SetupScript> = {}): SetupScript =>
+      ({ id: null, name, runs, order, timeoutMinutes: 5, content: 'exit 0', ...extra });
+    const names = (list: SetupScript[]) => list.map((s) => `${s.runs}:${String(s.order)}:${s.name}`);
+    const list = [script('Setup B', 'WindowsSetup', 2), script('PE B', 'WinPE', 2), script('Setup A', 'WindowsSetup', 1), script('PE A', 'WinPE', 1)];
+
+    it('lists WinPE scripts first, with order restarting in each phase', () => {
+      expect(names(orderedScripts(list))).toEqual(['WinPE:1:PE A', 'WinPE:2:PE B', 'WindowsSetup:1:Setup A', 'WindowsSetup:2:Setup B']);
+    });
+
+    it('moves a script within its phase only and renumbers contiguously', () => {
+      const ordered = orderedScripts(list);
+      expect(names(moveScript(ordered, 1, -1))).toEqual(['WinPE:1:PE B', 'WinPE:2:PE A', 'WindowsSetup:1:Setup A', 'WindowsSetup:2:Setup B']);
+      expect(names(moveScript(ordered, 1, 1))).toEqual(names(ordered));
+      expect(names(moveScript(ordered, 2, -1))).toEqual(names(ordered));
+      expect(names(renumberScripts([script('A', 'WinPE', 3), script('B', 'WinPE', 7)]))).toEqual(['WinPE:1:A', 'WinPE:2:B']);
+    });
+
+    it('adds a script last in its phase and moves an edited script to the end of a new phase', () => {
+      const ordered = orderedScripts(list);
+      expect(names(upsertScript(ordered, script('PE C', 'WinPE', 0)))).toEqual(['WinPE:1:PE A', 'WinPE:2:PE B', 'WinPE:3:PE C', 'WindowsSetup:1:Setup A', 'WindowsSetup:2:Setup B']);
+      expect(names(upsertScript(ordered, { ...ordered[0], runs: 'WindowsSetup' }, 0))).toEqual(['WinPE:1:PE B', 'WindowsSetup:1:Setup A', 'WindowsSetup:2:Setup B', 'WindowsSetup:3:PE A']);
+      expect(names(upsertScript(ordered, { ...ordered[1], name: 'PE B2' }, 1))).toEqual(['WinPE:1:PE A', 'WinPE:2:PE B2', 'WindowsSetup:1:Setup A', 'WindowsSetup:2:Setup B']);
+    });
+
+    it('shows size and timeouts as the dialog and table read them', () => {
+      expect(scriptSizeLabel('x'.repeat(12_698))).toBe('12.4 of 64 KB');
+      expect(TIMEOUT_OPTIONS.map((o) => o.value)).toEqual(['1', '2', '5', '10', '15', '20', '30']);
+      expect(TIMEOUT_OPTIONS[0].label).toBe('1 minute');
+      expect(TIMEOUT_OPTIONS[2].label).toBe('5 minutes');
+      expect(timeoutLabel(5)).toBe('5 min');
+    });
+
+    it('applies the same rules as Imaging Core', () => {
+      expect(validateScript(script('A', 'WinPE', 1), [])).toEqual([]);
+      expect(validateScript(script('A', 'WinPE', 1), [script('a', 'WindowsSetup', 1)])).toContain('Script names must be unique. Rename "A" and save again.');
+      expect(validateScript(script('A', 'WinPE', 1, { content: '  ' }), [])).toContain('"A" is empty. Add the script text.');
+      expect(validateScript(script('A', 'WinPE', 1, { content: 'x'.repeat(65_537) }), [])).toContain('"A" is larger than 64 KB. Shorten it.');
+      expect(validateScript(script('A', 'WinPE', 1, { timeoutMinutes: 45 }), [])).toContain('The timeout of "A" must be 1 to 30 minutes.');
+      expect(validateScript(script('', 'WinPE', 1), [])).toContain('Every script needs a name of 1 to 100 characters.');
+    });
+
+    it('marks a changed script as a content change', () => {
+      const saved = draft({ content: { ...emptyContent(), scripts: [script('A', 'WinPE', 1)] } });
+      expect(draftChanges(saved, draft({ content: { ...saved.content, scripts: [script('A', 'WinPE', 1, { content: 'exit 1' })] } })).contentChanged).toBe(true);
+      expect(draftChanges(saved, draft({ content: { ...saved.content, scripts: [script('A', 'WinPE', 1)] } })).contentChanged).toBe(false);
+    });
   });
 });

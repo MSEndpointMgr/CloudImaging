@@ -94,10 +94,10 @@ Section cards in order, each with the icon chip header:
    Timeout (140 px, "2 minutes"); "PowerShell" `CodeTextArea` (fixed 12-line height) with the help
    above it "Exit code 0 is success. In WinPE, the Windows drive is $env:CI_WINDOWS_DRIVE. Scripts
    cannot restart the device." and below it "0.3 of 64 KB. Do not put secrets in scripts:
-   everyone with access to this page can read them." Runs options with descriptions: "In WinPE,
-   right after the image is applied" ("Shown on the timeline. A failure follows the profile's
-   failure handling."; default) and "During Windows setup, before OOBE" ("After the restart, before
-   Autopilot. Logged on the device only."). Timeout options 1, 2, 5, 10, 15, 20, 30 minutes.
+   everyone with access to this page can read them." Runs options with descriptions: "In WinPE"
+   ("Right after the image is applied. Shown on the timeline. A failure follows the profile's
+   failure handling."; default) and "During Windows setup" ("Before OOBE, after the restart and
+   before Autopilot. Logged on the device only."); the short labels keep the 200 px trigger readable. Timeout options 1, 2, 5, 10, 15, 20, 30 minutes.
    Footer Cancel and Done; Done only closes the dialog, Save creates the version.
 4. **Answer file** (`FileCode`): description "Optional. Your own unattend.xml for Windows setup,
    for settings this profile has no control for." One-row table File ("unattend.xml",

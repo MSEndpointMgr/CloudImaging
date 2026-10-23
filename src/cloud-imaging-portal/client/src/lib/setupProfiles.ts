@@ -331,6 +331,91 @@ export function validateRegistryValue(value: SetupRegistryValue, others: SetupRe
   return problems;
 }
 
+// ── Scripts ──────────────────────────────────────────────────────────────────
+
+export const MAX_SCRIPTS = 20;
+export const MAX_SCRIPT_BYTES = 65_536;
+export const TIMEOUT_MINUTES = [1, 2, 5, 10, 15, 20, 30] as const;
+export const DEFAULT_TIMEOUT_MINUTES = 5;
+
+/** The Runs column: "WinPE" or "Windows setup". */
+export const SCRIPT_PHASE_SHORT_LABELS: Record<SetupScriptPhase, string> = {
+  WinPE: 'WinPE',
+  WindowsSetup: 'Windows setup',
+};
+
+export const SCRIPT_RUNS_OPTIONS = [
+  { value: 'WinPE', label: 'In WinPE', description: "Right after the image is applied. Shown on the timeline. A failure follows the profile's failure handling." },
+  { value: 'WindowsSetup', label: 'During Windows setup', description: 'Before OOBE, after the restart and before Autopilot. Logged on the device only.' },
+];
+
+/** "5 min" in the table. */
+export function timeoutLabel(minutes: number): string {
+  return `${String(minutes)} min`;
+}
+
+/** "5 minutes" (or "1 minute") in the dialog. */
+export function timeoutOptionLabel(minutes: number): string {
+  return `${String(minutes)} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
+
+export const TIMEOUT_OPTIONS = TIMEOUT_MINUTES.map((m) => ({ value: String(m), label: timeoutOptionLabel(m) }));
+
+export function utf8Length(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** "12.4 of 64 KB". */
+export function scriptSizeLabel(content: string): string {
+  return `${(utf8Length(content) / 1024).toFixed(1)} of 64 KB`;
+}
+
+/** WinPE scripts first, then Windows setup scripts, each by order. */
+export function orderedScripts(scripts: SetupScript[]): SetupScript[] {
+  const rank = (s: SetupScript) => (s.runs === 'WinPE' ? 0 : 1);
+  return [...scripts].sort((a, b) => rank(a) - rank(b) || a.order - b.order);
+}
+
+/** Orders 1, 2, 3 within each phase, keeping the current sequence. */
+export function renumberScripts(scripts: SetupScript[]): SetupScript[] {
+  const next: Record<SetupScriptPhase, number> = { WinPE: 0, WindowsSetup: 0 };
+  return orderedScripts(scripts).map((s) => ({ ...s, order: ++next[s.runs] }));
+}
+
+/** Swaps a script with its neighbour in the same phase; a move past either end does nothing. */
+export function moveScript(scripts: SetupScript[], index: number, direction: -1 | 1): SetupScript[] {
+  const list = orderedScripts(scripts);
+  const target = index + direction;
+  if (target < 0 || target >= list.length || list[target].runs !== list[index].runs) return list;
+  [list[index], list[target]] = [list[target], list[index]];
+  return renumberScripts(list.map((s, i) => ({ ...s, order: i })));
+}
+
+/** Adds or replaces a script; a new script, or one moved to the other phase, goes last in its phase. */
+export function upsertScript(scripts: SetupScript[], script: SetupScript, replaceIndex?: number): SetupScript[] {
+  const list = orderedScripts(scripts);
+  const previous = replaceIndex === undefined ? undefined : list[replaceIndex];
+  const rest = replaceIndex === undefined ? list : list.filter((_, i) => i !== replaceIndex);
+  const last = Math.max(0, ...rest.filter((s) => s.runs === script.runs).map((s) => s.order));
+  const order = previous && previous.runs === script.runs ? previous.order : last + 1;
+  const merged = replaceIndex === undefined ? [...rest, { ...script, order }] : [...rest.slice(0, replaceIndex), { ...script, order }, ...rest.slice(replaceIndex)];
+  return renumberScripts(merged);
+}
+
+/** The same rules as Imaging Core, for one script against the profile's other scripts. */
+export function validateScript(script: SetupScript, others: SetupScript[]): string[] {
+  const problems: string[] = [];
+  const name = script.name.trim();
+  const scriptLabel = name ? `"${name}"` : 'a script without a name';
+  const sentenceLabel = name ? `"${name}"` : 'A script without a name';
+  if (!name || name.length > MAX_NAME_LENGTH) problems.push('Every script needs a name of 1 to 100 characters.');
+  else if (others.some((o) => o.name.trim().toLowerCase() === name.toLowerCase())) problems.push(`Script names must be unique. Rename ${scriptLabel} and save again.`);
+  if (!(TIMEOUT_MINUTES as readonly number[]).includes(script.timeoutMinutes)) problems.push(`The timeout of ${scriptLabel} must be 1 to 30 minutes.`);
+  if (script.content.trim().length === 0) problems.push(`${sentenceLabel} is empty. Add the script text.`);
+  else if (utf8Length(script.content) > MAX_SCRIPT_BYTES) problems.push(`${sentenceLabel} is larger than 64 KB. Shorten it.`);
+  return problems;
+}
+
 // ── Deployment timeline ──────────────────────────────────────────────────────
 
 function plural(count: number, one: string, many: string): string {

@@ -156,7 +156,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
             // Install drivers (a later feature) hands Windows setup work over here; nothing yet.
             IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers = [];
-            var runPrepareSetup = setupProfile.Status == Services.Setup.SetupProfileLoadStatus.Loaded || specializeInstallers.Count > 0;
+            var runPrepareSetup = ShouldRunPrepareSetup(setupProfile.Status, specializeInstallers);
             _progress.ConfigureSteps(runPrepareSetup);
             var setupWarnings = 0;
 
@@ -487,6 +487,23 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     private static string? SuccessNote(int setupWarnings) =>
         setupWarnings > 0 ? ResultsViewModel.WarningsMessage(setupWarnings) : null;
 
+    /// <summary>Prepare setup runs for a pinned profile, or for Windows setup work Install drivers handed over.</summary>
+    internal static bool ShouldRunPrepareSetup(Services.Setup.SetupProfileLoadStatus profileStatus, IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers) =>
+        profileStatus == Services.Setup.SetupProfileLoadStatus.Loaded || specializeInstallers.Count > 0;
+
+    /// <summary>What Prepare setup works from; the handed-over installers pass through as they are.</summary>
+    internal static Services.Setup.PrepareSetupInput BuildPrepareSetupInput(
+        Services.Setup.SetupProfileLoadResult setupProfile,
+        IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers,
+        string volumeRoot,
+        MachineArchitecture deviceArchitecture,
+        Guid sessionId) =>
+        new(setupProfile.Descriptor?.ProfileName, setupProfile.Content, specializeInstallers, volumeRoot, deviceArchitecture)
+        {
+            SessionId = sessionId,
+            ProfileVersion = setupProfile.Descriptor?.Version,
+        };
+
     /// <summary>
     /// Loads the session's setup profile before Format disk. Returns null when the pipeline must
     /// stop: the profile could not be loaded (reported as a failed Prepare setup step, with no
@@ -545,17 +562,29 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         await reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, ct: ct);
 
         var volumeRoot = $"{windowsVolume.TrimEnd('\\')}\\";
-        var input = new Services.Setup.PrepareSetupInput(setupProfile.Descriptor?.ProfileName, setupProfile.Content, specializeInstallers, volumeRoot, deviceArchitecture);
+        var input = BuildPrepareSetupInput(setupProfile, specializeInstallers, volumeRoot, deviceArchitecture, _sessionId);
         var lastLine = string.Empty;
         Services.Setup.PrepareSetupResult result;
         try
         {
-            // Hive loads and file writes are synchronous I/O on the disk just written to; keep them
-            // off the UI thread, which only receives status lines and percent.
+            // Hive loads, scripts and file writes are synchronous work on the disk just written to;
+            // keep them off the UI thread, which only receives status lines and percent.
             result = await Task.Run(() =>
             {
                 using var hive = new Services.Setup.OfflineRegistryHive();
-                var service = new Services.Setup.PrepareSetupService(hive, new Services.Setup.SetupFileSystem(volumeRoot), pipelineLoggerFactory.CreateLogger<Services.Setup.PrepareSetupService>());
+                // Script output goes to the file log only; the activity ticker shows one line at a time.
+                var scripts = new Services.Setup.WinPeScriptRunner(
+                    new Services.Setup.RestrictedProcessRunner(),
+                    new Services.Setup.SetupFileSystem(Services.Setup.WinPeScriptRunner.ScratchRoot),
+                    () => Services.BootImageCapabilities.SupportsPowerShell(),
+                    _loggerFactory.CreateLogger<Services.Setup.WinPeScriptRunner>());
+                var service = new Services.Setup.PrepareSetupService(
+                    hive,
+                    new Services.Setup.SetupFileSystem(volumeRoot),
+                    scripts,
+                    () => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "SetupRunner", Services.Setup.UnattendComposer.RunnerScriptName)),
+                    TimeProvider.System,
+                    pipelineLoggerFactory.CreateLogger<Services.Setup.PrepareSetupService>());
                 return service.Run(input, (line, percent) =>
                 {
                     if (line != lastLine)
@@ -565,7 +594,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     }
                     _progress.StepPercent = percent;
                     _ = reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, percent, ct: ct);
-                });
+                }, ct);
             }, ct);
         }
         catch (Exception ex)

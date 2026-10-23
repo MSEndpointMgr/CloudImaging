@@ -65,6 +65,8 @@
 
   <ItemGroup>
     <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The setup runner travels with the Client into every boot image; Prepare setup stages it. -->
+    <Content Include="SetupRunner\*.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

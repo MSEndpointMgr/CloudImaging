@@ -26,6 +26,9 @@ public interface ISetupFileSystem
 
     /// <summary>True when the file exists.</summary>
     bool FileExists(string relativePath);
+
+    /// <summary>Absolute path, for handing to a process.</summary>
+    string FullPath(string relativePath);
 }
 
 /// <summary><see cref="ISetupFileSystem"/> over a mounted volume such as <c>W:\</c>.</summary>
@@ -85,4 +88,7 @@ public sealed class SetupFileSystem(string volumeRoot) : ISetupFileSystem
 
     /// <inheritdoc/>
     public bool FileExists(string relativePath) => File.Exists(Resolve(relativePath));
+
+    /// <inheritdoc/>
+    public string FullPath(string relativePath) => Resolve(relativePath);
 }

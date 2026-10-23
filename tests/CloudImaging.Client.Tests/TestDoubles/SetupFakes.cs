@@ -74,7 +74,7 @@ internal sealed class FakeOfflineRegistryHive : IOfflineRegistryHive
 }
 
 /// <summary>In-memory applied volume.</summary>
-internal sealed class FakeSetupFileSystem : ISetupFileSystem
+internal sealed class FakeSetupFileSystem(string root = @"W:\") : ISetupFileSystem
 {
     public Dictionary<string, byte[]> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -82,11 +82,14 @@ internal sealed class FakeSetupFileSystem : ISetupFileSystem
 
     public bool FailWrites { get; set; }
 
+    /// <summary>Writes whose relative path starts with this fail with a disk error.</summary>
+    public string? FailWritesUnder { get; set; }
+
     public void CreateDirectory(string relativePath) => Events.Add($"mkdir {relativePath}");
 
     public void WriteAllBytes(string relativePath, byte[] bytes)
     {
-        if (FailWrites)
+        if (FailWrites || (FailWritesUnder is not null && relativePath.StartsWith(FailWritesUnder, StringComparison.OrdinalIgnoreCase)))
         {
             throw new IOException("The disk is full.");
         }
@@ -102,7 +105,35 @@ internal sealed class FakeSetupFileSystem : ISetupFileSystem
         Files.Remove(relativePath);
     }
 
-    public void DeleteTree(string relativePath) => Events.Add($"rmdir {relativePath}");
+    public void DeleteTree(string relativePath)
+    {
+        Events.Add($"rmdir {relativePath}");
+        foreach (var key in Files.Keys.Where(k => k.StartsWith(relativePath + "\\", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            Files.Remove(key);
+        }
+    }
 
     public bool FileExists(string relativePath) => Files.ContainsKey(relativePath);
+
+    public string FullPath(string relativePath) => Path.Combine(root, relativePath);
+}
+
+/// <summary>Records each request and answers from a function; never starts a process.</summary>
+internal sealed class FakeRestrictedProcessRunner : IRestrictedProcessRunner
+{
+    public List<(RestrictedProcessRequest Request, string? ScriptText)> Runs { get; } = [];
+
+    /// <summary>Reads the script file at run time, so tests can check what was written before it ran.</summary>
+    public Func<string, string?> ReadScript { get; set; } = _ => null;
+
+    public Func<RestrictedProcessRequest, RestrictedProcessResult> Respond { get; set; } =
+        _ => new RestrictedProcessResult(RestrictedProcessOutcome.Exited, 0, TimeSpan.FromSeconds(1), ["done"]);
+
+    public RestrictedProcessResult Run(RestrictedProcessRequest request, CancellationToken cancellationToken)
+    {
+        var path = request.Arguments.Split('"', StringSplitOptions.RemoveEmptyEntries).LastOrDefault(a => a.EndsWith(".ps1", StringComparison.OrdinalIgnoreCase));
+        Runs.Add((request, path is null ? null : ReadScript(path)));
+        return Respond(request);
+    }
 }

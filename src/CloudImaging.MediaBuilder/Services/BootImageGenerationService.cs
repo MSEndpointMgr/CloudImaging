@@ -696,6 +696,13 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Adding WinPE .NET Framework support", 37);
                 await InjectNetFxOptionalComponentAsync(adkPath, mountDir, architecture, ct);
 
+                // Setup profiles run In WinPE scripts in Windows PowerShell, which needs Scripting first.
+                ReportProgress(WinPeOptionalComponents.PowerShellProgressText, 38);
+                foreach (var component in WinPeOptionalComponents.PowerShell)
+                {
+                    await InjectOptionalComponentAsync(adkPath, mountDir, architecture, component, ct);
+                }
+
                 // Windows RE ships the WLAN service but not these two DLLs from the full OS; without them wlansvc cannot start.
                 if (recoveryFilesDir is not null)
                 {
@@ -777,7 +784,8 @@ public sealed partial class BootImageGenerationService
                     toolsRootPath: toolsRootPath,
                     architecture: architecture,
                     autopilotToolingIncluded: includeAutopilotTooling,
-                    bootImageBase: bootImageBase);
+                    bootImageBase: bootImageBase,
+                    powerShellIncluded: true);
                 await BootImageManifestService.EmbedAsync(mountDir, manifest, ct);
                 LogManifestEmbedded(_logger, timestamp, driversInjected);
 
@@ -1047,6 +1055,24 @@ public sealed partial class BootImageGenerationService
                 "\"WinPE-NetFx.cab\" and \"en-us\\WinPE-NetFx_en-us.cab\"). This ships alongside copype.cmd as " +
                 "part of the Windows ADK WinPE add-on — reinstall/repair the WinPE add-on " +
                 "(adkwinpesetup.exe) and try again.");
+        }
+
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+    }
+
+    /// <summary>
+    /// Services one optional component (base cab plus its en-us language cab) into the mounted
+    /// WIM, the same way as WinPE-WMI and WinPE-NetFx.
+    /// </summary>
+    private async Task InjectOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, string component, CancellationToken ct)
+    {
+        var (baseCab, langCab) = WinPeOptionalComponents.PackagePaths(adkPath, architecture, component);
+        if (!File.Exists(baseCab) || !File.Exists(langCab))
+        {
+            var directory = WinPeOptionalComponents.Directory(adkPath, architecture);
+            RaiseLog($"FAILED: WinPE optional component package(s) not found under \"{directory}\".");
+            throw new InvalidOperationException(WinPeOptionalComponents.MissingMessage(directory, component));
         }
 
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);

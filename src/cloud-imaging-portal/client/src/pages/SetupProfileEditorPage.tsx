@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Copy, Crosshair, Database, Info, Pencil, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, Crosshair, Database, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Select } from '../components/ui/select.tsx';
@@ -11,6 +11,7 @@ import { ConfirmImpactDialog } from '../components/ConfirmImpactDialog.tsx';
 import type { PickerLocation } from '../components/LocationPicker.tsx';
 import { TargetingBadges } from '../components/TargetingBadges.tsx';
 import { RegistryValueDialog } from '../components/setup-profiles/RegistryValueDialog.tsx';
+import { ScriptDialog } from '../components/setup-profiles/ScriptDialog.tsx';
 import { SectionCard, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
 import { TargetingSection } from '../components/setup-profiles/TargetingSection.tsx';
 import { useAuth } from '../context/authContext.tsx';
@@ -20,6 +21,8 @@ import { formatTimestamp } from '../lib/utils.ts';
 import {
   FAILURE_HANDLING_LABELS,
   MAX_REGISTRY_VALUES,
+  MAX_SCRIPTS,
+  SCRIPT_PHASE_SHORT_LABELS,
   SetupProfileApiError,
   createSetupProfile,
   deleteImpact,
@@ -30,12 +33,17 @@ import {
   emptyDraft,
   fetchSetupProfile,
   fetchSetupProfiles,
+  moveScript,
+  orderedScripts,
   registryValuePath,
   registryValueTooltip,
+  renumberScripts,
   saveLabel,
   saveSetupProfile,
   targetedNames,
   targetingProblem,
+  timeoutLabel,
+  upsertScript,
   type SetupFailureHandling,
   type SetupProfileDetail,
   type SetupProfileDraft,
@@ -46,6 +54,7 @@ import {
 const FAILURE_HANDLING_OPTIONS = (Object.keys(FAILURE_HANDLING_LABELS) as SetupFailureHandling[]).map((value) => ({ value, label: FAILURE_HANDLING_LABELS[value] }));
 
 type RegistryDialog = { mode: 'add' } | { mode: 'edit'; index: number } | null;
+type ScriptDialogState = { mode: 'add' } | { mode: 'edit'; index: number } | null;
 
 /** Where a confirmed leave goes; Duplicate carries router state. */
 type PendingLeave = { to: string; state?: unknown } | null;
@@ -75,6 +84,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<SetupProfileApiError | null>(null);
   const [registryDialog, setRegistryDialog] = useState<RegistryDialog>(null);
+  const [scriptDialog, setScriptDialog] = useState<ScriptDialogState>(null);
   const [pendingLeave, setPendingLeave] = useState<PendingLeave>(null);
   const [targetingTouched, setTargetingTouched] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -224,6 +234,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   }
 
   const registryValues = draft.content.registryValues;
+  const scripts = orderedScripts(draft.content.scripts);
   const crumb = isNew ? 'New profile' : detail?.name ?? 'Setup profile';
 
   return (
@@ -340,6 +351,80 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         )}
       </SectionCard>
 
+      <SectionCard
+        icon={SquareTerminal}
+        title="Scripts"
+        description="PowerShell, run as SYSTEM in the order below within each phase."
+        action={!readOnly && (
+          <Tooltip content={scripts.length >= MAX_SCRIPTS ? 'A profile can have at most 20 scripts.' : 'Add a script'}>
+            <Button variant="outline" disabled={scripts.length >= MAX_SCRIPTS} onClick={() => setScriptDialog({ mode: 'add' })}><Plus />Add script</Button>
+          </Tooltip>
+        )}
+      >
+        {scripts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No scripts.</p>
+        ) : (
+          <div className="overflow-hidden rounded-md border border-border">
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[72px] text-right">Order</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="w-[180px]">Runs</TableHead>
+                  <TableHead className="w-[100px] text-right">Timeout</TableHead>
+                  <TableHead className="w-[160px]">Last modified</TableHead>
+                  {!readOnly && <TableHead className="w-[160px]">Actions</TableHead>}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {scripts.map((s, i) => {
+                  const first = i === 0 || scripts[i - 1].runs !== s.runs;
+                  const last = i === scripts.length - 1 || scripts[i + 1].runs !== s.runs;
+                  return (
+                    <TableRow key={s.id ?? `new-${s.runs}-${String(s.order)}`}>
+                      <TableCell className="text-right tabular-nums">{s.order}</TableCell>
+                      <TableCell><p className="truncate">{s.name}</p></TableCell>
+                      <TableCell>{SCRIPT_PHASE_SHORT_LABELS[s.runs]}</TableCell>
+                      <TableCell className="text-right tabular-nums">{timeoutLabel(s.timeoutMinutes)}</TableCell>
+                      <TableCell>
+                        {s.lastModifiedAt ? (
+                          <Tooltip content={s.lastModifiedBy ? `By ${s.lastModifiedBy}` : 'Author unknown'}>
+                            <span tabIndex={0} className="tabular-nums">{formatTimestamp(s.lastModifiedAt)}</span>
+                          </Tooltip>
+                        ) : (
+                          <span className="text-muted-foreground">Not saved yet</span>
+                        )}
+                      </TableCell>
+                      {!readOnly && (
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Tooltip content="Move up">
+                              <Button variant="ghost" size="icon" aria-label={`Move ${s.name} up`} className="text-muted-foreground" disabled={first} onClick={() => setContent({ scripts: moveScript(scripts, i, -1) })}><ArrowUp /></Button>
+                            </Tooltip>
+                            <Tooltip content="Move down">
+                              <Button variant="ghost" size="icon" aria-label={`Move ${s.name} down`} className="text-muted-foreground" disabled={last} onClick={() => setContent({ scripts: moveScript(scripts, i, 1) })}><ArrowDown /></Button>
+                            </Tooltip>
+                            <Tooltip content="Edit">
+                              <Button variant="ghost" size="icon" aria-label={`Edit ${s.name}`} onClick={() => setScriptDialog({ mode: 'edit', index: i })}><Pencil /></Button>
+                            </Tooltip>
+                            <Tooltip content="Delete">
+                              <Button variant="ghost" size="icon" aria-label={`Delete ${s.name}`} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => setContent({ scripts: renumberScripts(scripts.filter((_, j) => j !== i)) })}>
+                                <Trash2 />
+                              </Button>
+                            </Tooltip>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </SectionCard>
+
       <SectionCard icon={ShieldCheck} title="Failure handling" description="What happens when a registry value cannot be written, or a WinPE script fails or times out.">
         <SettingRow label="Deployment result" help="Windows setup scripts never change the result: they run after the portal stops tracking the device." htmlFor="setup-profile-failure-handling">
           {readOnly ? (
@@ -380,6 +465,18 @@ export default function SetupProfileEditorPage(): React.ReactElement {
             {saveLabel(detail?.currentVersion ?? 0, contentChanged)}
           </Button>
         </div>
+      )}
+
+      {scriptDialog && (
+        <ScriptDialog
+          script={scriptDialog.mode === 'edit' ? scripts[scriptDialog.index] : undefined}
+          others={scripts.filter((_, j) => scriptDialog.mode !== 'edit' || j !== scriptDialog.index)}
+          onClose={() => setScriptDialog(null)}
+          onApply={(script) => {
+            setContent({ scripts: upsertScript(scripts, script, scriptDialog.mode === 'edit' ? scriptDialog.index : undefined) });
+            setScriptDialog(null);
+          }}
+        />
       )}
 
       {registryDialog && (
