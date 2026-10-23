@@ -7,14 +7,14 @@ using CloudImaging.MediaBuilder.Views;
 namespace CloudImaging.MediaBuilder.ViewModels;
 
 /// <summary>
-/// View model for <see cref="ShellView"/> — the persistent NavigationView-style app shell
+/// View model for <see cref="ShellView"/>, the persistent NavigationView-style app shell
 /// shown once the user is signed in. Owns the current section and swaps the hosted
 /// content (Home / Generate Boot Image / Prepare USB Device) without leaving the shell,
 /// so the left navigation pane stays visible across every section.
 ///
 /// Generate Boot Image is disabled up front (nav item + Home tile) rather than only warned
 /// about after selection, when the Windows ADK is not installed (FR-050a) or the signed-in
-/// user lacks the Administrator role (FR-050b).
+/// user lacks the Operator or Administrator role (FR-050b).
 /// </summary>
 public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
 {
@@ -59,69 +59,72 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
         BootMediaCertificateCheckService? certCheckService = null,
         Func<bool>? isAdkInstalled = null)
     {
-        _authService       = authService;
+        _authService = authService;
         _operatorApiClient = operatorApiClient;
-        _genService        = genService;
+        _genService = genService;
         _gitHubReleasesClient = gitHubReleasesClient;
-        _usbValidator      = usbValidator;
-        _downloader        = downloader;
-        _usbPreparation    = usbPreparation;
-        _cache             = cache;
-        _isoGeneration     = isoGeneration;
-        _deviceWatcher     = deviceWatcher;
-        _certCheckService  = certCheckService;
+        _usbValidator = usbValidator;
+        _downloader = downloader;
+        _usbPreparation = usbPreparation;
+        _cache = cache;
+        _isoGeneration = isoGeneration;
+        _deviceWatcher = deviceWatcher;
+        _certCheckService = certCheckService;
 
-        AdkAvailable    = (isAdkInstalled ?? BootImageGenerationService.IsAdkInstalled)();
-        IsAdministrator = _authService.IsAdministrator;
+        AdkAvailable = (isAdkInstalled ?? BootImageGenerationService.IsAdkInstalled)();
+        CanGenerateBootImage = _authService.CanGenerateBootImage;
         HasMediaBuilderRole = _authService.HasMediaBuilderRole;
 
-        GoHomeCommand       = new RelayCommand(_ => GoHome(), _ => CanNavigate);
-        GoGenerateCommand   = new RelayCommand(_ => GoGenerate(), _ => IsGenerateBootImageAvailable && CanNavigate);
+        GoHomeCommand = new RelayCommand(_ => GoHome(), _ => CanNavigate);
+        GoGenerateCommand = new RelayCommand(_ => GoGenerate(), _ => IsGenerateBootImageAvailable && CanNavigate);
         GoPrepareUsbCommand = new RelayCommand(_ => GoPrepareUsb(), _ => IsPrepareUsbAvailable && CanNavigate);
 
         GoHome();
 
-        // T151/FR-050a: only Administrators can ever reach Generate Boot Image, so the check
-        // is skipped entirely for other roles. Runs after GoHome() so navigation is never
+        // FR-050a: only Operator and Administrator users can ever reach Generate Boot Image,
+        // so the check is skipped for other roles. It must run for every user the role gate opens
+        // to, since the status starts optimistic. Runs after GoHome() so navigation is never
         // blocked waiting on a network round-trip; the Home tile/nav item simply refreshes
         // live (fail-closed until confirmed) once the check resolves.
-        if (IsAdministrator && _certCheckService is not null)
+        if (CanGenerateBootImage && _certCheckService is not null)
+        {
             _ = RefreshCertificateStatusAsync();
+        }
     }
 
     /// <summary>
-    /// True when the Windows ADK is installed. Gates the "Generate Boot Image" nav item —
-    /// bound as its <c>IsEnabled</c> and its command's CanExecute — so that section is
+    /// True when the Windows ADK is installed. Gates the "Generate Boot Image" nav item,
+    /// bound as its <c>IsEnabled</c> and its command's CanExecute, so that section is
     /// unreachable from the shell (not just warned about) while the ADK is missing.
     /// </summary>
     public bool AdkAvailable { get; }
 
     /// <summary>
-    /// True when the signed-in user holds the Administrator app role. Gates the "Generate Boot
-    /// Image" nav item (FR-050b) the same way <see cref="AdkAvailable"/> does for the ADK
-    /// prerequisite (FR-050a) — Technician (or no-role) users only get Prepare USB Device.
+    /// True when the signed-in user holds the Operator or Administrator app role. Gates the
+    /// "Generate Boot Image" nav item (FR-050b) the same way <see cref="AdkAvailable"/> does for
+    /// the ADK prerequisite (FR-050a); Technician (or no-role) users only get Prepare USB Device.
     /// Computed once at shell construction time, which always happens after sign-in completes.
     /// </summary>
-    public bool IsAdministrator { get; }
+    public bool CanGenerateBootImage { get; }
 
     /// <summary>
-    /// True when the signed-in user holds either Media Builder app role. A user with no role at
+    /// True when the signed-in user holds any Media Builder app role. A user with no role at
     /// all can sign in but reaches no workflow, since every one of them calls the Operator API
     /// and would fail with 403.
     /// </summary>
     public bool HasMediaBuilderRole { get; }
 
-    /// <summary>True when the "Generate Boot Image" nav item should be reachable at all — requires the ADK, the Administrator role, AND a configured boot media certificate (T151).</summary>
+    /// <summary>True when the "Generate Boot Image" nav item should be reachable at all. Requires the ADK, the Operator or Administrator role, AND a configured boot media certificate.</summary>
     public bool IsGenerateBootImageAvailable =>
-        AdkAvailable && IsAdministrator && _certificateStatus == BootMediaCertificateStatus.Configured;
+        AdkAvailable && CanGenerateBootImage && _certificateStatus == BootMediaCertificateStatus.Configured;
 
-    /// <summary>True when the "Prepare USB Device" nav item should be reachable — open to both roles, closed to a no-role user.</summary>
+    /// <summary>True when the "Prepare USB Device" nav item should be reachable. Open to every Media Builder role, closed to a no-role user.</summary>
     public bool IsPrepareUsbAvailable => HasMediaBuilderRole;
 
     /// <summary>Tooltip/reason shown when the Generate Boot Image nav item is disabled; role restriction takes precedence.</summary>
     public string? GenerateBootImageUnavailableReason =>
-        !HasMediaBuilderRole ? "Generate Boot Image requires the Technician or Administrator role."
-        : !IsAdministrator ? "Generate Boot Image requires the Administrator role."
+        !HasMediaBuilderRole ? "Generate Boot Image requires the Technician, Operator or Administrator role."
+        : !CanGenerateBootImage ? "Generate Boot Image requires the Operator or Administrator role."
         : !AdkAvailable ? "Install the Windows ADK to unlock this section."
         : _certificateStatus switch
         {
@@ -133,7 +136,7 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
 
     /// <summary>Tooltip/reason shown when the Prepare USB Device nav item is disabled.</summary>
     public string? PrepareUsbUnavailableReason =>
-        !HasMediaBuilderRole ? "Prepare USB Device requires the Technician or Administrator role." : null;
+        !HasMediaBuilderRole ? "Prepare USB Device requires the Technician, Operator or Administrator role." : null;
 
     /// <summary>The view currently hosted in the shell's content area.</summary>
     public object? CurrentContent
@@ -158,16 +161,16 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
     }
 
     /// <summary>True when the Home section is active, for nav pane item highlighting.</summary>
-    public bool IsHomeActive       => CurrentSection == ShellSection.Home;
+    public bool IsHomeActive => CurrentSection == ShellSection.Home;
     /// <summary>True when the Generate Boot Image section is active, for nav pane item highlighting.</summary>
-    public bool IsGenerateActive   => CurrentSection == ShellSection.Generate;
+    public bool IsGenerateActive => CurrentSection == ShellSection.Generate;
     /// <summary>True when the Prepare USB Device section is active, for nav pane item highlighting.</summary>
     public bool IsPrepareUsbActive => CurrentSection == ShellSection.PrepareUsb;
 
     /// <summary>
     /// True while the nav pane (Home / Generate Boot Image / Prepare USB Device) should be
     /// selectable. False while the currently hosted section has a long-running operation in
-    /// flight (WinPE generation, or a USB write) — there's no way to resume an abandoned
+    /// flight (WinPE generation, or a USB write). There's no way to resume an abandoned
     /// operation after navigating away and back, so the nav pane is locked to prevent that
     /// data loss outright rather than warning about it afterwards.
     /// </summary>
@@ -176,7 +179,11 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
         get => _canNavigate;
         private set
         {
-            if (_canNavigate == value) return;
+            if (_canNavigate == value)
+            {
+                return;
+            }
+
             _canNavigate = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsOperationRunning));
@@ -199,9 +206,9 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
     /// <summary>Current section's display name, used as the bold trailing crumb in the shell's breadcrumb bar.</summary>
     public string SectionLabel => CurrentSection switch
     {
-        ShellSection.Generate   => "Generate Boot Image",
+        ShellSection.Generate => "Generate Boot Image",
         ShellSection.PrepareUsb => "Prepare USB Device",
-        _                       => "Home",
+        _ => "Home",
     };
 
     /// <summary>Signed-in user's display name, shown in the shell's footer. Falls back to the UPN, then a generic label.</summary>
@@ -213,7 +220,10 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
         get
         {
             var name = _authService.SignedInDisplayName;
-            if (string.IsNullOrWhiteSpace(name)) return "?";
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return "?";
+            }
 
             // A display name splits on spaces ("Jamie Doe"); a UPN fallback splits on the
             // separators typically used in its local part ("jamie.doe@contoso.com").
@@ -226,9 +236,9 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
     }
 
     /// <summary>Navigates to the Home section.</summary>
-    public ICommand GoHomeCommand       { get; }
+    public ICommand GoHomeCommand { get; }
     /// <summary>Navigates to the Generate Boot Image section.</summary>
-    public ICommand GoGenerateCommand   { get; }
+    public ICommand GoGenerateCommand { get; }
     /// <summary>Navigates to the Prepare USB Device section.</summary>
     public ICommand GoPrepareUsbCommand { get; }
 
@@ -238,11 +248,17 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
         var operationSelectionViewModel = new OperationSelectionViewModel(
             op =>
             {
-                if (op == "GenerateBootImage") GoGenerate();
-                else if (op == "PrepareUSB") GoPrepareUsb();
+                if (op == "GenerateBootImage")
+                {
+                    GoGenerate();
+                }
+                else if (op == "PrepareUSB")
+                {
+                    GoPrepareUsb();
+                }
             },
             isAdkInstalled: () => AdkAvailable,
-            isAdministrator: IsAdministrator,
+            canGenerateBootImage: CanGenerateBootImage,
             certificateStatus: _certificateStatus,
             hasMediaBuilderRole: HasMediaBuilderRole);
         var view = new OperationSelectionView { DataContext = operationSelectionViewModel };
@@ -303,7 +319,9 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
         }
 
         if (_certificateStatus == status)
+        {
             return;
+        }
 
         _certificateStatus = status;
         OnPropertyChanged(nameof(IsGenerateBootImageAvailable));
@@ -311,7 +329,9 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
         CommandManager.InvalidateRequerySuggested();
 
         if (CurrentContent is OperationSelectionView { DataContext: OperationSelectionViewModel vm })
+        {
             vm.SetCertificateStatus(status);
+        }
     }
 
     /// <summary>
@@ -334,14 +354,19 @@ public sealed class ShellViewModel : INotifyPropertyChanged, IOperationHost
     private static void Execute(ICommand command)
     {
         if (command.CanExecute(null))
+        {
             command.Execute(null);
+        }
     }
 
     /// <summary>Unsubscribes from the currently tracked content view model, if any, and unlocks the nav pane.</summary>
     private void StopTrackingBusyState()
     {
         if (_trackedContentViewModel is not null)
+        {
             _trackedContentViewModel.PropertyChanged -= OnTrackedContentPropertyChanged;
+        }
+
         _trackedContentViewModel = null;
         _isTrackedContentBusy = null;
         _cancelTrackedContent = null;

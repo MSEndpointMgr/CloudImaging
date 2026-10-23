@@ -35,25 +35,31 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
 });
 
-/** Route guard for Administrator-only pages; non-admins are redirected to Sessions (FR-040a). */
+/** Route guard for the Administrator-only Branding and Configuration pages; others are redirected home (FR-040a). */
 function RequireAdmin({ children }: { children: React.ReactElement }): React.ReactElement {
   const { isAdministrator } = useAuth();
   return isAdministrator ? children : <Navigate to="/" replace />;
 }
 
-/** Route guard for Sessions/OS/Boot/Recovery Images; Reader cannot browse to these directly. */
-function RequireOperationsAccess({ children }: { children: React.ReactElement }): React.ReactElement {
-  const { isAdministrator, isTechnician } = useAuth();
-  return isAdministrator || isTechnician ? children : <Navigate to="/" replace />;
+/** Route guard for Devices and the OS, Boot and Recovery Images pages (Administrator, Operator, Technician). */
+function RequireImagingAccess({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { canUseImaging } = useAuth();
+  return canUseImaging ? children : <Navigate to="/" replace />;
 }
 
-/** Route guard for the Reports pages; grants Reader access without opening them to Technician. */
+/** Route guard for the Locations and Wi-Fi Networks pages (Administrator, Operator). */
+function RequireManageLocations({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { canManageLocations } = useAuth();
+  return canManageLocations ? children : <Navigate to="/" replace />;
+}
+
+/** Route guard for the Reports pages (Administrator, Operator, Reader); Technician stays out. */
 function RequireReportsAccess({ children }: { children: React.ReactElement }): React.ReactElement {
-  const { isAdministrator, isReader } = useAuth();
-  return isAdministrator || isReader ? children : <Navigate to="/" replace />;
+  const { canViewReports } = useAuth();
+  return canViewReports ? children : <Navigate to="/" replace />;
 }
 
-/** Route guard for the Autopilot registrations page (Approver, Administrator, read-only Technician). */
+/** Route guard for the Autopilot registrations page (Approver, Administrator, Operator, read-only Technician). */
 function RequireAutopilotAccess({ children }: { children: React.ReactElement }): React.ReactElement {
   const { canViewAutopilot } = useAuth();
   return canViewAutopilot ? children : <Navigate to="/" replace />;
@@ -87,15 +93,15 @@ export default function App(): React.ReactElement {
                     <Routes>
                       <Route element={<AppShell />}>
                         <Route index                   element={<HomeRoute />} />
-                        <Route path="sessions"         element={<RequireOperationsAccess><SessionsPage /></RequireOperationsAccess>} />
-                        <Route path="os-images"        element={<RequireOperationsAccess><OsImagesPage /></RequireOperationsAccess>} />
-                        <Route path="boot-images"      element={<RequireOperationsAccess><BootImagesPage /></RequireOperationsAccess>} />
-                        <Route path="recovery-images"  element={<RequireOperationsAccess><RecoveryImagesPage /></RequireOperationsAccess>} />
+                        <Route path="sessions"         element={<RequireImagingAccess><SessionsPage /></RequireImagingAccess>} />
+                        <Route path="os-images"        element={<RequireImagingAccess><OsImagesPage /></RequireImagingAccess>} />
+                        <Route path="boot-images"      element={<RequireImagingAccess><BootImagesPage /></RequireImagingAccess>} />
+                        <Route path="recovery-images"  element={<RequireImagingAccess><RecoveryImagesPage /></RequireImagingAccess>} />
                         <Route path="autopilot"        element={<RequireAutopilotAccess><AutopilotRegistrationsPage /></RequireAutopilotAccess>} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />
-                        <Route path="locations"                   element={<RequireAdmin><LocationsPage /></RequireAdmin>} />
-                        <Route path="wifi-networks"               element={<RequireAdmin><WifiNetworksPage /></RequireAdmin>} />
+                        <Route path="locations"                   element={<RequireManageLocations><LocationsPage /></RequireManageLocations>} />
+                        <Route path="wifi-networks"               element={<RequireManageLocations><WifiNetworksPage /></RequireManageLocations>} />
                         <Route path="reports"                     element={<RequireReportsAccess><ReportsPage /></RequireReportsAccess>} />
                         <Route path="reports/device-outcomes"     element={<RequireReportsAccess><ReportDeviceOutcomesPage /></RequireReportsAccess>} />
                         <Route path="reports/location-statistics" element={<RequireReportsAccess><ReportLocationStatisticsPage /></RequireReportsAccess>} />

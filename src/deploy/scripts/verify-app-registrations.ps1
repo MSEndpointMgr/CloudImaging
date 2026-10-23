@@ -144,7 +144,7 @@ if ($portalApp) {
     $portalScope = $portalApp.Api.Oauth2PermissionScopes | Where-Object { $_.Value -eq 'user_impersonation' -and $_.IsEnabled }
     Test-Check "'user_impersonation' scope exposed and enabled" ($null -ne $portalScope) `
         "Expose an API -> Add a scope named 'user_impersonation', state Enabled. Missing this causes AADSTS500011."
-    foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Technician', 'CloudImaging.Reader') {
+    foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Operator', 'CloudImaging.Technician', 'CloudImaging.Reader') {
         $r = $portalApp.AppRoles | Where-Object { $_.Value -eq $role }
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."
@@ -189,7 +189,7 @@ if ($mediaBuilderApp) {
         "Supported account types should be 'Single tenant' (AzureADMyOrg)."
     Test-Check "Has a Mobile/desktop redirect URI of http://localhost" ($mediaBuilderApp.PublicClient.RedirectUris -contains 'http://localhost') `
         "Add a platform -> Mobile and desktop applications -> redirect URI http://localhost."
-    foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Technician') {
+    foreach ($role in 'CloudImaging.Administrator', 'CloudImaging.Operator', 'CloudImaging.Technician') {
         $r = $mediaBuilderApp.AppRoles | Where-Object { $_.Value -eq $role }
         Test-Check "App role '$role' exists (Users/Groups)" ($r -and $r.AllowedMemberTypes -contains 'User') `
             "App roles -> add '$role', allowed for Users/Groups."

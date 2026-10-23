@@ -1,25 +1,25 @@
-# Implementation Plan: Operations Role
+# Implementation Plan: Operator Role
 
-**Branch**: none created (work happens on the current branch; feature directory `specs/004-operations-role`) | **Date**: 2026-10-22 | **Spec**: [spec.md](spec.md)
+**Branch**: none created (work happens on the current branch; feature directory `specs/004-operator-role`) | **Date**: 2026-10-22 | **Spec**: [spec.md](spec.md)
 
-**Input**: Feature specification from `specs/004-operations-role/spec.md`
+**Input**: Feature specification from `specs/004-operator-role/spec.md`
 
 ## Summary
 
-Add a user app role `CloudImaging.Operations` between Technician and Administrator. Each of the three
+Add a user app role `CloudImaging.Operator` between Technician and Administrator. Each of the three
 role-aware applications (Portal backend, Portal frontend, Media Builder) gets the same implication
-table (Administrator implies Operations, Operations implies Technician) and evaluates gates against
+table (Administrator implies Operator, Operator implies Technician) and evaluates gates against
 the expanded role set, because tokens carry only directly assigned roles. The Portal backend widens
 31 route guards from Administrator-only (or Approver/Administrator/Reader allowlists) to include
-Operations, keeps 18 routes Administrator-only, and names every accepted role in its guards so the
+Operator, keeps 18 routes Administrator-only, and names every accepted role in its guards so the
 existing 403 detail stays accurate. It also closes a pre-existing gap: `GET /api/session-history`
 stops accepting Technician, and a new completion-times read keeps the Technician Dashboard's
 Completed Sessions stat working. The Portal frontend replaces raw role checks with a pure
 capability map derived from the token roles. The Media Builder opens Generate Boot Image and
-pre-production boot images to Operations and runs the boot media certificate check for it. The
+pre-production boot images to Operator and runs the boot media certificate check for it. The
 Operator API changes only in documentation comments. Role creation stays a documented manual step;
 no Bicep or script logic changes. The three release workflows publish their release body from a
-notes file committed per stream and version, which carries the Operations notice. Touched files are
+notes file committed per stream and version, which carries the Operator notice. Touched files are
 cleaned of em dash, en dash, middle dot and arrow characters.
 
 ---
@@ -69,7 +69,7 @@ Windows technician workstation (Media Builder). No change to the Operator API ru
 - Portal frontend: 10 files; 14 route guards plus the access-denied gate, 9 navigation items, 7 Dashboard cards plus 2 fetches, in-page controls on 4 pages, 3 user-facing strings ([contracts/portal-client-surfaces.md](contracts/portal-client-surfaces.md))
 - Media Builder: 5 gates and 15 user-facing string occurrences across 7 files ([contracts/media-builder-gates.md](contracts/media-builder-gates.md))
 - Documentation: `docs/roles-and-access.md`, `docs/setup-instructions.md`, `docs/upgrade-instructions.md`, `docs/image-upload-pipeline.md` (upload and pre-production roles), `README.md` (role wording, boot image step, link separators), `CONTRIBUTING.md` (release notes convention), one tooltip in `src/deploy/uiFormDefinition.json` (all five Portal user roles)
-- Release: 3 workflows read the body from `.github/release-notes/<stream>/<version>.md`; 3 notes files written at `v1.1.0` for the releases that ship this feature (backend, client, mediabuilder; only backend and mediabuilder carry the Operations notice)
+- Release: 3 workflows read the body from `.github/release-notes/<stream>/<version>.md`; 3 notes files written at `v1.1.0` for the releases that ship this feature (backend, client, mediabuilder; only backend and mediabuilder carry the Operator notice)
 - Character cleanup: 24 touched files contain banned characters, plus `docs/image-upload-pipeline.md`, which is touched but clean today (see Character cleanup below)
 
 ---
@@ -81,7 +81,7 @@ Windows technician workstation (Media Builder). No change to the Operator API ru
 | Principle | Result | Enforcement in this feature |
 |---|---|---|
 | I. Zero-Warning .NET Build | PASS | Media Builder and Operator API changes build in Release with zero warnings; no suppressions. Renamed view model parameters update every caller and test. |
-| II. Test-First Development | PASS, enforced by T036, T042, T053, T067 | Implication-table tests, the route matrix test, client capability tests and Media Builder role tests are written first and fail against the current code (Operations unknown), then pass. Coverage is measured, not assumed: T036 and T042 run `npm run test:coverage` in `src/cloud-imaging-portal/server` and `src/cloud-imaging-portal/client`, T053 runs `dotnet test tests/CloudImaging.MediaBuilder.Tests -c Release --collect "XPlat Code Coverage"` (collector added by T073), and T067 repeats all three. Gate: at least 80% line coverage on this feature's new and changed code paths: `server/src/middleware/roleGuard.ts`, `server/src/routes/session-history.ts` (new completed-timestamps route), `client/src/lib/portalRoles.ts` and `MediaBuilder/Services/MediaBuilderRoles.cs`. The client config already enforces a global 80% line threshold (`vite.config.ts`); the server config sets none, so per-file values are read from the text report. Route tests mock every service a router imports, so unit tests make no network calls (T009). |
+| II. Test-First Development | PASS, enforced by T036, T042, T053, T067 | Implication-table tests, the route matrix test, client capability tests and Media Builder role tests are written first and fail against the current code (Operator unknown), then pass. Coverage is measured, not assumed: T036 and T042 run `npm run test:coverage` in `src/cloud-imaging-portal/server` and `src/cloud-imaging-portal/client`, T053 runs `dotnet test tests/CloudImaging.MediaBuilder.Tests -c Release --collect "XPlat Code Coverage"` (collector added by T073), and T067 repeats all three. Gate: at least 80% line coverage on this feature's new and changed code paths: `server/src/middleware/roleGuard.ts`, `server/src/routes/session-history.ts` (new completed-timestamps route), `client/src/lib/portalRoles.ts` and `MediaBuilder/Services/MediaBuilderRoles.cs`. The client config already enforces a global 80% line threshold (`vite.config.ts`); the server config sets none, so per-file values are read from the text report. Route tests mock every service a router imports, so unit tests make no network calls (T009). |
 | III. Integration & End-to-End Testing | PASS | A Supertest route matrix exercises all 73 authenticated Portal backend routes for every role, satisfying "integration tests covering all authenticated routes". Media Builder logic is covered headlessly; the shell's certificate-check trigger is a documented manual verification item. Real-tenant verification per role is in [quickstart.md](quickstart.md). |
 | IV. UX Consistency | PASS | New and changed strings use ASCII punctuation and name roles plainly. Banned glyphs already present in touched files are removed (FR-040), including the boot image and upload file labels. Narrowing `GET /api/session-history` needs no deprecation notice: it is the Portal's internal backend-for-frontend API, not a user-facing interface (see Complexity Tracking). |
 | V. Performance | PASS | No new I/O; set lookups only. |
@@ -105,7 +105,7 @@ for Principle II and adds no runtime layer. No violations.
 ### Documentation (this feature)
 
 ```text
-specs/004-operations-role/
+specs/004-operator-role/
 ├── spec.md
 ├── plan.md                              # This file
 ├── research.md                          # Phase 0 decisions
@@ -123,9 +123,9 @@ specs/004-operations-role/
 
 ```text
 src/cloud-imaging-portal/server/src/
-├── middleware/roleGuard.ts              # PortalRole union, ROLE_IMPLICATIONS closure, requireOperations guard
+├── middleware/roleGuard.ts              # PortalRole union, ROLE_IMPLICATIONS closure, requireOperator guard
 └── routes/
-    ├── images.ts                        # 6 writes: Operations or Administrator
+    ├── images.ts                        # 6 writes: Operator or Administrator
     ├── boot-images.ts                   # 5 writes incl. promote/demote
     ├── recovery-images.ts               # 3 writes
     ├── upload-jobs.ts                   # upload status read
@@ -133,7 +133,7 @@ src/cloud-imaging-portal/server/src/
     ├── regions.ts                       # read and write
     ├── wifi-networks.ts                 # 5 routes
     ├── autopilot.ts                     # canView (message), canAudit, canDecide, GET group-tags
-    └── session-history.ts               # Reports read: Reader, Operations, Administrator; NEW completed-timestamps read
+    └── session-history.ts               # Reports read: Reader, Operator, Administrator; NEW completed-timestamps read
 
 src/cloud-imaging-portal/client/src/
 ├── lib/portalRoles.ts                   # NEW: implication table, expandRoles, capabilitiesFromRoles
@@ -142,7 +142,7 @@ src/cloud-imaging-portal/client/src/
 ├── components/Sidebar.tsx               # 'manage' access level for Locations and Wi-Fi Networks
 ├── pages/DashboardPage.tsx              # same access levels for cards and the stats fetch; Completed Sessions reads completed-timestamps
 ├── pages/OsImagesPage.tsx               # isAdministrator replaced by canManageCatalog
-├── pages/BootImagesPage.tsx             # canManageCatalog; demote impact text names Operations; file label without middle dot
+├── pages/BootImagesPage.tsx             # canManageCatalog; demote impact text names Operator; file label without middle dot
 ├── pages/RecoveryImagesPage.tsx         # canManageCatalog; file label without middle dot
 ├── pages/ReportsPage.tsx                # doc comment only
 └── pages/AutopilotRegistrationsPage.tsx # doc comment only (flags come from context)
@@ -150,7 +150,7 @@ src/cloud-imaging-portal/client/src/
 src/CloudImaging.MediaBuilder/
 ├── Services/MediaBuilderRoles.cs        # NEW: role constants, implication table, Expand
 ├── Services/EntraAuthenticationService.cs   # CanGenerateBootImage, CanSeePreProductionBootImages, HasMediaBuilderRole
-├── Services/OperatorApiErrorDescription.cs  # access-denied text names Operations
+├── Services/OperatorApiErrorDescription.cs  # access-denied text names Operator
 ├── ViewModels/ShellViewModel.cs         # gate and certificate check on CanGenerateBootImage; reason texts
 ├── ViewModels/OperationSelectionViewModel.cs  # parameter canGenerateBootImage; reason texts
 ├── ViewModels/PrepareStorageDeviceViewModel.cs # VisibleBootImages(canSeePreProduction); status text; boot image label without middle dots
@@ -170,23 +170,23 @@ src/deploy/uiFormDefinition.json         # Portal client ID tooltip lists all fi
 ├── workflows/release-client.yml         # same, stream client
 ├── workflows/release-mediabuilder.yml   # same, stream mediabuilder (fixed body text moves into the notes file)
 └── release-notes/                       # NEW: one notes file per stream and version
-    ├── backend/v1.1.0.md                # Operations notice: Portal and Media Builder registrations, assign, upgrade link
+    ├── backend/v1.1.0.md                # Operator notice: Portal and Media Builder registrations, assign, upgrade link
     ├── client/v1.1.0.md                 # stream description and artifact table only (no user roles)
-    └── mediabuilder/v1.1.0.md           # Operations notice: Media Builder registration, Generate Boot Image
+    └── mediabuilder/v1.1.0.md           # Operator notice: Media Builder registration, Generate Boot Image
 
 .vscode/tasks.json                       # release tag task `detail` text names the notes file (text only)
 Directory.Packages.props                 # coverlet.collector version (coverage for the Media Builder tests)
-README.md                                # user roles incl. Operations, boot image step, link separators without middle dots
+README.md                                # user roles incl. Operator, boot image step, link separators without middle dots
 CONTRIBUTING.md                          # release notes come from .github/release-notes/<stream>/<version>.md
 
 docs/
-├── roles-and-access.md                  # seven roles, Operations columns/rows, hierarchy with "implies", Technician refused Reports data, troubleshooting
+├── roles-and-access.md                  # seven roles, Operator columns/rows, hierarchy with "implies", Technician refused Reports data, troubleshooting
 ├── setup-instructions.md                # role lists, persona group, assignment table, Phase 5 prerequisite
 ├── upgrade-instructions.md              # release-specific step: add and assign the role; rollback note
-└── image-upload-pipeline.md             # upload, publish, abandon, delete, polling and pre-production visibility: Operations or Administrator
+└── image-upload-pipeline.md             # upload, publish, abandon, delete, polling and pre-production visibility: Operator or Administrator
 
 tests/cloud-imaging-portal/server/
-├── role-hierarchy.test.ts               # Operations implications, closure check
+├── role-hierarchy.test.ts               # Operator implications, closure check
 ├── role-route-matrix.test.ts            # NEW: every route x every role, driven by the contracts table
 ├── session-history-routes.test.ts       # NEW: Technician 403 on session history; completed-timestamps returns only SessionCompleted times
 ├── role-enforcement.test.ts             # tautological assertions replaced by the matrix (see research R9)
@@ -194,9 +194,9 @@ tests/cloud-imaging-portal/server/
 ├── os-image-chunked-upload.test.ts      # same
 ├── branding.test.ts                     # same
 ├── portal-configuration.test.ts         # same
-├── autopilot-routes.test.ts             # Operations cases
-├── regions-routes.test.ts               # Operations cases
-└── wifi-networks-routes.test.ts         # Operations cases
+├── autopilot-routes.test.ts             # Operator cases
+├── regions-routes.test.ts               # Operator cases
+└── wifi-networks-routes.test.ts         # Operator cases
 
 tests/cloud-imaging-portal/client/
 ├── portal-roles.test.ts                 # NEW: expansion and capability matrix
@@ -206,11 +206,11 @@ tests/cloud-imaging-portal/client/
 tests/CloudImaging.MediaBuilder.Tests/
 ├── CloudImaging.MediaBuilder.Tests.csproj # coverlet.collector reference
 ├── MediaBuilderRolesTests.cs            # NEW: expansion and capabilities
-├── OperationSelectionViewModelTests.cs  # renamed parameter, new reason texts, Operations cases
-└── PrepareStorageDeviceViewModelTests.cs # pre-production visibility for Operations
+├── OperationSelectionViewModelTests.cs  # renamed parameter, new reason texts, Operator cases
+└── PrepareStorageDeviceViewModelTests.cs # pre-production visibility for Operator
 
 tests/CloudImaging.OperatorApi.Tests/Contracts/
-├── BootImageLifecycleContractTests.cs   # assertion reason text names Operations or Administrator
+├── BootImageLifecycleContractTests.cs   # assertion reason text names Operator or Administrator
 └── ImageCatalogContractTests.cs         # same
 ```
 
@@ -225,7 +225,7 @@ script (FR-035), `SessionsPage.tsx` pre-flight controls, `UpdateAvailableBanner.
 Every occurrence of U+2014 (em dash), U+2013 (en dash), U+00B7 (middle dot), U+2192 (right arrow)
 and U+27F9 (long right arrow) in these touched files is replaced. Navigation paths become
 "Entra ID > Enterprise applications > Cloud Imaging Portal"; the hierarchy line becomes
-"`Administrator` implies `Operations`, which implies `Technician`, which implies `PortalAccess`";
+"`Administrator` implies `Operator`, which implies `Technician`, which implies `PortalAccess`";
 ranges such as "15 to 55%"; elsewhere a period, comma, colon or parentheses. Counts are lines
 with a hit as of 2026-10-22.
 
@@ -282,7 +282,7 @@ capabilities; route and view code consumes capabilities instead of raw role name
 
 ## Release Considerations
 
-- Portal backend and frontend ship together in the backend stream (`mse-ci-v#.#.#`); the Media Builder ships in its own stream. Until both are upgraded, an Operations user sees Operations behaviour only in the upgraded app. The upgrade instructions say to upgrade both before assigning Operations.
+- Portal backend and frontend ship together in the backend stream (`mse-ci-v#.#.#`); the Media Builder ships in its own stream. Until both are upgraded, an Operator user sees Operator behaviour only in the upgraded app. The upgrade instructions say to upgrade both before assigning Operator.
 - The role can be created before or after the upgrade. Unknown roles are ignored by old code; missing roles change nothing for new code.
 - Release notes: inside "Determine version tag", each workflow checks and stages `.github/release-notes/<stream>/<version>.md` right after the tag pattern check and before the existence check that creates and pushes a missing tag on manual runs (stream `backend`, `client` or `mediabuilder`; `<version>` is the tag minus its stream prefix, for example `v1.1.0`), and publishes it with `body_path`. A missing or empty file fails the run before any tag is created and before any build. The fixed stream description and artifact table move into the notes files, so the published body equals the file. The notes file must be on `main` before the tag task runs, because the tag tasks tag `origin/main`. Prerelease tags (for example `v1.1.0-beta.1`) need their own file. The `-latest` alias release bodies stay as they are. See research R14.
 - The Technician change to `GET /api/session-history` and the new completed-timestamps read ship together in the backend stream, so the Dashboard never calls a route the backend does not have.

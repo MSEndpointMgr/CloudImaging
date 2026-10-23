@@ -4,25 +4,26 @@ import { AuthenticatedRequest } from './auth.js';
 /**
  * User-level role authorization middleware for the Cloud Imaging Portal backend (FR-040a).
  *
- * Enforces the CloudImaging.Administrator / CloudImaging.Technician access model.
+ * Enforces the CloudImaging.Administrator / CloudImaging.Operator / CloudImaging.Technician access model.
  * Called after the auth middleware; reads the resolved JWT from req.user.
  */
 
 export type PortalRole =
   | 'CloudImaging.Administrator'
+  | 'CloudImaging.Operator'
   | 'CloudImaging.Technician'
   | 'CloudImaging.PortalAccess'
   | 'CloudImaging.Reader'
   | 'CloudImaging.AutopilotApprover';
 
 /**
- * Implied-role hierarchy. Portal SPA user tokens only ever carry
- * `CloudImaging.Administrator` or `CloudImaging.Technician`; `CloudImaging.PortalAccess`
- * is a service role on the portal backend managed identity and never appears in a user
- * token. Any signed-in user (Administrator or Technician) is granted PortalAccess so the
- * portal's read routes remain reachable, while Administrator-only writes stay restricted.
+ * Implied-role hierarchy: Administrator implies Operator, which implies Technician.
+ * `CloudImaging.PortalAccess` is a service role on the portal backend managed identity and
+ * never appears in a user token, so every hierarchical user role is granted it to keep the
+ * portal's read routes reachable. Each entry lists its full closure because expansion is a
+ * single pass.
  *
- * `CloudImaging.Reader` is deliberately NOT part of this chain — it's a standalone,
+ * `CloudImaging.Reader` is deliberately NOT part of this chain. It's a standalone,
  * narrowly-scoped role (Dashboard + Reports only) allowlisted explicitly on the handful of
  * routes those pages need, so it never gains the broad read access PortalAccess implies.
  * `CloudImaging.AutopilotApprover` is standalone for the same reason: it is allowlisted only
@@ -30,7 +31,8 @@ export type PortalRole =
  * explicitly rather than implying it here.
  */
 const ROLE_IMPLICATIONS: Record<string, readonly PortalRole[]> = {
-  'CloudImaging.Administrator': ['CloudImaging.Technician', 'CloudImaging.PortalAccess'],
+  'CloudImaging.Administrator': ['CloudImaging.Operator', 'CloudImaging.Technician', 'CloudImaging.PortalAccess'],
+  'CloudImaging.Operator': ['CloudImaging.Technician', 'CloudImaging.PortalAccess'],
   'CloudImaging.Technician': ['CloudImaging.PortalAccess'],
 };
 
@@ -75,7 +77,13 @@ export function requireRole(...roles: PortalRole[]) {
 
 /**
  * Middleware that restricts access to CloudImaging.Administrator only.
- * Apply to: OS image upload/edit/delete, boot image lifecycle,
- * branding configuration, deployment configuration, cert management (FR-040a).
+ * Apply to: branding configuration, deployment configuration, cert management, pre-flight
+ * overrides, partitioning scheme, update check and Autopilot group tag writes (FR-040a).
  */
 export const requireAdmin = requireRole('CloudImaging.Administrator');
+
+/**
+ * Middleware for day-to-day operational administration (catalog, upload status, Locations,
+ * regions, Wi-Fi). Administrator is listed explicitly so the 403 detail names every accepted role.
+ */
+export const requireOperator = requireRole('CloudImaging.Operator', 'CloudImaging.Administrator');

@@ -22,10 +22,6 @@ describe('Portal backend: staged OS image upload', () => {
       expect(res.blockSize).toBe(8 * 1024 * 1024);
       expect(Math.ceil(20 * 1024 ** 3 / res.blockSize)).toBeLessThan(50_000);
     });
-
-    it('requires Administrator role', () => {
-      expect('CloudImaging.Administrator').toBe('CloudImaging.Administrator');
-    });
   });
 
   describe('POST /api/images/upload/:uploadId/publish', () => {
@@ -61,10 +57,6 @@ describe('Portal backend: staged OS image upload', () => {
       const failed = { uploadId: 'uuid', status: 'Failed', failureReason: 'Checksum mismatch.' };
       expect(completed.resultImageId).toBeTruthy();
       expect(failed.failureReason).toBeTruthy();
-    });
-
-    it('requires Administrator role', () => {
-      expect('CloudImaging.Administrator').toBe('CloudImaging.Administrator');
     });
   });
 });

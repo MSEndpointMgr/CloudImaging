@@ -8,7 +8,7 @@
         while the right-hand content area swaps between sections (ShellViewModel).
 
         "Generate Boot Image" is disabled (dimmed, not clickable, with a tooltip) rather
-        than hidden or badge-annotated when the Windows ADK is missing (FR-050a) — the
+        than hidden or badge-annotated when the Windows ADK is missing (FR-050a). The
         Home tile explains the requirement inline; the nav item doesn't repeat it.
     -->
     <UserControl.Resources>
@@ -41,7 +41,7 @@
 
                 <!--
                     IsEnabled locks the whole nav pane while the hosted section has a long-running
-                    operation in flight (WinPE generation, USB write) — see ShellViewModel.CanNavigate.
+                    operation in flight (WinPE generation, USB write); see ShellViewModel.CanNavigate.
                     There's no way to resume an abandoned operation after navigating away and back,
                     so this blocks it outright rather than warning about it afterwards.
                 -->
@@ -89,8 +89,8 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Generate Boot Image — disabled up front when the ADK is missing (FR-050a) or
-                         the signed-in user lacks the Administrator role (FR-050b) -->
+                    <!-- Generate Boot Image: disabled up front when the ADK is missing (FR-050a) or
+                         the signed-in user lacks the Operator or Administrator role (FR-050b) -->
                     <Border IsEnabled="{Binding IsGenerateBootImageAvailable}"
                             ToolTipService.ShowOnDisabled="True"
                             ToolTip="{Binding GenerateBootImageUnavailableReason}">
@@ -126,8 +126,8 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Prepare USB Device — open to both roles, disabled when the signed-in
-                         user holds neither (FR-050b) -->
+                    <!-- Prepare USB Device: open to every Media Builder role, disabled when the
+                         signed-in user holds none (FR-050b) -->
                     <Border IsEnabled="{Binding IsPrepareUsbAvailable}"
                             ToolTipService.ShowOnDisabled="True"
                             ToolTip="{Binding PrepareUsbUnavailableReason}">

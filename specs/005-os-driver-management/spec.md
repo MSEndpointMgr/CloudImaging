@@ -21,6 +21,10 @@
 - Sync run history is kept for 90 days (agreed).
 - A component the vendor withdraws stays in the set until an administrator removes it (changed from "leaves at the next sync").
 
+### Session 2026-10-23
+
+- Q: Who writes `Panther\unattend.xml` and runs Specialize installers? A: Setup Profiles (spec 003). Its Prepare setup step, which runs right after Install drivers, writes the device's single answer file with one setup runner command; the setup runner runs driver installers first, then setup profile scripts. This applies whether or not a setup profile targets the device.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Onboard an HP model and have its drivers installed during deployment (Priority: P1)
@@ -64,17 +68,17 @@ An administrator reviews a model's component table. Each component already has a
 
 For components such as HP Hotkey Support, Realtek audio or Intel graphics, injecting the INF makes the hardware work but leaves out the vendor's companion app. With the action WinPE + Specialize (or Specialize for installer-only components), the Client stages the component on the applied volume and Windows setup runs the vendor's silent installer as SYSTEM during the specialize pass, before OOBE.
 
-**Why this priority**: Required to match the vendor's factory experience, but devices are usable without it. It also depends on the shared owner of `Panther\unattend.xml` from the OS customisation stage.
+**Why this priority**: Required to match the vendor's factory experience, but devices are usable without it. It also depends on the Prepare setup step and setup runner from Setup Profiles (spec 003).
 
 **Independent Test**: Deploy a device whose pinned set contains one WinPE + Specialize component and one Specialize component, and confirm after OOBE that the companion apps are installed for all users and a local log lists each component's exit code.
 
 **Acceptance Scenarios**:
 
-1. **Given** a pinned set with Specialize work, **When** the Client finishes the Install drivers step, **Then** the specialize-pass hook is registered through the shared unattend owner and the components' staged folders remain on the applied volume.
-2. **Given** a pinned set without Specialize work, **When** the step finishes, **Then** no specialize hook is registered and all extracted folders are deleted.
-3. **Given** the specialize pass runs, **When** each component's staged files match the manifest, **Then** the vendor's silent installer runs as SYSTEM with a timeout, exit codes 0 and 3010 count as success, and no restart happens inside specialize.
-4. **Given** a staged file that no longer matches the manifest, **When** the runner reaches it, **Then** that component is not run, the failure is logged, and the runner continues with the next component.
-5. **Given** the runner has finished, **Then** the staged content is deleted and results remain only in the local log.
+1. **Given** a pinned set with Specialize work, **When** the Client finishes the Install drivers step, **Then** the components are handed to the Prepare setup step, which lists them first in the setup manifest and adds the setup runner command to the device's answer file, and the components' staged folders remain on the applied volume.
+2. **Given** a pinned set without Specialize work, **When** the step finishes, **Then** no driver entries are added to the setup manifest and all extracted folders are deleted.
+3. **Given** the specialize pass runs, **When** each component's staged files match the manifest, **Then** the setup runner runs the vendor's silent installer as SYSTEM with a timeout, exit codes 0 and 3010 count as success, and no restart happens inside specialize.
+4. **Given** a staged file that no longer matches the manifest, **When** the setup runner reaches it, **Then** that component is not run, the failure is logged, and the setup runner continues with the next component.
+5. **Given** the setup runner has finished, **Then** the staged content is deleted and results remain only in the local log.
 
 ---
 
@@ -169,7 +173,7 @@ An administrator checks the Storage tab to see total and per-vendor usage, rolls
 - Onboarding a model of a vendor that is off: the vendor is turned on.
 - The applied volume lacks space for extraction: the affected components fail with a clear reason; extraction never falls back to WinPE's RAM disk.
 - A device restarts or loses power during the Install drivers step: the existing session failure and retry behaviour applies; a partial driver store is replaced when the image is applied again.
-- The specialize installer hangs: the runner stops it at the timeout, logs it, and continues.
+- The specialize installer hangs: the setup runner stops it at the timeout, logs it, and continues.
 
 ## Requirements *(mandatory)*
 
@@ -279,9 +283,9 @@ An administrator checks the Storage tab to see total and per-vendor usage, rolls
 
 #### Client: Specialize phase
 
-- **FR-055**: When the pinned set has Specialize work (WinPE + Specialize or Specialize components), the Client MUST register a synchronous specialize-pass command in the applied volume's `Panther\unattend.xml` through the shared unattend owner (see Dependencies). Without Specialize work, no command is registered.
-- **FR-056**: The specialize runner MUST run as SYSTEM, process components in resolved order, re-verify each component's staged files against the manifest, run the vendor's silent installer with a timeout, and log the exit code. Exit codes 0 and 3010 MUST count as success (3010: restart pending). The runner MUST NOT restart the device inside specialize, and MUST continue after a failed component.
-- **FR-057**: Specialize results MUST be written to a local log on the device only; nothing is reported to the portal after the reboot. The runner MUST delete the staged content when done, including after failures.
+- **FR-055**: When the pinned set has Specialize work (WinPE + Specialize or Specialize components), the Client MUST hand those components to the Prepare setup step of Setup Profiles (spec 003, FR-024 to FR-026), which lists them first in the setup manifest and adds the setup runner command to the device's answer file, whether or not a setup profile targets the device. Without Specialize work, no driver entries are added.
+- **FR-056**: For driver components, the setup runner (spec 003, FR-026) MUST run as SYSTEM, process them in resolved order before any setup profile scripts, re-verify each component's staged files against the manifest, run the vendor's silent installer with a timeout, and log the exit code. Exit codes 0 and 3010 MUST count as success (3010: restart pending). The setup runner MUST NOT restart the device inside specialize, and MUST continue after a failed component.
+- **FR-057**: Specialize results MUST be written to a local log on the device only; nothing is reported to the portal after the reboot. The setup runner MUST delete the staged content when done, including after failures.
 
 #### Deployment timeline
 
@@ -308,9 +312,10 @@ An administrator checks the Storage tab to see total and per-vendor usage, rolls
 
 #### Access control and audit
 
-- **FR-075**: Only `CloudImaging.Operations` and `CloudImaging.Administrator` MUST be able to onboard, remove, edit rules and overrides, approve, roll back, change sync, vendor and critical-category settings, and use Sync now. Setting an OS image's Windows release follows the OS Images catalog permissions (Operations or Administrator). These restrictions MUST be enforced by the server, not only by the UI.
+- **FR-075**: Only `CloudImaging.Operator` and `CloudImaging.Administrator` MUST be able to onboard, remove, edit rules and overrides, approve, roll back, change sync, vendor and critical-category settings, and use Sync now. Setting an OS image's Windows release follows the OS Images catalog permissions (Operator or Administrator). These restrictions MUST be enforced by the server, not only by the UI.
 - **FR-076**: Users with read access MUST see the Drivers page without edit controls. `CloudImaging.Technician` reads; Reader, Autopilot Approver and users without a role have no access.
 - **FR-077**: Every change listed in FR-075 MUST be recorded with who made it and when.
+- **FR-079**: No part of the feature outside code comments (UI text, messages, logs, API responses, the device log, docs) MUST contain requirement, success criterion, task or story identifiers or pointers to them.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -347,7 +352,7 @@ An administrator checks the Storage tab to see total and per-vendor usage, rolls
 
 ## Assumptions
 
-- Read access: the todo names `CloudImaging.PortalAccess` as the reading role. In this product that role is the Portal backend's managed identity on the Operator API, not a user role, so the Drivers endpoints are called through it while user read access follows the existing catalog pattern (Technician reads, Operations and Administrator edit).
+- Read access: the todo names `CloudImaging.PortalAccess` as the reading role. In this product that role is the Portal backend's managed identity on the Operator API, not a user role, so the Drivers endpoints are called through it while user read access follows the existing catalog pattern (Technician reads, Operator and Administrator edit).
 - Retention is the current set plus one previous set per model and release. Keeping more previous sets and a storage size budget per model are out of scope for this version.
 - When two rules of the same layer and match kind match one component with different actions, the most recently changed rule wins, and Source names it.
 - A component the vendor withdraws from its catalog stays in the resolved set at its last verified version until an administrator removes it, because the hardware it supports is still in the field. Its stored file is kept while the component is in a set.
@@ -360,9 +365,9 @@ An administrator checks the Storage tab to see total and per-vendor usage, rolls
 
 ### Dependencies
 
-- **Operations role (prerequisite, spec 004)**: a new `CloudImaging.Operations` role, between Technician and Administrator (Administrator implies Operations, Operations implies Technician), manages day-to-day operations: OS, boot and recovery images, driver management, Locations, Wi-Fi networks, Autopilot approvals, Reports, and boot image generation in Media Builder. Configuration, Branding, Autopilot settings and other tenant-wide security settings stay Administrator-only. The role is introduced by its own change, not by this specification. Until it exists, Administrator alone holds the FR-075 permissions.
-- **OS customisation stage (prerequisite, spec 003)**: the Specialize phase needs a single owner of `Panther\unattend.xml` shared with the OS customisation stage (`todo/os-customisation-stage.md`). That stage, at least its unattend ownership, will be designed and mocked up first and is not part of this specification. User Story 3 cannot ship before it.
-- The Install drivers step is also the first consumer of that stage's offline servicing of the applied volume in WinPE; both must use the same step ordering and reporting model.
+- **Operator role (prerequisite, spec 004)**: a new `CloudImaging.Operator` role, between Technician and Administrator (Administrator implies Operator, Operator implies Technician), manages day-to-day operations: OS, boot and recovery images, driver management, Locations, Wi-Fi networks, Autopilot approvals, Reports, and boot image generation in Media Builder. Configuration, Branding, Autopilot settings and other tenant-wide security settings stay Administrator-only. The role is introduced by its own change, not by this specification. Until it exists, Administrator alone holds the FR-075 permissions.
+- **Setup Profiles (prerequisite, spec 003)**: owns the device's single `Panther\unattend.xml` and the setup runner. Its Prepare setup step runs right after Install drivers and before Configure boot, and writes the answer file entry that starts the setup runner during specialize. User Story 3 cannot ship before it; User Stories 1, 2 and 4 to 7 do not depend on it.
+- The Install drivers and Prepare setup steps use the same step ordering and reporting model, and both are optional steps that older deployments do not have.
 - Vendor catalogs remain publicly reachable at their current locations and formats.
 
 ### Risks and items still to validate

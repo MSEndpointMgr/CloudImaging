@@ -8,10 +8,11 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.OperatorApi.Functions;
 
 /// <summary>
-/// Wi-Fi network proxy endpoints.
+/// Wi-Fi network proxy endpoints. For the PortalAccess routes the Portal backend accepts
+/// Operator or Administrator users.
 ///
 /// GET    /api/wifi-networks: lists networks, without passwords (PortalAccess)
-/// POST   /api/wifi-networks: creates a network (PortalAccess; portal server gates Administrator)
+/// POST   /api/wifi-networks: creates a network (PortalAccess)
 /// PUT    /api/wifi-networks/order: sets the order (PortalAccess)
 /// PUT    /api/wifi-networks/{id}: updates a network (PortalAccess)
 /// DELETE /api/wifi-networks/{id}: deletes a network (PortalAccess)

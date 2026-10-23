@@ -9,8 +9,8 @@ namespace CloudImaging.OperatorApi.Functions;
 
 /// <summary>
 /// OS image catalog proxy endpoints (T085, FR-036, FR-037).
-/// Require CloudImaging.PortalAccess (read) or CloudImaging.Administrator (write).
-/// Role enforcement is applied by AppRoleAuthorizationMiddleware.
+/// AppRoleAuthorizationMiddleware requires the CloudImaging.PortalAccess service role. The Portal
+/// backend accepts CloudImaging.Operator or CloudImaging.Administrator users for OS image writes.
 /// </summary>
 public sealed partial class ImageCatalogFunctions
 {

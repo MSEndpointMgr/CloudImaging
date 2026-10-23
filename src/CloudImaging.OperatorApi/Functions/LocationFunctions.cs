@@ -12,11 +12,11 @@ namespace CloudImaging.OperatorApi.Functions;
 ///
 /// GET    /api/locations: lists all locations; also allowed for CloudImaging.MediaBuilderAccess
 ///        so Media Builder can populate the location picker
-/// POST   /api/locations: creates a location (PortalAccess only; portal server gates Administrator)
+/// POST   /api/locations: creates a location (PortalAccess only; the Portal backend accepts Operator or Administrator)
 /// PUT    /api/locations/{id}: updates a location's name and country (PortalAccess only)
 /// DELETE /api/locations/{id}: deletes a location (PortalAccess only)
 /// GET    /api/regions: the country-to-region mapping (PortalAccess only)
-/// PUT    /api/regions: replaces the mapping (PortalAccess only; portal server gates Administrator)
+/// PUT    /api/regions: replaces the mapping (PortalAccess only; the Portal backend accepts Operator or Administrator)
 /// </summary>
 public sealed partial class LocationFunctions
 {
@@ -127,6 +127,6 @@ public sealed partial class LocationFunctions
         return response;
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Location created — HTTP {StatusCode}.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Location created. HTTP {StatusCode}.")]
     private static partial void LogCreated(ILogger logger, int statusCode);
 }

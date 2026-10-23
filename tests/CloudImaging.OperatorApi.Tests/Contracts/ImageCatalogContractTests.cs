@@ -19,7 +19,7 @@ public sealed class ImageCatalogContractTests
     public void CreateImage_RequiresAdministratorRole()
     {
         "CloudImaging.Administrator".Should().Be("CloudImaging.Administrator",
-            "creating an image requires CloudImaging.Administrator role");
+            "the Portal backend accepts CloudImaging.Operator or CloudImaging.Administrator for creating an image");
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public sealed class ImageCatalogContractTests
     public void UpdateImage_Returns200_WithUpdatedMetadata()
     {
         var patchableFields = new[] { "name", "version", "description" };
-        patchableFields.Should().Contain("name",    "name is patchable");
+        patchableFields.Should().Contain("name", "name is patchable");
         patchableFields.Should().Contain("version", "version is patchable");
         patchableFields.Should().NotContain("storagePath",
             "storagePath is immutable once the image is uploaded");

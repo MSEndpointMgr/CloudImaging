@@ -5,9 +5,6 @@ import { describe, it, expect } from 'vitest';
  */
 describe('Portal backend: branding routes', () => {
   describe('GET /api/branding', () => {
-    it('requires PortalAccess role', () => {
-      expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');
-    });
     it('returns primaryColor, accentColor, applicationName', () => {
       const res = { primaryColor: '#0078d4', accentColor: '#005a9e', applicationName: 'Cloud Imaging' };
       expect(res).toHaveProperty('primaryColor');
@@ -17,9 +14,6 @@ describe('Portal backend: branding routes', () => {
   });
 
   describe('PUT /api/branding', () => {
-    it('requires Administrator role', () => {
-      expect('CloudImaging.Administrator').toBe('CloudImaging.Administrator');
-    });
     it('returns 204 on success', () => {
       expect(204).toBe(204);
     });

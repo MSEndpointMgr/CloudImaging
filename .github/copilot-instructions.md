@@ -1,7 +1,7 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/004-operations-role/plan.md
+at specs/004-operator-role/plan.md
 <!-- SPECKIT END -->
 
 Before making changes for any bug fix or feature implementation, first reason through the complete problem and the surrounding system.
@@ -114,6 +114,10 @@ At the end, provide a concise summary of:
 * The changes you made
 * The validation performed
 * Any remaining assumptions, risks, or unresolved limitations
+
+## No Spec or Task References in the Solution
+
+Never put a spec, requirement, success criterion, task or user story identifier (for example `FR-044`, `SC-003`, `T068`, `US3`, "spec 005"), or a pointer to one, in any part of the solution: UI labels, tooltips, dialogs, toasts, error and validation messages, exception text, log messages, API responses, script output, Bicep parameter descriptions, docs or release notes. Code comments are the only place they are allowed. Spec documents under `specs/` may reference each other.
 
 ## Design Mockups
 

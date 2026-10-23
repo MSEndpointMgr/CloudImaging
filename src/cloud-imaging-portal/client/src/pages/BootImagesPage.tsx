@@ -86,9 +86,9 @@ function fmtSize(bytes: number): string {
   return `${(bytes / 1_073_741_824).toFixed(2)} GB`;
 }
 
-/** Boot Images management page (T127, US7, FR-063). Administrator manages entries. */
+/** Boot Images management page (FR-063). Operator and Administrator manage entries. */
 export default function BootImagesPage(): React.ReactElement {
-  const { isAdministrator } = useAuth();
+  const { canManageCatalog } = useAuth();
   const { notify } = useToast();
   const [images, setImages]   = useState<BootImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,7 +126,7 @@ export default function BootImagesPage(): React.ReactElement {
     const res = await apiFetch(`/api/boot-images/${id}`, { method: 'DELETE', credentials: 'include' });
     if (res.ok || res.status === 204) { void loadImages(); return; }
     // Anything else must be reported. Silently ignoring it (as this did) made a rejected delete
-    // — most commonly the 409 for the currently published entry — look like the button was dead.
+    // (most commonly the 409 for the currently published entry) look like the button was dead.
     notify({
       status: 'error',
       title: 'Failed to delete boot image.',
@@ -173,7 +173,7 @@ export default function BootImagesPage(): React.ReactElement {
     if (!candidate.isLatestPublished) {
       return {
         confirmTitle: title,
-        impact: 'Technicians can no longer prepare USB devices with it. Only Administrators see it in Media Builder. USB devices are not affected.',
+        impact: 'Technicians can no longer prepare USB devices with it. Only Operator and Administrator users see it in Media Builder. USB devices are not affected.',
         confirmLabel: 'Demote',
         destructive: false,
       };
@@ -220,7 +220,7 @@ export default function BootImagesPage(): React.ReactElement {
         <p className="text-sm text-muted-foreground">
           WinPE images written to USB boot media and ISO files by the Media Builder.
         </p>
-        {isAdministrator && (
+        {canManageCatalog && (
           <Button onClick={() => setUploadOpen(true)}>
             <Upload />
             Upload boot image
@@ -241,20 +241,20 @@ export default function BootImagesPage(): React.ReactElement {
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
               <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
-                {isAdministrator && <TableHead className="w-px whitespace-nowrap">Actions</TableHead>}
+                {canManageCatalog && <TableHead className="w-px whitespace-nowrap">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSkeletonRows columns={isAdministrator ? 7 : 6} />
+              <TableSkeletonRows columns={canManageCatalog ? 7 : 6} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={isAdministrator ? 7 : 6} className="p-0">
+                <TableCell colSpan={canManageCatalog ? 7 : 6} className="p-0">
                   <EmptyState
                     icon={HardDrive}
                     title="No boot images"
                     description="Generate a boot image in the Media Builder app, then upload the WIM file here. It starts in pre-production so you can test it before promoting it."
-                    action={isAdministrator ? (
+                    action={canManageCatalog ? (
                       <Button onClick={() => setUploadOpen(true)}>
                         <Upload />
                         Upload boot image
@@ -289,7 +289,7 @@ export default function BootImagesPage(): React.ReactElement {
                 <TableCell>
                   <Badge variant={STAGE_BADGE[bootImageStage(img)]} dot>{BOOT_IMAGE_STAGE_LABELS[bootImageStage(img)]}</Badge>
                 </TableCell>
-                {isAdministrator && (
+                {canManageCatalog && (
                   <TableCell className="w-px whitespace-nowrap">
                     <div className="flex items-center gap-1">
                       {!img.isLatestPublished && (
@@ -382,11 +382,11 @@ interface UploadBootImageDialogProps {
   onPublished: () => void;
 }
 
-/** Staged boot image upload modal: hash → SAS upload → publish (T128, FR-063). */
+/** Staged boot image upload modal: hash, SAS upload, then publish (FR-063). */
 function UploadBootImageDialog({ activeCounts, existingVersions, onClose, onPublished }: UploadBootImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
   // Tracks whether the current `version` value was populated automatically from the
-  // selected file's name, so a subsequent file pick can safely replace it — but a
+  // selected file's name, so a subsequent file pick can safely replace it. A
   // manual edit to the field immediately "claims" it and stops any further auto-fill.
   const [versionAutoFilled, setVersionAutoFilled] = useState(false);
   const wimArchitecture = useWimArchitecture();
@@ -515,7 +515,7 @@ function UploadBootImageDialog({ activeCounts, existingVersions, onClose, onPubl
                 Choose file
               </Button>
               <span className="truncate text-sm text-muted-foreground">
-                {file ? `${file.name} · ${fmtSize(file.size)}` : 'No file selected'}
+                {file ? `${file.name} (${fmtSize(file.size)})` : 'No file selected'}
               </span>
             </div>
           </div>

@@ -30,6 +30,7 @@ function appFor(claims: Claims) {
 
 const admin: Claims = { roles: ['CloudImaging.Administrator'], preferred_username: 'anna@contoso.com' };
 const technician: Claims = { roles: ['CloudImaging.Technician'] };
+const operator: Claims = { roles: ['CloudImaging.Operator'], preferred_username: 'olle@contoso.com' };
 const networkId = '6f1c2a3e-4b5d-4e6f-8a9b-0c1d2e3f4a5b';
 const locationId = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
 
@@ -70,6 +71,41 @@ describe('Portal backend: Wi-Fi network routes', () => {
 
     expect(res.status).toBe(200);
     expect(operatorApi.updateWifiNetwork).toHaveBeenCalledWith(networkId, { ssid: 'Lab', security: 'Wpa2Personal', changedBy: 'anna@contoso.com' });
+  });
+
+  it('lets Operator list, create, reorder, update and delete networks', async () => {
+    const app = appFor(operator);
+    expect((await request(app).get('/api/wifi-networks')).status).toBe(200);
+    expect((await request(app).post('/api/wifi-networks').send({ ssid: 'Lab' })).status).toBe(201);
+    expect((await request(app).put('/api/wifi-networks/order').send({ networkIds: [networkId] })).status).toBe(204);
+    expect((await request(app).put(`/api/wifi-networks/${networkId}`).send({ ssid: 'Lab' })).status).toBe(200);
+    expect((await request(app).delete(`/api/wifi-networks/${networkId}`)).status).toBe(204);
+    expect(operatorApi.deleteWifiNetwork).toHaveBeenCalledWith(networkId);
+  });
+
+  it('stamps the signed-in Operator user as the password changer on create and update', async () => {
+    const app = appFor(operator);
+    await request(app).post('/api/wifi-networks').send({ ssid: 'Lab', password: 'pw', changedBy: 'mallory' });
+    await request(app).put(`/api/wifi-networks/${networkId}`).send({ ssid: 'Lab', changedBy: 'mallory' });
+
+    expect(operatorApi.createWifiNetwork).toHaveBeenCalledWith({ ssid: 'Lab', password: 'pw', changedBy: 'olle@contoso.com' });
+    expect(operatorApi.updateWifiNetwork).toHaveBeenCalledWith(networkId, { ssid: 'Lab', changedBy: 'olle@contoso.com' });
+  });
+
+  it.each([
+    ['Operator', operator],
+    ['Administrator', admin],
+  ])('returns no password field to %s', async (_name, claims) => {
+    const app = appFor(claims);
+    const responses = [
+      await request(app).get('/api/wifi-networks'),
+      await request(app).post('/api/wifi-networks').send({ ssid: 'Lab', password: 'correct horse' }),
+      await request(app).put(`/api/wifi-networks/${networkId}`).send({ ssid: 'Lab', password: 'correct horse' }),
+    ];
+    for (const res of responses) {
+      expect(res.status).toBeLessThan(300);
+      expect(JSON.stringify(res.body)).not.toMatch(/password/i);
+    }
   });
 
   it('rejects a malformed network id', async () => {

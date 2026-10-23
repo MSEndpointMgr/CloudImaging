@@ -23,7 +23,10 @@ Check the [Releases page](https://github.com/MSEndpointMgr/CloudImaging/releases
 streams have actually moved since your last upgrade. The page is a single flat list, so read
 the tag prefix rather than assuming the newest entry applies to you.
 
-> **Let the portal tell you instead.** **Configuration** → **Miscellaneous** → **Version** shows
+Some releases also need a one-time manual step that no script performs. Check
+[Release-Specific Steps](#release-specific-steps) for every release you are moving past.
+
+> **Let the portal tell you instead.** **Configuration** > **Miscellaneous** > **Version** shows
 > the release this deployment is running, and enabling **Check GitHub for new releases** makes
 > the portal notify administrators when a newer backend release is published. It is off by
 > default because it is the only outbound call the portal makes outside your tenant. It only
@@ -237,6 +240,68 @@ resource group.
 
 ---
 
+## Release-Specific Steps
+
+Manual steps that a specific release needs once, in addition to Parts 1 to 4. Skip any step
+whose release you upgraded past before.
+
+### Add the Operator role
+
+**Applies when** upgrading the backend stream to `mse-ci-v1.1.0` or later and the Media Builder
+stream to `mse-ci-mediabuilder-v1.1.0` or later, from an earlier release.
+
+These releases add the `CloudImaging.Operator` user role: day-to-day operational administration
+(OS, boot and recovery images, Locations, Wi-Fi networks, Autopilot decisions, every report and
+Generate Boot Image) without Branding, Configuration or the boot media certificate. See
+[roles-and-access.md](roles-and-access.md) for exactly what it grants. No script creates,
+checks or assigns the role, so you add it by hand.
+
+**What stays the same**: every existing role and assignment keeps working as before, whether or
+not you add the role. Defining the role changes nothing; access changes only for the users and
+groups you assign it to.
+One API-level change ships regardless: Reports session data is refused to Technician tokens
+called directly. The Portal never showed Reports to Technicians, and their Dashboard is unchanged.
+
+> **Do not touch the existing roles.** Adding Operator must not change, remove or re-create any
+> existing role definition, role ID or role assignment on any registration. A re-created role gets
+> a new ID, and existing assignments still point at the old one. If
+> `CloudImaging.Operator` already exists on a registration, skip that registration.
+
+1. **Upgrade both streams first.** Run [Part 1](#part-1-upgrade-the-azure-components) and
+   [Part 4](#part-4-upgrade-the-media-builder) before assigning anyone. Until both are upgraded,
+   an Operator user gets Operator access only in the app that is already upgraded. Adding the
+   role definition itself is safe before or after the upgrade.
+2. **Add the role to the Cloud Imaging Portal registration.** Entra ID > **App registrations** >
+   **Cloud Imaging Portal** > **App roles** > **Create app role**, with the same values as a fresh
+   installation ([setup-instructions.md, Registration 1](setup-instructions.md#registration-1-cloud-imaging-portal-browser-spa)):
+
+   | Field | Value |
+   |---|---|
+   | Display name | `CloudImaging.Operator` |
+   | Allowed member types | Users/Groups |
+   | Value | `CloudImaging.Operator` |
+   | Description | `Day-to-day operational administration: OS, boot and recovery images, drivers, locations, Wi-Fi networks, Autopilot approvals and reports. No security or tenant-wide settings.` |
+   | Do you want to enable this app role? | Checked |
+
+3. **Add the role to the Cloud Imaging Media Builder registration** the same way, with this
+   description: `Generate boot images and prepare USB storage devices, including pre-production boot images.`
+   ([setup-instructions.md, Registration 3](setup-instructions.md#registration-3-cloud-imaging-media-builder-desktop-public-client)).
+   Do not add it to the Cloud Imaging Operator API registration.
+4. **Assign it.** Create a **Cloud Imaging Operators** group and assign it on the Portal, the
+   Media Builder and, for members who build boot media, `CloudImaging.MediaBuilderAccess` on the
+   Operator API, exactly as
+   [setup-instructions.md, Phase 3, Step 2](setup-instructions.md#step-2-assign-access-to-your-administrators-and-technicians)
+   describes for a fresh installation.
+5. **Have each member sign out and back in** to the Portal and the Media Builder. Roles are read
+   at sign-in, so a current session keeps its previous access until then.
+
+**Rollback**: an earlier release ignores `CloudImaging.Operator`. After rolling back the backend,
+a user who holds only Operator gets the Portal's "Access denied" screen; after rolling back the
+Media Builder, they reach no workflow. They regain access when the upgrade is reapplied or another
+role is assigned. The role definitions and assignments can stay in place.
+
+---
+
 ## Rollback
 
 Extract the bundle for the release you were previously on, and run the `upgrade.ps1` inside it:
@@ -262,6 +327,8 @@ Two limits worth knowing:
   as well.
 - Rollback does not reverse data changes. If a release migrated stored data, its release notes
   will say so and state whether rollback is supported.
+- Rollback does not undo [Release-Specific Steps](#release-specific-steps). Each step states what
+  a rollback means for it.
 
 ---
 

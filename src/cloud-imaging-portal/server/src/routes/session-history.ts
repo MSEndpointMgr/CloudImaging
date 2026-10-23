@@ -3,16 +3,33 @@ import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 
 /**
- * Session history route (Reports feature). Proxies durable terminal-outcome records to the
- * Operator API. Uses the same `CloudImaging.PortalAccess` gate as `/api/sessions` (rather than
- * Administrator-only) because the Dashboard's "Completed Sessions" stat card — visible to every
- * signed-in portal user, not just Administrators — also reads this endpoint (Reports feature,
- * Phase 7). Also allows `CloudImaging.Reader`, which never holds PortalAccess, since it's the
- * only session data Reader's Dashboard/Reports pages are allowed to see.
+ * Session history routes. `GET /` returns full terminal-outcome records and is Reports data, so
+ * it accepts Reader, Operator and Administrator only. The Dashboard's Completed Sessions stat is
+ * shown to every Portal role, Technician included, so it reads `GET /completed-timestamps`
+ * instead: completion times only, with no device, location, pre-flight, image or error detail.
  */
 const router = Router();
 
-router.get('/', requireRole('CloudImaging.PortalAccess', 'CloudImaging.Reader'), async (req: Request, res: Response, next: NextFunction) => {
+interface SessionHistoryEntry { finalState?: unknown; terminalAt?: unknown }
+
+// Registered before any parameterised path so a future `/:id` route cannot capture it.
+router.get('/completed-timestamps', requireRole('CloudImaging.PortalAccess', 'CloudImaging.Reader'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const data = await operatorApiClient.getSessionHistory(
+      req.query['from'] as string | undefined,
+      req.query['to'] as string | undefined,
+    );
+    const records = Array.isArray(data) ? data as SessionHistoryEntry[] : [];
+    const terminalAts = records
+      .filter(r => r.finalState === 'SessionCompleted' && typeof r.terminalAt === 'string')
+      .map(r => r.terminalAt as string);
+    res.json(terminalAts);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/', requireRole('CloudImaging.Reader', 'CloudImaging.Operator', 'CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const data = await operatorApiClient.getSessionHistory(
       req.query['from'] as string | undefined,

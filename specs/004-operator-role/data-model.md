@@ -1,4 +1,4 @@
-# Data Model: Operations Role
+# Data Model: Operator Role
 
 **Feature**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md) | **Date**: 2026-10-22
 
@@ -12,16 +12,16 @@ role and capability model each application evaluates at request or render time.
 | Value (= display name) | Defined on | Member types | Kind | New |
 |---|---|---|---|---|
 | `CloudImaging.Administrator` | Portal, Media Builder | Users/Groups | User, hierarchical | No |
-| `CloudImaging.Operations` | Portal, Media Builder | Users/Groups | User, hierarchical | **Yes** |
+| `CloudImaging.Operator` | Portal, Media Builder | Users/Groups | User, hierarchical | **Yes** |
 | `CloudImaging.Technician` | Portal, Media Builder | Users/Groups | User, hierarchical | No |
 | `CloudImaging.Reader` | Portal | Users/Groups | User, standalone | No |
 | `CloudImaging.AutopilotApprover` | Portal | Users/Groups | User, standalone, optional | No |
 | `CloudImaging.PortalAccess` | Operator API | Applications | Service (Portal backend managed identity) | No |
 | `CloudImaging.MediaBuilderAccess` | Operator API | Users/Groups, Applications | Service (Media Builder callers) | No |
 
-**Operations role definition** (entered by hand on each registration):
+**Operator role definition** (entered by hand on each registration):
 
-- Value and display name: `CloudImaging.Operations`
+- Value and display name: `CloudImaging.Operator`
 - Allowed member types: Users/Groups
 - State: Enabled
 - Description, Portal registration: `Day-to-day operational administration: OS, boot and recovery images, drivers, locations, Wi-Fi networks, Autopilot approvals and reports. No security or tenant-wide settings.`
@@ -31,7 +31,7 @@ role and capability model each application evaluates at request or render time.
 **Validation rules**:
 - Role values are compared case-sensitively (`StringComparison.Ordinal` in the Media Builder, `Set.has` in TypeScript), as today.
 - Unknown role values in a token are ignored by every app.
-- Operations is never defined on the Operator API registration (FR-006).
+- Operator is never defined on the Operator API registration (FR-006).
 
 ---
 
@@ -41,8 +41,8 @@ Identical edges in all three apps. Each app lists the closure explicitly.
 
 | Held role | Also implies (Portal backend) | Also implies (Portal frontend, Media Builder) |
 |---|---|---|
-| Administrator | Operations, Technician, PortalAccess | Operations, Technician |
-| Operations | Technician, PortalAccess | Technician |
+| Administrator | Operator, Technician, PortalAccess | Operator, Technician |
+| Operator | Technician, PortalAccess | Technician |
 | Technician | PortalAccess | (none) |
 | Reader | (none) | (none) |
 | AutopilotApprover | (none) | (none) |
@@ -63,13 +63,13 @@ Accepted-role lists passed to `requireRole`. The user passes when the expanded s
 |---|---|---|
 | `requireRole('CloudImaging.PortalAccess')` | PortalAccess | Technician-level reads and session operations (unchanged) |
 | `requireRole('CloudImaging.PortalAccess', 'CloudImaging.Reader')` | PortalAccess, Reader | Catalog lists (unchanged); Dashboard completion times (new route) |
-| Reports session history **(narrowed)** | Reader, Operations, Administrator | `GET /api/session-history` (FR-015a) |
-| `requireOperations` **(new)** | Operations, Administrator | Catalog, upload status, Locations, regions, Wi-Fi |
+| Reports session history **(narrowed)** | Reader, Operator, Administrator | `GET /api/session-history` (FR-015a) |
+| `requireOperator` **(new)** | Operator, Administrator | Catalog, upload status, Locations, regions, Wi-Fi |
 | `requireAdmin` | Administrator | FR-012 list (unchanged) |
-| `canView` (autopilot) | AutopilotApprover, Administrator, **Operations**, Technician | Queue list and detail |
-| `canAudit` (autopilot) | AutopilotApprover, Administrator, **Operations**, Reader | History report |
-| `canDecide` (autopilot) | AutopilotApprover, Administrator, **Operations** | Approve, reject, retry |
-| group tag read (autopilot) | AutopilotApprover, Administrator, **Operations** | `GET /group-tags` |
+| `canView` (autopilot) | AutopilotApprover, Administrator, **Operator**, Technician | Queue list and detail |
+| `canAudit` (autopilot) | AutopilotApprover, Administrator, **Operator**, Reader | History report |
+| `canDecide` (autopilot) | AutopilotApprover, Administrator, **Operator** | Approve, reject, retry |
+| group tag read (autopilot) | AutopilotApprover, Administrator, **Operator** | `GET /group-tags` |
 
 Full per-route mapping: [contracts/portal-server-routes.md](contracts/portal-server-routes.md).
 
@@ -84,17 +84,17 @@ Full per-route mapping: [contracts/portal-server-routes.md](contracts/portal-ser
 | `hasPortalAccess` | Technician, Reader, AutopilotApprover | Access denied gate |
 | `hasDashboardAccess` | Technician, Reader | Home route, Dashboard nav item |
 | `canUseImaging` | Technician | Devices, OS/Boot/Recovery Images pages, Dashboard stats fetch |
-| `canManageCatalog` | Operations | Upload, edit, delete, promote, demote controls; upload status |
-| `canManageLocations` | Operations | Locations and Wi-Fi Networks pages and nav items |
-| `canViewReports` | Operations, Reader | Reports index and the four session reports |
+| `canManageCatalog` | Operator | Upload, edit, delete, promote, demote controls; upload status |
+| `canManageLocations` | Operator | Locations and Wi-Fi Networks pages and nav items |
+| `canViewReports` | Operator, Reader | Reports index and the four session reports |
 | `canViewAutopilot` | Technician, AutopilotApprover | Autopilot page |
-| `canDecideAutopilot` | Operations, AutopilotApprover | Review, approve, reject, retry, change group tag |
-| `canViewAutopilotReport` | Operations, Reader, AutopilotApprover | Autopilot Registration History report and its link |
+| `canDecideAutopilot` | Operator, AutopilotApprover | Review, approve, reject, retry, change group tag |
+| `canViewAutopilotReport` | Operator, Reader, AutopilotApprover | Autopilot Registration History report and its link |
 | `isAdministrator` | Administrator | Branding, Configuration (incl. Autopilot settings, partitioning, certificate, update check), pre-flight overrides, update notice |
 
 **Resulting capability sets for a single assigned role**:
 
-| Capability | Administrator | Operations | Technician | Reader | Approver |
+| Capability | Administrator | Operator | Technician | Reader | Approver |
 |---|---|---|---|---|---|
 | hasPortalAccess | Yes | Yes | Yes | Yes | Yes |
 | hasDashboardAccess | Yes | Yes | Yes | Yes | No |
@@ -118,10 +118,10 @@ Administrator, Technician, Reader and Approver columns equal today's behaviour (
 | Capability | True when E contains | Gate |
 |---|---|---|
 | `HasMediaBuilderRole` | Technician | Prepare USB reachable; no-role state when false |
-| `CanGenerateBootImage` | Operations | Generate Boot Image role gate; certificate check runs |
-| `CanSeePreProductionBootImages` | Operations | Pre-production images listed in Prepare USB |
+| `CanGenerateBootImage` | Operator | Generate Boot Image role gate; certificate check runs |
+| `CanSeePreProductionBootImages` | Operator | Pre-production images listed in Prepare USB |
 
-| Capability | Administrator | Operations | Technician | No role |
+| Capability | Administrator | Operator | Technician | No role |
 |---|---|---|---|---|
 | HasMediaBuilderRole | Yes | Yes | Yes | No |
 | CanGenerateBootImage | Yes | Yes | No | No |
@@ -137,11 +137,11 @@ check failed, certificate missing.
 
 | State | Effect |
 |---|---|
-| Role not defined on a registration | Nothing changes; nobody can be assigned Operations there |
+| Role not defined on a registration | Nothing changes; nobody can be assigned Operator there |
 | Role defined, not assigned | Nothing changes |
 | Assigned (user or group) | Takes effect at the user's next sign-in, per registration |
 | Removed | Current token keeps it until expiry or refresh |
-| Release rolled back | Operations ignored; Operations-only users lose access until rollback is undone or another role is assigned |
+| Release rolled back | Operator ignored; Operator-only users lose access until rollback is undone or another role is assigned |
 
 Portal and Media Builder assignments are independent; `MediaBuilderAccess` on the Operator API is
 still required for any Media Builder API call.

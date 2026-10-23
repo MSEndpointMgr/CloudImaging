@@ -5,9 +5,6 @@ import { describe, it, expect } from 'vitest';
  */
 describe('Portal backend: image management routes', () => {
   describe('GET /api/images', () => {
-    it('requires PortalAccess role', () => {
-      expect('CloudImaging.PortalAccess').toBe('CloudImaging.PortalAccess');
-    });
     it('returns array of images with sha256Hash', () => {
       const image = { imageId: 'id', name: 'Win11', version: '24H2', sha256Hash: 'abc' };
       expect(image).toHaveProperty('sha256Hash');
@@ -15,9 +12,6 @@ describe('Portal backend: image management routes', () => {
   });
 
   describe('POST /api/images', () => {
-    it('requires Administrator role', () => {
-      expect('CloudImaging.Administrator').toBe('CloudImaging.Administrator');
-    });
     it('returns 201 on success', () => {
       expect(201).toBe(201);
     });

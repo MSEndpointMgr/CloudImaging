@@ -23,7 +23,7 @@ from `useAuth()`, computed by `capabilitiesFromRoles` in `client/src/lib/portalR
 | Capability source (`portalRoles.ts` new, `authContext.tsx`) | n/a | 2 |
 | Doc comments only (`ReportsPage.tsx`, `AutopilotRegistrationsPage.tsx`) | 0 | 2 |
 
-Unchanged gates (Operations stays out): Branding and Configuration routes, nav items and Dashboard
+Unchanged gates (Operator stays out): Branding and Configuration routes, nav items and Dashboard
 cards; pre-flight approve and revoke on the Devices page; `UpdateAvailableBanner`; certificate
 expiry toast on Configuration.
 
@@ -77,7 +77,7 @@ New access level `'manage'` for Locations and Wi-Fi Networks; `'admin'` keeps Br
 | Configuration | admin | Adm | admin | Adm |
 
 The existing access-level name `'operations'` is renamed (for example `'imaging'`) so it cannot be
-confused with the Operations role.
+confused with the Operator role.
 
 ## Dashboard (`DashboardPage.tsx`)
 
@@ -107,13 +107,13 @@ pages that read session outcomes keep calling `GET /api/session-history`.
 | Locations, Wi-Fi Networks | All controls (page-level gate only) | route `RequireAdmin` | route `canManageLocations` | Adm, Ops |
 
 Upload status polling (`uploadJobService.ts`) needs no gate of its own; it runs only from upload
-dialogs that `canManageCatalog` already gates, against a route that accepts Operations.
+dialogs that `canManageCatalog` already gates, against a route that accepts Operator.
 
 ## User-facing strings
 
 | File | Before | After |
 |---|---|---|
-| `BootImagesPage.tsx` (demote impact text) | `Technicians can no longer prepare USB devices with it. Only Administrators see it in Media Builder. USB devices are not affected.` | `Technicians can no longer prepare USB devices with it. Only Operations and Administrator users see it in Media Builder. USB devices are not affected.` |
+| `BootImagesPage.tsx` (demote impact text) | `Technicians can no longer prepare USB devices with it. Only Administrators see it in Media Builder. USB devices are not affected.` | `Technicians can no longer prepare USB devices with it. Only Operator and Administrator users see it in Media Builder. USB devices are not affected.` |
 | `BootImagesPage.tsx` (upload dialog selected file) | `` `${file.name} \u00B7 ${fmtSize(file.size)}` `` (middle dot) | `` `${file.name} (${fmtSize(file.size)})` `` |
 | `RecoveryImagesPage.tsx` (upload dialog selected file) | same middle dot label | `` `${file.name} (${fmtSize(file.size)})` `` |
 
@@ -121,6 +121,6 @@ The middle dot is written as its escape here so this contract stays free of the 
 No client test asserts on the selected-file label.
 
 Role names in refusals reach the user through the server's 403 detail (toasts use
-`extractErrorDetail`), which names `CloudImaging.Operations, CloudImaging.Administrator` for
+`extractErrorDetail`), which names `CloudImaging.Operator, CloudImaging.Administrator` for
 catalog, location and Wi-Fi writes (FR-023). Existing texts that say "an administrator" for
 Autopilot settings and retention stay correct.

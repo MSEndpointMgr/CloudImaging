@@ -9,11 +9,12 @@ namespace CloudImaging.OperatorApi.Functions;
 
 /// <summary>
 /// Portal-role boot image lifecycle CRUD proxy endpoints (T116, FR-063).
-/// Requires CloudImaging.Administrator role (enforced by AppRoleAuthorizationMiddleware).
+/// AppRoleAuthorizationMiddleware requires the CloudImaging.PortalAccess service role. The Portal
+/// backend accepts CloudImaging.Operator or CloudImaging.Administrator users for these writes.
 ///
-/// DELETE /api/boot-images/{id}         → ImagingCore DELETE /api/internal/boot-images/{id}
-/// POST   /api/boot-images/{id}/promote → ImagingCore POST /api/internal/boot-images/{id}/promote
-/// POST   /api/boot-images/{id}/demote  → ImagingCore POST /api/internal/boot-images/{id}/demote
+/// DELETE /api/boot-images/{id}: forwarded to ImagingCore DELETE /api/internal/boot-images/{id}
+/// POST   /api/boot-images/{id}/promote: forwarded to ImagingCore POST /api/internal/boot-images/{id}/promote
+/// POST   /api/boot-images/{id}/demote: forwarded to ImagingCore POST /api/internal/boot-images/{id}/demote
 ///
 /// Publishing is not here: it happens through the staged upload pipeline
 /// (BootImageUploadFunctions), which verifies the blob before it reaches the catalog.
@@ -58,7 +59,7 @@ public sealed partial class BootImageLifecycleFunctions
 
     // ── POST /api/boot-images/{id}/promote ─────────────────────────────────────
 
-    // Not in the MediaBuilderAccess allowlist: only the Portal (Administrator-gated) can promote.
+    // Not in the MediaBuilderAccess allowlist: only the Portal (Operator or Administrator) can promote.
     /// <summary>POST boot-images/{id}/promote. Promotes a boot image to the published/latest slot.</summary>
     [Function("PromoteBootImage")]
     public async Task<HttpResponseData> PromoteBootImage(
@@ -104,7 +105,7 @@ public sealed partial class BootImageLifecycleFunctions
         CancellationToken ct)
     {
         var response = req.CreateResponse((HttpStatusCode)((int)coreResponse.StatusCode));
-        // Forward the body regardless of content type — plain-text error messages were previously
+        // Forward the body regardless of content type. Plain-text error messages were previously
         // dropped here because only "json" content types were forwarded, so the browser saw the
         // right status code but an empty/generic body.
         var body = await coreResponse.Content.ReadAsStringAsync(ct);
@@ -117,7 +118,7 @@ public sealed partial class BootImageLifecycleFunctions
     }
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Boot image delete proxied for {BootImageId} — ImagingCore HTTP {StatusCode}.")]
+        Message = "Boot image delete proxied for {BootImageId}. ImagingCore HTTP {StatusCode}.")]
     private static partial void LogDeleteProxied(ILogger logger, Guid bootImageId, int statusCode);
 
     [LoggerMessage(Level = LogLevel.Information,

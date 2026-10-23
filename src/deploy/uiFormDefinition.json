@@ -110,7 +110,7 @@
                   "name": "portalClientId",
                   "type": "Microsoft.Common.TextBox",
                   "label": "Cloud Imaging Portal - Application (client) ID",
-                  "toolTip": "Client ID of the Cloud Imaging Portal SPA app registration. Exposes user_impersonation and the CloudImaging.Administrator / CloudImaging.Technician user roles. Used by the portal frontend (MSAL) and validated by the portal backend.",
+                  "toolTip": "Client ID of the Cloud Imaging Portal SPA app registration. Exposes user_impersonation and the CloudImaging.Administrator, CloudImaging.Operator, CloudImaging.Technician, CloudImaging.Reader and CloudImaging.AutopilotApprover user roles. Used by the portal frontend (MSAL) and validated by the portal backend.",
                   "constraints": {
                     "required": true,
                     "regex": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",

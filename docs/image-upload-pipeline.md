@@ -53,7 +53,7 @@ Every request crosses four boundaries before reaching storage:
 
 | Hop | Component | Responsibility |
 |---|---|---|
-| 1 | **Portal Backend** (Node/Express) | Validates the signed-in user's `CloudImaging.Administrator` role. Holds no storage credentials. |
+| 1 | **Portal Backend** (Node/Express) | Validates that the signed-in user holds `CloudImaging.Operator` or `CloudImaging.Administrator`. Holds no storage credentials. |
 | 2 | **Operator API** (Functions) | Service-level role check (`CloudImaging.PortalAccess`), then proxies to Core. Not reachable from the internet by users. |
 | 3 | **Imaging Core API** (Functions) | Owns storage. Names blobs, mints SAS, validates, writes catalog entities. |
 | 4 | **Azure Blob Storage** | Holds the bytes. |
@@ -262,18 +262,19 @@ holder of the same architecture is demoted, so publishing an ARM64 image never c
 latest image.
 
 Boot images are not made latest on upload. A verified upload lands in **pre-production**
-(`IsProduction = false`): only Administrators see it in Media Builder, and devices never receive
-it. An Administrator tests it on a USB device, then promotes it in the Portal
-(`POST /api/boot-images/{id}/promote`), which sets `IsProduction` and makes it the latest for its
-architecture. Promoting an older production image is how you roll back. The latest image is never
-demoted by the capacity rotation. Rows written before this stage existed read as production.
+(`IsProduction = false`): only Operator and Administrator users see it in Media Builder, and
+devices never receive it. An Operator or Administrator user tests it on a USB device, then
+promotes it in the Portal (`POST /api/boot-images/{id}/promote`), which sets `IsProduction` and
+makes it the latest for its architecture. Promoting an older production image is how you roll
+back. The latest image is never demoted by the capacity rotation. Rows written before this stage
+existed read as production.
 
 Demote (`POST /api/boot-images/{id}/demote`) reverts a promote: the image goes back to
 pre-production, and if it was the latest, the most recently promoted other production image of the
 same architecture becomes latest again (if there is none, that architecture has no latest until
 another is promoted). USB devices that self-updated to the demoted image go back to the restored
-image on their next boot. Only sticks an Administrator prepared with a pre-production image
-(`UsbPreparationManifest.PreparedForTesting`) are held on their image.
+image on their next boot. Only sticks an Operator or Administrator user prepared with a
+pre-production image (`UsbPreparationManifest.PreparedForTesting`) are held on their image.
 
 The Device Gateway returns the latest boot image of the Client's own architecture, and answers
 204 when a test stick reports (via `currentBootImageId`) an image that is still pre-production, so
@@ -304,8 +305,8 @@ Catalog entities live in Azure Table Storage, all under partition key `catalog`:
 | Operation | Required role | Enforced by |
 |---|---|---|
 | Read any catalog | `CloudImaging.Reader` and above | Portal Backend |
-| Start, publish, abandon, delete an upload | `CloudImaging.Administrator` | Portal Backend |
-| Poll an upload job | `CloudImaging.Administrator` | Portal Backend |
+| Start, publish, abandon, delete an upload | `CloudImaging.Operator` or `CloudImaging.Administrator` | Portal Backend |
+| Poll an upload job | `CloudImaging.Operator` or `CloudImaging.Administrator` | Portal Backend |
 | Portal Backend to Operator API | `CloudImaging.PortalAccess` | `AppRoleAuthorizationMiddleware` |
 
 `CloudImaging.MediaBuilderAccess` is a **read-only** service role and cannot reach any upload

@@ -6,7 +6,7 @@
         FR-051: Media Builder OperationSelectionView (the shell's "Home" content).
         Two operation tiles: Generate Boot Image and Prepare USB Device. A single tap
         navigates directly to the section (FR-050a: Generate Boot Image is disabled up
-        front — not just warned about after selection — when the ADK is missing).
+        front, not just warned about after selection, when the ADK is missing).
     -->
     <Grid Margin="28,16,28,28" VerticalAlignment="Top" HorizontalAlignment="Left" MaxWidth="640">
         <Grid.RowDefinitions>
@@ -29,8 +29,8 @@
         <!-- Operation tiles -->
         <UniformGrid Grid.Row="2" Columns="2">
 
-            <!-- Generate Boot Image — disabled up front when the ADK is missing (FR-050a) or the
-                 signed-in user lacks the Administrator role (FR-050b) -->
+            <!-- Generate Boot Image: disabled up front when the ADK is missing (FR-050a) or the
+                 signed-in user lacks the Operator or Administrator role (FR-050b) -->
             <Border Margin="0,0,14,0" Padding="20" CornerRadius="8" Cursor="Hand"
                     IsEnabled="{Binding IsGenerateBootImageAvailable}"
                     ToolTipService.ShowOnDisabled="True"
@@ -77,13 +77,13 @@
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                Margin="0,6,0,0"
                                Visibility="{Binding IsBlockedByMissingAdk, Converter={StaticResource BoolToVisibility}}" />
-                    <TextBlock Text="Requires the Administrator role"
+                    <TextBlock Text="Requires the Operator or Administrator role"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
                                Margin="0,6,0,0"
                                Visibility="{Binding IsRestrictedByRole, Converter={StaticResource BoolToVisibility}}" />
-                    <TextBlock Text="Requires the Technician or Administrator role"
+                    <TextBlock Text="Requires the Technician, Operator or Administrator role"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
@@ -110,7 +110,7 @@
                 </StackPanel>
             </Border>
 
-            <!-- Prepare USB — open to both roles, disabled when the signed-in user holds none -->
+            <!-- Prepare USB: open to every Media Builder role, disabled when the signed-in user holds none -->
             <Border Margin="14,0,0,0" Padding="20" CornerRadius="8" Cursor="Hand"
                     IsEnabled="{Binding IsPrepareUsbAvailable}"
                     ToolTipService.ShowOnDisabled="True"
@@ -151,7 +151,7 @@
                                Style="{StaticResource BodyTextBlockStyle}"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                    <TextBlock Text="Requires the Technician or Administrator role"
+                    <TextBlock Text="Requires the Technician, Operator or Administrator role"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemFillColorCautionBrush}"
@@ -194,7 +194,7 @@
             </Grid>
         </Border>
 
-        <!-- FR-050b: no-role banner, shown when the signed-in user holds neither app role -->
+        <!-- FR-050b: no-role banner, shown when the signed-in user holds no Media Builder app role -->
         <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
                 Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                 BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
@@ -215,14 +215,14 @@
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock TextWrapping="Wrap">
-                        <Run Text="No role assigned. " FontWeight="SemiBold" /><Run Text="Your account has no Cloud Imaging role, so no workflow is available. Ask your Cloud Imaging administrator to assign you the Technician role to prepare USB media, or the Administrator role to also generate boot images."
+                        <Run Text="No role assigned. " FontWeight="SemiBold" /><Run Text="Your account has no Cloud Imaging role, so no workflow is available. Ask your Cloud Imaging administrator to assign you the Technician role to prepare USB media, or the Operator role to also generate boot images."
                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </TextBlock>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- FR-050b: Administrator-role banner, shown when the signed-in user's role is the reason Generate Boot Image is unavailable -->
+        <!-- FR-050b: role banner, shown when the signed-in user's role is the reason Generate Boot Image is unavailable -->
         <Border Grid.Row="4" Padding="14,10" CornerRadius="8"
                 Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                 BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
@@ -243,7 +243,7 @@
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock TextWrapping="Wrap">
-                        <Run Text="Administrator role required. " FontWeight="SemiBold" /><Run Text="Generating boot images is restricted to the Administrator role. Ask your Cloud Imaging administrator to grant it if you need access."
+                        <Run Text="Operator role required. " FontWeight="SemiBold" /><Run Text="Generating boot images requires the Operator or Administrator role. Ask your Cloud Imaging administrator to assign it."
                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </TextBlock>
                 </StackPanel>
@@ -271,7 +271,7 @@
 
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock TextWrapping="Wrap">
-                        <Run Text="Operator API access denied. " FontWeight="SemiBold" /><Run Text="Your account needs the CloudImaging.MediaBuilderAccess app role on the Cloud Imaging Operator API enterprise application, which is granted separately from your Technician or Administrator role. Ask your Cloud Imaging administrator to assign it."
+                        <Run Text="Operator API access denied. " FontWeight="SemiBold" /><Run Text="Your account needs the CloudImaging.MediaBuilderAccess app role on the Cloud Imaging Operator API enterprise application, which is granted separately from your Technician, Operator or Administrator role. Ask your Cloud Imaging administrator to assign it."
                              Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </TextBlock>
                 </StackPanel>

@@ -8,8 +8,8 @@ interface NavItem {
   label: string;
   path: string;
   icon: React.ReactNode;
-  /** Undefined = visible to any signed-in portal role (Administrator/Technician/Reader). */
-  access?: 'dashboard' | 'operations' | 'autopilot' | 'reports' | 'admin';
+  /** Undefined = visible to any signed-in portal role. */
+  access?: 'dashboard' | 'imaging' | 'autopilot' | 'reports' | 'manage' | 'admin';
 }
 
 interface NavSection {
@@ -31,10 +31,10 @@ const navSections: NavSection[] = [
   {
     title: 'Imaging',
     items: [
-      { label: 'Devices',         path: '/sessions',         icon: <Monitor   size={18} />, access: 'operations' },
-      { label: 'OS Images',       path: '/os-images',        icon: <HardDrive size={18} />, access: 'operations' },
-      { label: 'Boot Images',     path: '/boot-images',      icon: <Disc      size={18} />, access: 'operations' },
-      { label: 'Recovery Images', path: '/recovery-images',  icon: <LifeBuoy  size={18} />, access: 'operations' },
+      { label: 'Devices',         path: '/sessions',         icon: <Monitor   size={18} />, access: 'imaging' },
+      { label: 'OS Images',       path: '/os-images',        icon: <HardDrive size={18} />, access: 'imaging' },
+      { label: 'Boot Images',     path: '/boot-images',      icon: <Disc      size={18} />, access: 'imaging' },
+      { label: 'Recovery Images', path: '/recovery-images',  icon: <LifeBuoy  size={18} />, access: 'imaging' },
       { label: 'Autopilot',       path: '/autopilot',        icon: <BadgeCheck size={18} />, access: 'autopilot' },
     ],
   },
@@ -47,8 +47,8 @@ const navSections: NavSection[] = [
   {
     title: 'Administration',
     items: [
-      { label: 'Locations',     path: '/locations',     icon: <MapPin   size={18} />, access: 'admin' },
-      { label: 'Wi-Fi Networks', path: '/wifi-networks', icon: <Wifi    size={18} />, access: 'admin' },
+      { label: 'Locations',     path: '/locations',     icon: <MapPin   size={18} />, access: 'manage' },
+      { label: 'Wi-Fi Networks', path: '/wifi-networks', icon: <Wifi    size={18} />, access: 'manage' },
       { label: 'Branding',      path: '/branding',      icon: <Palette  size={18} />, access: 'admin' },
       { label: 'Configuration', path: '/configuration', icon: <Settings size={18} />, access: 'admin' },
     ],
@@ -58,18 +58,17 @@ const navSections: NavSection[] = [
 export function Sidebar(): React.ReactElement {
   const { pathname } = useLocation();
   const { branding, logoUrl } = useBranding();
-  const { isAdministrator, isTechnician, isReader, canViewAutopilot, hasDashboardAccess } = useAuth();
-  const canOperations = isAdministrator || isTechnician;
-  const canReports = isAdministrator || isReader;
+  const { isAdministrator, canUseImaging, canManageLocations, canViewReports, canViewAutopilot, hasDashboardAccess } = useAuth();
   const appName = branding.applicationName ?? 'Cloud Imaging';
   const canAccess = (item: NavItem): boolean => {
     switch (item.access) {
-      case 'dashboard':  return hasDashboardAccess;
-      case 'operations': return canOperations;
-      case 'autopilot':  return canViewAutopilot;
-      case 'reports':    return canReports;
-      case 'admin':      return isAdministrator;
-      default:           return true;
+      case 'dashboard': return hasDashboardAccess;
+      case 'imaging':   return canUseImaging;
+      case 'autopilot': return canViewAutopilot;
+      case 'reports':   return canViewReports;
+      case 'manage':    return canManageLocations;
+      case 'admin':     return isAdministrator;
+      default:          return true;
     }
   };
   // Sections whose every item is filtered out by role are dropped entirely, so a Reader never

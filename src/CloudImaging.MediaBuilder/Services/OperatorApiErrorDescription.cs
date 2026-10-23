@@ -14,7 +14,7 @@ public static class OperatorApiErrorDescription
     public const string AccessDenied =
         "The Cloud Imaging Operator API denied this request. Your account needs the " +
         "CloudImaging.MediaBuilderAccess app role on the Cloud Imaging Operator API enterprise " +
-        "application, which is granted separately from your Technician or Administrator role. " +
+        "application, which is granted separately from your Technician, Operator or Administrator role. " +
         "Ask your Cloud Imaging administrator to assign it.";
 
     /// <summary>True when the given exception (or any inner exception in its chain) represents a 401/403 response from the Operator API.</summary>
@@ -24,7 +24,9 @@ public static class OperatorApiErrorDescription
         for (Exception? current = ex; current is not null; current = current.InnerException)
         {
             if (current is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized })
+            {
                 return true;
+            }
         }
         return false;
     }
