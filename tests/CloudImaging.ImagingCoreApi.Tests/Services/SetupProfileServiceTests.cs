@@ -249,6 +249,57 @@ public sealed class SetupProfileServiceTests
     }
 
     [Fact]
+    public async Task LoweringRetention_DeletesNothingUntilTheNextSave_AndEveryVersionCarriesASummary()
+    {
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        for (var i = 2; i <= 7; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+        (await _bed.Versions.ListAsync(current.ProfileId)).Should().HaveCount(7);
+        (await _bed.Versions.ListAsync(current.ProfileId)).Should().OnlyContain(v => v.ChangeSummary.Total > 0);
+
+        await _bed.SaveAsync(current, Content(Value(data: "8")));
+        (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().BeEquivalentTo([8, 7, 6, 5, 4]);
+    }
+
+    [Fact]
+    public async Task Restore_OfAPrunedVersion_IsNotFound()
+    {
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        for (var i = 2; i <= 6; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+
+        var result = await _bed.Service.RestoreAsync(current.ProfileId, new RestoreSetupProfileVersionRequest { Version = 1, BaseVersion = 6, Actor = Actor() });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.NotFound);
+    }
+
+    [Fact]
+    public async Task Sweep_DeletesAPrunedVersion_OnceNoRunningDeploymentPinsIt()
+    {
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        var session = await _bed.AddSessionAsync(SessionState.SessionInProgress, _bed.Stockholm, current.ProfileId, 1);
+        for (var i = 2; i <= 6; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+        (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().Contain(1);
+
+        await _bed.Sessions.UpdateAsync(session with { State = SessionState.SessionCompleted });
+        await _bed.Service.SweepAsync();
+
+        (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().BeEquivalentTo([6, 5, 4, 3, 2]);
+        _bed.Blobs.Blobs.Keys.Should().NotContain($"{current.ProfileId:D}/000001.json");
+    }
+
+    [Fact]
     public async Task Delete_TombstonesTheProfile_RemovesTargets_KeepsVersionBlobs()
     {
         var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));

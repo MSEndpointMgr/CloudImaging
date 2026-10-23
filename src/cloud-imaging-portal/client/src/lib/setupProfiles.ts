@@ -201,11 +201,17 @@ export function emptyDraft(): SetupProfileDraft {
   return { name: '', targeting: { allDevices: false, locationIds: [] }, content: emptyContent() };
 }
 
+/** The editor's draft; display fields such as passes and last modified stay, saving strips them. */
 export function draftFrom(detail: Pick<SetupProfileDetail, 'name' | 'targeting' | 'content'>): SetupProfileDraft {
   return {
     name: detail.name,
     targeting: { allDevices: detail.targeting.allDevices, locationIds: [...detail.targeting.locationIds] },
-    content: contentForSave(detail.content),
+    content: {
+      failureHandling: detail.content.failureHandling,
+      registryValues: detail.content.registryValues.map((v) => ({ ...v })),
+      scripts: detail.content.scripts.map((s) => ({ ...s })),
+      answerFile: detail.content.answerFile ? { ...detail.content.answerFile } : null,
+    },
   };
 }
 
@@ -428,6 +434,114 @@ export function answerFileProblems(errors: SetupProfileApiError['errors']): { co
   return errors.map((e) => ({ code: e.code, line: e.line ?? 0, message: e.message }));
 }
 
+// ── Versions and history ─────────────────────────────────────────────────────
+
+export interface SetupProfileSectionChange {
+  added: number;
+  removed: number;
+  changed: number;
+  reordered?: boolean;
+}
+
+export interface SetupProfileChangeSummary {
+  registryValues: SetupProfileSectionChange;
+  scripts: SetupProfileSectionChange;
+  answerFile: 'NoChange' | 'Added' | 'Removed' | 'Changed';
+  failureHandling: { from: SetupFailureHandling; to: SetupFailureHandling } | null;
+  names: { registryValues: string[]; scripts: string[] };
+  total: number;
+}
+
+export interface SetupProfileVersionSummary {
+  version: number;
+  createdAt: string;
+  createdBy?: string | null;
+  changeSummary: SetupProfileChangeSummary;
+  restoredFrom?: number | null;
+  duplicatedFrom?: { profileId: string; profileName: string; version: number } | null;
+  isCurrent: boolean;
+  inUseCount: number;
+}
+
+export interface SetupProfileVersionDetail extends SetupProfileVersionSummary {
+  content: SetupProfileContent;
+}
+
+export type SetupProfileHistoryKind = 'Created' | 'Renamed' | 'TargetingChanged' | 'LocationDeleted' | 'VersionSaved' | 'VersionRestored' | 'Duplicated' | 'Deleted';
+
+export interface SetupProfileHistoryEntry {
+  kind: SetupProfileHistoryKind;
+  at: string;
+  by?: string | null;
+  change: string;
+}
+
+/** Entries of the Targeting tab: everything that is not a version. */
+export function targetingHistory(entries: SetupProfileHistoryEntry[]): SetupProfileHistoryEntry[] {
+  return entries.filter((e) => e.kind !== 'VersionSaved' && e.kind !== 'VersionRestored' && e.kind !== 'Deleted');
+}
+
+/** "1 change", "3 changes". */
+export function changesLabel(total: number): string {
+  return total === 0 ? 'No changes' : plural(total, 'change', 'changes');
+}
+
+/**
+ * One section of an expanded version: "No change", ""Time zone" changed", or with mixed kinds
+ * "1 added, 2 changed: "A", "B", "C"". Past ten names the rest is counted.
+ */
+export function sectionChangeText(change: SetupProfileSectionChange, names: string[]): string {
+  const kinds = ([['added', change.added], ['changed', change.changed], ['removed', change.removed]] as const).filter(([, n]) => n > 0);
+  const count = change.added + change.changed + change.removed;
+  if (count === 0) return change.reordered ? 'Reordered' : 'No change';
+  const quoted = names.map((n) => `"${n}"`).join(', ') + (count > names.length ? `, and ${String(count - names.length)} more` : '');
+  const text = kinds.length === 1 && names.length > 0
+    ? `${quoted} ${kinds[0][0]}`
+    : `${kinds.map(([kind, n]) => `${String(n)} ${kind}`).join(', ')}${names.length > 0 ? `: ${quoted}` : ''}`;
+  return change.reordered ? `${text}, reordered` : text;
+}
+
+export function answerFileChangeText(change: SetupProfileChangeSummary['answerFile']): string {
+  return change === 'NoChange' ? 'No change' : change;
+}
+
+export function failureHandlingChangeText(change: SetupProfileChangeSummary['failureHandling']): string {
+  return change ? `${FAILURE_HANDLING_LABELS[change.from]} to ${FAILURE_HANDLING_LABELS[change.to]}` : 'No change';
+}
+
+/** The labelled fields of an expanded version row. */
+export function versionFields(version: SetupProfileVersionSummary): { label: string; value: string }[] {
+  const summary = version.changeSummary;
+  const fields = [
+    { label: 'Registry values', value: sectionChangeText(summary.registryValues, summary.names.registryValues) },
+    { label: 'Scripts', value: sectionChangeText(summary.scripts, summary.names.scripts) },
+    { label: 'Answer file', value: answerFileChangeText(summary.answerFile) },
+    { label: 'Failure handling', value: failureHandlingChangeText(summary.failureHandling) },
+  ];
+  if (version.restoredFrom) fields.push({ label: 'Restored from', value: `Version ${String(version.restoredFrom)}` });
+  if (version.duplicatedFrom) fields.push({ label: 'Duplicated from', value: `${version.duplicatedFrom.profileName}, version ${String(version.duplicatedFrom.version)}` });
+  return fields;
+}
+
+/** Tooltip of the In use badge. */
+export function inUseTooltip(count: number): string {
+  return count === 1 ? '1 running deployment uses this version' : `${String(count)} running deployments use this version`;
+}
+
+/** Under the Versions table; only Administrators can read the retention setting, so it is optional. */
+export function versionsFootnote(count: number, retention: number | null): string {
+  const kept = retention === null ? 'The most recent' : `The ${String(retention)} most recent`;
+  return `${plural(count, 'version', 'versions')}. ${kept} are kept, plus older ones running deployments still use.`;
+}
+
+export function restoreImpact(version: number, currentVersion: number): string {
+  return `Saves version ${String(version)}'s registry values, scripts, answer file and failure handling as version ${String(currentVersion + 1)}. Devices imaged from now on get it; running deployments keep the version they started with. Targeting is not changed.`;
+}
+
+export function readOnlyVersionBanner(version: number, currentVersion: number): string {
+  return `Version ${String(version)}, read-only. The current version is ${String(currentVersion)}.`;
+}
+
 // ── Deployment timeline ──────────────────────────────────────────────────────
 
 function plural(count: number, one: string, many: string): string {
@@ -577,6 +691,28 @@ export async function saveSetupProfile(profileId: string, baseVersion: number, d
 export async function deleteSetupProfile(profileId: string): Promise<void> {
   const res = await apiFetch(`/api/setup-profiles/${encodeURIComponent(profileId)}`, { method: 'DELETE', credentials: 'include' });
   if (!res.ok) throw await failure(res, 'The setup profile was not deleted.');
+}
+
+export async function fetchSetupProfileVersions(profileId: string): Promise<SetupProfileVersionSummary[]> {
+  return readJson(await apiFetchWithRetry(`/api/setup-profiles/${encodeURIComponent(profileId)}/versions`, { credentials: 'include' }), 'Could not load the versions.');
+}
+
+export async function fetchSetupProfileVersion(profileId: string, version: number): Promise<SetupProfileVersionDetail> {
+  return readJson(await apiFetchWithRetry(`/api/setup-profiles/${encodeURIComponent(profileId)}/versions/${String(version)}`, { credentials: 'include' }), 'Could not load the version.');
+}
+
+export async function fetchSetupProfileHistory(profileId: string): Promise<SetupProfileHistoryEntry[]> {
+  return readJson(await apiFetchWithRetry(`/api/setup-profiles/${encodeURIComponent(profileId)}/history`, { credentials: 'include' }), 'Could not load the history.');
+}
+
+export async function restoreSetupProfileVersion(profileId: string, version: number, baseVersion: number): Promise<SetupProfileDetail> {
+  const res = await apiFetch(`/api/setup-profiles/${encodeURIComponent(profileId)}/restore`, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    credentials: 'include',
+    body: JSON.stringify({ version, baseVersion }),
+  });
+  return readJson(res, 'The version was not restored.');
 }
 
 export async function fetchStepItems(sessionId: string, stepName: string): Promise<ImagingStepItem[]> {

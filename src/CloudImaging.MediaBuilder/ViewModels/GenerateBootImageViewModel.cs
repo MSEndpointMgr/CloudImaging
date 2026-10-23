@@ -886,10 +886,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     }
 
     /// <summary>
-    /// Updates the trailing progress line in place instead of appending a new one each tick —
-    /// used for both the "still running (Ns elapsed)…" DISM heartbeat and the Cloud Imaging
-    /// Client per-chunk download byte count — so a rapidly-ticking status doesn't flood the log
-    /// with one line per update.
+    /// Updates the trailing progress line in place instead of appending a new one each tick
+    /// (DISM's progress bar and the Client download byte count), so a rapidly-ticking status
+    /// doesn't flood the log with one line per update.
     /// </summary>
     private void UpdateHeartbeatLine(string line)
     {

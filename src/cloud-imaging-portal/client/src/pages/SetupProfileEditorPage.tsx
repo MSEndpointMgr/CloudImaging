@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, Crosshair, Database, FileCode, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, Crosshair, Database, FileCode, History, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Select } from '../components/ui/select.tsx';
@@ -11,6 +11,7 @@ import { ConfirmImpactDialog } from '../components/ConfirmImpactDialog.tsx';
 import type { PickerLocation } from '../components/LocationPicker.tsx';
 import { TargetingBadges } from '../components/TargetingBadges.tsx';
 import { RegistryValueDialog } from '../components/setup-profiles/RegistryValueDialog.tsx';
+import { ProfileHistoryDialog } from '../components/setup-profiles/ProfileHistoryDialog.tsx';
 import { ScriptDialog } from '../components/setup-profiles/ScriptDialog.tsx';
 import { SectionCard, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
 import { TargetingSection } from '../components/setup-profiles/TargetingSection.tsx';
@@ -34,12 +35,16 @@ import {
   duplicateName,
   emptyDraft,
   fetchSetupProfile,
+  fetchSetupProfileVersion,
   fetchSetupProfiles,
   moveScript,
   orderedScripts,
+  readOnlyVersionBanner,
   registryValuePath,
   registryValueTooltip,
   renumberScripts,
+  restoreImpact,
+  restoreSetupProfileVersion,
   saveLabel,
   saveSetupProfile,
   targetedNames,
@@ -69,14 +74,16 @@ type PendingLeave = { to: string; state?: unknown } | null;
  * changed content creates a new version; name and targeting changes do not.
  */
 export default function SetupProfileEditorPage(): React.ReactElement {
-  const { profileId } = useParams<{ profileId: string }>();
+  const { profileId, version } = useParams<{ profileId: string; version?: string }>();
   const isNew = profileId === undefined;
+  // A version route shows that version's content read-only.
+  const viewedVersion = version === undefined ? null : Number(version);
   const navigate = useNavigate();
   const location = useLocation();
   const duplicateOf = (location.state as { duplicateOf?: string } | null)?.duplicateOf;
   const { notify } = useToast();
-  const { canManageSetupProfiles } = useAuth();
-  const readOnly = !canManageSetupProfiles;
+  const { canManageSetupProfiles, isAdministrator } = useAuth();
+  const readOnly = !canManageSetupProfiles || viewedVersion !== null;
 
   const [profiles, setProfiles] = useState<SetupProfileSummary[]>([]);
   const [locations, setLocations] = useState<PickerLocation[]>([]);
@@ -95,16 +102,21 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const [targetingTouched, setTargetingTouched] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [retention, setRetention] = useState<number | null>(null);
+  const [restoringViewed, setRestoringViewed] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     setSaveError(null);
     try {
-      const [list, locationsRes, current] = await Promise.all([
+      const [list, locationsRes, current, viewed] = await Promise.all([
         fetchSetupProfiles(),
         apiFetchWithRetry('/api/locations', { credentials: 'include' }),
         isNew ? (duplicateOf ? fetchSetupProfile(duplicateOf) : Promise.resolve(null)) : fetchSetupProfile(profileId),
+        !isNew && viewedVersion !== null ? fetchSetupProfileVersion(profileId, viewedVersion) : Promise.resolve(null),
       ]);
       setProfiles(list);
       if (locationsRes.ok) setLocations((await locationsRes.json() as PickerLocation[]).sort((a, b) => a.name.localeCompare(b.name)));
@@ -119,15 +131,16 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         setDraft(start);
       } else if (current) {
         setDetail(current);
-        setSaved(draftFrom(current));
-        setDraft(draftFrom(current));
+        const shown = viewed ? draftFrom({ ...current, content: viewed.content }) : draftFrom(current);
+        setSaved(shown);
+        setDraft(shown);
       }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Could not load the setup profile.');
     } finally {
       setLoading(false);
     }
-  }, [isNew, duplicateOf, profileId]);
+  }, [isNew, duplicateOf, profileId, viewedVersion]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -170,6 +183,33 @@ export default function SetupProfileEditorPage(): React.ReactElement {
 
   const set = (patch: Partial<SetupProfileDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const setContent = (patch: Partial<SetupProfileDraft['content']>) => setDraft((d) => ({ ...d, content: { ...d.content, ...patch } }));
+
+  // Only Administrators can read the configuration, so others see the history note without the number.
+  const openHistory = async () => {
+    setHistoryOpen(true);
+    if (!isAdministrator || retention !== null) return;
+    try {
+      const res = await apiFetchWithRetry('/api/portal-config', { credentials: 'include' });
+      if (res.ok) setRetention((await res.json() as { setupProfileVersionRetention?: number }).setupProfileVersionRetention ?? 25);
+    } catch {
+      // The note reads without the number.
+    }
+  };
+
+  const restoreViewed = async () => {
+    if (!detail || viewedVersion === null) return;
+    setRestoreBusy(true);
+    try {
+      const restored = await restoreSetupProfileVersion(detail.profileId, viewedVersion, detail.currentVersion);
+      notify({ status: 'success', title: `Version ${String(viewedVersion)} restored as version ${String(restored.currentVersion)}.` });
+      setRestoringViewed(false);
+      void navigate(`/setup-profiles/${restored.profileId}`);
+    } catch (err) {
+      notify({ status: 'error', title: 'The version was not restored.', description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (!detail) return;
@@ -275,15 +315,28 @@ export default function SetupProfileEditorPage(): React.ReactElement {
             </p>
           )}
         </div>
-        {detail && canManageSetupProfiles && (
+        {detail && (
           <div className="flex shrink-0 gap-2">
-            <Button variant="outline" onClick={() => leave('/setup-profiles/new', { duplicateOf: detail.profileId })}><Copy />Duplicate</Button>
-            <Button variant="outline" onClick={() => setDeleting(true)}><Trash2 />Delete</Button>
+            <Button variant="outline" onClick={() => void openHistory()}><History />History</Button>
+            {canManageSetupProfiles && viewedVersion === null && (
+              <>
+                <Button variant="outline" onClick={() => leave('/setup-profiles/new', { duplicateOf: detail.profileId })}><Copy />Duplicate</Button>
+                <Button variant="outline" onClick={() => setDeleting(true)}><Trash2 />Delete</Button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {readOnly && (
+      {viewedVersion !== null && detail ? (
+        <div className="flex items-center gap-3 rounded-md border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
+          <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="flex-1">{readOnlyVersionBanner(viewedVersion, detail.currentVersion)}</span>
+          {canManageSetupProfiles && viewedVersion !== detail.currentVersion && (
+            <Button variant="outline" onClick={() => setRestoringViewed(true)}><Undo2 />Restore</Button>
+          )}
+        </div>
+      ) : readOnly && (
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
           <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
           Read-only
@@ -554,7 +607,11 @@ export default function SetupProfileEditorPage(): React.ReactElement {
           others={scripts.filter((_, j) => scriptDialog.mode !== 'edit' || j !== scriptDialog.index)}
           onClose={() => setScriptDialog(null)}
           onApply={(script) => {
-            setContent({ scripts: upsertScript(scripts, script, scriptDialog.mode === 'edit' ? scriptDialog.index : undefined) });
+            const before = scriptDialog.mode === 'edit' ? scripts[scriptDialog.index] : undefined;
+            // An edited script shows as not saved until the profile is saved.
+            const changed = !before || before.name !== script.name || before.content !== script.content || before.runs !== script.runs || before.timeoutMinutes !== script.timeoutMinutes;
+            const next = changed ? { ...script, lastModifiedAt: null, lastModifiedBy: null } : script;
+            setContent({ scripts: upsertScript(scripts, next, scriptDialog.mode === 'edit' ? scriptDialog.index : undefined) });
             setScriptDialog(null);
           }}
         />
@@ -589,6 +646,38 @@ export default function SetupProfileEditorPage(): React.ReactElement {
             setTimeout(() => navigate(target.to, { state: target.state }), 0);
           }}
           titleId="discard-setup-profile-title"
+        />
+      )}
+
+      {historyOpen && detail && (
+        <ProfileHistoryDialog
+          profile={detail}
+          retention={retention}
+          canRestore={canManageSetupProfiles}
+          onClose={() => setHistoryOpen(false)}
+          onView={(v) => { setHistoryOpen(false); leave(v === detail.currentVersion ? `/setup-profiles/${detail.profileId}` : `/setup-profiles/${detail.profileId}/versions/${String(v)}`); }}
+          onRestored={(restored) => {
+            setHistoryOpen(false);
+            notify({ status: 'success', title: `Restored as version ${String(restored.currentVersion)}.` });
+            if (viewedVersion !== null) {
+              void navigate(`/setup-profiles/${restored.profileId}`);
+              return;
+            }
+            setDetail(restored);
+            setSaved(draftFrom(restored));
+            setDraft(draftFrom(restored));
+          }}
+        />
+      )}
+
+      {restoringViewed && detail && viewedVersion !== null && (
+        <ConfirmImpactDialog
+          icon={Undo2}
+          copy={{ confirmTitle: `Restore version ${String(viewedVersion)}?`, impact: restoreImpact(viewedVersion, detail.currentVersion), confirmLabel: 'Restore', destructive: false }}
+          busy={restoreBusy}
+          onCancel={() => setRestoringViewed(false)}
+          onConfirm={() => void restoreViewed()}
+          titleId="restore-viewed-version-title"
         />
       )}
 

@@ -158,4 +158,66 @@ public sealed class SetupProfileFunctionsTests
         step.GetProperty("itemCounts")[0].GetProperty("kind").GetString().Should().Be("WinPEScript");
         step.GetProperty("itemsTruncated").GetBoolean().Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Restore_CreatesTheNextVersion_AndAStaleBaseIs409_AndAnUnknownVersionIs404()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        await _bed.SaveAsync(detail, Content(Value(data: "2")));
+        var id = detail.ProfileId.ToString();
+
+        var restored = await _functions.RestoreSetupProfileVersion(Request("POST", new { version = 1, baseVersion = 2, actor = new { upn = "ops@contoso.com" } }), id, FunctionTestHost.Context);
+        restored.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await restored.ReadJsonAsync();
+        json.GetProperty("currentVersion").GetInt32().Should().Be(3);
+        json.GetProperty("content").GetProperty("registryValues")[0].GetProperty("data").GetString().Should().Be("1");
+
+        (await _functions.RestoreSetupProfileVersion(Request("POST", new { version = 1, baseVersion = 2, actor = new { upn = "ops@contoso.com" } }), id, FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _functions.RestoreSetupProfileVersion(Request("POST", new { version = 9, baseVersion = 3, actor = new { upn = "ops@contoso.com" } }), id, FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _functions.RestoreSetupProfileVersion(Request("POST", new { version = 1, baseVersion = 3, actor = new { upn = "ops@contoso.com" } }), "not-a-guid", FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Versions_AreNewestFirst_WithCurrentAndInUse()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        await _bed.SaveAsync(detail, Content(Value(data: "2")));
+        await _bed.AddSessionAsync(SessionState.SessionInProgress, _bed.Stockholm, detail.ProfileId, 1);
+
+        var json = await (await _functions.GetSetupProfileVersions(Request("GET"), detail.ProfileId.ToString(), FunctionTestHost.Context)).ReadJsonAsync();
+
+        json.EnumerateArray().Select(v => (v.GetProperty("version").GetInt32(), v.GetProperty("isCurrent").GetBoolean(), v.GetProperty("inUseCount").GetInt32()))
+            .Should().Equal((2, true, 0), (1, false, 1));
+        (await _functions.GetSetupProfileVersions(Request("GET"), Guid.NewGuid().ToString(), FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task OneVersion_IncludesItsContent_AndAnUnknownOneIs404()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        await _bed.SaveAsync(detail, Content(Value(data: "2")));
+        var id = detail.ProfileId.ToString();
+
+        var json = await (await _functions.GetSetupProfileVersion(Request("GET"), id, "1", FunctionTestHost.Context)).ReadJsonAsync();
+        json.GetProperty("content").GetProperty("registryValues")[0].GetProperty("data").GetString().Should().Be("1");
+
+        (await _functions.GetSetupProfileVersion(Request("GET"), id, "7", FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _functions.GetSetupProfileVersion(Request("GET"), id, "0", FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _functions.GetSetupProfileVersion(Request("GET"), id, "x", FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task History_IsNewestFirst_WithTheKindsOfChange()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        _bed.Time.Advance(TimeSpan.FromMinutes(1));
+        await _bed.SaveAsync(detail, targeting: At(_bed.Stockholm, _bed.Gothenburg), name: "Stockholm and Gothenburg");
+
+        var json = await (await _functions.GetSetupProfileHistory(Request("GET"), detail.ProfileId.ToString(), FunctionTestHost.Context)).ReadJsonAsync();
+
+        var kinds = json.EnumerateArray().Select(h => h.GetProperty("kind").GetString()).ToList();
+        kinds.Should().Contain(["Created", "Renamed", "TargetingChanged"]);
+        kinds.IndexOf("Created").Should().BeGreaterThan(kinds.IndexOf("Renamed"), "the newest entry comes first");
+        (await _functions.GetSetupProfileHistory(Request("GET"), Guid.NewGuid().ToString(), FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 }
