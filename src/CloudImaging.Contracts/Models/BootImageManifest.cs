@@ -55,4 +55,7 @@ public sealed class BootImageManifest
 
     /// <summary>Windows PE or Windows RE. Manifests before 1.3 are Windows PE.</summary>
     public BootImageBase Base { get; init; } = BootImageBase.WindowsPE;
+
+    /// <summary>Whether WinPE-Scripting and WinPE-PowerShell were added, so In WinPE setup scripts can run. False for older manifests.</summary>
+    public bool PowerShellIncluded { get; init; }
 }

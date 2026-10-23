@@ -87,3 +87,9 @@ export const requireAdmin = requireRole('CloudImaging.Administrator');
  * regions, Wi-Fi). Administrator is listed explicitly so the 403 detail names every accepted role.
  */
 export const requireOperator = requireRole('CloudImaging.Operator', 'CloudImaging.Administrator');
+
+/**
+ * Middleware for reads that Technicians may see but Reader and AutopilotApprover may not (setup
+ * profiles). Operator and Administrator are listed so the 403 detail names every accepted role.
+ */
+export const requireTechnician = requireRole('CloudImaging.Technician', 'CloudImaging.Operator', 'CloudImaging.Administrator');

@@ -66,6 +66,53 @@ internal sealed partial class InMemoryTableClient : TableClient
         return Task.FromResult<Response>(new FakeResponse(204));
     }
 
+    /// <summary>
+    /// Applies an entity group transaction all or nothing, with the service's rules: one partition,
+    /// at most 100 actions, 409 for an add on an existing row, 412 for a stale ETag and 404 for an
+    /// update or delete of a missing row.
+    /// </summary>
+    public override Task<Response<IReadOnlyList<Response>>> SubmitTransactionAsync(IEnumerable<TableTransactionAction> transactionActions, CancellationToken cancellationToken = default)
+    {
+        var actions = transactionActions.ToList();
+        if (actions.Count == 0 || actions.Count > 100 || actions.Select(a => a.Entity.PartitionKey).Distinct(StringComparer.Ordinal).Count() > 1)
+        {
+            throw new TableTransactionFailedException(new RequestFailedException(400, "Invalid transaction"));
+        }
+
+        foreach (var action in actions)
+        {
+            var exists = _rows.TryGetValue((action.Entity.PartitionKey, action.Entity.RowKey), out var existing);
+            var etag = action.ETag == default ? action.Entity.ETag : action.ETag;
+            var status = action.ActionType switch
+            {
+                TableTransactionActionType.Add when exists => 409,
+                TableTransactionActionType.UpdateMerge or TableTransactionActionType.UpdateReplace or TableTransactionActionType.Delete when !exists => 404,
+                TableTransactionActionType.UpdateMerge or TableTransactionActionType.UpdateReplace or TableTransactionActionType.Delete
+                    when etag != default && etag != ETag.All && etag != existing!.ETag => 412,
+                _ => 0,
+            };
+            if (status != 0)
+            {
+                throw new TableTransactionFailedException(new RequestFailedException(status, $"Transaction action failed (status {status})."));
+            }
+        }
+
+        var responses = new List<Response>();
+        foreach (var action in actions)
+        {
+            if (action.ActionType == TableTransactionActionType.Delete)
+            {
+                _rows.Remove((action.Entity.PartitionKey, action.Entity.RowKey));
+                responses.Add(new FakeResponse(204));
+            }
+            else
+            {
+                responses.Add(Store(action.Entity));
+            }
+        }
+        return Task.FromResult(Response.FromValue<IReadOnlyList<Response>>(responses, new FakeResponse(202)));
+    }
+
     public override AsyncPageable<T> QueryAsync<T>(string? filter = null, int? maxPerPage = null, IEnumerable<string>? select = null, CancellationToken cancellationToken = default)
     {
         var conditions = FilterTerm().Matches(filter ?? string.Empty)

@@ -19,7 +19,15 @@ public enum ImagingStepName
     ConfigureBoot,
 
     /// <summary>Applying the recovery (WinRE) image to the Recovery partition.</summary>
-    ApplyRecoveryImage
+    ApplyRecoveryImage,
+
+    /// <summary>
+    /// Optional step that writes the setup profile's registry values, runs and stages its scripts
+    /// and writes the device's answer file. Runs after Apply image and before Configure boot, and
+    /// is only reported when the device has setup work. Appended so stored values stay stable;
+    /// pipeline order is defined by the progress calculator and the clients, not by position.
+    /// </summary>
+    PrepareSetup
 }
 
 /// <summary>Step execution states.</summary>

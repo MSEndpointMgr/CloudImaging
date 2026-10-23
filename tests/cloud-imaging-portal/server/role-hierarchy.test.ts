@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Response } from 'express';
-import { getUserRoles, requireRole, requireOperator, isAdministrator } from '@/middleware/roleGuard.js';
+import { getUserRoles, requireRole, requireOperator, requireTechnician, isAdministrator } from '@/middleware/roleGuard.js';
 import type { AuthenticatedRequest } from '@/middleware/auth.js';
 
 /**
@@ -76,6 +76,32 @@ describe('Portal backend: role hierarchy', () => {
   it('Reader is accepted only where explicitly allowlisted alongside PortalAccess', () => {
     expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.PortalAccess', 'CloudImaging.Reader'])).toBe(200);
     expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.Administrator'])).toBe(403);
+  });
+
+  it.each([
+    ['CloudImaging.Technician', 200],
+    ['CloudImaging.Operator', 200],
+    ['CloudImaging.Administrator', 200],
+    ['CloudImaging.Reader', 403],
+    ['CloudImaging.AutopilotApprover', 403],
+  ])('requireTechnician with %s returns %i', (role, expected) => {
+    let status = 200;
+    let nextCalled = false;
+    const res = { status(code: number) { status = code; return this; }, json() { return this; } } as unknown as Response;
+    requireTechnician(reqWithRoles([role]), res, () => { nextCalled = true; });
+    expect(nextCalled ? 200 : status).toBe(expected);
+  });
+
+  it('requireTechnician refuses a user without roles and names every accepted role', () => {
+    let body: { detail?: string } = {};
+    let status = 200;
+    const res = {
+      status(code: number) { status = code; return this; },
+      json(payload: { detail?: string }) { body = payload; return this; },
+    } as unknown as Response;
+    requireTechnician(reqWithRoles(undefined), res, () => { status = 200; });
+    expect(status).toBe(403);
+    expect(body.detail).toBe('This operation requires one of the following roles: CloudImaging.Technician, CloudImaging.Operator, CloudImaging.Administrator.');
   });
 });
 

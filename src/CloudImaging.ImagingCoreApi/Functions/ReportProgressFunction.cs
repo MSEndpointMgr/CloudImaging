@@ -124,8 +124,7 @@ public sealed partial class ReportProgressFunction
 
         // Determine new session state
         bool anyFailed = allSteps.Any(s => s.Status == ImagingStepStatus.Failed);
-        bool allCompleted = allSteps.Count == OverallProgressCalculator.PipelineStepCount
-                            && allSteps.All(s => s.Status == ImagingStepStatus.Completed);
+        bool allCompleted = OverallProgressCalculator.IsPipelineComplete(allSteps);
 
         // A step that has started but not yet reported any sub-progress still means the device is
         // imaging (the first FormatDisk report is InProgress at 0%, which leaves overallPercent at
