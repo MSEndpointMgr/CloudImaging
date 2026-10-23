@@ -164,7 +164,12 @@ export function locationDisabledReason(profiles: SetupProfileSummary[], ownProfi
 /** Why All devices cannot be picked: another profile already has it. */
 export function allDevicesDisabledReason(profiles: SetupProfileSummary[], ownProfileId: string | undefined): string | undefined {
   const owner = profiles.find((p) => p.profileId !== ownProfileId && p.targeting.allDevices);
-  return owner ? `Already used by ${owner.name}` : undefined;
+  return owner ? `Used by ${owner.name}. Only one profile can target all devices.` : undefined;
+}
+
+/** How many of the listed locations other profiles already target, for the picker footer. */
+export function locationsTargetedElsewhere(profiles: SetupProfileSummary[], ownProfileId: string | undefined, locationIds: string[]): number {
+  return locationIds.filter((id) => locationDisabledReason(profiles, ownProfileId, id) !== undefined).length;
 }
 
 export function targetingProblem(targeting: SetupProfileTargeting): string | null {
@@ -262,13 +267,13 @@ export function deleteImpact(names: string[]): string {
 
 // ── Registry values ──────────────────────────────────────────────────────────
 
-/** Full key path as shown in the table, for example HKLM\SOFTWARE\Policies\Microsoft\FVE. */
-export function registryKeyPath(value: Pick<SetupRegistryValue, 'hive' | 'key'>): string {
-  return `${HIVE_PATH_PREFIXES[value.hive]}\\${value.key}`;
+/** Full path including the value name, for example HKLM\SOFTWARE\Policies\Microsoft\FVE\EncryptionMethodWithXtsOs. */
+export function registryValuePath(value: Pick<SetupRegistryValue, 'hive' | 'key' | 'valueName'>): string {
+  return `${HIVE_PATH_PREFIXES[value.hive]}\\${value.key}\\${value.valueName || '(Default)'}`;
 }
 
-export function registryValueTooltip(value: Pick<SetupRegistryValue, 'valueName' | 'type'>): string {
-  return `Value name: ${value.valueName || '(Default)'}. Type: ${VALUE_TYPE_LABELS[value.type]}.`;
+export function registryValueTooltip(value: Pick<SetupRegistryValue, 'hive' | 'key' | 'valueName' | 'type'>): string {
+  return `${registryValuePath(value)} (${VALUE_TYPE_LABELS[value.type]})`;
 }
 
 const MAX_KEY_LENGTH = 512;
@@ -332,34 +337,88 @@ function plural(count: number, one: string, many: string): string {
   return `${String(count)} ${count === 1 ? one : many}`;
 }
 
-/** One sentence per item kind, for example "3 registry values written. 1 of 2 WinPE scripts failed." */
-export function itemCountsSummary(counts: ImagingStepItemCount[]): string {
-  const total = (kinds: StepItemKind[], outcome?: StepItemOutcome) =>
-    counts.filter((c) => kinds.includes(c.kind) && (outcome === undefined || c.outcome === outcome)).reduce((sum, c) => sum + c.count, 0);
-  const sentences: string[] = [];
+export const STEP_ITEM_KIND_LABELS: Record<StepItemKind, string> = {
+  RegistryValue: 'Registry value',
+  WinPEScript: 'WinPE script',
+  WindowsSetupScript: 'Windows setup script',
+  DriverInstaller: 'Driver installer',
+  AnswerFile: 'Answer file',
+};
 
-  const describe = (kinds: StepItemKind[], one: string, many: string, done: string) => {
-    const all = total(kinds);
-    if (all === 0) return;
-    const failed = total(kinds, 'Failed');
-    const notRun = total(kinds, 'NotRun');
-    if (failed > 0) sentences.push(`${String(failed)} of ${plural(all, one, many)} failed.`);
-    else if (notRun > 0) sentences.push(`${String(notRun)} of ${plural(all, one, many)} not run.`);
-    else sentences.push(`${plural(total(kinds, 'Succeeded'), one, many)} ${done}.`);
+export type SummaryTone = 'failed' | 'notRun' | 'succeeded' | 'queued';
+
+export interface SummaryItem {
+  tone: SummaryTone;
+  text: string;
+}
+
+/**
+ * The Prepare setup card's summary, one entry per outcome with failures first, for example
+ * "1 WinPE script failed", "4 registry values written", "1 script and 5 driver installers queued
+ * for Windows setup".
+ */
+export function itemCountsSummary(counts: ImagingStepItemCount[]): SummaryItem[] {
+  const total = (kind: StepItemKind, outcome: StepItemOutcome) =>
+    counts.filter((c) => c.kind === kind && c.outcome === outcome).reduce((sum, c) => sum + c.count, 0);
+  const nouns: Record<StepItemKind, [string, string]> = {
+    RegistryValue: ['registry value', 'registry values'],
+    WinPEScript: ['WinPE script', 'WinPE scripts'],
+    WindowsSetupScript: ['Windows setup script', 'Windows setup scripts'],
+    DriverInstaller: ['driver installer', 'driver installers'],
+    AnswerFile: ['answer file', 'answer files'],
   };
+  const kinds: StepItemKind[] = ['RegistryValue', 'WinPEScript', 'WindowsSetupScript', 'DriverInstaller', 'AnswerFile'];
+  const items: SummaryItem[] = [];
 
-  describe(['RegistryValue'], 'registry value', 'registry values', 'written');
-  describe(['WinPEScript'], 'WinPE script', 'WinPE scripts', 'ran');
+  for (const [outcome, tone, verb] of [['Failed', 'failed', 'failed'], ['NotRun', 'notRun', 'not run']] as const) {
+    for (const kind of kinds) {
+      const n = total(kind, outcome);
+      if (n > 0) items.push({ tone, text: kind === 'AnswerFile' ? `Answer file ${verb}` : `${plural(n, ...nouns[kind])} ${verb}` });
+    }
+  }
 
-  const queued = total(['WindowsSetupScript', 'DriverInstaller'], 'Queued');
-  const stagingFailed = total(['WindowsSetupScript', 'DriverInstaller'], 'Failed');
-  if (stagingFailed > 0) sentences.push(`${String(stagingFailed)} of ${plural(total(['WindowsSetupScript', 'DriverInstaller']), 'item', 'items')} for Windows setup failed.`);
-  else if (queued > 0) sentences.push(`${plural(queued, 'item', 'items')} queued for Windows setup.`);
+  const written = total('RegistryValue', 'Succeeded');
+  if (written > 0) items.push({ tone: 'succeeded', text: `${plural(written, ...nouns.RegistryValue)} written` });
+  const ran = total('WinPEScript', 'Succeeded');
+  if (ran > 0) items.push({ tone: 'succeeded', text: `${plural(ran, ...nouns.WinPEScript)} succeeded` });
 
-  const answerFile = counts.find((c) => c.kind === 'AnswerFile' && c.count > 0);
-  if (answerFile) sentences.push(answerFile.outcome === 'Succeeded' ? 'Answer file written.' : `Answer file ${ITEM_OUTCOME_LABELS[answerFile.outcome].toLowerCase()}.`);
+  const queuedScripts = total('WindowsSetupScript', 'Queued');
+  const queuedInstallers = total('DriverInstaller', 'Queued');
+  const queued = [
+    queuedScripts > 0 ? plural(queuedScripts, 'script', 'scripts') : null,
+    queuedInstallers > 0 ? plural(queuedInstallers, ...nouns.DriverInstaller) : null,
+  ].filter((part): part is string => part !== null);
+  if (queued.length > 0) items.push({ tone: 'queued', text: `${queued.join(' and ')} queued for Windows setup` });
+  return items;
+}
 
-  return sentences.join(' ');
+/** The status column of one item row, for example "Failed: exit code 1" or "Queued for Windows setup". */
+export function itemStatusText(item: Pick<ImagingStepItem, 'kind' | 'outcome' | 'reason' | 'exitCode'>): string {
+  switch (item.outcome) {
+    case 'Failed': {
+      if (item.exitCode != null && item.reason?.startsWith('Exited with code')) return `Failed: exit code ${String(item.exitCode)}`;
+      const first = item.reason?.split(/(?<=\.)\s/)[0]?.replace(/\.$/, '');
+      return first ? `Failed: ${first}` : 'Failed';
+    }
+    case 'NotRun':
+      return 'Not run';
+    case 'Queued':
+      return 'Queued for Windows setup';
+    case 'Succeeded':
+      return item.kind === 'RegistryValue' || item.kind === 'AnswerFile' ? 'Written' : 'Succeeded';
+  }
+}
+
+/** The full reason behind an item row, with the script's last output line when there is one. */
+export function itemTooltip(item: Pick<ImagingStepItem, 'reason' | 'lastOutputLine'>): string | undefined {
+  const text = [item.reason, item.lastOutputLine ? `Last output: ${item.lastOutputLine}` : null].filter(Boolean).join(' ');
+  return text || undefined;
+}
+
+/** Failed items first, then not run, then the rest, each group in device order. */
+export function sortItemsFailuresFirst<T extends Pick<ImagingStepItem, 'index' | 'outcome'>>(items: T[]): T[] {
+  const rank: Record<StepItemOutcome, number> = { Failed: 0, NotRun: 1, Succeeded: 2, Queued: 2 };
+  return [...items].sort((a, b) => rank[a.outcome] - rank[b.outcome] || a.index - b.index);
 }
 
 // ── API ──────────────────────────────────────────────────────────────────────

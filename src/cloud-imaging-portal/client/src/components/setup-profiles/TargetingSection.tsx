@@ -1,9 +1,9 @@
-import { Label } from '../ui/label.tsx';
 import { Select } from '../ui/select.tsx';
 import { LocationPicker, type PickerLocation } from '../LocationPicker.tsx';
 import {
   allDevicesDisabledReason,
   locationDisabledReason,
+  locationsTargetedElsewhere,
   type SetupProfileSummary,
   type SetupProfileTargeting,
 } from '../../lib/setupProfiles.ts';
@@ -24,22 +24,25 @@ export function TargetingSection({ targeting, onChange, profiles, profileId, loc
 }): React.ReactElement {
   const allDevicesReason = allDevicesDisabledReason(profiles, profileId);
   const options = [
-    { value: 'all', label: 'All devices', description: allDevicesReason ?? 'Devices whose location has no profile of its own', disabled: Boolean(allDevicesReason) && !targeting.allDevices },
-    { value: 'selected', label: 'Selected locations' },
+    {
+      value: 'all',
+      label: 'All devices',
+      description: allDevicesReason ?? 'Every device with no profile for its location, including media prepared without a location or for locations added later',
+      disabled: Boolean(allDevicesReason) && !targeting.allDevices,
+    },
+    { value: 'selected', label: 'Selected locations', description: 'Only USB media prepared for the locations you pick' },
   ];
+  const takenElsewhere = locationsTargetedElsewhere(profiles, profileId, locations.map((l) => l.locationId));
 
   return (
-    <div className="space-y-2">
-      <Label htmlFor="setup-profile-scope">Devices</Label>
-      <p className="text-sm text-muted-foreground">
-        A location can belong to one profile. Devices whose location has no profile get the All devices profile, if one exists.
-      </p>
+    <div className="space-y-3">
       <Select
         id="setup-profile-scope"
+        aria-label="Devices"
         value={targeting.allDevices ? 'all' : 'selected'}
         onValueChange={(v) => onChange({ allDevices: v === 'all', locationIds: v === 'all' ? [] : targeting.locationIds })}
         options={options}
-        wrapperClassName="max-w-xs"
+        wrapperClassName="w-80 max-w-full"
       />
       {!targeting.allDevices && (
         <LocationPicker
@@ -48,6 +51,7 @@ export function TargetingSection({ targeting, onChange, profiles, profileId, loc
           selected={targeting.locationIds}
           onChange={(locationIds) => onChange({ allDevices: false, locationIds })}
           disabledReason={(id) => locationDisabledReason(profiles, profileId, id)}
+          footerNote={takenElsewhere > 0 ? `${String(takenElsewhere)} targeted by other profiles` : undefined}
         />
       )}
       {problem && <p className="text-sm text-destructive">{problem}</p>}

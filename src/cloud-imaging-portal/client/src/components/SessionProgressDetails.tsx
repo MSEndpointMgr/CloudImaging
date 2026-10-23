@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { AlertTriangle, Check, LoaderCircle, Minus, X } from 'lucide-react';
-import { Badge } from './ui/badge.tsx';
+import { Check, CircleCheck, CircleMinus, CircleX, Clock, LoaderCircle, Minus, X } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 import { Tooltip } from './ui/tooltip.tsx';
 import { cn, formatDateTime, formatDuration } from '../lib/utils.ts';
@@ -10,12 +9,15 @@ import {
   type ImagingStepDetails,
 } from '../lib/imagingProgress.ts';
 import {
-  ITEM_OUTCOME_LABELS,
+  STEP_ITEM_KIND_LABELS,
   fetchStepItems,
   itemCountsSummary,
+  itemStatusText,
+  itemTooltip,
+  sortItemsFailuresFirst,
   type ImagingStepItem,
   type SetupProfilePin,
-  type StepItemOutcome,
+  type SummaryTone,
 } from '../lib/setupProfiles.ts';
 
 interface SessionProgressDetailsProps {
@@ -34,13 +36,6 @@ type StepStatus = 'Completed' | 'Warning' | 'InProgress' | 'Failed' | 'Pending' 
 
 const PREPARE_SETUP = 'PrepareSetup';
 const NOT_RUN_TOOLTIP = "This device's boot image is older than Setup Profiles, so the profile was not applied. Update the boot image.";
-
-const OUTCOME_BADGES: Record<StepItemOutcome, 'success' | 'negative' | 'info' | 'muted'> = {
-  Succeeded: 'success',
-  Failed: 'negative',
-  Queued: 'info',
-  NotRun: 'muted',
-};
 
 interface ResolvedStep {
   name: string;
@@ -98,7 +93,7 @@ function elapsedMs(step: ImagingStepDetails, now: number): number | null {
 function StepKnob({ status }: { status: StepStatus }): React.ReactElement {
   const icon =
     status === 'Completed' ? <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
-    : status === 'Warning' ? <AlertTriangle className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
+    : status === 'Warning' ? <span className="text-[13px] font-semibold leading-none" aria-hidden="true">!</span>
     : status === 'InProgress' ? <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
     : status === 'Failed' ? <X className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
     : status === 'NotRun' ? <Minus className="h-3 w-3" strokeWidth={3} aria-hidden="true" />
@@ -109,7 +104,7 @@ function StepKnob({ status }: { status: StepStatus }): React.ReactElement {
       className={cn(
         'absolute left-1/2 top-0 z-10 flex h-[22px] w-[22px] -translate-x-1/2 items-center justify-center rounded-full border-2 bg-card',
         status === 'Completed' && 'border-emerald-600 text-emerald-600 dark:border-emerald-400 dark:text-emerald-400',
-        status === 'Warning' && 'border-amber-600 text-amber-600 ring-4 ring-amber-500/15 dark:border-amber-400 dark:text-amber-400',
+        status === 'Warning' && 'border-amber-400 bg-amber-400 text-slate-950',
         status === 'InProgress' && 'border-primary text-primary ring-4 ring-primary/15',
         status === 'Failed' && 'border-destructive text-destructive ring-4 ring-destructive/15',
         status === 'NotRun' && 'border-border text-muted-foreground',
@@ -121,14 +116,58 @@ function StepKnob({ status }: { status: StepStatus }): React.ReactElement {
   );
 }
 
-/** One line per item the device reported for Prepare setup, failures first. */
-function StepItems({ sessionId, truncated }: { sessionId: string; truncated: boolean }): React.ReactElement {
+const SUMMARY_ICONS: Record<SummaryTone, { icon: typeof CircleCheck; className: string }> = {
+  failed: { icon: CircleX, className: 'text-destructive' },
+  notRun: { icon: CircleMinus, className: 'text-muted-foreground' },
+  succeeded: { icon: CircleCheck, className: 'text-emerald-600 dark:text-emerald-400' },
+  queued: { icon: Clock, className: 'text-muted-foreground' },
+};
+
+/** One-line rows, failures first; the full reason is in the row tooltip. */
+function ItemRows({ items }: { items: ImagingStepItem[] }): React.ReactElement {
+  return (
+    <ul className="mt-3 divide-y divide-border rounded-md border border-border bg-background">
+      {items.map((item) => {
+        const tone: SummaryTone = item.outcome === 'Failed' ? 'failed' : item.outcome === 'NotRun' ? 'notRun' : item.outcome === 'Queued' ? 'queued' : 'succeeded';
+        const { icon: Icon, className } = SUMMARY_ICONS[tone];
+        const tooltip = itemTooltip(item);
+        const row = (
+          <span tabIndex={tooltip ? 0 : undefined} className="grid h-10 w-full grid-cols-[16px_150px_minmax(0,1fr)_minmax(0,300px)] items-center gap-3 px-3 text-sm">
+            <Icon className={cn('h-4 w-4', className)} aria-hidden="true" />
+            <span className="truncate">{STEP_ITEM_KIND_LABELS[item.kind]}</span>
+            <span className="truncate">{item.name}</span>
+            <span className="truncate text-muted-foreground">{itemStatusText(item)}</span>
+          </span>
+        );
+        return <li key={item.index}>{tooltip ? <Tooltip content={tooltip} className="block w-full">{row}</Tooltip> : row}</li>;
+      })}
+    </ul>
+  );
+}
+
+/**
+ * Prepare setup card: which profile and version ran, what happened, and the items. Failed items
+ * load straight away so a warning never hides behind a click; everything else is behind Show details.
+ */
+function PrepareSetupCard({ setupProfile, step, sessionId }: {
+  setupProfile: SetupProfilePin | null | undefined;
+  step: ResolvedStep | undefined;
+  sessionId?: string;
+}): React.ReactElement {
+  const [showAll, setShowAll] = React.useState(false);
   const [items, setItems] = React.useState<ImagingStepItem[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const listId = React.useId();
+  const counts = step?.itemCounts ?? [];
+  const summary = itemCountsSummary(counts);
+  const totalCount = counts.reduce((sum, c) => sum + c.count, 0);
+  const failedCount = counts.filter((c) => c.outcome === 'Failed').reduce((sum, c) => sum + c.count, 0);
+  const queuedCount = counts.filter((c) => c.outcome === 'Queued').reduce((sum, c) => sum + c.count, 0);
+  const wantItems = Boolean(sessionId) && totalCount > 0 && (showAll || failedCount > 0);
 
   const load = React.useCallback(async () => {
+    if (!sessionId) return;
     setError(null);
-    setItems(null);
     try {
       setItems(await fetchStepItems(sessionId, PREPARE_SETUP));
     } catch (err) {
@@ -136,76 +175,59 @@ function StepItems({ sessionId, truncated }: { sessionId: string; truncated: boo
     }
   }, [sessionId]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    if (wantItems && items === null) void load();
+  }, [wantItems, items, load]);
 
-  if (error) {
-    return (
-      <div className="mt-2 flex items-center gap-2">
-        <p className="text-sm text-destructive">{error}</p>
-        <Button variant="link" onClick={() => void load()}>Try again</Button>
-      </div>
-    );
-  }
-  if (!items) return <p className="mt-2 text-sm text-muted-foreground">Loading items...</p>;
-  if (items.length === 0) return <p className="mt-2 text-sm text-muted-foreground">The device reported no items.</p>;
+  const sorted = items ? sortItemsFailuresFirst(items) : [];
+  const shown = showAll ? sorted : sorted.filter((i) => i.outcome === 'Failed');
+  const hidden = Math.max(0, totalCount - shown.length);
 
   return (
-    <div className="mt-2 space-y-1">
-      <ul className="divide-y divide-border rounded-md border border-border bg-card">
-        {items.map((item) => {
-          const isScript = item.kind === 'WinPEScript' || item.kind === 'WindowsSetupScript';
-          const meta = [
-            isScript && item.exitCode != null ? `Exit code ${String(item.exitCode)}` : null,
-            isScript && item.durationMs != null ? formatDuration(item.durationMs) : null,
-          ].filter(Boolean).join(', ');
-          const badge = <Badge variant={OUTCOME_BADGES[item.outcome]} tabIndex={item.reason ? 0 : undefined}>{ITEM_OUTCOME_LABELS[item.outcome]}</Badge>;
-          return (
-            <li key={item.index} className="flex items-center gap-3 px-3 py-2">
-              <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
-              {meta && <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{meta}</span>}
-              {item.reason ? <Tooltip content={item.reason}>{badge}</Tooltip> : badge}
-            </li>
-          );
-        })}
-      </ul>
-      {truncated && <p className="text-sm text-muted-foreground">Showing the first 500 items.</p>}
+    <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+      <p className="text-sm font-medium">
+        {setupProfile ? `Setup profile: ${setupProfile.name}, version ${String(setupProfile.version)}` : 'No setup profile'}
+      </p>
+      {(summary.length > 0 || (Boolean(sessionId) && totalCount > 0)) && (
+        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          {summary.map(({ tone, text }) => {
+            const { icon: Icon, className } = SUMMARY_ICONS[tone];
+            return <span key={text} className="inline-flex items-center gap-2"><Icon className={cn('h-4 w-4', className)} aria-hidden="true" />{text}</span>;
+          })}
+          {Boolean(sessionId) && totalCount > 0 && (
+            <Button variant="link" aria-expanded={showAll} aria-controls={listId} onClick={() => setShowAll((s) => !s)}>
+              {showAll ? 'Hide details' : 'Show details'}
+            </Button>
+          )}
+        </div>
+      )}
+      <div id={listId}>
+        {wantItems && error && (
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="link" onClick={() => void load()}>Try again</Button>
+          </div>
+        )}
+        {wantItems && !error && items === null && <p className="mt-2 text-sm text-muted-foreground">Loading items...</p>}
+        {wantItems && items !== null && shown.length > 0 && <ItemRows items={shown} />}
+        {wantItems && items !== null && items.length === 0 && <p className="mt-2 text-sm text-muted-foreground">The device reported no items.</p>}
+      </div>
+      {!showAll && failedCount > 0 && items !== null && hidden > 0 && (
+        <p className="mt-2 text-xs text-muted-foreground">Failures are listed first; {plural(hidden, 'other item is', 'other items are')} hidden.</p>
+      )}
+      {showAll && step?.itemsTruncated && <p className="mt-2 text-xs text-muted-foreground">Showing the first 500 items.</p>}
+      {queuedCount > 0 && step?.status !== 'Failed' && (
+        <p className="mt-2 text-xs text-muted-foreground">Windows setup runs after the restart and is recorded on the device only.</p>
+      )}
+      {step?.status === 'Failed' && (
+        <p className="mt-2 text-xs text-muted-foreground">The device does not start Windows. Retry the deployment after fixing the profile or the OS image.</p>
+      )}
     </div>
   );
 }
 
-/** Neutral card for Prepare setup: which profile and version, what happened, and the items. */
-function PrepareSetupCard({ setupProfile, step, sessionId }: {
-  setupProfile: SetupProfilePin | null | undefined;
-  step: ResolvedStep | undefined;
-  sessionId?: string;
-}): React.ReactElement {
-  const [open, setOpen] = React.useState(false);
-  const listId = React.useId();
-  const summary = step?.itemCounts?.length ? itemCountsSummary(step.itemCounts) : null;
-  const hasItems = Boolean(sessionId) && (step?.itemCounts?.length ?? 0) > 0;
-
-  return (
-    <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium">Prepare setup</p>
-          <p className="text-sm text-muted-foreground">
-            {setupProfile ? `${setupProfile.name}, version ${String(setupProfile.version)}` : 'No setup profile'}
-          </p>
-          {step?.status === 'Warning' && <p className="mt-1 text-sm text-amber-700 dark:text-amber-400">Completed with warnings</p>}
-          {summary && <p className="mt-1 text-sm text-foreground">{summary}</p>}
-        </div>
-        {hasItems && (
-          <Button variant="outline" aria-expanded={open} aria-controls={listId} onClick={() => setOpen((o) => !o)}>
-            {open ? 'Hide items' : 'Show items'}
-          </Button>
-        )}
-      </div>
-      <div id={listId}>
-        {open && sessionId && <StepItems sessionId={sessionId} truncated={Boolean(step?.itemsTruncated)} />}
-      </div>
-    </div>
-  );
+function plural(count: number, one: string, many: string): string {
+  return `${String(count)} ${count === 1 ? one : many}`;
 }
 
 export function SessionProgressDetails({
@@ -301,7 +323,8 @@ export function SessionProgressDetails({
                 className={cn(
                   'absolute left-0 top-[10px] h-0.5 w-1/2',
                   step.status === 'Failed' ? 'bg-destructive/60'
-                  : step.status === 'Completed' || step.status === 'Warning' || step.status === 'InProgress'
+                  : step.status === 'Warning' ? 'bg-amber-400/50'
+                  : step.status === 'Completed' || step.status === 'InProgress'
                     ? 'bg-emerald-600/50 dark:bg-emerald-400/50'
                     : 'bg-border',
                 )}
@@ -312,7 +335,8 @@ export function SessionProgressDetails({
                 aria-hidden="true"
                 className={cn(
                   'absolute left-1/2 top-[10px] h-0.5 w-1/2',
-                  step.status === 'Completed' || step.status === 'Warning' ? 'bg-emerald-600/50 dark:bg-emerald-400/50' : 'bg-border',
+                  step.status === 'Warning' ? 'bg-amber-400/50'
+                  : step.status === 'Completed' ? 'bg-emerald-600/50 dark:bg-emerald-400/50' : 'bg-border',
                 )}
               />
             )}
@@ -340,7 +364,8 @@ export function SessionProgressDetails({
 
       {prepareSetup && <PrepareSetupCard setupProfile={setupProfile} step={prepareSetup} sessionId={sessionId} />}
 
-      {focus && (
+      {/* A failed Prepare setup already explains itself in its own card. */}
+      {focus && !(failed && failed.name === PREPARE_SETUP) && (
         <div
           className={cn(
             'mt-5 flex flex-wrap items-center justify-between gap-4 rounded-md border p-4',

@@ -64,6 +64,8 @@ Static Web Apps (Portal frontend), WinPE and Windows RE boot images (x64, ARM64)
 
 **Project Type**: Polyglot web application plus WinPE client and desktop tool; a new feature across all six components.
 
+**Design source**: [docs/design/os-customisation.html](../../docs/design/os-customisation.html) for every portal surface; [contracts/portal-client-surfaces.md](contracts/portal-client-surfaces.md) follows it.
+
 **Performance Goals**:
 - Prepare setup adds at most 30 seconds to a deployment, excluding the profile's own scripts (SC-005)
 - Portal list and detail reads at most 300 ms at p95 under 50 users (constitution V)

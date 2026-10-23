@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ListChecks, ListX } from 'lucide-react';
+import { Check, X } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 import { Checkbox } from './ui/checkbox.tsx';
 import { SearchInput } from './ui/search-input.tsx';
@@ -18,13 +18,15 @@ export interface PickerLocation {
  * and Clear act on the locations shown, so a search narrows them. A location with a
  * `disabledReason` cannot be picked and shows the reason in a tooltip.
  */
-export function LocationPicker({ locations, selected, onChange, disabledReason, idPrefix = 'loc' }: {
+export function LocationPicker({ locations, selected, onChange, disabledReason, idPrefix = 'loc', footerNote }: {
   locations: PickerLocation[];
   selected: string[];
   onChange: (ids: string[]) => void;
   disabledReason?: (locationId: string) => string | undefined;
   /** Prefix for the row label ids, so two pickers on one page never share an id. */
   idPrefix?: string;
+  /** Right-hand footer text while not searching, for example "2 targeted by other profiles". */
+  footerNote?: string;
 }): React.ReactElement {
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
@@ -48,10 +50,10 @@ export function LocationPicker({ locations, selected, onChange, disabledReason, 
       <div className="flex flex-wrap items-center gap-2 border-b border-border p-2">
         <SearchInput value={search} onValueChange={setSearch} placeholder="Search locations" aria-label="Search locations" wrapperClassName="min-w-40 flex-1" />
         <Tooltip content={`Select ${scope}`}>
-          <Button variant="outline" onClick={selectShown} disabled={pickable.length === 0}><ListChecks />Select all</Button>
+          <Button variant="outline" onClick={selectShown} disabled={pickable.length === 0}><Check />Select all</Button>
         </Tooltip>
         <Tooltip content={`Clear ${scope}`}>
-          <Button variant="outline" onClick={clearShown} disabled={shown.length === 0}><ListX />Clear</Button>
+          <Button variant="outline" onClick={clearShown} disabled={shown.length === 0}><X />Clear</Button>
         </Tooltip>
       </div>
       <ul className="h-56 overflow-y-auto py-1" aria-label="Locations">
@@ -78,7 +80,7 @@ export function LocationPicker({ locations, selected, onChange, disabledReason, 
       </ul>
       <div className="flex justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground">
         <span>{selected.length} of {locations.length} selected</span>
-        {term && <span>{shown.length} shown</span>}
+        {term ? <span>{shown.length} shown</span> : footerNote && <span>{footerNote}</span>}
       </div>
     </div>
   );

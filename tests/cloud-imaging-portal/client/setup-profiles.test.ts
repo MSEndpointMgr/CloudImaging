@@ -7,11 +7,15 @@ import {
   duplicateName,
   emptyContent,
   itemCountsSummary,
+  itemStatusText,
+  itemTooltip,
   locationDisabledReason,
+  locationsTargetedElsewhere,
   profileForLocation,
-  registryKeyPath,
+  registryValuePath,
   registryValueTooltip,
   saveLabel,
+  sortItemsFailuresFirst,
   targetingProblem,
   validateRegistryValue,
   type SetupProfileDraft,
@@ -70,8 +74,13 @@ describe('Portal frontend: setup profile helpers', () => {
   });
 
   it('names the profile that already uses All devices', () => {
-    expect(allDevicesDisabledReason(profiles, 'p1')).toBe('Already used by Default profile');
+    expect(allDevicesDisabledReason(profiles, 'p1')).toBe('Used by Default profile. Only one profile can target all devices.');
     expect(allDevicesDisabledReason(profiles, 'p3')).toBeUndefined();
+  });
+
+  it('counts the locations other profiles target, for the picker footer', () => {
+    expect(locationsTargetedElsewhere(profiles, 'p1', ['sto', 'got', 'mal'])).toBe(1);
+    expect(locationsTargetedElsewhere(profiles, undefined, ['sto', 'got', 'mal'])).toBe(2);
   });
 
   it('resolves a location to its own profile first, then All devices', () => {
@@ -119,12 +128,13 @@ describe('Portal frontend: setup profile helpers', () => {
     );
   });
 
-  it('formats a registry value path per hive with name and type in the tooltip', () => {
-    expect(registryKeyPath(value({ hive: 'Software', key: 'Policies\\Microsoft\\FVE' }))).toBe('HKLM\\SOFTWARE\\Policies\\Microsoft\\FVE');
-    expect(registryKeyPath(value({ hive: 'System', key: 'Setup' }))).toBe('HKLM\\SYSTEM\\Setup');
-    expect(registryKeyPath(value({ hive: 'DefaultUser', key: 'Control Panel\\Desktop' }))).toBe('Default user\\Control Panel\\Desktop');
-    expect(registryValueTooltip(value({ valueName: 'X', type: 'DWord' }))).toBe('Value name: X. Type: DWORD.');
-    expect(registryValueTooltip(value({ valueName: '', type: 'MultiString' }))).toBe('Value name: (Default). Type: Multi-string.');
+  it('formats the full registry value path per hive with the type in the tooltip', () => {
+    expect(registryValuePath(value({ hive: 'Software', key: 'Policies\\Microsoft\\FVE', valueName: 'EncryptionMethodWithXtsOs' }))).toBe('HKLM\\SOFTWARE\\Policies\\Microsoft\\FVE\\EncryptionMethodWithXtsOs');
+    expect(registryValuePath(value({ hive: 'System', key: 'Setup', valueName: '' }))).toBe('HKLM\\SYSTEM\\Setup\\(Default)');
+    expect(registryValuePath(value({ hive: 'DefaultUser', key: 'Control Panel\\Desktop', valueName: 'MenuShowDelay' }))).toBe('Default user\\Control Panel\\Desktop\\MenuShowDelay');
+    expect(registryValueTooltip(value({ hive: 'System', key: 'CurrentControlSet\\Control\\BitLocker', valueName: 'PreventDeviceEncryption', type: 'DWord' })))
+      .toBe('HKLM\\SYSTEM\\CurrentControlSet\\Control\\BitLocker\\PreventDeviceEncryption (DWORD)');
+    expect(registryValueTooltip(value({ valueName: '', type: 'MultiString' }))).toContain('\\(Default) (Multi-string)');
   });
 
   describe('registry value rules', () => {
@@ -170,14 +180,48 @@ describe('Portal frontend: setup profile helpers', () => {
     });
   });
 
-  it('summarizes item counts per kind', () => {
+  it('summarizes item counts as separate items, failures first', () => {
     expect(itemCountsSummary([
-      { kind: 'RegistryValue', outcome: 'Succeeded', count: 3 },
-      { kind: 'WinPEScript', outcome: 'Succeeded', count: 1 },
+      { kind: 'RegistryValue', outcome: 'Succeeded', count: 4 },
+      { kind: 'WinPEScript', outcome: 'Succeeded', count: 2 },
+      { kind: 'WindowsSetupScript', outcome: 'Queued', count: 1 },
+      { kind: 'DriverInstaller', outcome: 'Queued', count: 5 },
+    ])).toEqual([
+      { tone: 'succeeded', text: '4 registry values written' },
+      { tone: 'succeeded', text: '2 WinPE scripts succeeded' },
+      { tone: 'queued', text: '1 script and 5 driver installers queued for Windows setup' },
+    ]);
+    expect(itemCountsSummary([
+      { kind: 'RegistryValue', outcome: 'Succeeded', count: 7 },
       { kind: 'WinPEScript', outcome: 'Failed', count: 1 },
-      { kind: 'WindowsSetupScript', outcome: 'Queued', count: 2 },
-    ])).toBe('3 registry values written. 1 of 2 WinPE scripts failed. 2 items queued for Windows setup.');
-    expect(itemCountsSummary([{ kind: 'RegistryValue', outcome: 'Succeeded', count: 1 }, { kind: 'AnswerFile', outcome: 'Succeeded', count: 1 }]))
-      .toBe('1 registry value written. Answer file written.');
+      { kind: 'AnswerFile', outcome: 'Succeeded', count: 1 },
+    ])).toEqual([
+      { tone: 'failed', text: '1 WinPE script failed' },
+      { tone: 'succeeded', text: '7 registry values written' },
+    ]);
+    expect(itemCountsSummary([{ kind: 'RegistryValue', outcome: 'NotRun', count: 2 }, { kind: 'AnswerFile', outcome: 'NotRun', count: 1 }]))
+      .toEqual([{ tone: 'notRun', text: '2 registry values not run' }, { tone: 'notRun', text: 'Answer file not run' }]);
+  });
+
+  it('describes one item row with a short status and the full reason in the tooltip', () => {
+    expect(itemStatusText({ kind: 'WinPEScript', outcome: 'Failed', reason: 'Exited with code 1.', exitCode: 1 })).toBe('Failed: exit code 1');
+    expect(itemStatusText({ kind: 'RegistryValue', outcome: 'Failed', reason: 'The SYSTEM hive could not be loaded. Access denied.', exitCode: null })).toBe('Failed: The SYSTEM hive could not be loaded');
+    expect(itemStatusText({ kind: 'WinPEScript', outcome: 'Failed', reason: 'Stopped after 5 minutes.', exitCode: null })).toBe('Failed: Stopped after 5 minutes');
+    expect(itemStatusText({ kind: 'RegistryValue', outcome: 'Succeeded', reason: null, exitCode: null })).toBe('Written');
+    expect(itemStatusText({ kind: 'WinPEScript', outcome: 'Succeeded', reason: null, exitCode: 0 })).toBe('Succeeded');
+    expect(itemStatusText({ kind: 'WindowsSetupScript', outcome: 'Queued', reason: null, exitCode: null })).toBe('Queued for Windows setup');
+    expect(itemStatusText({ kind: 'AnswerFile', outcome: 'NotRun', reason: 'x', exitCode: null })).toBe('Not run');
+    expect(itemTooltip({ reason: 'Exited with code 1.', lastOutputLine: 'Invalid namespace' })).toBe('Exited with code 1. Last output: Invalid namespace');
+    expect(itemTooltip({ reason: null, lastOutputLine: null })).toBeUndefined();
+  });
+
+  it('sorts failed items first, then not run, then the rest in device order', () => {
+    const sorted = sortItemsFailuresFirst([
+      { index: 0, outcome: 'Succeeded' as const },
+      { index: 1, outcome: 'NotRun' as const },
+      { index: 2, outcome: 'Failed' as const },
+      { index: 3, outcome: 'Queued' as const },
+    ]);
+    expect(sorted.map((i) => i.index)).toEqual([2, 1, 0, 3]);
   });
 });

@@ -89,8 +89,8 @@ Expected: no output from the first command. Every hit of the second must be a co
 | 4.1 | Operator | Open Imaging > Setup Profiles | Empty state with "New profile". |
 | 4.2 | Operator | Create "Stockholm and Gothenburg": target Stockholm HQ and Gothenburg Office; add `HKLM SYSTEM` `CurrentControlSet\Control\BitLocker` `PreventDeviceEncryption` DWORD 1, `HKLM SOFTWARE` `Policies\Microsoft\FVE` `EncryptionMethodWithXtsOs` DWORD 7, `HKLM SYSTEM` `CurrentControlSet\Services\tzautoupdate` `Start` DWORD 3; add WinPE script "Enable Wake on LAN in HP firmware" and Windows setup script "Wired 802.1X for the office LAN"; save. Time it. | Saved as version 1 in under 5 minutes (SC-001). List row shows two location badges, 3, 2, absolute time. |
 | 4.3 | Operator | New profile "Lab": open the location picker | Stockholm HQ and Gothenburg Office are disabled with "Targeted by Stockholm and Gothenburg". |
-| 4.4 | Operator | Target All devices on "Lab", save; start another profile and open Targeting | "All devices" is disabled with "Already used by Lab". |
-| 4.5 | Operator | Answer file: paste one with `RegisteredOrganization`, `TimeZone`, `InputLocale` | "Valid answer file. Passes: specialize, oobeSystem." Row shows passes, size, time. |
+| 4.4 | Operator | Target All devices on "Lab", save; start another profile and open Targeting | "All devices" is disabled and reads "Used by Lab. Only one profile can target all devices." |
+| 4.5 | Operator | Answer file: paste one with `RegisteredOrganization`, `TimeZone`, `InputLocale` | "Valid. Passes: specialize, oobeSystem." Row shows passes, size, time. |
 | 4.6 | Operator | Answer file: add a windowsPE pass and an UnattendedJoin component | Both problems listed with line numbers at once; Done and Save disabled. |
 | 4.7 | Operator | Send the same file directly: `Invoke-RestMethod -Method Put -Uri https://<portal>/api/setup-profiles/<id> -Headers @{ Authorization = "Bearer $($Token)" } -ContentType 'application/json' -Body $Body` | 400 with the same two problems in `errors` (SC-003). |
 | 4.8 | Operator | Edit a script twice more (versions 2, 3), open History | Versions tab with three rows, Current on 3; expanding 2 shows labelled fields with "No change" where nothing changed. Targeting tab shows the creation and targeting rows. |
@@ -117,10 +117,10 @@ Use one Windows 11 23H2, one 24H2 and one 25H2 OS image (spec risk 1), x64, and 
 
 | # | Do | Expect |
 |---|---|---|
-| 6.1 | Couple a device from Stockholm HQ media, one from media without a location, press Start imaging | Overlay: "Stockholm and Gothenburg: 1 device" and "Lab: 1 device" (All devices), no versions (US5). |
+| 6.1 | Couple a device from Stockholm HQ media, one from media without a location, press Start imaging | Overlay: "1 device: Stockholm and Gothenburg" and "1 device started from media without a location: Lab", no versions (US5). |
 | 6.2 | While the device downloads, save a new version of the profile | Device still gets the version pinned at Start imaging (SC-002); History shows the pinned version "In use". |
 | 6.3 | Watch the device | Step list shows Prepare setup after Apply image; status lines change per phase; UI responsive throughout. |
-| 6.4 | Portal timeline after completion | Prepare setup card names the profile and version; summary counts; "Show items" lists each registry value, the WinPE script with exit code and duration, the Windows setup script as queued. |
+| 6.4 | Portal timeline after completion | Card "Setup profile: <name>, version N"; summary items with icons; "Show details" lists each registry value, the WinPE script with its exit code, the Windows setup script as queued. |
 | 6.5 | First boot, before sign-in: open a command prompt in OOBE (Shift+F10) | `reg query HKLM\SYSTEM\CurrentControlSet\Control\BitLocker /v PreventDeviceEncryption` shows 1; FVE and tzautoupdate values present; `C:\Windows\Logs\CloudImaging\SetupRunner.log` lists the Windows setup script as Succeeded before OOBE; `C:\Windows\Setup\CloudImaging` no longer exists. |
 | 6.6 | Inspect `C:\Windows\Panther\unattend.xml` | Profile settings present; exactly one `Invoke-CloudImagingSetup.ps1` command, Order 1, in the `amd64` (or `arm64`) Deployment component (SC-007). |
 | 6.7 | Add a Default user value (`Control Panel\Desktop` `MenuShowDelay` String 200); image each OS version | Value present in a new user's profile after first sign-in; on failure the item reason names the hive. |
