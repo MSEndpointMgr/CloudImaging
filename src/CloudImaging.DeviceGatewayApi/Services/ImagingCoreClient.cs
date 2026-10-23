@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace CloudImaging.DeviceGatewayApi.Services;
 
 /// <summary>
-/// Typed HTTP client for Device Gateway API → Imaging Core API calls over Private Link (FR-013).
+/// Typed HTTP client for Device Gateway API -> Imaging Core API calls over Private Link (FR-013).
 /// All operations forward requests using the Device Gateway API managed identity credential.
 /// </summary>
 public sealed class ImagingCoreClient
@@ -62,7 +62,7 @@ public sealed class ImagingCoreClient
     /// <summary>
     /// Fetch the active boot media certificate's metadata (thumbprint, validity window) from
     /// ImagingCoreApi (FR-069). ImagingCoreApi's BootMediaCertificateRepository is the sole
-    /// owner/writer of the BootMediaCertificate table — the Device Gateway API must go through
+    /// owner/writer of the BootMediaCertificate table: the Device Gateway API must go through
     /// this Private Link call rather than reading that table directly out of ImagingCoreApi's
     /// storage account, the same way every other cross-service data need in this class does.
     /// </summary>

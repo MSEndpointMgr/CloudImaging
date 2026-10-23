@@ -11,13 +11,13 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// Lifecycle rules:
 ///   • Inactivity timeout: sessions with no heartbeat within <see cref="InactivityTimeout"/> are
 ///     expired. Sessions still in <see cref="SessionState.SessionInit"/>/<see cref="SessionState.SessionAllowed"/>
-///     (never coupled by an operator) transition to <see cref="SessionState.SessionExpired"/> — a
+///     (never coupled by an operator) transition to <see cref="SessionState.SessionExpired"/>: a
 ///     benign timeout, not a failure. Sessions already coupled (<see cref="SessionState.SessionAssigned"/>/
 ///     <see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>) transition
 ///     to <see cref="SessionState.SessionFailed"/>, since an operator was already involved and the
 ///     interruption has real diagnostic value.
 ///   • Sessions actively imaging (<see cref="SessionState.SessionStarted"/>/<see cref="SessionState.SessionInProgress"/>)
-///     get the longer <see cref="ActiveImagingHeartbeatTimeout"/> instead — a full disk apply can
+///     get the longer <see cref="ActiveImagingHeartbeatTimeout"/> instead: a full disk apply can
 ///     legitimately outlast the pre-imaging window, and a device mid-apply must survive a transient
 ///     network outage rather than being declared failed while it is still working.
 ///   • Terminal purge: sessions in terminal state (Completed / Failed / Expired / NotAuthorized) that have
@@ -57,7 +57,7 @@ public sealed partial class DeviceSessionLifecycleService
     ];
 
     // Never-coupled states: an inactivity timeout here means the operator simply never entered
-    // the passcode in time — not a real failure, so it must resolve to SessionExpired rather
+    // the passcode in time: not a real failure, so it must resolve to SessionExpired rather
     // than SessionFailed (see class remarks).
     private static readonly SessionState[] NeverCoupledStates =
     [
@@ -167,7 +167,7 @@ public sealed partial class DeviceSessionLifecycleService
 
     /// <summary>
     /// Purges SessionHistory (Reports audit) records whose retention window has elapsed.
-    /// Independent of <see cref="PurgeTerminalSessionsAsync"/> — history retention is
+    /// Independent of <see cref="PurgeTerminalSessionsAsync"/>: history retention is
     /// administrator-configurable and typically much longer than the live session TTL.
     /// Returns the number of history records purged.
     /// </summary>
@@ -208,7 +208,7 @@ public sealed partial class DeviceSessionLifecycleService
 
     /// <summary>
     /// Records a SessionHistory (Reports audit) entry for an inactivity-driven terminal
-    /// transition. FailedStepName is intentionally left unset here — unlike
+    /// transition. FailedStepName is intentionally left unset here: unlike
     /// <c>ReportProgressFunction</c>, this path doesn't have direct access to the per-step
     /// records, only the session's free-text <see cref="DeviceSession.CurrentStep"/> snapshot.
     /// ErrorDetail instead captures a synthesized, still-diagnostically-useful reason.

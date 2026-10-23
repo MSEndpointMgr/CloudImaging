@@ -29,7 +29,7 @@ public enum ProgressStepState
 /// One entry in the ProgressView's step sidebar (Format Disk, Download Image, ...): a fixed
 /// label, a visual <see cref="State"/> driving the sidebar's dot/label styling via XAML
 /// DataTriggers, and an optional short <see cref="Caption"/> ("In progress…", "Completed in
-/// 12s", "Failed") — mirrors the Steps sidebar pattern in
+/// 12s", "Failed"): mirrors the Steps sidebar pattern in
 /// CloudImaging.MediaBuilder's GenerateBootImageView.
 /// </summary>
 public sealed class ProgressStepItem : INotifyPropertyChanged
@@ -167,8 +167,8 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     ///
     /// <para>
     /// Only steps that can report genuine progress set this (image download, image apply,
-    /// recovery image, and any future step such as driver injection). Steps that cannot — disk
-    /// format, boot configuration — leave it at 0 rather than showing a fabricated value.
+    /// recovery image, and any future step such as driver injection). Steps that cannot: disk
+    /// format, boot configuration: leave it at 0 rather than showing a fabricated value.
     /// <see cref="UpdateStep"/> resets it on every transition, so a new step always starts from
     /// empty and never inherits the previous step's fill.
     /// </para>
@@ -232,7 +232,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     /// for direct binding to a read-only TextBox "ticker" (FR-007: light live detail).</summary>
     public string LogText { get => _logText; private set { _logText = value; OnPropertyChanged(); } }
 
-    /// <summary>Short label of the step currently in progress — falls back to the most recently
+    /// <summary>Short label of the step currently in progress: falls back to the most recently
     /// failed, then most recently completed, step so the heading is never blank.</summary>
     public string CurrentStepTitle =>
         Steps.FirstOrDefault(s => s.State == ProgressStepState.Active)?.Label
@@ -240,8 +240,8 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         ?? Steps.LastOrDefault(s => s.State is ProgressStepState.Done or ProgressStepState.Warning)?.Label
         ?? Steps[0].Label;
 
-    /// <summary>"Step X of 5 · Elapsed mm:ss" shown under the title.</summary>
-    public string StepSubtitle => $"Step {CurrentStepNumber} of {Steps.Count} · Elapsed {ElapsedText}";
+    /// <summary>"Step X of 5, elapsed mm:ss" shown under the title.</summary>
+    public string StepSubtitle => $"Step {CurrentStepNumber} of {Steps.Count}, elapsed {ElapsedText}";
 
     /// <summary>Wall-clock time since this view model was created (i.e. since imaging started),
     /// refreshed opportunistically whenever progress/step bindings change.</summary>
@@ -333,7 +333,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     /// </summary>
     /// <param name="transferredBytes">Bytes received so far.</param>
     /// <param name="totalBytes">Total size, or a non-positive value when the server did not send
-    /// a Content-Length — in which case only the transferred amount is shown, since "of ?" is
+    /// a Content-Length: in which case only the transferred amount is shown, since "of ?" is
     /// worse than no denominator at all.</param>
     public void SetTransferProgress(long transferredBytes, long totalBytes)
     {
@@ -351,8 +351,8 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Appends a single timestamped line to <see cref="LogText"/>. Called both for each
-    /// phase-level <see cref="StatusMessage"/> change and — via
-    /// <see cref="Services.ProgressActivityLoggerFactory"/> — for every Information-level log
+    /// phase-level <see cref="StatusMessage"/> change and: via
+    /// <see cref="Services.ProgressActivityLoggerFactory"/>: for every Information-level log
     /// message the pipeline's step services (DiskFormatService, ImageDownloadService,
     /// ImageApplyService, BootConfigurationService, RecoveryImageService) already emit, so the
     /// ticker shows the real commands/sub-steps each phase runs rather than just one line per

@@ -5,7 +5,7 @@ using CloudImaging.Contracts.Models;
 namespace CloudImaging.OperatorApi.Services;
 
 /// <summary>
-/// Typed HTTP client for Operator API → Imaging Core API calls over Private Link (FR-064).
+/// Typed HTTP client for Operator API -> Imaging Core API calls over Private Link (FR-064).
 /// All operations forward requests using the Operator API managed identity credential.
 /// </summary>
 public sealed class ImagingCoreClient

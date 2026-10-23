@@ -119,7 +119,7 @@ public sealed class ImagingWorkflowViewModelTests
     {
         // SAS is refreshed when < 15 minutes remain (FR-025)
         var threshold = SasRefreshCoordinator.RefreshThreshold;
-        threshold.TotalMinutes.Should().Be(15, "SAS token refresh threshold is 15 minutes (FR-025)");
+        threshold.TotalMinutes.Should().Be(15, "SAS token refresh threshold is 15 minutes");
     }
 
     // ── Overall progress increases as steps complete ─────────────────────────

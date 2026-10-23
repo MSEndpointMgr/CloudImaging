@@ -67,8 +67,15 @@ public sealed class RestrictedProcessRunner : IRestrictedProcessRunner
         finally
         {
             // Closing the job kills anything the process left running (KILL_ON_JOB_CLOSE).
-            if (job != IntPtr.Zero) CloseHandle(job);
-            if (restrictedToken != IntPtr.Zero) CloseHandle(restrictedToken);
+            if (job != IntPtr.Zero)
+            {
+                CloseHandle(job);
+            }
+
+            if (restrictedToken != IntPtr.Zero)
+            {
+                CloseHandle(restrictedToken);
+            }
         }
     }
 
@@ -140,10 +147,25 @@ public sealed class RestrictedProcessRunner : IRestrictedProcessRunner
         }
         finally
         {
-            if (writePipe != IntPtr.Zero) CloseHandle(writePipe);
-            if (process.hThread != IntPtr.Zero) CloseHandle(process.hThread);
-            if (process.hProcess != IntPtr.Zero) CloseHandle(process.hProcess);
-            if (reader is null) CloseHandle(readPipe);
+            if (writePipe != IntPtr.Zero)
+            {
+                CloseHandle(writePipe);
+            }
+
+            if (process.hThread != IntPtr.Zero)
+            {
+                CloseHandle(process.hThread);
+            }
+
+            if (process.hProcess != IntPtr.Zero)
+            {
+                CloseHandle(process.hProcess);
+            }
+
+            if (reader is null)
+            {
+                CloseHandle(readPipe);
+            }
         }
     }
 
@@ -158,7 +180,10 @@ public sealed class RestrictedProcessRunner : IRestrictedProcessRunner
                 lock (output)
                 {
                     output.Enqueue(line);
-                    if (output.Count > MaxOutputLines) output.Dequeue();
+                    if (output.Count > MaxOutputLines)
+                    {
+                        output.Dequeue();
+                    }
                 }
             }
         }

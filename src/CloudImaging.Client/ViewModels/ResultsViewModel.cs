@@ -104,7 +104,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
         TryAgainCommand = new RelayCommand(_ => (tryAgain ?? _navigateToStart)());
 
         // FR-025: on success, count down and restart the device automatically instead of
-        // leaving it sitting on a terminal screen indefinitely — no restartSystem callback is
+        // leaving it sitting on a terminal screen indefinitely: no restartSystem callback is
         // supplied by unit tests, so the countdown/restart is inert there.
         if (_outcome == Outcome.Success && _restartSystem is not null)
         {
@@ -124,7 +124,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     public bool IsNotAuthorized => _outcome == Outcome.NotAuthorized;
 
     /// <summary>
-    /// The session was never coupled before its passcode/inactivity window elapsed — a benign
+    /// The session was never coupled before its passcode/inactivity window elapsed: a benign
     /// timeout, not a diagnosable failure (FR-021). Shown with warning (not error) styling, and
     /// still offers Retry so the technician can simply request a fresh session.
     /// </summary>

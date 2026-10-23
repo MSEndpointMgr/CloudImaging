@@ -107,15 +107,15 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
             // Announce the step transition in the log itself as a banner line. Without this,
             // the log only ever shows raw external-process output (dism.exe/cmd.exe/copype.cmd
-            // stdout) — a step could go Active in the steps sidebar with nothing in the log to mark
+            // stdout): a step could go Active in the steps sidebar with nothing in the log to mark
             // the transition, and the next thing shown might be an unrelated-sounding line from that
             // step's own internal tooling (e.g. copype.cmd's own "Mounting ..." chatter), making the
             // log look out of sync with the sidebar. This is done here (once, at the ViewModel) rather
             // than in the service's ReportProgress, since that method also drives the IPC round-trip
-            // for elevated generation (see BootImageGenerationService.TailProgress) — logging there
+            // for elevated generation (see BootImageGenerationService.TailProgress): logging there
             // would double up every banner line during elevated runs. Step messages are kept short
             // and self-contained (no trailing "…") so they always fit the one-line progress header
-            // on their own — the same text is reused verbatim as the banner line here.
+            // on their own: the same text is reused verbatim as the banner line here.
             AppendLogLine(e.Message.TrimEnd());
         });
 
@@ -384,9 +384,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
     /// <summary>
     /// True from the moment Cancel is clicked until generation actually stops (FR-051 cancel
-    /// support). Disables the Cancel button the instant it's pressed — clicking cancel a second
+    /// support). Disables the Cancel button the instant it's pressed: clicking cancel a second
     /// time (or repeatedly) while cleanup is still in flight does nothing useful and just reads
-    /// as unresponsive — and flips the spinner's rotation direction as a clear visual cue that a
+    /// as unresponsive: and flips the spinner's rotation direction as a clear visual cue that a
     /// cancellation is in progress rather than the generation itself just running as normal.
     /// </summary>
     public bool IsCancelling
@@ -431,7 +431,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         private set { _progressPercent = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercentText)); }
     }
 
-    /// <summary>Numeric percentage as display text (e.g. "42%") — the progress bar itself only shows the fill visually.</summary>
+    /// <summary>Numeric percentage as display text (e.g. "42%"): the progress bar itself only shows the fill visually.</summary>
     public string ProgressPercentText => $"{ProgressPercent}%";
 
     /// <summary>Current status line shown above the progress bar.</summary>
@@ -535,7 +535,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public bool ShowResultDialog => IsResultDialogOpen && (IsComplete || HasError || WasCancelled);
 
     /// <summary>
-    /// True once a generation has ended in failure or cancellation — the only cases worth
+    /// True once a generation has ended in failure or cancellation: the only cases worth
     /// offering a "start over" button for. A successful generation has nothing to retry, so
     /// that button is hidden once <see cref="IsComplete"/> is true (see GenerateBootImageView.xaml).
     /// </summary>
@@ -546,7 +546,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
     /// <summary>
     /// Live command/output log streamed from the generation service (FR-051d), as one plain,
-    /// selectable block of text (one line per entry, no wrapping) — bind a read-only TextBox
+    /// selectable block of text (one line per entry, no wrapping): bind a read-only TextBox
     /// to this rather than an ItemsControl/ListBox so the whole log can be selected and copied
     /// like a real console, not a list of separately-selectable rows.
     /// </summary>
@@ -684,7 +684,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         try
         {
             // Set (or refresh) the Operator API bearer token used for boot media certificate
-            // retrieval, branding logo retrieval, and Device Gateway endpoint resolution —
+            // retrieval, branding logo retrieval, and Device Gateway endpoint resolution:
             // without this, GenerateElevatedAsync's certificate fetch fails as unauthenticated.
             var token = await _authService.GetAccessTokenAsync(_cts.Token)
                 ?? throw new InvalidOperationException("Sign in to the Operator API before generating a boot image.");
@@ -729,7 +729,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             // Mirror the "FAILED: ..." convention already used for individual command failures
             // (RunExternalAsync) so the log always ends with a clear terminal marker line,
             // even when the failure happened somewhere that never itself called RaiseLog
-            // (e.g. an ADK/prerequisite check) — otherwise the log would just trail off with
+            // (e.g. an ADK/prerequisite check): otherwise the log would just trail off with
             // whatever step banner was last announced, with nothing to explain the red InfoBar
             // shown alongside it.
             // T160/FR-058: every failure path surfaces a support reference code so a technician
@@ -776,7 +776,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             return;
 
         // Set IsCancelling (disables the button, reverses the spinner) and log the request
-        // immediately, at the moment the user clicks Cancel — the later "Generation cancelled"
+        // immediately, at the moment the user clicks Cancel: the later "Generation cancelled"
         // banner only appears once cleanup has actually finished unwinding, which can take a
         // few seconds (e.g. a DISM unmount already in flight), so without this the button would
         // look unresponsive and the log would show nothing happened until cleanup completes.
@@ -869,7 +869,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>
     /// Appends one clean line to <see cref="LogText"/>. External tools (copype.cmd, dism.exe)
     /// emit blank lines and decorative "===...===" banner lines mixed in with the actual
-    /// step/status text — those are noise in a live activity log, so they're filtered out here
+    /// step/status text: those are noise in a live activity log, so they're filtered out here
     /// rather than in the service (which still logs everything, unfiltered, via ILogger).
     /// </summary>
     private void AppendLogLine(string line)
@@ -878,7 +878,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         if (string.IsNullOrWhiteSpace(trimmed) || trimmed.All(c => c is '=' or '-'))
             return;
 
-        // A real line follows any pending heartbeat tick — the next heartbeat should start
+        // A real line follows any pending heartbeat tick: the next heartbeat should start
         // a fresh line rather than overwrite this one.
         _heartbeatLineStart = -1;
         _logBuilder.Append(TimestampPrefix()).Append(trimmed).Append(Environment.NewLine);
@@ -951,7 +951,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
             if (isCompleted)
             {
-                // The driver-injection and support-tools steps are optional (FR-051c/FR-051d) —
+                // The driver-injection and support-tools steps are optional (FR-051c/FR-051d):
                 // when no path was given for one, nothing was actually done for it, so it reads
                 // as Skipped rather than Done.
                 var noDriversToInject = step.Label == DriverInjectionStepLabel && string.IsNullOrWhiteSpace(_driverRootPath);
@@ -1062,13 +1062,13 @@ public sealed class GenerationStep(string label, int startPercent, string? skipp
     /// <summary>Short explanatory line shown under a skipped step; null for every other state.</summary>
     public string? Caption => IsSkipped ? skippedCaption ?? "Skipped" : null;
 
-    /// <summary>Symbol shown next to the step label: done ✓, active ▶, failed ✕, skipped –, pending ○.</summary>
+    /// <summary>Symbol shown next to the step label: done ✓, active ▶, failed ✕, skipped , , pending ○.</summary>
     public string Glyph => _state switch
     {
         GenerationStepState.Done    => "\u2713", // ✓
         GenerationStepState.Active  => "\u25B6", // ▶
         GenerationStepState.Failed  => "\u2715", // ✕
-        GenerationStepState.Skipped => "\u2013", // –
+        GenerationStepState.Skipped => "\u2013", // en dash
         _                           => "\u25CB", // ○
     };
 

@@ -14,16 +14,16 @@ namespace CloudImaging.Client.Services;
 /// <b>Why this is needed.</b> <see cref="DiskFormatService"/> assigns the target partitions the
 /// first free drive letters WinPE has left (the boot media, its cache partition and any attached
 /// USB storage have usually taken several already), so the Windows volume is routinely mounted as
-/// something like <c>H:</c>. Everything the pipeline does afterwards — DISM apply, bcdboot,
-/// reagentc — is addressed through that letter. The letter itself is a WinPE-only artifact and
+/// something like <c>H:</c>. Everything the pipeline does afterwards: DISM apply, bcdboot,
+/// reagentc: is addressed through that letter. The letter itself is a WinPE-only artifact and
 /// normally has no bearing on the deployed OS, but the drive letter the deployed OS ends up using
 /// is <i>not</i> derived from the disk layout: at boot, mountmgr reads the letter assignments
 /// stored in the SYSTEM hive it is booting from, under <c>HKLM\SYSTEM\MountedDevices</c>.
 /// </para>
 /// <para>
 /// A stock, Sysprep-generalized <c>install.wim</c> ships with those assignments cleared, so it
-/// lands on <c>C:</c> by luck rather than by design. A custom-captured image — exactly what this
-/// product lets an administrator upload — very often still carries the letter mappings of the
+/// lands on <c>C:</c> by luck rather than by design. A custom-captured image: exactly what this
+/// product lets an administrator upload: very often still carries the letter mappings of the
 /// machine it was captured from, and a machine that boots with Windows on anything other than
 /// <c>C:</c> is effectively broken: hard-coded paths, installers, Group Policy, servicing and
 /// most in-box tooling all assume <c>C:</c>, and the letter cannot be changed afterwards.
@@ -33,7 +33,7 @@ namespace CloudImaging.Client.Services;
 /// (<c>OSDPreserveDriveLetter=False</c>) apply after laying the image down: mount the applied
 /// image's own SYSTEM hive offline, throw away every inherited <c>\DosDevices\&lt;letter&gt;:</c>
 /// mapping, and write a single new one pointing <c>C:</c> at the volume that was just imaged. The
-/// binary volume identity that value needs is not something this code has to construct — WinPE's
+/// binary volume identity that value needs is not something this code has to construct: WinPE's
 /// own mountmgr already recorded it under the live <c>HKLM\SYSTEM\MountedDevices</c> when diskpart
 /// assigned the partition its temporary letter, so it is simply copied across.
 /// </para>
@@ -45,7 +45,7 @@ namespace CloudImaging.Client.Services;
 /// </remarks>
 public sealed partial class OfflineDriveLetterService
 {
-    /// <summary>Live WinPE mount-manager state — the source of the target volume's binary identity.</summary>
+    /// <summary>Live WinPE mount-manager state: the source of the target volume's binary identity.</summary>
     private const string LiveMountedDevicesKey = @"SYSTEM\MountedDevices";
 
     /// <summary>Sub-key of the SYSTEM hive root that holds mountmgr's persisted letter assignments.</summary>
@@ -100,7 +100,7 @@ public sealed partial class OfflineDriveLetterService
         if (volumeId is null or { Length: 0 })
         {
             // Without the identity the letter cannot be pinned, but clearing the inherited
-            // mappings on its own still leaves mountmgr free to assign the boot volume C: — which
+            // mappings on its own still leaves mountmgr free to assign the boot volume C:: which
             // is what it does when nothing else claims the letter. Worth doing, worth flagging.
             LogVolumeIdentityUnavailable(_logger, letter);
         }

@@ -92,7 +92,7 @@ public sealed partial class BulkAssignmentService
             config.SasTokenUrlExpiryMinutes > 0 ? config.SasTokenUrlExpiryMinutes : 240);
 
         // All sessions in this batch are assigned the same OS image, so one SAS token URL can be
-        // shared across every session — avoids one user-delegation-key round trip per device.
+        // shared across every session: avoids one user-delegation-key round trip per device.
         // Without this, sessions bulk-assigned from the Coupled Devices table never receive a
         // SasTokenUrl at all, and the Client's ImagingWorkflowViewModel polls for one until it
         // times out (5 minutes) because only the single-session /assign endpoint used to set it.
@@ -179,7 +179,7 @@ public sealed partial class BulkAssignmentService
         }
         catch
         {
-            return storagePath; // Fallback — caller should handle auth separately
+            return storagePath; // Fallback: caller should handle auth separately
         }
     }
 

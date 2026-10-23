@@ -1,4 +1,4 @@
-// modules/storage.bicep — Storage Accounts for portal assets and ImagingCoreApi blobs
+// modules/storage.bicep: Storage Accounts for portal assets and ImagingCoreApi blobs
 
 param location string
 param storageAppName string      // Portal frontend, deployment assets

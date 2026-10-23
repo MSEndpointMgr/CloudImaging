@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.ImagingCoreApi.Functions;
 
 /// <summary>
-/// POST /api/internal/sessions/{sessionId}/assign — Assigns an OS image to a coupled session (T039b, FR-025).
+/// POST /api/internal/sessions/{sessionId}/assign: Assigns an OS image to a coupled session (T039b, FR-025).
 ///
 /// Rules:
 ///   1. Session must be in <see cref="SessionState.SessionAssigned"/> state.
@@ -23,10 +23,10 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 ///   5. Transition to <see cref="SessionState.SessionStarted"/>.
 ///
 /// Response codes:
-///   201 Created — assignment succeeded; returns session ID + SAS token URL.
-///   404 Not Found — session not found.
-///   400 Bad Request — image not found in active catalog.
-///   409 Conflict — session not in assignable state, or the image's architecture differs from the device's.
+///   201 Created: assignment succeeded; returns session ID + SAS token URL.
+///   404 Not Found: session not found.
+///   400 Bad Request: image not found in active catalog.
+///   409 Conflict: session not in assignable state, or the image's architecture differs from the device's.
 /// </summary>
 public sealed partial class AssignSessionFunction
 {
@@ -120,7 +120,7 @@ public sealed partial class AssignSessionFunction
         var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
         var setupProfile = await _setupProfileResolver.ResolveAsync(session.LocationId, context.CancellationToken);
 
-        // Transition: SessionAssigned → SessionStarted, pinning the setup profile version so later edits never change what the device gets.
+        // Transition: SessionAssigned -> SessionStarted, pinning the setup profile version so later edits never change what the device gets.
         var assigned = session with
         {
             State = SessionState.SessionStarted,
@@ -170,7 +170,7 @@ public sealed partial class AssignSessionFunction
         }
         catch
         {
-            return storagePath; // Fallback — caller should handle auth separately
+            return storagePath; // Fallback: caller should handle auth separately
         }
     }
 
@@ -186,6 +186,6 @@ public sealed partial class AssignSessionFunction
     private static partial void LogArchitectureMismatch(ILogger logger, Guid sessionId, MachineArchitecture deviceArchitecture, MachineArchitecture imageArchitecture);
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Session {SessionId} assigned OS image {ImageId} — state=SessionStarted.")]
+        Message = "Session {SessionId} assigned OS image {ImageId}: state=SessionStarted.")]
     private static partial void LogSessionAssigned(ILogger logger, Guid sessionId, Guid imageId);
 }

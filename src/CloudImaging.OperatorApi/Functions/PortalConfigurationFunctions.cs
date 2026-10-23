@@ -44,7 +44,7 @@ public sealed partial class PortalConfigurationFunctions
     }
 
     /// <summary>
-    /// Replaces the portal configuration (Administrator only — middleware enforces role).
+    /// Replaces the portal configuration (Administrator only: middleware enforces role).
     /// </summary>
     [Function(nameof(PutPortalConfiguration))]
     public async Task<HttpResponseData> PutPortalConfiguration(

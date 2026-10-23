@@ -24,7 +24,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const PUBLISH_TIMEOUT_MS = 40_000;
 
 /**
- * Typed HTTP client for portal backend → Operator API calls over Private Link (T041, FR-013).
+ * Typed HTTP client for portal backend -> Operator API calls over Private Link (T041, FR-013).
  * Every request is authenticated with the portal backend's OWN managed-identity token (which
  * carries the `CloudImaging.PortalAccess` service role) via a request interceptor. The user's
  * browser token is never forwarded downstream. User RBAC is enforced separately at the portal

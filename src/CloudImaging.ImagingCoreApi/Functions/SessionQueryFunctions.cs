@@ -11,12 +11,12 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 
 /// <summary>
 /// Internal session query endpoints consumed by the Operator API for the portal devices view
-/// (FR-031). These return a secret-free projection of a <see cref="DeviceSession"/> — the
+/// (FR-031). These return a secret-free projection of a <see cref="DeviceSession"/>: the
 /// passcode hash, device-session token, and SAS token URL are NEVER exposed to the portal.
 ///
-/// GET /api/internal/sessions        — list all sessions (active + terminal), optional state filter
-/// GET /api/internal/sessions/{id}   — get a single session summary
-/// GET /api/internal/sessions/{sessionId}/status — device-facing status poll (secrets included:
+/// GET /api/internal/sessions       : list all sessions (active + terminal), optional state filter
+/// GET /api/internal/sessions/{id}  : get a single session summary
+/// GET /api/internal/sessions/{sessionId}/status: device-facing status poll (secrets included:
 ///   this is called only by Device Gateway API over Private Link, never by the portal)
 /// </summary>
 public sealed partial class SessionQueryFunctions
@@ -260,7 +260,7 @@ public sealed partial class SessionQueryFunctions
         bool ItemsTruncated);
 
     /// <summary>
-    /// Hardware inventory collected silently at session init (FR-001a). Informational only — every
+    /// Hardware inventory collected silently at session init (FR-001a). Informational only: every
     /// field is nullable/empty-able because WMI is not guaranteed to answer in WinPE.
     /// </summary>
     private sealed record HardwareSummary(

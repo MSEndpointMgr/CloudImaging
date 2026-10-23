@@ -7,7 +7,7 @@ using Xunit;
 namespace CloudImaging.Client.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="ResultsViewModel"/> — three terminal outcomes (T133, FR-025, FR-026).
+/// Unit tests for <see cref="ResultsViewModel"/>: three terminal outcomes (T133, FR-025, FR-026).
 /// </summary>
 public sealed class ResultsViewModelTests
 {
@@ -66,7 +66,7 @@ public sealed class ResultsViewModelTests
     [Fact]
     public void Success_WithoutRestartCallback_StartsFullCountdownAndDoesNotThrow()
     {
-        // No restartSystem callback is supplied (mirrors Build(...) used throughout this file) —
+        // No restartSystem callback is supplied (mirrors Build(...) used throughout this file):
         // the countdown must still expose sane initial values and never require a live Dispatcher.
         var vm = Build(ResultsViewModel.Outcome.Success);
 
@@ -115,7 +115,7 @@ public sealed class ResultsViewModelTests
     [Fact]
     public void Failure_ExposesErrorDetail()
     {
-        const string detail = "Image hash mismatch — SHA256 verification failed.";
+        const string detail = "Image hash mismatch: SHA256 verification failed.";
         var vm = Build(ResultsViewModel.Outcome.Failure, errorDetail: detail);
         vm.ErrorDetail.Should().Be(detail);
     }
@@ -159,7 +159,7 @@ public sealed class ResultsViewModelTests
     {
         var vm = Build(ResultsViewModel.Outcome.NotAuthorized, deviceSerialNumber: "SN123");
         vm.SupportReferenceCode.Should().BeNull(
-            "NotAuthorized is not an error — no support code is needed");
+            "NotAuthorized is not an error: no support code is needed");
     }
 
     // ── Expired outcome (FR-021) ──────────────────────────────────────────────
@@ -178,7 +178,7 @@ public sealed class ResultsViewModelTests
     [Fact]
     public void Expired_HasNoSupportReferenceCode()
     {
-        // Expiring before coupling is a benign timeout, not a diagnosable failure — no support
+        // Expiring before coupling is a benign timeout, not a diagnosable failure: no support
         // reference code is needed, same as NotAuthorized.
         var vm = Build(ResultsViewModel.Outcome.Expired);
         vm.SupportReferenceCode.Should().BeNull("a coupling timeout is not an error");

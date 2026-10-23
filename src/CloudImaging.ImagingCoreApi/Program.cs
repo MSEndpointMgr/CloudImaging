@@ -5,13 +5,13 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-// Local variable for Graph scopes — allocated once, satisfies CA1861
+// Local variable for Graph scopes: allocated once, satisfies CA1861
 string[] graphScopes = ["https://graph.microsoft.com/.default"];
 
 var host = new HostBuilder()
     .ConfigureFunctionsWebApplication(builder =>
     {
-        // Only ProblemDetails middleware at this layer —
+        // Only ProblemDetails middleware at this layer:
         // ImagingCoreApi is accessible only via Private Link from trusted callers (FR-020).
         builder.UseMiddleware<ProblemDetailsMiddleware>();
     })
@@ -20,7 +20,7 @@ var host = new HostBuilder()
         services.AddApplicationInsightsTelemetryWorkerService();
         services.ConfigureFunctionsApplicationInsights();
 
-        // Table Storage — all repositories share one TableServiceClient
+        // Table Storage: all repositories share one TableServiceClient
         services.AddSingleton(sp =>
         {
             var accountName = ctx.Configuration["AzureWebJobsStorage:accountName"]
@@ -66,8 +66,8 @@ var host = new HostBuilder()
         services.AddSingleton<WifiPasswordStore>();
         services.AddSingleton<WifiNetworkCatalog>();
 
-        // Device pre-flight authorization (FR-026) — Microsoft Graph via managed identity
-        // Scopes are read-only at startup — use a static field to avoid CA1861
+        // Device pre-flight authorization (FR-026): Microsoft Graph via managed identity
+        // Scopes are read-only at startup: use a static field to avoid CA1861
         services.AddSingleton<Azure.Core.TokenCredential>(sp =>
         {
             var managedIdentityClientId = ctx.Configuration["AZURE_CLIENT_ID"];

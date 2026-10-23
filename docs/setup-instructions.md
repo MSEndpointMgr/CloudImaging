@@ -558,7 +558,8 @@ without them; the rest are optional and can be revisited any time from **Configu
      Microsoft Graph and proceeds.
 6. **Review Security and Miscellaneous settings** *(optional)*.
    - **Configuration** > **Security**: certificate/token validity periods and clock skew tolerance.
-   - **Configuration** > **Miscellaneous**: session history retention.
+   - **Configuration** > **Miscellaneous**: session history retention, and the setup profile
+     versions kept per profile.
    - Both have working defaults and only need attention for organization-specific requirements.
 7. **Turn on version checking** *(optional)*.
    - **Configuration** > **Miscellaneous** > **Version** shows the release this deployment is
@@ -571,6 +572,11 @@ without them; the rest are optional and can be revisited any time from **Configu
      internet access.
    - Nothing is ever installed automatically; see
      [upgrade-instructions.md](upgrade-instructions.md).
+8. **Create setup profiles** *(optional)*.
+   - Under **Imaging** > **Setup Profiles**, an Operator or Administrator adds the registry values,
+     scripts and answer file devices need before Autopilot runs, and targets them by the location
+     on the USB media. See [Setup profiles](setup-profiles.md).
+   - Without a profile, devices image exactly as before.
 
 ---
 
@@ -721,6 +727,12 @@ older cached installer for one with a newer download for the other).
 
 Media Builder verifies the ADK + WinPE add-on are present (and blocks **Generate Boot Image**
 with a link to the page above if not) before you can start a build.
+
+> **PowerShell in boot images.** Generate Boot Image adds the `WinPE-Scripting` and
+> `WinPE-PowerShell` optional components (each with its `en-us` language pack) to every boot
+> image, so [setup profile](setup-profiles.md) scripts can run in WinPE. Media Builder takes them
+> from the WinPE add-on's `WinPE_OCs` folder for the architecture being built, and stops with a
+> message naming the missing file if the add-on does not provide them.
 
 #### Deploying the Media Builder with Intune
 

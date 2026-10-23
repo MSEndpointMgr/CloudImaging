@@ -8,9 +8,9 @@
         (Format, Download, Apply, Configure Boot, Apply Recovery) with a small dot + label +
         caption per step (mirrors CloudImaging.MediaBuilder's GenerateBootImageView step list).
         The right "hero" panel shows a continuously-spinning (indeterminate) progress ring next
-        to the current step's title/subtitle — the overall session percentage is shown as text
+        to the current step's title/subtitle: the overall session percentage is shown as text
         over the ring, so the ring itself only needs to communicate "still working", not the
-        value — a short live-activity ticker underneath (the same StatusMessage strings
+        value: a short live-activity ticker underneath (the same StatusMessage strings
         ImagingWorkflowViewModel already sets), and a progress bar scoped to the step that is
         currently running (download / apply / recovery), with the real downloaded-vs-total byte
         counts under it while a transfer is in flight. No fabricated speed or time-remaining
@@ -191,7 +191,7 @@
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             </StackPanel>
 
-            <!-- Error section — accent-strip design (icon + title, selectable message, no boxed InfoBar) -->
+            <!-- Error section: accent-strip design (icon + title, selectable message, no boxed InfoBar) -->
             <StackPanel Grid.Row="3" Margin="0,14,0,0"
                         Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">

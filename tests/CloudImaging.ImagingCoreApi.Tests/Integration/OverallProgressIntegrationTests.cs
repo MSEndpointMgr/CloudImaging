@@ -113,7 +113,7 @@ public sealed class OverallProgressIntegrationTests
         };
 
         OverallProgressCalculator.Calculate(steps).Should().Be(8,
-            "a Failed step contributes 0% — only the completed step counts");
+            "a Failed step contributes 0%: only the completed step counts");
     }
 
     // ── CurrentOrLastStepName ─────────────────────────────────────────────────

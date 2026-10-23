@@ -1,6 +1,6 @@
 using System.IO;
-using FluentAssertions;
 using CloudImaging.Client.Services.Setup;
+using FluentAssertions;
 using Xunit;
 
 namespace CloudImaging.Client.Tests;

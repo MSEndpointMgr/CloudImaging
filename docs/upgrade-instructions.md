@@ -300,6 +300,29 @@ a user who holds only Operator gets the Portal's "Access denied" screen; after r
 Media Builder, they reach no workflow. They regain access when the upgrade is reapplied or another
 role is assigned. The role definitions and assignments can stay in place.
 
+### Turn on setup profiles
+
+**Applies when** upgrading the backend stream to `mse-ci-v1.1.0` or later from an earlier release.
+
+These releases add [setup profiles](setup-profiles.md): registry values, scripts and an answer file
+applied to devices before Windows starts, managed under **Imaging** > **Setup Profiles**. Nothing
+changes on devices until an Operator or Administrator saves a profile.
+
+1. **Redeploy the Template Spec** ([Part 2](#part-2-apply-infrastructure-changes)). It adds the
+   `setup-profiles` blob container to the Imaging Core storage account. Imaging Core creates its new
+   tables itself on first use. There is no data migration.
+2. **Upgrade in this order**: the backend ([Part 1](#part-1-upgrade-the-azure-components)), then
+   Media Builder ([Part 4](#part-4-upgrade-the-media-builder)), then the Client by generating new
+   boot images with that Media Builder and updating the USB media
+   ([Part 3](#part-3-upgrade-the-cloud-imaging-client)). The new Media Builder adds PowerShell to
+   boot images, which In WinPE scripts need.
+3. **Expect older media to skip profiles.** A device started from an older boot image images as
+   before without its profile, and the timeline shows Prepare setup as **Not run**. Profiles apply
+   once the device's boot image is updated.
+
+**Rollback**: an earlier backend ignores setup profiles, and devices image without them. The
+profiles, versions and history stay in storage and are back when the upgrade is reapplied.
+
 ---
 
 ## Rollback

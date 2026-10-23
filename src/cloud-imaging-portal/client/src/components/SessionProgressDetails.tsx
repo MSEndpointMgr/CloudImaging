@@ -355,7 +355,7 @@ export function SessionProgressDetails({
               </Tooltip>
             ) : (
               <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                {step.durationMs != null ? formatDuration(step.durationMs) : '—'}
+                {step.durationMs != null ? formatDuration(step.durationMs) : '\u2014'}
               </p>
             )}
           </li>

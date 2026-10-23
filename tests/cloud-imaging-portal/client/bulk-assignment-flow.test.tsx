@@ -69,7 +69,7 @@ describe('Portal frontend: Start imaging setup profile lines', () => {
 
 /**
  * Portal frontend bulk assignment UI tests (T074, FR-035).
- * Bulk assignment is no longer selection-driven — the OS image dropdown above the
+ * Bulk assignment is no longer selection-driven: the OS image dropdown above the
  * Coupled Devices table always applies to every row currently in that table.
  */
 describe('Portal frontend: bulk assignment UI', () => {

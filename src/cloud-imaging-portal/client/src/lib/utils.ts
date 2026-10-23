@@ -39,15 +39,15 @@ const DAY = 24 * HOUR;
  * Operators scanning a device or image list are asking "is this recent?", and answering that
  * from an absolute timestamp requires reading the date, recalling today's date, and subtracting.
  * Past a week the relative form stops being informative ("63 days ago"), so it falls back to the
- * absolute date. Always pair this with the absolute value in a `title`/tooltip — see
- * `RelativeTime` — because the exact instant still matters when correlating with device logs.
+ * absolute date. Always pair this with the absolute value in a `title`/tooltip: see
+ * `RelativeTime`: because the exact instant still matters when correlating with device logs.
  *
  * Timestamps slightly in the future are reported as "just now": the client clock and the service
  * clock are not guaranteed to agree, and "in 3 seconds" reads as a bug.
  */
 export function formatRelativeTime(iso: string, now: number = Date.now()): string {
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '—';
+  if (Number.isNaN(then)) return '\u2014';
 
   const elapsed = now - then;
   if (elapsed < MINUTE) return 'just now';

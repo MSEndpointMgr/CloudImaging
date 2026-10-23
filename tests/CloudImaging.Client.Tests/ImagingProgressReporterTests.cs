@@ -12,7 +12,7 @@ namespace CloudImaging.Client.Tests;
 /// Regression coverage for the Device Gateway 429 flood (2026-08-30): a percent-progress
 /// callback fires on every download chunk / DISM console line, so <see cref="ImagingProgressReporter"/>
 /// must throttle those specifically, without any percent value (including 0/100) bypassing the
-/// throttle — that exact bypass is what caused the flood in production.
+/// throttle: that exact bypass is what caused the flood in production.
 /// </summary>
 public sealed class ImagingProgressReporterTests
 {
@@ -24,7 +24,7 @@ public sealed class ImagingProgressReporterTests
         var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, clock);
 
         // Simulates a large download where integer-truncated percent stays at 0 for hundreds of
-        // ~80 KB chunk reads before crossing 1% — the scenario that flooded the gateway.
+        // ~80 KB chunk reads before crossing 1%: the scenario that flooded the gateway.
         for (var i = 0; i < 50; i++)
         {
             await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, 0);
@@ -59,7 +59,7 @@ public sealed class ImagingProgressReporterTests
         await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, 0);
         handler.CallCount.Should().Be(1);
 
-        // Must exceed ImagingProgressReporter's private MinProgressReportInterval — keep in sync
+        // Must exceed ImagingProgressReporter's private MinProgressReportInterval: keep in sync
         // with that constant if it ever changes.
         clock.UtcNow += TimeSpan.FromSeconds(11);
         await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, 1);

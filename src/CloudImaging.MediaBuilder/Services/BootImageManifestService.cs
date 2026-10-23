@@ -9,7 +9,7 @@ namespace CloudImaging.MediaBuilder.Services;
 /// Builds and embeds the <see cref="BootImageManifest"/> integrity/provenance manifest into a
 /// generated boot image WIM (T065, FR-051). Replaces the earlier <c>BootImageSigningService</c>,
 /// which claimed to produce a "signed manifest" but never actually used its certificate
-/// parameter — see <see cref="BootImageManifest"/>'s remarks for why real cryptographic
+/// parameter: see <see cref="BootImageManifest"/>'s remarks for why real cryptographic
 /// signing was intentionally descoped rather than implemented.
 ///
 /// Fully static and side-effect-free apart from the final <see cref="EmbedAsync"/> file write,

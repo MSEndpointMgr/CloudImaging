@@ -82,18 +82,30 @@ The Overrides tab and the Approve action are hidden while pre-flight authorizati
 flowchart LR
     Format["1. Prepare disk<br/><code>FormatDisk</code>"] --> Download["2. Download image<br/><code>DownloadImage</code>"]
     Download --> Apply["3. Apply Windows image<br/><code>ApplyImage</code>"]
-    Apply --> Boot["4. Configure boot<br/><code>ConfigureBoot</code>"]
+    Apply --> Prepare["Prepare setup (optional)<br/><code>PrepareSetup</code>"]
+    Prepare --> Boot["4. Configure boot<br/><code>ConfigureBoot</code>"]
     Boot --> Recovery["5. Configure recovery<br/><code>ApplyRecoveryImage</code>"]
     Recovery --> Complete["SessionCompleted"]
 
     Format -. failure .-> Failed["SessionFailed"]
     Download -. failure .-> Failed
     Apply -. failure .-> Failed
+    Prepare -. failure .-> Failed
     Boot -. failure .-> Failed
     Recovery -. failure .-> Failed
 ```
 
-Each stage reports `Pending`, `InProgress`, `Completed`, or `Failed`. Imaging Core calculates overall progress from all five stages. The session enters `SessionInProgress` as soon as the first stage starts, even when its percentage is still 0.
+Each stage reports `Pending`, `InProgress`, `Completed`, or `Failed`. Imaging Core calculates overall progress from all five stages; the optional Prepare setup step adds no weight, so the percentage holds while it runs. The session enters `SessionInProgress` as soon as the first stage starts, even when its percentage is still 0.
+
+### Prepare setup
+
+Prepare setup is an optional step that applies the device's [setup profile](setup-profiles.md). It runs after Apply Windows image and before Configure boot when the device has a setup profile or driver installers for Windows setup, and is skipped and not shown otherwise.
+
+- **Pinning**: when imaging starts, the session records the profile that targets the location on the device's USB media, and its current version. Edits saved later do not change what the device receives. The Client downloads that version before Prepare disk; if it cannot, the session fails before the disk is touched.
+- **Work**: writes the registry values, runs the In WinPE scripts, stages the During Windows setup work and writes the answer file. The timeline card shows the profile name and version, a summary per kind of item, and every item under **Show details**, failures first.
+- **Warnings or failure**: with the profile's failure handling set to **Complete with warnings**, a failed item leaves the step `Completed` with an amber warning marker and the session completes. With **Fail the deployment**, the first failed item stops the step, later items are reported as not run, Configure boot does not run, and the session fails. Fix the profile or the OS image and retry.
+- **Windows setup work** runs after the restart, when the portal no longer tracks the device. Its results are only in `C:\Windows\Logs\CloudImaging\SetupRunner.log` on the device.
+- **Not run**: a device whose boot image predates setup profiles images without its profile. The finished session shows Prepare setup as **Not run**, with a tooltip asking to update the boot image.
 
 ### Disk layout and firmware mode
 

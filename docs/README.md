@@ -16,6 +16,7 @@ Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 | [Upgrade instructions](upgrade-instructions.md) | Move an existing deployment to a newer release: the three release streams, running `upgrade.ps1`, applying infrastructure changes, rebuilding boot media, and rolling back |
 | [Troubleshooting index](troubleshooting-index.md) | Start from a visible symptom and jump to the relevant operational checks |
 | [Operations runbook](operations-runbook.md) | Run it day to day: monitoring, certificate rotation, upgrades, troubleshooting |
+| [Setup profiles](setup-profiles.md) | Write registry values, run scripts and add an answer file on devices before Windows starts, targeted by the location on their USB media |
 | [Roles and access](roles-and-access.md) | The full Entra ID app role and service role model |
 
 ## The three components
