@@ -69,24 +69,28 @@ public sealed partial class DeviceSessionLifecycleService
     private readonly SessionHistoryRepository _historyRepo;
     private readonly PortalConfigurationRepository _configRepo;
     private readonly PreFlightOverrideRepository _overrideRepo;
+    private readonly ImagingStepItemRepository _itemRepo;
     private readonly ILogger<DeviceSessionLifecycleService> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
     /// <param name="historyRepo">Session history repository.</param>
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="overrideRepo">Pre-flight override repository.</param>
+    /// <param name="itemRepo">Per-item step outcomes, deleted with their session.</param>
     /// <param name="logger">Logger for this service.</param>
     public DeviceSessionLifecycleService(
         DeviceSessionRepository sessionRepo,
         SessionHistoryRepository historyRepo,
         PortalConfigurationRepository configRepo,
         PreFlightOverrideRepository overrideRepo,
+        ImagingStepItemRepository itemRepo,
         ILogger<DeviceSessionLifecycleService> logger)
     {
         _sessionRepo = sessionRepo;
         _historyRepo = historyRepo;
         _configRepo = configRepo;
         _overrideRepo = overrideRepo;
+        _itemRepo = itemRepo;
         _logger = logger;
     }
 
@@ -152,6 +156,7 @@ public sealed partial class DeviceSessionLifecycleService
         await foreach (var session in _sessionRepo.QueryTerminalDueForPurgeAsync(DateTimeOffset.UtcNow, ct))
         {
             await _sessionRepo.DeletePurgedAsync(session.SessionId, ct);
+            await _itemRepo.DeleteSessionAsync(session.SessionId, ct);
             LogSessionPurged(_logger, session.SessionId, session.TerminalAt);
             purged++;
         }

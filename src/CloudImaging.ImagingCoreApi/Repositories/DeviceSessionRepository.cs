@@ -142,6 +142,25 @@ public sealed class DeviceSessionRepository
     }
 
     /// <summary>
+    /// Counts active sessions pinned to each version of a setup profile. Pinned versions must
+    /// survive retention pruning and the version sweep until these sessions end.
+    /// </summary>
+    public async Task<Dictionary<int, int>> CountActiveBySetupProfileVersionAsync(Guid profileId, CancellationToken ct = default)
+    {
+        var id = profileId.ToString();
+        var filter = TableClient.CreateQueryFilter($"PartitionKey eq {ActivePartition} and SetupProfileId eq {id}");
+        var counts = new Dictionary<int, int>();
+        await foreach (var entity in _table.QueryAsync<TableEntity>(filter, cancellationToken: ct))
+        {
+            if (entity.GetInt32("SetupProfileVersion") is { } version)
+            {
+                counts[version] = counts.GetValueOrDefault(version) + 1;
+            }
+        }
+        return counts;
+    }
+
+    /// <summary>
     /// List all sessions across both partitions (active and terminal) for the portal devices
     /// view, so completed/failed sessions remain visible until they are purged (FR-031).
     /// </summary>
@@ -231,6 +250,9 @@ public sealed class DeviceSessionRepository
         ["SasTokenUrl"] = s.SasTokenUrl,
         ["SasTokenUrlExpiresAt"] = s.SasTokenUrlExpiresAt,
         ["PartitioningSchemeSnapshotJson"] = s.PartitioningSchemeSnapshotJson,
+        ["SetupProfileId"] = s.SetupProfileId?.ToString(),
+        ["SetupProfileVersion"] = s.SetupProfileVersion,
+        ["SetupProfileName"] = s.SetupProfileName,
         ["OverallProgressPercent"] = s.OverallProgressPercent,
         ["CurrentStep"] = s.CurrentStep,
         ["CreatedAt"] = s.CreatedAt,
@@ -272,6 +294,9 @@ public sealed class DeviceSessionRepository
         SasTokenUrl = e.GetString("SasTokenUrl"),
         SasTokenUrlExpiresAt = e.GetDateTimeOffset("SasTokenUrlExpiresAt"),
         PartitioningSchemeSnapshotJson = e.GetString("PartitioningSchemeSnapshotJson"),
+        SetupProfileId = Guid.TryParse(e.GetString("SetupProfileId"), out var profileId) ? profileId : null,
+        SetupProfileVersion = e.GetInt32("SetupProfileVersion"),
+        SetupProfileName = e.GetString("SetupProfileName"),
         OverallProgressPercent = e.GetInt32("OverallProgressPercent") ?? 0,
         CurrentStep = e.GetString("CurrentStep"),
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
