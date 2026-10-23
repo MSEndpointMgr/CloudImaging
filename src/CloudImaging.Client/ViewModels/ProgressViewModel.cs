@@ -19,7 +19,10 @@ public enum ProgressStepState
     Done,
 
     /// <summary>Failed.</summary>
-    Failed
+    Failed,
+
+    /// <summary>Completed, but some of its items failed.</summary>
+    Warning
 }
 
 /// <summary>
@@ -120,8 +123,28 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         _elapsedTimer.Start();
     }
 
-    /// <summary>The 5-node step pipeline shown in ProgressView's sidebar.</summary>
+    /// <summary>The step pipeline shown in ProgressView's sidebar.</summary>
     public ObservableCollection<ProgressStepItem> Steps { get; }
+
+    /// <summary>
+    /// Shows Prepare Setup between Apply Image and Configure Boot when this session runs it (a
+    /// setup profile applies, or earlier steps handed over Windows setup work), and hides it
+    /// otherwise, so a session without it keeps the five familiar steps.
+    /// </summary>
+    public void ConfigureSteps(bool includePrepareSetup)
+    {
+        var existing = Steps.FirstOrDefault(s => s.Step == ImagingStepName.PrepareSetup);
+        if (includePrepareSetup && existing is null)
+        {
+            var configureBoot = Steps.ToList().FindIndex(s => s.Step == ImagingStepName.ConfigureBoot);
+            Steps.Insert(configureBoot < 0 ? Steps.Count : configureBoot, new ProgressStepItem(ImagingStepName.PrepareSetup, "Prepare Setup"));
+        }
+        else if (!includePrepareSetup && existing is not null)
+        {
+            Steps.Remove(existing);
+        }
+        OnPropertyChanged(nameof(StepSubtitle));
+    }
 
     /// <summary>Overall pipeline progress, 0-100, shown over the progress ring.</summary>
     public int OverallPercent
@@ -214,7 +237,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     public string CurrentStepTitle =>
         Steps.FirstOrDefault(s => s.State == ProgressStepState.Active)?.Label
         ?? Steps.LastOrDefault(s => s.State == ProgressStepState.Failed)?.Label
-        ?? Steps.LastOrDefault(s => s.State == ProgressStepState.Done)?.Label
+        ?? Steps.LastOrDefault(s => s.State is ProgressStepState.Done or ProgressStepState.Warning)?.Label
         ?? Steps[0].Label;
 
     /// <summary>"Step X of 5 · Elapsed mm:ss" shown under the title.</summary>
@@ -240,26 +263,31 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
             var activeIndex = Steps.ToList().FindIndex(s => s.State == ProgressStepState.Active);
             if (activeIndex >= 0) return activeIndex + 1;
 
-            var lastDoneIndex = Steps.ToList().FindLastIndex(s => s.State == ProgressStepState.Done);
+            var lastDoneIndex = Steps.ToList().FindLastIndex(s => s.State is ProgressStepState.Done or ProgressStepState.Warning);
             return lastDoneIndex >= 0 ? Math.Min(lastDoneIndex + 2, Steps.Count) : 1;
         }
     }
 
     /// <summary>Updates a step's status, refreshes its sidebar entry (state + duration caption),
     /// and re-derives the header title/subtitle.</summary>
-    public void UpdateStep(ImagingStepName step, ImagingStepStatus status)
+    public void UpdateStep(ImagingStepName step, ImagingStepStatus status, int warningCount = 0)
     {
-        var item = Steps.First(s => s.Step == step);
+        var item = Steps.FirstOrDefault(s => s.Step == step);
 
         // Every step transition clears the step-scoped bar and its byte counter, so a step that
         // reports no progress of its own (disk format, boot configuration) shows an empty bar
         // instead of inheriting the previous step's fill, and a step that does report starts
         // from zero. New steps added later get this behaviour without touching this method.
         ResetStepProgress();
+        if (item is null)
+        {
+            return;
+        }
 
         item.State = status switch
         {
             ImagingStepStatus.InProgress => ProgressStepState.Active,
+            ImagingStepStatus.Completed when warningCount > 0 => ProgressStepState.Warning,
             ImagingStepStatus.Completed  => ProgressStepState.Done,
             ImagingStepStatus.Failed     => ProgressStepState.Failed,
             _                            => ProgressStepState.Pending,
@@ -269,6 +297,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         {
             ProgressStepState.Active => Track(step),
             ProgressStepState.Done   => Completed(step),
+            ProgressStepState.Warning => "Completed with warnings",
             ProgressStepState.Failed => "Failed",
             _                        => null,
         };

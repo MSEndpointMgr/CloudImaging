@@ -42,6 +42,27 @@ public sealed class ResultsViewModelTests
         vm.SupportReferenceCode.Should().BeNull("no error reference is needed on success");
     }
 
+    [Theory]
+    [InlineData(1, "Imaging completed with warnings. 1 setup item failed; see the deployment timeline in the portal.")]
+    [InlineData(3, "Imaging completed with warnings. 3 setup items failed; see the deployment timeline in the portal.")]
+    public void Success_WithSetupWarnings_ShowsTheWarning(int failedItems, string expected)
+    {
+        ResultsViewModel.WarningsMessage(failedItems).Should().Be(expected);
+
+        var vm = Build(ResultsViewModel.Outcome.Success, errorDetail: ResultsViewModel.WarningsMessage(failedItems));
+
+        vm.HasWarning.Should().BeTrue();
+        vm.WarningMessage.Should().Be(expected);
+        vm.SupportReferenceCode.Should().BeNull();
+    }
+
+    [Fact]
+    public void Success_WithoutWarnings_ShowsNoWarning_AndFailureNeverShowsOne()
+    {
+        Build(ResultsViewModel.Outcome.Success).HasWarning.Should().BeFalse();
+        Build(ResultsViewModel.Outcome.Failure, errorDetail: "DISM failed.").HasWarning.Should().BeFalse();
+    }
+
     [Fact]
     public void Success_WithoutRestartCallback_StartsFullCountdownAndDoesNotThrow()
     {

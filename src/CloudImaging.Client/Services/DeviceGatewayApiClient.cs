@@ -212,6 +212,43 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
+    /// GET /api/v1/sessions/{sessionId}/setup-profile: the setup profile version pinned on the
+    /// session. 204 and 404 (an older backend without setup profiles) mean nothing to apply; 409
+    /// means the session is already ending; 429 carries how long to wait. The read URL in the
+    /// descriptor is never logged, only its host.
+    /// </summary>
+    public async Task<SetupProfileFetch> GetSetupProfileAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        var path = $"/api/v1/sessions/{sessionId}/setup-profile";
+        LogHttpRequest(_logger, "GET", path);
+        using var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+
+        switch (response.StatusCode)
+        {
+            case System.Net.HttpStatusCode.OK:
+                var descriptor = await response.Content.ReadFromJsonAsync<CloudImaging.Contracts.Models.SetupProfiles.SetupProfileDescriptor>(JsonOptions, ct);
+                if (descriptor is null)
+                {
+                    return new SetupProfileFetch(SetupProfileFetchStatus.Failed, null, null);
+                }
+                LogSetupProfileDescriptor(_logger, descriptor.ProfileName, descriptor.Version, Uri.TryCreate(descriptor.ContentUrl, UriKind.Absolute, out var contentUri) ? contentUri.Host : "(invalid)");
+                return new SetupProfileFetch(SetupProfileFetchStatus.Pinned, descriptor, null);
+            case System.Net.HttpStatusCode.NoContent:
+            case System.Net.HttpStatusCode.NotFound:
+                return new SetupProfileFetch(SetupProfileFetchStatus.None, null, null);
+            case System.Net.HttpStatusCode.Conflict:
+                return new SetupProfileFetch(SetupProfileFetchStatus.PipelineEnding, null, null);
+            case System.Net.HttpStatusCode.TooManyRequests:
+                return new SetupProfileFetch(SetupProfileFetchStatus.RateLimited, null, response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(5));
+            default:
+                var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+                LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+                return new SetupProfileFetch(SetupProfileFetchStatus.Failed, null, null);
+        }
+    }
+
+    /// <summary>
     /// POST /api/v1/sessions/{sessionId}/sas/refresh — Refresh the SAS token URL.
     /// Returns both the (possibly unchanged) URL and its actual server-computed expiry, so the caller
     /// never has to guess the new expiry (see <see cref="SasRefreshCoordinator"/>).
@@ -583,6 +620,9 @@ public sealed partial class DeviceGatewayApiClient
         Message = "Latest recovery image: version={Version} sha256={Sha256Hash} url={SasUrl} (signature omitted).")]
     private static partial void LogLatestRecoveryImage(ILogger logger, string version, string sha256Hash, string sasUrl);
 
+    [LoggerMessage(Level = LogLevel.Information, Message = "Setup profile {ProfileName} version {Version} is pinned on this session; content is served from {Host}.")]
+    private static partial void LogSetupProfileDescriptor(ILogger logger, string profileName, int version, string host);
+
     [LoggerMessage(Level = LogLevel.Debug,
         Message = "Log upload URL issued for session {SessionId}: fileName={FileName} (upload URL signature omitted).")]
     private static partial void LogLogUploadUrlIssued(ILogger logger, Guid sessionId, string fileName);
@@ -656,6 +696,28 @@ public sealed class SessionStatusResponse
 
 /// <summary>Result of a SAS token refresh call — see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>
 public sealed record SasRefreshResult(string? SasTokenUrl, DateTimeOffset? ExpiresAt);
+
+/// <summary>How the setup profile descriptor request ended.</summary>
+public enum SetupProfileFetchStatus
+{
+    /// <summary>A version is pinned; <see cref="SetupProfileFetch.Descriptor"/> is set.</summary>
+    Pinned,
+
+    /// <summary>Nothing is pinned, or the backend has no setup profiles.</summary>
+    None,
+
+    /// <summary>The session is no longer starting or in progress.</summary>
+    PipelineEnding,
+
+    /// <summary>Rate limited; wait <see cref="SetupProfileFetch.RetryAfter"/>.</summary>
+    RateLimited,
+
+    /// <summary>The Device Gateway or Imaging Core failed.</summary>
+    Failed,
+}
+
+/// <summary>Result of <see cref="DeviceGatewayApiClient.GetSetupProfileAsync"/>.</summary>
+public sealed record SetupProfileFetch(SetupProfileFetchStatus Status, CloudImaging.Contracts.Models.SetupProfiles.SetupProfileDescriptor? Descriptor, TimeSpan? RetryAfter);
 
 /// <summary>
 /// Response from the Device Gateway API POST /api/v1/sessions/{sessionId}/logs/upload-url

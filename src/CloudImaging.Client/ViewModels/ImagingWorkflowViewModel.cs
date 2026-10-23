@@ -146,6 +146,20 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 return;
             }
 
+            // The setup profile is fetched before the disk is touched, so a device that cannot get
+            // its profile fails with its existing OS intact rather than half-prepared.
+            var setupProfile = await LoadSetupProfileAsync(reporter, ct);
+            if (setupProfile is null)
+            {
+                return;
+            }
+
+            // Install drivers (a later feature) hands Windows setup work over here; nothing yet.
+            IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers = [];
+            var runPrepareSetup = setupProfile.Status == Services.Setup.SetupProfileLoadStatus.Loaded || specializeInstallers.Count > 0;
+            _progress.ConfigureSteps(runPrepareSetup);
+            var setupWarnings = 0;
+
             _sasCoordinator = new Services.SasRefreshCoordinator(
                 _gatewayClient,
                 _sessionId,
@@ -328,6 +342,18 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.Completed, ct: ct);
             _progress.OverallPercent = 80;
 
+            // ── Prepare setup ───────────────────────────────────────────────────
+            if (runPrepareSetup)
+            {
+                var result = await RunPrepareSetupAsync(reporter, setupProfile, specializeInstallers, diskFormat.WindowsVolume, deviceArchitecture, pipelineLoggerFactory, ct);
+                if (result is null)
+                {
+                    return;
+                }
+                setupWarnings = result.WarningCount;
+                _progress.OverallPercent = 82;
+            }
+
             // ── Configure boot ──────────────────────────────────────────────────
             _progress.StatusMessage = "Configuring boot files…";
             _progress.UpdateStep(ImagingStepName.ConfigureBoot, ImagingStepStatus.InProgress);
@@ -396,7 +422,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 _progress.OverallPercent = 100;
                 _progress.StatusMessage = "Imaging complete.";
 
-                _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
+                _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, SuccessNote(setupWarnings), null);
                 return;
             }
 
@@ -444,7 +470,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.OverallPercent = 100;
             _progress.StatusMessage = "Imaging complete.";
 
-            _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
+            _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, SuccessNote(setupWarnings), null);
         }
         catch (Exception ex)
         {
@@ -456,6 +482,107 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _heartbeatCoordinator?.Dispose();
             CleanUpTargetVolumeCacheRoot();
         }
+    }
+
+    private static string? SuccessNote(int setupWarnings) =>
+        setupWarnings > 0 ? ResultsViewModel.WarningsMessage(setupWarnings) : null;
+
+    /// <summary>
+    /// Loads the session's setup profile before Format disk. Returns null when the pipeline must
+    /// stop: the profile could not be loaded (reported as a failed Prepare setup step, with no
+    /// items and the disk untouched), or the session is already ending.
+    /// </summary>
+    private async Task<Services.Setup.SetupProfileLoadResult?> LoadSetupProfileAsync(Services.ImagingProgressReporter reporter, CancellationToken ct)
+    {
+        _progress.StatusMessage = "Checking for a setup profile…";
+        Services.Setup.SetupProfileLoadResult result;
+        using (var download = new HttpClient())
+        {
+            var loader = new Services.Setup.SetupProfileContentLoader(_gatewayClient, download, _loggerFactory.CreateLogger<Services.Setup.SetupProfileContentLoader>());
+            result = await loader.LoadAsync(_sessionId, ct);
+        }
+
+        switch (result.Status)
+        {
+            case Services.Setup.SetupProfileLoadStatus.Failed:
+                _progress.ConfigureSteps(includePrepareSetup: true);
+                await FailAsync(reporter, ImagingStepName.PrepareSetup, "SPF", result.FailureMessage ?? Services.Setup.SetupProfileContentLoader.DownloadFailedMessage, ct);
+                return null;
+            case Services.Setup.SetupProfileLoadStatus.PipelineEnding:
+                try
+                {
+                    _status = await _gatewayClient.GetSessionStatusAsync(_sessionId, ct) ?? _status;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or Services.DeviceGatewayApiException)
+                {
+                    // Fall through with the last known status.
+                }
+                if (!HandleTerminalState())
+                {
+                    await FailAsync(reporter, null, "SPF", "The session ended before imaging started.", ct);
+                }
+                return null;
+            default:
+                return result;
+        }
+    }
+
+    /// <summary>
+    /// Runs Prepare setup on the applied volume and reports its result with every item in one
+    /// call. Returns null when the step failed and the pipeline has stopped.
+    /// </summary>
+    private async Task<Services.Setup.PrepareSetupResult?> RunPrepareSetupAsync(
+        Services.ImagingProgressReporter reporter,
+        Services.Setup.SetupProfileLoadResult setupProfile,
+        IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers,
+        string windowsVolume,
+        MachineArchitecture deviceArchitecture,
+        ILoggerFactory pipelineLoggerFactory,
+        CancellationToken ct)
+    {
+        _progress.StatusMessage = "Preparing Windows setup…";
+        _progress.UpdateStep(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress);
+        await reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, ct: ct);
+
+        var volumeRoot = $"{windowsVolume.TrimEnd('\\')}\\";
+        var input = new Services.Setup.PrepareSetupInput(setupProfile.Descriptor?.ProfileName, setupProfile.Content, specializeInstallers, volumeRoot, deviceArchitecture);
+        var lastLine = string.Empty;
+        Services.Setup.PrepareSetupResult result;
+        try
+        {
+            // Hive loads and file writes are synchronous I/O on the disk just written to; keep them
+            // off the UI thread, which only receives status lines and percent.
+            result = await Task.Run(() =>
+            {
+                using var hive = new Services.Setup.OfflineRegistryHive();
+                var service = new Services.Setup.PrepareSetupService(hive, new Services.Setup.SetupFileSystem(volumeRoot), pipelineLoggerFactory.CreateLogger<Services.Setup.PrepareSetupService>());
+                return service.Run(input, (line, percent) =>
+                {
+                    if (line != lastLine)
+                    {
+                        lastLine = line;
+                        _progress.StatusMessage = line;
+                    }
+                    _progress.StepPercent = percent;
+                    _ = reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, percent, ct: ct);
+                });
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            await FailAsync(reporter, ImagingStepName.PrepareSetup, "PSU", ex.Message, ct);
+            return null;
+        }
+
+        await reporter.ReportResultAsync(ImagingStepName.PrepareSetup, result.Status, result.WarningCount, result.Items, result.ErrorDetail, ct);
+        if (result.Status == ImagingStepStatus.Failed)
+        {
+            await FailAsync(reporter, ImagingStepName.PrepareSetup, "PSU", result.ErrorDetail ?? "Prepare setup failed.", ct, alreadyReported: true);
+            return null;
+        }
+
+        _progress.UpdateStep(ImagingStepName.PrepareSetup, ImagingStepStatus.Completed, result.WarningCount);
+        return result;
     }
 
     /// <summary>
@@ -500,28 +627,9 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 return true;
             }
 
-            if (!Enum.TryParse<SessionState>(_status.State ?? string.Empty, ignoreCase: true, out var state))
+            if (HandleTerminalState())
             {
-                state = SessionState.SessionInit;
-            }
-
-            switch (state)
-            {
-                case SessionState.SessionCompleted:
-                    _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
-                    return false;
-                case SessionState.SessionFailed:
-                    FireAndForgetLogUpload();
-                    _navigateToResults(
-                        ResultsViewModel.Outcome.Failure,
-                        _deviceSerialNumber,
-                        "The session failed before an image could be applied.",
-                        null);
-                    return false;
-                case SessionState.SessionNotAuthorized:
-                    FireAndForgetLogUpload();
-                    _navigateToResults(ResultsViewModel.Outcome.NotAuthorized, _deviceSerialNumber, null, null);
-                    return false;
+                return false;
             }
 
             try { await Task.Delay(AssignmentPollInterval, ct); }
@@ -540,20 +648,57 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// Navigates to the Results screen when <see cref="_status"/> is terminal. Returns true when it
+    /// did, so the caller stops.
+    /// </summary>
+    private bool HandleTerminalState()
+    {
+        if (!Enum.TryParse<SessionState>(_status.State ?? string.Empty, ignoreCase: true, out var state))
+        {
+            state = SessionState.SessionInit;
+        }
+
+        switch (state)
+        {
+            case SessionState.SessionCompleted:
+                _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, null, null);
+                return true;
+            case SessionState.SessionFailed:
+                FireAndForgetLogUpload();
+                _navigateToResults(
+                    ResultsViewModel.Outcome.Failure,
+                    _deviceSerialNumber,
+                    "The session failed before an image could be applied.",
+                    null);
+                return true;
+            case SessionState.SessionNotAuthorized:
+                FireAndForgetLogUpload();
+                _navigateToResults(ResultsViewModel.Outcome.NotAuthorized, _deviceSerialNumber, null, null);
+                return true;
+            default:
+                return false;
+        }
+    }
+
     private async Task FailAsync(
         Services.ImagingProgressReporter reporter,
         ImagingStepName? step,
         string stageCode,
         string errorDetail,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool alreadyReported = false)
     {
         var code = SupportReferenceCode.ForClient(_sessionId, stageCode).ToString();
 
         if (step is { } s)
         {
             _progress.UpdateStep(s, ImagingStepStatus.Failed);
-            try { await reporter.ReportAsync(s, ImagingStepStatus.Failed, errorDetail: errorDetail, ct: ct); }
-            catch { /* best-effort — progress reporting must never mask the real failure */ }
+            if (!alreadyReported)
+            {
+                try { await reporter.ReportAsync(s, ImagingStepStatus.Failed, errorDetail: errorDetail, ct: ct); }
+                catch { /* best-effort — progress reporting must never mask the real failure */ }
+            }
         }
 
         // ProgressView and ResultsView are both FR-002b no-scroll views (see

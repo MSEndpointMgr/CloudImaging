@@ -132,5 +132,95 @@ public sealed class ImagingWorkflowViewModelTests
             System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
         return (string)method.Invoke(null, [errorDetail])!;
     }
+
+    // ── Setup profile fetch happens before the disk is touched ───────────────────────────────
+
+    private sealed record PipelineRun(List<(string Path, string? Body)> Calls, ResultsViewModel.Outcome Outcome, string? Detail, ProgressViewModel Progress);
+
+    /// <summary>
+    /// Runs the pipeline against a fake Device Gateway until it navigates to Results. The session
+    /// already has an image assigned, so the first thing after the assignment wait is the setup
+    /// profile fetch; nothing here may reach Format disk.
+    /// </summary>
+    private static async Task<PipelineRun> RunUntilResultsAsync(Func<string, int, System.Net.Http.HttpResponseMessage> respond)
+    {
+        var counts = new Dictionary<string, int>();
+        var calls = new List<(string, string?)>();
+        var handler = new TestDoubles.RecordingHandler(request =>
+        {
+            var path = request.RequestUri!.AbsolutePath;
+            counts[path] = counts.GetValueOrDefault(path) + 1;
+            return respond(path, counts[path]);
+        });
+        var gateway = new DeviceGatewayApiClient(new System.Net.Http.HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        var sessionId = Guid.NewGuid();
+        var status = new SessionStatusResponse
+        {
+            SessionId = sessionId,
+            State = "SessionStarted",
+            SasTokenUrl = "https://storage.example.com/os.wim?sig=x",
+            Sha256Hash = "abc",
+            OsImageArchitecture = CloudImaging.Contracts.Models.MachineArchitecturePlatform.HostArchitecture(),
+        };
+        var progress = new ProgressViewModel();
+        var done = new TaskCompletionSource<(ResultsViewModel.Outcome, string?)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var vm = new ImagingWorkflowViewModel(gateway, sessionId, "SN1", status, progress,
+            (outcome, _, detail, _) => done.TrySetResult((outcome, detail)), NullLoggerFactory.Instance, cacheRoot: System.IO.Path.GetTempPath());
+
+        vm.Start();
+        var (result, message) = await done.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        foreach (var (request, body) in handler.Requests)
+        {
+            calls.Add((request.RequestUri!.AbsolutePath, body));
+        }
+        return new PipelineRun(calls, result, message, progress);
+    }
+
+    private static System.Net.Http.HttpResponseMessage Ok() => new(System.Net.HttpStatusCode.OK);
+
+    [Fact]
+    public async Task SetupProfileFetchFailure_ReportsAFailedPrepareSetup_AndNeverFormatsTheDisk()
+    {
+        var run = await RunUntilResultsAsync((path, _) =>
+        {
+            if (path.EndsWith("/setup-profile", StringComparison.Ordinal))
+            {
+                var limited = new System.Net.Http.HttpResponseMessage((System.Net.HttpStatusCode)429);
+                limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.Zero);
+                return limited;
+            }
+            return Ok();
+        });
+
+        run.Outcome.Should().Be(ResultsViewModel.Outcome.Failure);
+        run.Detail.Should().Be(Services.Setup.SetupProfileContentLoader.DownloadFailedMessage);
+        run.Calls.Count(c => c.Path.EndsWith("/setup-profile", StringComparison.Ordinal)).Should().Be(3);
+        var reports = run.Calls.Where(c => c.Path.EndsWith("/progress", StringComparison.Ordinal)).Select(c => System.Text.Json.JsonDocument.Parse(c.Body!).RootElement).ToList();
+        reports.Should().ContainSingle();
+        reports[0].GetProperty("stepName").GetString().Should().Be("PrepareSetup");
+        reports[0].GetProperty("status").GetString().Should().Be("Failed");
+        reports[0].GetProperty("errorDetail").GetString().Should().Be(Services.Setup.SetupProfileContentLoader.DownloadFailedMessage);
+        reports[0].TryGetProperty("items", out _).Should().BeFalse("a fetch failure has no items");
+        run.Progress.Steps.Single(s => s.Step == ImagingStepName.FormatDisk).State.Should().Be(ProgressStepState.Pending);
+        run.Progress.Steps.Single(s => s.Step == ImagingStepName.PrepareSetup).State.Should().Be(ProgressStepState.Failed);
+    }
+
+    [Fact]
+    public async Task SessionEndingDuringFetch_FollowsTheTerminalState()
+    {
+        var run = await RunUntilResultsAsync((path, _) => path switch
+        {
+            _ when path.EndsWith("/setup-profile", StringComparison.Ordinal) => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Conflict),
+            _ when path.EndsWith("/status", StringComparison.Ordinal) => new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent("""{"state":"SessionFailed"}""", System.Text.Encoding.UTF8, "application/json"),
+            },
+            _ => Ok(),
+        });
+
+        run.Outcome.Should().Be(ResultsViewModel.Outcome.Failure);
+        run.Detail.Should().Be("The session failed before an image could be applied.");
+        run.Calls.Should().NotContain(c => c.Path.EndsWith("/progress", StringComparison.Ordinal));
+    }
 }
 

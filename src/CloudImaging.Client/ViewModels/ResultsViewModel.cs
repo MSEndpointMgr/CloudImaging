@@ -142,6 +142,16 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     /// <summary>Error detail captured from the failed step, if applicable.</summary>
     public string? ErrorDetail  => _errorDetail;
 
+    /// <summary>On success, the note that some setup items failed; null otherwise.</summary>
+    public string? WarningMessage => IsSuccess ? _errorDetail : null;
+
+    /// <summary>True when a successful run has setup items that failed.</summary>
+    public bool HasWarning => !string.IsNullOrEmpty(WarningMessage);
+
+    /// <summary>The success note for <paramref name="failedItems"/> failed setup items.</summary>
+    public static string WarningsMessage(int failedItems) =>
+        $"Imaging completed with warnings. {failedItems} setup item{(failedItems == 1 ? "" : "s")} failed; see the deployment timeline in the portal.";
+
     /// <summary>Identifier of the session this outcome is for.</summary>
     public Guid? SessionId { get; }
 
