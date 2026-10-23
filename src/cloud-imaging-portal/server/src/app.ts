@@ -4,8 +4,8 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
-import axios from 'axios';
 import { DEPLOYED_VERSION } from './version.js';
+import { errorHandler } from './middleware/errorHandler.js';
 
 // Application Insights. Must be set up before importing any other modules (FR-065, FR-067)
 const aiConnectionString = process.env['APPLICATIONINSIGHTS_CONNECTION_STRING'];
@@ -47,6 +47,9 @@ app.use(cors({
   credentials: true,
 }));
 
+// Setup profiles carry up to 20 scripts of 64 KB plus a 256 KB answer file, so their router gets a
+// larger limit. It must run first: body-parser skips a body that is already parsed.
+app.use('/api/setup-profiles', express.json({ limit: '4mb' }));
 app.use(express.json({ limit: '1mb' }));
 
 // Basic rate limiting on all portal API routes (operator-side; per-session limits handled at DeviceGateway)
@@ -96,6 +99,7 @@ import { uploadJobsRouter } from './routes/upload-jobs.js';
 import { updateCheckRouter } from './routes/update-check.js';
 import { autopilotRouter } from './routes/autopilot.js';
 import { preFlightOverridesRouter } from './routes/preflight-overrides.js';
+import { setupProfilesRouter } from './routes/setup-profiles.js';
 
 // Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
@@ -120,91 +124,10 @@ app.use('/api/upload-jobs',         uploadJobsRouter);
 app.use('/api/update-check',        updateCheckRouter);
 app.use('/api/autopilot',           autopilotRouter);
 app.use('/api/preflight-overrides', preFlightOverridesRouter);
-
-/** Longest upstream message relayed to the browser. Operator API messages are one sentence. */
-const MAX_FORWARDED_DETAIL_CHARS = 500;
-
-function truncateDetail(detail: string | undefined): string | undefined {
-  if (!detail) return undefined;
-  const trimmed = detail.trim();
-  if (!trimmed) return undefined;
-  return trimmed.length > MAX_FORWARDED_DETAIL_CHARS
-    ? `${trimmed.slice(0, MAX_FORWARDED_DETAIL_CHARS)}…`
-    : trimmed;
-}
+app.use('/api/setup-profiles',      setupProfilesRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────────
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  // An AxiosError carries its request config: the Operator API bearer token and the request body,
-  // which can hold a Wi-Fi password. Log only what identifies the failure.
-  console.error('Unhandled error', axios.isAxiosError(err)
-    ? { message: err.message, code: err.code, method: err.config?.method, url: err.config?.url, status: err.response?.status, response: err.response?.data as unknown }
-    : err);
-
-  // Translate downstream Operator API failures into meaningful responses so the
-  // portal can distinguish "backend unreachable" from an authorization/validation
-  // error instead of always surfacing a generic 500.
-  if (axios.isAxiosError(err)) {
-    // No response received. The Operator API is unreachable (down, wrong URL,
-    // connection refused, DNS failure, or timed out).
-    if (!err.response) {
-      const unreachable = err.code === 'ECONNABORTED';
-      res.status(504).json({
-        type: 'https://cloudimaging.io/errors/backend-unavailable',
-        title: 'Backend API unavailable.',
-        status: 504,
-        detail: unreachable
-          ? 'The Operator API did not respond in time. Confirm it is running and reachable.'
-          : `The Operator API could not be reached (${err.code ?? 'connection error'}). Confirm it is running and reachable.`,
-      });
-      return;
-    }
-
-    // Upstream responded with an error status. Forward it (and its problem
-    // details when present) so the client sees the real cause (e.g. 403, 400).
-    const status = err.response.status;
-    const data: unknown = err.response.data;
-
-    // Only client errors carry an operator-actionable, deliberately worded message
-    // ("checksum mismatch", "this upload has expired", "image is in use"). An upstream 5xx
-    // is an unhandled backend fault whose body can contain stack traces, connection strings
-    // in exception text, or internal host names, so its text is logged above and replaced
-    // here rather than relayed to the browser.
-    if (status >= 500) {
-      res.status(status).json({
-        type: 'https://cloudimaging.io/errors/upstream-error',
-        title: 'The backend API returned an error.',
-        status,
-        detail: `The Operator API responded with status ${String(status)}. ` +
-          'Check Application Insights for correlation details.',
-      });
-      return;
-    }
-
-    // OperatorApi's proxy forwards its own plain-text error bodies (e.g. checksum
-    // validation, stale/expired staged-upload blocks) as-is rather than wrapping them in
-    // ProblemDetails JSON, so `data` here is sometimes a raw string rather than an object.
-    const upstream = data && typeof data === 'object' ? (data as Record<string, unknown>) : undefined;
-    const plainTextDetail = typeof data === 'string' && data.trim().length > 0 ? data : undefined;
-    const forwarded = (upstream?.['detail'] as string | undefined) ?? plainTextDetail;
-    res.status(status).json({
-      type: (upstream?.['type'] as string | undefined) ?? 'https://cloudimaging.io/errors/upstream-error',
-      title: (upstream?.['title'] as string | undefined) ?? 'The backend API returned an error.',
-      status,
-      // Cap the relayed text: an unexpected HTML error page from an edge component in front
-      // of the Operator API would otherwise be echoed into the portal UI in full.
-      detail: truncateDetail(forwarded) ?? `The Operator API responded with status ${String(status)}.`,
-    });
-    return;
-  }
-
-  res.status(500).json({
-    type: 'https://cloudimaging.io/errors/internal-error',
-    title: 'An unexpected error occurred.',
-    status: 500,
-    detail: 'An internal error occurred. Check Application Insights for correlation details.',
-  });
-});
+app.use(errorHandler);
 
 const port = parseInt(process.env['PORT'] ?? '3000', 10);
 app.listen(port, () => { console.log(`Cloud Imaging Portal backend listening on port ${String(port)}`); });

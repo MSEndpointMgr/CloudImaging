@@ -57,6 +57,29 @@ router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.
   }
 });
 
+// ── GET /api/sessions/:id/steps/:stepName/items: per-item results of one step ──
+
+/** Pipeline step names; anything else is refused before it reaches an upstream path. */
+const STEP_NAMES = new Set(['FormatDisk', 'DownloadImage', 'ApplyImage', 'ApplyRecoveryImage', 'PrepareSetup', 'ConfigureBoot']);
+
+router.get('/:sessionId/steps/:stepName/items', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
+  const stepName = req.params['stepName'] as string;
+  if (!STEP_NAMES.has(stepName)) {
+    res.status(400).json({
+      type: 'https://cloudimaging.io/errors/invalid-parameter',
+      title: 'Invalid step name.',
+      status: 400,
+      detail: `Route parameter 'stepName' must be one of: ${[...STEP_NAMES].join(', ')}.`,
+    });
+    return;
+  }
+  try {
+    res.json(await operatorApiClient.getSessionStepItems(req.params['sessionId'] as string, stepName));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── POST /api/sessions/couple: couple by passcode (PortalAccess) ─────────
 
 router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {

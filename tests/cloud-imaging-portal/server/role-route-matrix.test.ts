@@ -78,6 +78,16 @@ const operatorApi = vi.hoisted(() => {
     createAutopilotGroupTag: resolved(),
     updateAutopilotGroupTag: resolved(),
     deleteAutopilotGroupTag: resolved(undefined),
+    getSetupProfiles: resolved([]),
+    getSetupProfile: resolved(),
+    createSetupProfile: resolved(),
+    updateSetupProfile: resolved(),
+    deleteSetupProfile: resolved(undefined),
+    restoreSetupProfileVersion: resolved(),
+    getSetupProfileVersions: resolved([]),
+    getSetupProfileVersion: resolved(),
+    getSetupProfileHistory: resolved([]),
+    getSessionStepItems: resolved([]),
     // routes/cert.ts posts generate and rotate through the client's raw axios instance.
     http: { post: resolved({ data: {} }) },
   };
@@ -107,6 +117,7 @@ const { uploadJobsRouter } = await import('@/routes/upload-jobs.js');
 const { updateCheckRouter } = await import('@/routes/update-check.js');
 const { autopilotRouter } = await import('@/routes/autopilot.js');
 const { preFlightOverridesRouter } = await import('@/routes/preflight-overrides.js');
+const { setupProfilesRouter } = await import('@/routes/setup-profiles.js');
 
 const MOUNTS: [string, Router][] = [
   ['/api/sessions', sessionsRouter],
@@ -126,6 +137,7 @@ const MOUNTS: [string, Router][] = [
   ['/api/update-check', updateCheckRouter],
   ['/api/autopilot', autopilotRouter],
   ['/api/preflight-overrides', preFlightOverridesRouter],
+  ['/api/setup-profiles', setupProfilesRouter],
 ];
 
 type Role = 'Adm' | 'Ops' | 'Tech' | 'Rdr' | 'Appr';
@@ -148,6 +160,7 @@ const AP_VIEW = ['CloudImaging.AutopilotApprover', 'CloudImaging.Administrator',
 const AP_AUDIT = ['CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Operator', 'CloudImaging.Reader'];
 const AP_DECIDE = ['CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Operator'];
 const HISTORY = ['CloudImaging.Reader', 'CloudImaging.Operator', 'CloudImaging.Administrator'];
+const TECH = ['CloudImaging.Technician', 'CloudImaging.Operator', 'CloudImaging.Administrator'];
 
 // "Accepted after" sets.
 const PA_USERS: Role[] = ['Adm', 'Ops', 'Tech'];
@@ -172,6 +185,17 @@ const ROUTES: Row[] = [
   ['post', '/api/sessions/bulk-assign', PA, PA_USERS, PA_BEFORE],
   ['delete', '/api/sessions/:sessionId', PA, PA_USERS, PA_BEFORE],
   ['post', '/api/sessions/:sessionId/preflight-override', ADM, ADM_USERS, ADM_BEFORE],
+  ['get', '/api/sessions/:sessionId/steps/:stepName/items', PA, PA_USERS, null],
+
+  ['get', '/api/setup-profiles', TECH, PA_USERS, null],
+  ['get', '/api/setup-profiles/:profileId', TECH, PA_USERS, null],
+  ['post', '/api/setup-profiles', OPS, OPS_USERS, null],
+  ['put', '/api/setup-profiles/:profileId', OPS, OPS_USERS, null],
+  ['delete', '/api/setup-profiles/:profileId', OPS, OPS_USERS, null],
+  ['post', '/api/setup-profiles/:profileId/restore', OPS, OPS_USERS, null],
+  ['get', '/api/setup-profiles/:profileId/versions', TECH, PA_USERS, null],
+  ['get', '/api/setup-profiles/:profileId/versions/:version', TECH, PA_USERS, null],
+  ['get', '/api/setup-profiles/:profileId/history', TECH, PA_USERS, null],
 
   ['get', '/api/images', PA_RDR, PA_RDR_USERS, PA_RDR_BEFORE],
   ['post', '/api/images', OPS, OPS_USERS, ADM_BEFORE],
@@ -261,6 +285,7 @@ const TOKENS: [name: string, roles: Role[]][] = [
   ['Reader', ['Rdr']],
   ['AutopilotApprover', ['Appr']],
   ['Operator plus Technician', ['Ops', 'Tech']],
+  ['No role', []],
 ];
 
 /** Every GUID-validated parameter gets a value that fails validation, so accepted requests stop at 400. */
@@ -315,10 +340,10 @@ describe('Portal backend: route-by-role matrix', () => {
     vi.clearAllMocks();
   });
 
-  it('lists every route the 17 routers register exactly once', () => {
+  it('lists every route the 18 routers register exactly once', () => {
     const table = ROUTES.map(([method, path]) => `${method.toUpperCase()} ${path}`);
-    expect(MOUNTS).toHaveLength(17);
-    expect(ROUTES).toHaveLength(73);
+    expect(MOUNTS).toHaveLength(18);
+    expect(ROUTES).toHaveLength(83);
     expect(new Set(table).size).toBe(table.length);
     expect([...registeredRoutes()].sort()).toEqual([...table].sort());
   });
@@ -341,6 +366,13 @@ describe('Portal backend: route-by-role matrix', () => {
       expect(res.body.detail).toBe(`This operation requires one of the following roles: ${guard.join(', ')}.`);
       for (const mock of backendMocks()) expect(mock).not.toHaveBeenCalled();
     });
+  });
+
+  it('refuses an unknown step name for step items with 400 without an upstream call', async () => {
+    const res = await request(appFor(['Tech'])).get('/api/sessions/8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10/steps/Unknown/items');
+
+    expect(res.status).toBe(400);
+    for (const mock of backendMocks()) expect(mock).not.toHaveBeenCalled();
   });
 
   describe('existing roles keep their access', () => {
