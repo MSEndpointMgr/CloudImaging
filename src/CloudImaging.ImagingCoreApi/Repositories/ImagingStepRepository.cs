@@ -1,7 +1,9 @@
+using System.Text.Json;
 using Azure;
 using Azure.Data.Tables;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
+using CloudImaging.Contracts.Models.SetupProfiles;
 
 namespace CloudImaging.ImagingCoreApi.Repositories;
 
@@ -12,6 +14,7 @@ namespace CloudImaging.ImagingCoreApi.Repositories;
 public sealed class ImagingStepRepository
 {
     private const string TableName = "ImagingSteps";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly TableClient _table;
 
     /// <param name="tableServiceClient">Table service client used to resolve the imaging steps table.</param>
@@ -32,6 +35,9 @@ public sealed class ImagingStepRepository
             ["CompletedAt"] = step.CompletedAt,
             ["ErrorDetail"] = step.ErrorDetail,
             ["StepProgress"] = step.StepProgressPercent,
+            ["WarningCount"] = step.WarningCount,
+            ["ItemCountsJson"] = step.ItemCounts.Count == 0 ? null : JsonSerializer.Serialize(step.ItemCounts, JsonOptions),
+            ["ItemsTruncated"] = step.ItemsTruncated,
         };
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
     }
@@ -52,8 +58,24 @@ public sealed class ImagingStepRepository
                 CompletedAt = entity.GetDateTimeOffset("CompletedAt"),
                 ErrorDetail = entity.GetString("ErrorDetail"),
                 StepProgressPercent = entity.GetInt32("StepProgress"),
+                WarningCount = entity.GetInt32("WarningCount"),
+                ItemCounts = ReadItemCounts(entity.GetString("ItemCountsJson")),
+                ItemsTruncated = entity.GetBoolean("ItemsTruncated") ?? false,
             });
         }
         return steps;
+    }
+
+    private static List<ImagingStepItemCount> ReadItemCounts(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+        try
+        {
+            return JsonSerializer.Deserialize<List<ImagingStepItemCount>>(json, JsonOptions) ?? [];
+        }
+        catch (JsonException) { return []; }
     }
 }

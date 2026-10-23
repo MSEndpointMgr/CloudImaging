@@ -15,6 +15,7 @@ namespace CloudImaging.OperatorApi.Functions;
 /// GET /api/sessions/{id}   — get a single device session summary
 /// GET /api/sessions/{id}/logs                    — list uploaded diagnostic logs for a session
 /// GET /api/sessions/{id}/logs/{fileName}/download-url — issue a short-lived download URL
+/// GET /api/sessions/{id}/steps/{stepName}/items: per-item results a device reported for one step
 /// GET /api/session-history — list durable terminal-outcome records for the Reports section
 /// </summary>
 public sealed partial class SessionQueryFunctions
@@ -91,6 +92,23 @@ public sealed partial class SessionQueryFunctions
         }
 
         var coreResponse = await _coreClient.GetSessionLogDownloadUrlAsync(sessionGuid, fileName, context.CancellationToken);
+        return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    /// <summary>GET sessions/{sessionId}/steps/{stepName}/items. The per-item results a device reported for one step.</summary>
+    [Function("GetSessionStepItems")]
+    public async Task<HttpResponseData> GetSessionStepItems(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "sessions/{sessionId}/steps/{stepName}/items")] HttpRequestData req,
+        string sessionId,
+        string stepName,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(sessionId, out var sessionGuid))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+
+        var coreResponse = await _coreClient.GetSessionStepItemsAsync(sessionGuid, stepName, context.CancellationToken);
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
     }
 

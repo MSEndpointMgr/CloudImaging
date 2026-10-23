@@ -22,6 +22,7 @@ import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClien
 import { countryName, countryOptions } from '../lib/countries.ts';
 import { describeNames, regionCodeFor, type RegionsView } from '../lib/regions.ts';
 import { networksForLocation, type WifiNetwork } from '../lib/wifiNetworks.ts';
+import { fetchSetupProfiles, type SetupProfileSummary } from '../lib/setupProfiles.ts';
 import { cn, formatDateTime } from '../lib/utils.ts';
 
 interface LocationEntry {
@@ -96,6 +97,7 @@ export default function LocationsPage(): React.ReactElement {
   const [deleting, setDeleting] = useState<LocationEntry | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
+  const [setupProfiles, setSetupProfiles] = useState<SetupProfileSummary[]>([]);
   const [wifiFor, setWifiFor] = useState<{ location: LocationEntry; afterAdd: boolean } | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -145,6 +147,13 @@ export default function LocationsPage(): React.ReactElement {
   };
 
   useEffect(() => { void loadLocations(); void loadRegions(); void loadWifiNetworks(); }, []);
+
+  // Loaded when a delete is about to be confirmed, so the confirmation can name the profile that
+  // loses the location. A failure only drops that sentence; the server still refuses unsafe deletes.
+  useEffect(() => {
+    if (!deleting) return;
+    fetchSetupProfiles().then(setSetupProfiles).catch(() => setSetupProfiles([]));
+  }, [deleting]);
 
   // Shared by the add form and the importer, so both go through the same endpoint and validation.
   const createLocation = async (name: string, countryCode: string | null): Promise<LocationEntry | null> => {
@@ -226,7 +235,7 @@ export default function LocationsPage(): React.ReactElement {
         void loadWifiNetworks();
         void refreshLocations();
       } else {
-        notify({ status: 'error', title: 'Failed to delete location.' });
+        notify({ status: 'error', title: 'Failed to delete location.', description: await extractErrorDetail(res, 'The location was not deleted.') });
       }
     } catch {
       notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' });
@@ -246,8 +255,10 @@ export default function LocationsPage(): React.ReactElement {
   const deleteImpact = (loc: LocationEntry): string => {
     const base = 'Sessions already tagged with it keep showing its name, but it can no longer be selected in Media Builder. Pending Autopilot requests from it lose its region and country for group tag templates.';
     const lost = wifiNetworks.filter(n => n.enabled && !n.allLocations && n.locationIds.includes(loc.locationId)).map(n => n.ssid);
-    if (lost.length === 0) return base;
-    return `${base} Once they are next online, devices there no longer join the Wi-Fi network${lost.length === 1 ? '' : 's'} ${describeNames(lost, 'networks')} automatically.`;
+    const profile = setupProfiles.find(p => !p.targeting.allDevices && p.targeting.locationIds.includes(loc.locationId));
+    const profileNote = profile ? ` It is also removed from setup profile ${profile.name}.` : '';
+    if (lost.length === 0) return `${base}${profileNote}`;
+    return `${base} Once they are next online, devices there no longer join the Wi-Fi network${lost.length === 1 ? '' : 's'} ${describeNames(lost, 'networks')} automatically.${profileNote}`;
   };
 
   return (

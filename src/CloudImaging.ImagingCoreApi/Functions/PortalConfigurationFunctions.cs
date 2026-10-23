@@ -49,12 +49,15 @@ public sealed partial class PortalConfigurationFunctions
         FunctionContext context)
     {
         PortalConfiguration? config;
+        string? changedBy;
         try
         {
-            config = await JsonSerializer.DeserializeAsync<PortalConfiguration>(
-                req.Body,
-                JsonOptions,
-                context.CancellationToken);
+            using var document = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
+            config = document.RootElement.Deserialize<PortalConfiguration>(JsonOptions);
+            changedBy = document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("changedBy", out var by) && by.ValueKind == JsonValueKind.String
+                ? by.GetString()
+                : null;
         }
         catch (JsonException ex)
         {
@@ -92,9 +95,51 @@ public sealed partial class PortalConfigurationFunctions
             return bad;
         }
 
+        if (config.SetupProfileVersionRetention is < PortalConfiguration.MinSetupProfileVersionRetention or > PortalConfiguration.MaxSetupProfileVersionRetention)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Keep between 5 and 100 versions per profile.", context.CancellationToken);
+            return bad;
+        }
+
+        // Who changed retention and when are set here, never taken from the request.
+        var existing = await _repo.GetAsync(context.CancellationToken);
+        var retentionChanged = existing.SetupProfileVersionRetention != config.SetupProfileVersionRetention;
+        config = With(config, retentionChanged ? DateTimeOffset.UtcNow : existing.SetupProfileVersionRetentionChangedAt, retentionChanged ? changedBy : existing.SetupProfileVersionRetentionChangedBy);
+        if (retentionChanged)
+        {
+            LogRetentionChanged(_logger, existing.SetupProfileVersionRetention, config.SetupProfileVersionRetention, changedBy ?? "unknown");
+        }
+
         await _repo.UpsertAsync(config, context.CancellationToken);
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
+
+    private static PortalConfiguration With(PortalConfiguration c, DateTimeOffset? retentionChangedAt, string? retentionChangedBy) => new()
+    {
+        DevicePreFlightAuthorizationEnabled = c.DevicePreFlightAuthorizationEnabled,
+        PreFlightRequireAutopilotPresence = c.PreFlightRequireAutopilotPresence,
+        PreFlightRequireUefiFirmware = c.PreFlightRequireUefiFirmware,
+        PreFlightRequireSecureBoot = c.PreFlightRequireSecureBoot,
+        PreFlightRequireTpm20 = c.PreFlightRequireTpm20,
+        SasTokenUrlExpiryMinutes = c.SasTokenUrlExpiryMinutes,
+        BootImageSasExpiryMinutes = c.BootImageSasExpiryMinutes,
+        CertValidityPeriodDays = c.CertValidityPeriodDays,
+        ClockSkewToleranceSeconds = c.ClockSkewToleranceSeconds,
+        SessionHistoryRetentionDays = c.SessionHistoryRetentionDays,
+        UpdateCheckEnabled = c.UpdateCheckEnabled,
+        AutopilotRegistrationEnabled = c.AutopilotRegistrationEnabled,
+        AutopilotGroupTagRequired = c.AutopilotGroupTagRequired,
+        AutopilotPendingExpiryDays = c.AutopilotPendingExpiryDays,
+        AutopilotRetentionDays = c.AutopilotRetentionDays,
+        SetupProfileVersionRetention = c.SetupProfileVersionRetention,
+        SetupProfileVersionRetentionChangedAt = retentionChangedAt,
+        SetupProfileVersionRetentionChangedBy = retentionChangedBy,
+        LastModifiedAt = c.LastModifiedAt,
+    };
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Setup profile version retention changed from {Previous} to {Current} by {ChangedBy}.")]
+    private static partial void LogRetentionChanged(ILogger logger, int previous, int current, string changedBy);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid JSON in PutPortalConfiguration request body.")]
     private static partial void LogInvalidJson(ILogger logger, Exception ex);

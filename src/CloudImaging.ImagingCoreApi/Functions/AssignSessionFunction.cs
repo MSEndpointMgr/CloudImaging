@@ -34,24 +34,28 @@ public sealed partial class AssignSessionFunction
     private readonly OsImageRepository _imageRepo;
     private readonly PortalConfigurationRepository _configRepo;
     private readonly BlobServiceClient _blobClient;
+    private readonly SetupProfileResolver _setupProfileResolver;
     private readonly ILogger<AssignSessionFunction> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
     /// <param name="imageRepo">OS image catalog repository.</param>
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="blobClient">Blob service client used to issue the assigned image's download SAS URL.</param>
+    /// <param name="setupProfileResolver">Resolves the setup profile pinned at assignment.</param>
     /// <param name="logger">Logger for this function.</param>
     public AssignSessionFunction(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
         PortalConfigurationRepository configRepo,
         BlobServiceClient blobClient,
+        SetupProfileResolver setupProfileResolver,
         ILogger<AssignSessionFunction> logger)
     {
         _sessionRepo = sessionRepo;
         _imageRepo = imageRepo;
         _configRepo = configRepo;
         _blobClient = blobClient;
+        _setupProfileResolver = setupProfileResolver;
         _logger = logger;
     }
 
@@ -114,8 +118,9 @@ public sealed partial class AssignSessionFunction
 
         // Generate SAS token URL for the OS image blob
         var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
+        var setupProfile = await _setupProfileResolver.ResolveAsync(session.LocationId, context.CancellationToken);
 
-        // Transition: SessionAssigned → SessionStarted
+        // Transition: SessionAssigned → SessionStarted, pinning the setup profile version so later edits never change what the device gets.
         var assigned = session with
         {
             State = SessionState.SessionStarted,
@@ -124,6 +129,9 @@ public sealed partial class AssignSessionFunction
             SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
             OverallProgressPercent = 0,
             LastHeartbeatAt = DateTimeOffset.UtcNow,
+            SetupProfileId = setupProfile?.ProfileId,
+            SetupProfileVersion = setupProfile?.Version,
+            SetupProfileName = setupProfile?.Name,
         };
 
         await _sessionRepo.UpdateAsync(assigned, context.CancellationToken);

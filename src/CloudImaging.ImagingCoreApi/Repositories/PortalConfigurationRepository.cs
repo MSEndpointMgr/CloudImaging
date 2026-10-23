@@ -70,6 +70,9 @@ public sealed partial class PortalConfigurationRepository
             [nameof(PortalConfiguration.AutopilotGroupTagRequired)] = config.AutopilotGroupTagRequired,
             [nameof(PortalConfiguration.AutopilotPendingExpiryDays)] = config.AutopilotPendingExpiryDays,
             [nameof(PortalConfiguration.AutopilotRetentionDays)] = config.AutopilotRetentionDays,
+            [nameof(PortalConfiguration.SetupProfileVersionRetention)] = config.SetupProfileVersionRetention,
+            [nameof(PortalConfiguration.SetupProfileVersionRetentionChangedAt)] = config.SetupProfileVersionRetentionChangedAt,
+            [nameof(PortalConfiguration.SetupProfileVersionRetentionChangedBy)] = config.SetupProfileVersionRetentionChangedBy,
         };
 
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
@@ -101,6 +104,9 @@ public sealed partial class PortalConfigurationRepository
             AutopilotGroupTagRequired = e.GetBoolean(nameof(PortalConfiguration.AutopilotGroupTagRequired)) ?? false,
             AutopilotPendingExpiryDays = e.GetInt32(nameof(PortalConfiguration.AutopilotPendingExpiryDays)) ?? 7,
             AutopilotRetentionDays = e.GetInt32(nameof(PortalConfiguration.AutopilotRetentionDays)) ?? 365,
+            SetupProfileVersionRetention = e.GetInt32(nameof(PortalConfiguration.SetupProfileVersionRetention)) ?? PortalConfiguration.DefaultSetupProfileVersionRetention,
+            SetupProfileVersionRetentionChangedAt = e.GetDateTimeOffset(nameof(PortalConfiguration.SetupProfileVersionRetentionChangedAt)),
+            SetupProfileVersionRetentionChangedBy = e.GetString(nameof(PortalConfiguration.SetupProfileVersionRetentionChangedBy)),
         };
     }
 

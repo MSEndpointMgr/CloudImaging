@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { requireRole } from '../middleware/roleGuard.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
+import { decidingUser } from './autopilot.js';
 
 /**
  * Portal configuration route (T146, FR-026).
@@ -15,9 +17,11 @@ router.get('/', requireRole('CloudImaging.Administrator'), async (_req: Request,
   } catch (err) { next(err); }
 });
 
-router.put('/', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.put('/', requireRole('CloudImaging.Administrator'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    await operatorApiClient.putConfiguration(req.body as unknown);
+    // Who changed a tracked setting comes from the token, never from the browser.
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? (req.body as Record<string, unknown>) : {};
+    await operatorApiClient.putConfiguration({ ...body, changedBy: decidingUser(req)?.decidedByUpn ?? null });
     res.status(204).send();
   } catch (err) { next(err); }
 });

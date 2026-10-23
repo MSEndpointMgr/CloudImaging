@@ -1,7 +1,9 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { requireOperator, requireRole } from '../middleware/roleGuard.js';
 import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
+import { decidingUser } from './autopilot.js';
 
 /**
  * Locations router (Location Labels feature). Proxies the admin-managed location catalog to
@@ -38,9 +40,10 @@ router.put('/:locationId', requireOperator, requireGuidParams('locationId'), asy
   }
 });
 
-router.delete('/:locationId', requireOperator, requireGuidParams('locationId'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:locationId', requireOperator, requireGuidParams('locationId'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    await operatorApiClient.deleteLocation(req.params['locationId'] as string);
+    // Recorded in the history of any setup profile that targeted the location.
+    await operatorApiClient.deleteLocation(req.params['locationId'] as string, decidingUser(req)?.decidedByUpn);
     res.status(204).send();
   } catch (err) {
     next(err);

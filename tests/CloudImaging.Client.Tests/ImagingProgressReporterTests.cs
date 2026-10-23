@@ -100,6 +100,44 @@ public sealed class ImagingProgressReporterTests
         return (handler, gateway);
     }
 
+    [Fact]
+    public async Task ReportResultAsync_SendsWarningCountAndItemsInOneCall()
+    {
+        var handler = new TestDoubles.RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var gateway = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, new FakeTimeProvider());
+        CloudImaging.Contracts.Models.SetupProfiles.ImagingStepItem[] items =
+        [
+            new() { Index = 0, Kind = StepItemKind.RegistryValue, Name = "Time zone", Outcome = StepItemOutcome.Succeeded },
+            new() { Index = 1, Kind = StepItemKind.AnswerFile, Name = "Answer file", Outcome = StepItemOutcome.Failed, Reason = "The disk is full." },
+        ];
+
+        await reporter.ReportResultAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.Completed, 1, items);
+
+        handler.Requests.Should().ContainSingle();
+        using var body = System.Text.Json.JsonDocument.Parse(handler.Requests[0].Body!);
+        body.RootElement.GetProperty("stepName").GetString().Should().Be("PrepareSetup");
+        body.RootElement.GetProperty("status").GetString().Should().Be("Completed");
+        body.RootElement.GetProperty("warningCount").GetInt32().Should().Be(1);
+        var sent = body.RootElement.GetProperty("items");
+        sent.GetArrayLength().Should().Be(2);
+        sent[1].GetProperty("kind").GetString().Should().Be("AnswerFile");
+        sent[1].GetProperty("outcome").GetString().Should().Be("Failed");
+    }
+
+    [Fact]
+    public async Task ReportResultAsync_IsNeverThrottled_AndPercentUpdatesStayThrottled()
+    {
+        var (handler, gateway) = CreateGateway();
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, new FakeTimeProvider());
+
+        await reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, 10);
+        await reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, 20);
+        await reporter.ReportResultAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.Completed, 0, []);
+
+        handler.CallCount.Should().Be(2, "the second percent update falls inside the interval; the result always goes through");
+    }
+
     private sealed class FakeTimeProvider : TimeProvider
     {
         public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;

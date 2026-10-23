@@ -24,6 +24,7 @@ export function ConfirmImpactDialog({
   onCancel,
   onConfirm,
   titleId = 'confirm-impact-title',
+  details,
 }: {
   copy: ConfirmImpactCopy;
   busy: boolean;
@@ -31,6 +32,8 @@ export function ConfirmImpactDialog({
   onConfirm: () => void;
   /** Override the heading's element id if multiple dialogs could render in the same tree. */
   titleId?: string;
+  /** Optional extra content under the impact text, for example the list of affected items. */
+  details?: React.ReactNode;
 }): React.ReactElement {
   // Portalled to document.body so the dimming overlay always covers the full viewport (including
   // the app header) regardless of any stacking context introduced by this dialog's call site.
@@ -53,6 +56,7 @@ export function ConfirmImpactDialog({
             {/* Impact copy interpolates operator-supplied names, so an unbroken token long enough
                 to outgrow the modal has to wrap rather than overflow it. */}
             <p className="text-xs leading-relaxed text-muted-foreground break-words">{copy.impact}</p>
+            {details}
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">

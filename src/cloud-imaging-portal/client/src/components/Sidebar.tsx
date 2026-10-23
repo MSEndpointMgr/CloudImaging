@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin, BadgeCheck, Wifi } from 'lucide-react';
+import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin, BadgeCheck, Wifi, ListChecks } from 'lucide-react';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { cn } from '../lib/utils.ts';
@@ -9,7 +9,7 @@ interface NavItem {
   path: string;
   icon: React.ReactNode;
   /** Undefined = visible to any signed-in portal role. */
-  access?: 'dashboard' | 'imaging' | 'autopilot' | 'reports' | 'manage' | 'admin';
+  access?: 'dashboard' | 'imaging' | 'setupProfiles' | 'autopilot' | 'reports' | 'manage' | 'admin';
 }
 
 interface NavSection {
@@ -35,6 +35,7 @@ const navSections: NavSection[] = [
       { label: 'OS Images',       path: '/os-images',        icon: <HardDrive size={18} />, access: 'imaging' },
       { label: 'Boot Images',     path: '/boot-images',      icon: <Disc      size={18} />, access: 'imaging' },
       { label: 'Recovery Images', path: '/recovery-images',  icon: <LifeBuoy  size={18} />, access: 'imaging' },
+      { label: 'Setup Profiles',  path: '/setup-profiles',   icon: <ListChecks size={18} />, access: 'setupProfiles' },
       { label: 'Autopilot',       path: '/autopilot',        icon: <BadgeCheck size={18} />, access: 'autopilot' },
     ],
   },
@@ -58,12 +59,13 @@ const navSections: NavSection[] = [
 export function Sidebar(): React.ReactElement {
   const { pathname } = useLocation();
   const { branding, logoUrl } = useBranding();
-  const { isAdministrator, canUseImaging, canManageLocations, canViewReports, canViewAutopilot, hasDashboardAccess } = useAuth();
+  const { isAdministrator, canUseImaging, canViewSetupProfiles, canManageLocations, canViewReports, canViewAutopilot, hasDashboardAccess } = useAuth();
   const appName = branding.applicationName ?? 'Cloud Imaging';
   const canAccess = (item: NavItem): boolean => {
     switch (item.access) {
       case 'dashboard': return hasDashboardAccess;
       case 'imaging':   return canUseImaging;
+      case 'setupProfiles': return canViewSetupProfiles;
       case 'autopilot': return canViewAutopilot;
       case 'reports':   return canViewReports;
       case 'manage':    return canManageLocations;

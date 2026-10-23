@@ -97,6 +97,39 @@ public sealed partial class ImagingProgressReporter
     }
 
     /// <summary>
+    /// Reports the final status of a step together with its per-item results in one call, so a
+    /// step with items costs no more of the session's rate limit than any other step end. Never
+    /// throttled; the items replace any the step reported before.
+    /// </summary>
+    public async Task ReportResultAsync(
+        ImagingStepName stepName,
+        ImagingStepStatus status,
+        int warningCount,
+        IReadOnlyList<CloudImaging.Contracts.Models.SetupProfiles.ImagingStepItem> items,
+        string? errorDetail = null,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            await _gatewayClient.ReportProgressAsync(_sessionId, new
+            {
+                stepName = stepName.ToString(),
+                status = status.ToString(),
+                stepProgressPercent = (int?)null,
+                errorDetail,
+                warningCount,
+                items,
+            }, ct);
+
+            LogResultReported(_logger, stepName, status, warningCount, items.Count);
+        }
+        catch (Exception ex)
+        {
+            LogReportFailed(_logger, LoggedFailure.StackTrace(ex), stepName, LoggedFailure.Reason(ex));
+        }
+    }
+
+    /// <summary>
     /// Decides whether a percent-progress update is worth spending one of the session's rate-
     /// limited calls on. Always lets through the first update for a new step; otherwise only
     /// sends once the minimum interval has passed since the last update actually sent (not merely
@@ -128,6 +161,11 @@ public sealed partial class ImagingProgressReporter
         Message = "Progress reported: step={StepName} status={Status} subProgress={SubProgress}%.")]
     private static partial void LogReported(
         ILogger logger, ImagingStepName stepName, ImagingStepStatus status, int subProgress);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Step result reported: step={StepName} status={Status} warnings={WarningCount} items={ItemCount}.")]
+    private static partial void LogResultReported(
+        ILogger logger, ImagingStepName stepName, ImagingStepStatus status, int warningCount, int itemCount);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to report progress for step {StepName}: {Reason}")]
     private static partial void LogReportFailed(ILogger logger, Exception? ex, ImagingStepName stepName, string reason);

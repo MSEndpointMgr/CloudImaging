@@ -45,6 +45,10 @@ export interface PortalCapabilities {
   canDecideAutopilot: boolean;
   /** Autopilot Registration History report. */
   canViewAutopilotReport: boolean;
+  /** Setup Profiles page, read-only. */
+  canViewSetupProfiles: boolean;
+  /** Create, edit, duplicate, delete and restore setup profiles. */
+  canManageSetupProfiles: boolean;
   /** Branding, Configuration, pre-flight overrides and the update notice. */
   isAdministrator: boolean;
 }
@@ -62,6 +66,8 @@ export function capabilitiesFromRoles(raw: readonly string[]): PortalCapabilitie
     canViewAutopilot: has(ROLE_TECHNICIAN, ROLE_AUTOPILOT_APPROVER),
     canDecideAutopilot: has(ROLE_OPERATOR, ROLE_AUTOPILOT_APPROVER),
     canViewAutopilotReport: has(ROLE_OPERATOR, ROLE_READER, ROLE_AUTOPILOT_APPROVER),
+    canViewSetupProfiles: has(ROLE_TECHNICIAN),
+    canManageSetupProfiles: has(ROLE_OPERATOR),
     isAdministrator: has(ROLE_ADMINISTRATOR),
   };
 }

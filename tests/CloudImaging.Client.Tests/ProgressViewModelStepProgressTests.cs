@@ -80,4 +80,43 @@ public sealed class ProgressViewModelStepProgressTests
     /// <summary>Formats a figure the way the view model does, so these assertions hold on build
     /// agents and workstations whose decimal separator is not a period.</summary>
     private static string Number(double value) => value.ToString("0.00", CultureInfo.CurrentCulture);
+
+    [Fact]
+    public void PrepareSetup_AppearsBetweenApplyImageAndConfigureBoot_OnlyWhenExpected()
+    {
+        var vm = new ProgressViewModel();
+        vm.Steps.Select(s => s.Label).Should().NotContain("Prepare Setup");
+
+        vm.ConfigureSteps(includePrepareSetup: true);
+        vm.Steps.Select(s => s.Label).Should().Equal("Format Disk", "Download Image", "Apply Image", "Prepare Setup", "Configure Boot", "Apply Recovery Image");
+        vm.StepSubtitle.Should().StartWith("Step 1 of 6");
+
+        vm.ConfigureSteps(includePrepareSetup: false);
+        vm.Steps.Should().HaveCount(5);
+    }
+
+    [Fact]
+    public void CompletedWithWarnings_ShowsTheWarningState()
+    {
+        var vm = new ProgressViewModel();
+        vm.ConfigureSteps(includePrepareSetup: true);
+
+        vm.UpdateStep(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress);
+        vm.UpdateStep(ImagingStepName.PrepareSetup, ImagingStepStatus.Completed, warningCount: 1);
+
+        var step = vm.Steps.Single(s => s.Step == ImagingStepName.PrepareSetup);
+        step.State.Should().Be(ProgressStepState.Warning);
+        step.Caption.Should().Be("Completed with warnings");
+        vm.CurrentStepTitle.Should().Be("Prepare Setup");
+    }
+
+    [Fact]
+    public void UpdatingAStepThatIsNotShown_IsIgnored()
+    {
+        var vm = new ProgressViewModel();
+
+        var act = () => vm.UpdateStep(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress);
+
+        act.Should().NotThrow();
+    }
 }

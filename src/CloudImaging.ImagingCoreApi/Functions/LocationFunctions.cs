@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -27,17 +28,20 @@ public sealed partial class LocationFunctions
     private readonly LocationRepository _repo;
     private readonly RegionConfigurationRepository _regions;
     private readonly WifiNetworkRepository _wifiNetworks;
+    private readonly SetupProfileService _setupProfiles;
     private readonly ILogger<LocationFunctions> _logger;
 
     /// <param name="repo">Location repository.</param>
     /// <param name="regions">Region configuration, used to resolve each location's region.</param>
     /// <param name="wifiNetworks">Wi-Fi networks, cleaned up when a location is deleted.</param>
+    /// <param name="setupProfiles">Setup profiles, which lose a deleted location from their targeting.</param>
     /// <param name="logger">Logger for this function group.</param>
-    public LocationFunctions(LocationRepository repo, RegionConfigurationRepository regions, WifiNetworkRepository wifiNetworks, ILogger<LocationFunctions> logger)
+    public LocationFunctions(LocationRepository repo, RegionConfigurationRepository regions, WifiNetworkRepository wifiNetworks, SetupProfileService setupProfiles, ILogger<LocationFunctions> logger)
     {
         _repo = repo;
         _regions = regions;
         _wifiNetworks = wifiNetworks;
+        _setupProfiles = setupProfiles;
         _logger = logger;
     }
 
@@ -184,8 +188,18 @@ public sealed partial class LocationFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        await _repo.DeleteAsync(locationId, context.CancellationToken);
-        var networks = await _wifiNetworks.RemoveLocationAsync(locationId, context.CancellationToken);
+        var ct = context.CancellationToken;
+        var refused = await _setupProfiles.CheckLocationDeletionAsync(locationId, ct);
+        if (refused is not null)
+        {
+            return await SetupProfileFunctions.ProblemAsync(req, new SetupProfileResult(SetupProfileOutcome.Conflict, Detail: refused), ct);
+        }
+
+        var existing = await _repo.GetByIdAsync(locationId, ct);
+        await _repo.DeleteAsync(locationId, ct);
+        var networks = await _wifiNetworks.RemoveLocationAsync(locationId, ct);
+        var changedBy = System.Web.HttpUtility.ParseQueryString(req.Url.Query)["changedBy"];
+        await _setupProfiles.RemoveDeletedLocationAsync(locationId, existing?.Name ?? "A location", changedBy, ct);
         LogDeleted(_logger, locationId, networks.Count);
 
         return req.CreateResponse(HttpStatusCode.NoContent);

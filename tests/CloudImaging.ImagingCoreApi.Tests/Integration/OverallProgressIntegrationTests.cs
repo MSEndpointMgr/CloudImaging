@@ -24,15 +24,6 @@ public sealed class OverallProgressIntegrationTests
         OverallProgressCalculator.Calculate(null).Should().Be(0);
     }
 
-    [Fact]
-    public void PipelineStepCount_Matches_EveryDeclaredStep()
-    {
-        OverallProgressCalculator.PipelineStepCount.Should().Be(
-            Enum.GetValues<ImagingStepName>().Length,
-            "every step the Client can report must be weighted, otherwise a completed session " +
-            "never reaches 100% and never transitions to SessionCompleted");
-    }
-
     // ── Single step complete ──────────────────────────────────────────────────
 
     [Fact]

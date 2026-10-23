@@ -326,8 +326,8 @@ export class OperatorApiClient {
     return data;
   }
 
-  async deleteLocation(locationId: string): Promise<void> {
-    await this.http.delete<unknown>(`/api/locations/${encodeURIComponent(locationId)}`);
+  async deleteLocation(locationId: string, changedBy?: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/locations/${encodeURIComponent(locationId)}`, changedBy ? { params: { changedBy } } : undefined);
   }
 
   async getRegions(): Promise<unknown> {
@@ -422,6 +422,57 @@ export class OperatorApiClient {
 
   async deleteAutopilotGroupTag(id: string, changedBy?: string): Promise<void> {
     await this.http.delete<unknown>(`/api/autopilot/group-tags/${encodeURIComponent(id)}`, changedBy ? { params: { changedBy } } : undefined);
+  }
+
+  // ── Setup profiles ──────────────────────────────────────────────────────────
+
+  async getSetupProfiles(): Promise<unknown> {
+    const { data } = await this.http.get<unknown>('/api/setup-profiles');
+    return data;
+  }
+
+  async getSetupProfile(profileId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}`);
+    return data;
+  }
+
+  async createSetupProfile(payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/setup-profiles', payload);
+    return data;
+  }
+
+  async updateSetupProfile(profileId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.put<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}`, payload);
+    return data;
+  }
+
+  async deleteSetupProfile(profileId: string, changedBy?: string): Promise<void> {
+    await this.http.delete<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}`, changedBy ? { params: { changedBy } } : undefined);
+  }
+
+  async restoreSetupProfileVersion(profileId: string, payload: unknown): Promise<unknown> {
+    const { data } = await this.http.post<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}/restore`, payload);
+    return data;
+  }
+
+  async getSetupProfileVersions(profileId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}/versions`);
+    return data;
+  }
+
+  async getSetupProfileVersion(profileId: string, version: number): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}/versions/${String(version)}`);
+    return data;
+  }
+
+  async getSetupProfileHistory(profileId: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}/history`);
+    return data;
+  }
+
+  async getSessionStepItems(sessionId: string, stepName: string): Promise<unknown> {
+    const { data } = await this.http.get<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}/steps/${encodeURIComponent(stepName)}/items`);
+    return data;
   }
 }
 

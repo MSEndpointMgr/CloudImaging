@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
+using CloudImaging.Contracts.Models.SetupProfiles;
 using CloudImaging.ImagingCoreApi.Repositories;
 using CloudImaging.ImagingCoreApi.Services;
 using Microsoft.Azure.Functions.Worker;
@@ -30,24 +31,28 @@ public sealed partial class ReportProgressFunction
 
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ImagingStepRepository _stepRepo;
+    private readonly ImagingStepItemRepository _itemRepo;
     private readonly SessionHistoryRepository _historyRepo;
     private readonly PortalConfigurationRepository _configRepo;
     private readonly ILogger<ReportProgressFunction> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
     /// <param name="stepRepo">Imaging step repository.</param>
+    /// <param name="itemRepo">Per-item step outcomes.</param>
     /// <param name="historyRepo">Session history repository.</param>
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="logger">Logger for this function.</param>
     public ReportProgressFunction(
         DeviceSessionRepository sessionRepo,
         ImagingStepRepository stepRepo,
+        ImagingStepItemRepository itemRepo,
         SessionHistoryRepository historyRepo,
         PortalConfigurationRepository configRepo,
         ILogger<ReportProgressFunction> logger)
     {
         _sessionRepo = sessionRepo;
         _stepRepo = stepRepo;
+        _itemRepo = itemRepo;
         _historyRepo = historyRepo;
         _configRepo = configRepo;
         _logger = logger;
@@ -98,6 +103,9 @@ public sealed partial class ReportProgressFunction
 
         // Preserve the initial start timestamp when a later completion/failure report replaces
         // the same Table Storage row. Without this, completed steps lose their elapsed-time data.
+        // Items only travel on a step's final report; an older Client sends none.
+        var isFinal = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed;
+        var (items, truncated) = isFinal && payload.Items is { } reported ? NormalizeItems(reported) : ([], false);
         var step = new ImagingStep
         {
             StepName = payload.StepName,
@@ -108,8 +116,15 @@ public sealed partial class ReportProgressFunction
                         ?? (payload.Status == ImagingStepStatus.InProgress ? now : null),
             CompletedAt = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed
                                   ? now : null,
+            WarningCount = isFinal ? payload.WarningCount : existingStep?.WarningCount,
+            ItemCounts = isFinal && payload.Items is not null ? CountItems(items) : existingStep?.ItemCounts ?? [],
+            ItemsTruncated = isFinal ? truncated : existingStep?.ItemsTruncated ?? false,
         };
 
+        if (isFinal && payload.Items is not null)
+        {
+            await _itemRepo.ReplaceAsync(sessionGuid, payload.StepName, items, context.CancellationToken);
+        }
         await _stepRepo.UpsertAsync(sessionGuid, step, context.CancellationToken);
 
         if (existingStep is not null)
@@ -124,8 +139,7 @@ public sealed partial class ReportProgressFunction
 
         // Determine new session state
         bool anyFailed = allSteps.Any(s => s.Status == ImagingStepStatus.Failed);
-        bool allCompleted = allSteps.Count == OverallProgressCalculator.PipelineStepCount
-                            && allSteps.All(s => s.Status == ImagingStepStatus.Completed);
+        bool allCompleted = OverallProgressCalculator.IsPipelineComplete(allSteps);
 
         // A step that has started but not yet reported any sub-progress still means the device is
         // imaging (the first FormatDisk report is InProgress at 0%, which leaves overallPercent at
@@ -189,7 +203,35 @@ public sealed partial class ReportProgressFunction
         public required ImagingStepStatus Status { get; init; }
         public int? StepProgressPercent { get; init; }
         public string? ErrorDetail { get; init; }
+        public int? WarningCount { get; init; }
+        public IReadOnlyList<ImagingStepItem>? Items { get; init; }
     }
+
+    /// <summary>
+    /// Truncates text fields and the list to their limits instead of rejecting the report, so a
+    /// long script output line never costs the device its final step report.
+    /// </summary>
+    internal static (List<ImagingStepItem> Items, bool Truncated) NormalizeItems(IReadOnlyList<ImagingStepItem> items)
+    {
+        var kept = items.Take(ImagingStepItem.MaxItemsPerReport).Select(item => item with
+        {
+            Name = Cap(item.Name, ImagingStepItem.MaxNameLength) ?? string.Empty,
+            Target = Cap(item.Target, ImagingStepItem.MaxTargetLength),
+            Reason = Cap(item.Reason, ImagingStepItem.MaxReasonLength),
+            LastOutputLine = Cap(item.LastOutputLine, ImagingStepItem.MaxLastOutputLineLength),
+        }).ToList();
+        return (kept, items.Count > ImagingStepItem.MaxItemsPerReport);
+    }
+
+    /// <summary>Counts items by kind and outcome.</summary>
+    internal static List<ImagingStepItemCount> CountItems(IEnumerable<ImagingStepItem> items) =>
+        [.. items
+            .GroupBy(item => (item.Kind, item.Outcome))
+            .OrderBy(group => group.Key.Kind).ThenBy(group => group.Key.Outcome)
+            .Select(group => new ImagingStepItemCount { Kind = group.Key.Kind, Outcome = group.Key.Outcome, Count = group.Count() })];
+
+    private static string? Cap(string? value, int max) =>
+        value is null || value.Length <= max ? value : value[..max];
 
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Progress: session={SessionId} step={StepName} status={Status} overall={Overall}%.")]

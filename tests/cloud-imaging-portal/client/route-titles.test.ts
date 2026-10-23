@@ -17,6 +17,12 @@ describe('Portal frontend: route section titles', () => {
     expect(resolveSectionTitle('/locations')).toBe('Locations');
     expect(resolveSectionTitle('/branding')).toBe('Branding');
     expect(resolveSectionTitle('/configuration')).toBe('Configuration');
+    expect(resolveSectionTitle('/setup-profiles')).toBe('Setup Profiles');
+  });
+
+  it('gives every setup profile route the section title', () => {
+    expect(resolveSectionTitle('/setup-profiles/new')).toBe('Setup Profiles');
+    expect(resolveSectionTitle('/setup-profiles/8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10')).toBe('Setup Profiles');
   });
 
   it('lets nested routes inherit their parent section', () => {

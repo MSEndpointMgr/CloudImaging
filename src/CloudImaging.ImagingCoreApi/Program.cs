@@ -50,6 +50,16 @@ var host = new HostBuilder()
         services.AddSingleton<UploadJobRepository>();
         services.AddSingleton<AutopilotRegistrationRepository>();
         services.AddSingleton<AutopilotGroupTagRepository>();
+        services.AddSingleton<SetupProfileRepository>();
+        services.AddSingleton<SetupProfileTargetRepository>();
+        services.AddSingleton(sp => new SetupProfileVersionRepository(
+            sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>(),
+            sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(SetupProfileVersionRepository.ContainerName)));
+        services.AddSingleton<SetupProfileHistoryRepository>();
+        services.AddSingleton<ImagingStepItemRepository>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<SetupProfileResolver>();
+        services.AddSingleton<SetupProfileService>();
 
         // Key Vault certificate service (FR-068)
         services.AddSingleton<KeyVaultCertificateService>();
@@ -135,6 +145,11 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<UploadJobRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<AutopilotRegistrationRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<AutopilotGroupTagRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<SetupProfileRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<SetupProfileTargetRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<SetupProfileVersionRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<SetupProfileHistoryRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<ImagingStepItemRepository>().EnsureTableExistsAsync(ct);
 }
 
 host.Run();

@@ -1,4 +1,5 @@
 using CloudImaging.Contracts.Enums;
+using CloudImaging.Contracts.Models.SetupProfiles;
 
 namespace CloudImaging.Contracts.Models;
 
@@ -26,4 +27,16 @@ public sealed class ImagingStep
     /// to overallProgressPercent until the step completes (FR-007).
     /// </summary>
     public int? StepProgressPercent { get; init; }
+
+    /// <summary>
+    /// Number of failed items for steps that report items; null for other steps. A Completed step
+    /// with a warning count above 0 completed with warnings.
+    /// </summary>
+    public int? WarningCount { get; init; }
+
+    /// <summary>Item counts by kind and outcome, computed by Imaging Core from the reported items.</summary>
+    public IReadOnlyList<ImagingStepItemCount> ItemCounts { get; init; } = [];
+
+    /// <summary>True when the device reported more items than are kept.</summary>
+    public bool ItemsTruncated { get; init; }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using CloudImaging.Contracts.Models;
+using CloudImaging.Contracts.Models.SetupProfiles;
 using CloudImaging.ImagingCoreApi.Repositories;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -190,7 +191,10 @@ public sealed partial class SessionQueryFunctions
             steps.Select(ToStepSummary).ToArray(),
             s.CreatedAt,
             s.LastHeartbeatAt,
-            s.TerminalAt);
+            s.TerminalAt,
+            s.SetupProfileId is { } profileId && s.SetupProfileVersion is { } version
+                ? new SetupProfilePin(profileId, s.SetupProfileName ?? string.Empty, version)
+                : null);
     }
 
     /// <summary>
@@ -212,7 +216,10 @@ public sealed partial class SessionQueryFunctions
         step.StepProgressPercent,
         step.StartedAt,
         step.CompletedAt,
-        step.ErrorDetail);
+        step.ErrorDetail,
+        step.WarningCount,
+        step.ItemCounts,
+        step.ItemsTruncated);
 
     /// <summary>Secret-free portal projection of a device session.</summary>
     private sealed record SessionSummary(
@@ -235,7 +242,11 @@ public sealed partial class SessionQueryFunctions
         IReadOnlyList<StepSummary> Steps,
         DateTimeOffset CreatedAt,
         DateTimeOffset? LastHeartbeatAt,
-        DateTimeOffset? TerminalAt);
+        DateTimeOffset? TerminalAt,
+        SetupProfilePin? SetupProfile);
+
+    /// <summary>The setup profile version pinned on a session.</summary>
+    private sealed record SetupProfilePin(Guid ProfileId, string Name, int Version);
 
     private sealed record StepSummary(
         string StepName,
@@ -243,7 +254,10 @@ public sealed partial class SessionQueryFunctions
         int? StepProgressPercent,
         DateTimeOffset? StartedAt,
         DateTimeOffset? CompletedAt,
-        string? ErrorDetail);
+        string? ErrorDetail,
+        int? WarningCount,
+        IReadOnlyList<ImagingStepItemCount> ItemCounts,
+        bool ItemsTruncated);
 
     /// <summary>
     /// Hardware inventory collected silently at session init (FR-001a). Informational only — every

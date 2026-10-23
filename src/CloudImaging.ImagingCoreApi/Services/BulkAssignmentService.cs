@@ -18,24 +18,28 @@ public sealed partial class BulkAssignmentService
     private readonly OsImageRepository _imageRepo;
     private readonly PortalConfigurationRepository _configRepo;
     private readonly BlobServiceClient _blobClient;
+    private readonly SetupProfileResolver _setupProfileResolver;
     private readonly ILogger<BulkAssignmentService> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
     /// <param name="imageRepo">OS image catalog repository, used to validate the target image exists.</param>
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="blobClient">Blob service client used to issue image download SAS URLs upon assignment.</param>
+    /// <param name="setupProfileResolver">Resolves the setup profile pinned at assignment.</param>
     /// <param name="logger">Logger for this service.</param>
     public BulkAssignmentService(
         DeviceSessionRepository sessionRepo,
         OsImageRepository imageRepo,
         PortalConfigurationRepository configRepo,
         BlobServiceClient blobClient,
+        SetupProfileResolver setupProfileResolver,
         ILogger<BulkAssignmentService> logger)
     {
         _sessionRepo = sessionRepo;
         _imageRepo = imageRepo;
         _configRepo = configRepo;
         _blobClient = blobClient;
+        _setupProfileResolver = setupProfileResolver;
         _logger = logger;
     }
 
@@ -94,6 +98,11 @@ public sealed partial class BulkAssignmentService
         // times out (5 minutes) because only the single-session /assign endpoint used to set it.
         var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, ct);
 
+        // One resolution per distinct location: every device from the same media gets the same pin.
+        var resolved = new Dictionary<Guid, ResolvedSetupProfile?>();
+        var resolvedWithoutLocation = default(ResolvedSetupProfile);
+        var resolvedWithoutLocationLoaded = false;
+
         var assigned = new List<Guid>();
         var skipped = new List<Guid>();
 
@@ -108,7 +117,26 @@ public sealed partial class BulkAssignmentService
                 continue;
             }
 
-            var updated = session! with
+            ResolvedSetupProfile? setupProfile;
+            if (session!.LocationId is { } locationId)
+            {
+                if (!resolved.TryGetValue(locationId, out setupProfile))
+                {
+                    setupProfile = await _setupProfileResolver.ResolveAsync(locationId, ct);
+                    resolved[locationId] = setupProfile;
+                }
+            }
+            else
+            {
+                if (!resolvedWithoutLocationLoaded)
+                {
+                    resolvedWithoutLocation = await _setupProfileResolver.ResolveAsync(null, ct);
+                    resolvedWithoutLocationLoaded = true;
+                }
+                setupProfile = resolvedWithoutLocation;
+            }
+
+            var updated = session with
             {
                 State = SessionState.SessionStarted,
                 AssignedOsImageId = osImageId,
@@ -116,6 +144,9 @@ public sealed partial class BulkAssignmentService
                 SasTokenUrlExpiresAt = DateTimeOffset.UtcNow + sasExpiry,
                 OverallProgressPercent = 0,
                 LastHeartbeatAt = DateTimeOffset.UtcNow,
+                SetupProfileId = setupProfile?.ProfileId,
+                SetupProfileVersion = setupProfile?.Version,
+                SetupProfileName = setupProfile?.Name,
             };
 
             await _sessionRepo.UpdateAsync(updated, ct);

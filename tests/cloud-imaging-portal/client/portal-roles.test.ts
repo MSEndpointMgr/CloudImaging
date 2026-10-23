@@ -26,6 +26,8 @@ const NONE: PortalCapabilities = {
   canViewAutopilot: false,
   canDecideAutopilot: false,
   canViewAutopilotReport: false,
+  canViewSetupProfiles: false,
+  canManageSetupProfiles: false,
   isAdministrator: false,
 };
 
@@ -39,6 +41,8 @@ const OPERATOR: PortalCapabilities = {
   canViewAutopilot: true,
   canDecideAutopilot: true,
   canViewAutopilotReport: true,
+  canViewSetupProfiles: true,
+  canManageSetupProfiles: true,
   isAdministrator: false,
 };
 
@@ -97,6 +101,7 @@ describe('portalRoles: capabilitiesFromRoles', () => {
       hasDashboardAccess: true,
       canUseImaging: true,
       canViewAutopilot: true,
+      canViewSetupProfiles: true,
     });
   });
 
@@ -126,6 +131,24 @@ describe('portalRoles: capabilitiesFromRoles', () => {
 
   it('an empty role list has no capability', () => {
     expect(capabilitiesFromRoles([])).toEqual(NONE);
+  });
+
+  it.each([
+    [ROLE_ADMINISTRATOR, true, true],
+    [ROLE_OPERATOR, true, true],
+    [ROLE_TECHNICIAN, true, false],
+    [ROLE_READER, false, false],
+    [ROLE_AUTOPILOT_APPROVER, false, false],
+  ])('%s: view setup profiles %s, manage setup profiles %s', (role, canView, canManage) => {
+    const caps = capabilitiesFromRoles([role]);
+    expect(caps.canViewSetupProfiles).toBe(canView);
+    expect(caps.canManageSetupProfiles).toBe(canManage);
+  });
+
+  it('Operator plus Reader keeps both setup profile flags', () => {
+    const caps = capabilitiesFromRoles([ROLE_OPERATOR, ROLE_READER]);
+    expect(caps.canViewSetupProfiles).toBe(true);
+    expect(caps.canManageSetupProfiles).toBe(true);
   });
 
   it('unknown and differently cased role values are ignored', () => {

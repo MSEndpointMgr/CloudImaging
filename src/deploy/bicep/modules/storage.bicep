@@ -54,6 +54,14 @@ resource containerOsImages 'Microsoft.Storage/storageAccounts/blobServices/conta
   properties: { publicAccess: 'None' }
 }
 
+// Setup profile versions, one immutable JSON document per version. No lifecycle rule: Imaging Core
+// prunes versions itself because a running session may still pin an old one.
+resource containerSetupProfiles 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobServiceCore
+  name: 'setup-profiles'
+  properties: { publicAccess: 'None' }
+}
+
 resource containerBootImages 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
   parent: blobServiceCore
   name: 'boot-images'

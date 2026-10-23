@@ -88,6 +88,27 @@ public sealed class PortalConfiguration
     /// <summary>Days a handled Autopilot request (imported, already registered, rejected or expired) is kept for audit before it is deleted. Default: 365.</summary>
     public int AutopilotRetentionDays { get; init; } = 365;
 
+    /// <summary>Default number of setup profile versions kept per profile.</summary>
+    public const int DefaultSetupProfileVersionRetention = 25;
+
+    /// <summary>Lowest allowed setup profile version retention.</summary>
+    public const int MinSetupProfileVersionRetention = 5;
+
+    /// <summary>Highest allowed setup profile version retention.</summary>
+    public const int MaxSetupProfileVersionRetention = 100;
+
+    /// <summary>
+    /// Setup profile versions kept per profile, applied at each profile's next save. Versions used
+    /// by running deployments are always kept. Default: 25. Valid: 5 to 100.
+    /// </summary>
+    public int SetupProfileVersionRetention { get; init; } = DefaultSetupProfileVersionRetention;
+
+    /// <summary>When <see cref="SetupProfileVersionRetention"/> last changed.</summary>
+    public DateTimeOffset? SetupProfileVersionRetentionChangedAt { get; init; }
+
+    /// <summary>Who last changed <see cref="SetupProfileVersionRetention"/>.</summary>
+    public string? SetupProfileVersionRetentionChangedBy { get; init; }
+
     /// <summary>When the configuration was last modified.</summary>
     public DateTimeOffset LastModifiedAt { get; init; }
 }

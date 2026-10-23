@@ -1,14 +1,13 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Eye, EyeOff, FileUp, KeyRound, ListChecks, ListX, Lock, Save, X } from 'lucide-react';
+import { AlertTriangle, Eye, EyeOff, FileUp, KeyRound, Lock, Save, X } from 'lucide-react';
 import { Button } from './ui/button.tsx';
-import { Checkbox } from './ui/checkbox.tsx';
 import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
-import { SearchInput } from './ui/search-input.tsx';
 import { Select } from './ui/select.tsx';
 import { Switch } from './ui/switch.tsx';
 import { Tooltip } from './ui/tooltip.tsx';
+import { LocationPicker, type PickerLocation } from './LocationPicker.tsx';
 import { apiFetch, extractErrorDetail } from '../lib/apiClient.ts';
 import { describeNames } from '../lib/regions.ts';
 import { formatDateTime } from '../lib/utils.ts';
@@ -27,13 +26,7 @@ import {
   type WifiSecurity,
 } from '../lib/wifiNetworks.ts';
 
-/** A location as the picker shows it. */
-export interface PickerLocation {
-  locationId: string;
-  name: string;
-  effectiveRegion?: string | null;
-  countryCode?: string | null;
-}
+export type { PickerLocation };
 
 const SCOPE_OPTIONS = [
   { value: 'all', label: 'All locations', description: 'Also covers locations added later' },
@@ -59,59 +52,6 @@ function removalTitleAndNames(removedIds: string[], locations: PickerLocation[])
   const count = removedIds.length;
   const title = `${count === locations.length && count > 3 ? `All ${String(count)}` : String(count)} location${count === 1 ? '' : 's'} will stop connecting automatically`;
   return { title, names: describeNames(names) };
-}
-
-function LocationPicker({ locations, selected, onChange }: {
-  locations: PickerLocation[];
-  selected: string[];
-  onChange: (ids: string[]) => void;
-}): React.ReactElement {
-  const [search, setSearch] = useState('');
-  const term = search.trim().toLowerCase();
-  const shown = useMemo(
-    () => (term ? locations.filter((l) => [l.name, l.effectiveRegion, l.countryCode].some((v) => v?.toLowerCase().includes(term))) : locations),
-    [locations, term],
-  );
-  const selectedSet = new Set(selected);
-  const scope = term ? `the ${String(shown.length)} location${shown.length === 1 ? '' : 's'} shown` : 'every location';
-
-  const toggle = (id: string, on: boolean) => onChange(on ? [...selected, id] : selected.filter((s) => s !== id));
-  const selectShown = () => onChange([...new Set([...selected, ...shown.map((l) => l.locationId)])]);
-  const clearShown = () => {
-    const hide = new Set(shown.map((l) => l.locationId));
-    onChange(selected.filter((id) => !hide.has(id)));
-  };
-
-  return (
-    <div className="rounded-md border border-border">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border p-2">
-        <SearchInput value={search} onValueChange={setSearch} placeholder="Search locations" aria-label="Search locations" wrapperClassName="min-w-40 flex-1" />
-        <Tooltip content={`Select ${scope}`}>
-          <Button variant="outline" onClick={selectShown} disabled={shown.length === 0}><ListChecks />Select all</Button>
-        </Tooltip>
-        <Tooltip content={`Clear ${scope}`}>
-          <Button variant="outline" onClick={clearShown} disabled={shown.length === 0}><ListX />Clear</Button>
-        </Tooltip>
-      </div>
-      <ul className="h-56 overflow-y-auto py-1" aria-label="Locations">
-        {shown.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{locations.length === 0 ? 'No locations exist yet.' : 'No locations match.'}</li>}
-        {shown.map((l) => {
-          const labelId = `wifi-loc-${l.locationId}`;
-          return (
-            <li key={l.locationId} className="flex items-center gap-3 px-3 py-1">
-              <Checkbox checked={selectedSet.has(l.locationId)} onCheckedChange={(on) => toggle(l.locationId, on)} labelledBy={labelId} />
-              <span id={labelId} className="min-w-0 flex-1 truncate text-sm">{l.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{[l.effectiveRegion, l.countryCode].filter(Boolean).join(', ')}</span>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="flex justify-between border-t border-border px-3 py-2 text-sm text-muted-foreground">
-        <span>{selected.length} of {locations.length} selected</span>
-        {term && <span>{shown.length} shown</span>}
-      </div>
-    </div>
-  );
 }
 
 function SettingRow({ title, help, children, labelId }: { title: string; help: string; children: React.ReactNode; labelId?: string }): React.ReactElement {
@@ -273,7 +213,7 @@ export function WifiNetworkDialog({ network, networks, locations, onClose, onSav
             <Label htmlFor="wifi-scope">Locations</Label>
             <p className="text-sm text-muted-foreground">USB media prepared for these locations, and devices registered at them, receive this network.</p>
             <Select id="wifi-scope" value={draft.allLocations ? 'all' : 'selected'} onValueChange={(v) => set({ allLocations: v === 'all' })} options={SCOPE_OPTIONS} />
-            {!draft.allLocations && <LocationPicker locations={locations} selected={draft.locationIds} onChange={(locationIds) => set({ locationIds })} />}
+            {!draft.allLocations && <LocationPicker idPrefix="wifi-loc" locations={locations} selected={draft.locationIds} onChange={(locationIds) => set({ locationIds })} />}
             {attempted && locationsError && <p className="text-sm text-destructive">{locationsError}</p>}
           </div>
 

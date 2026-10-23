@@ -1,0 +1,108 @@
+using System.IO;
+using System.Net.Http;
+using CloudImaging.Client.Services.Setup;
+using CloudImaging.Contracts.Enums;
+using Microsoft.Win32;
+
+namespace CloudImaging.Client.Tests.TestDoubles;
+
+/// <summary>HTTP handler that answers from a function and records every request with its body.</summary>
+internal sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+{
+    public List<(HttpRequestMessage Request, string? Body)> Requests { get; } = [];
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        Requests.Add((request, body));
+        return respond(request);
+    }
+}
+
+/// <summary>In-memory offline hives: records loads, writes and unloads in order.</summary>
+internal sealed class FakeOfflineRegistryHive : IOfflineRegistryHive
+{
+    public List<string> Events { get; } = [];
+
+    public Dictionary<(SetupRegistryHive Hive, string Key, string Name), object> Values { get; } = [];
+
+    public Dictionary<SetupRegistryHive, string> LoadFailures { get; } = [];
+
+    public Func<SetupRegistryHive, string, string, Exception?> SetFailure { get; set; } = (_, _, _) => null;
+
+    public HashSet<SetupRegistryHive> Loaded { get; } = [];
+
+    public void Load(SetupRegistryHive hive, string hiveFilePath)
+    {
+        Events.Add($"load {hive}");
+        if (LoadFailures.TryGetValue(hive, out var message))
+        {
+            throw new OfflineHiveException(message);
+        }
+        Loaded.Add(hive);
+    }
+
+    public bool Unload(SetupRegistryHive hive)
+    {
+        Events.Add($"unload {hive}");
+        Loaded.Remove(hive);
+        return true;
+    }
+
+    public void SetValue(SetupRegistryHive hive, string key, string valueName, object value, RegistryValueKind kind)
+    {
+        if (!Loaded.Contains(hive))
+        {
+            throw new InvalidOperationException($"{hive} is not loaded.");
+        }
+        if (SetFailure(hive, key, valueName) is { } failure)
+        {
+            throw failure;
+        }
+        Events.Add($"set {hive} {key}\\{valueName}");
+        Values[(hive, key, valueName)] = value;
+    }
+
+    public object? GetValue(SetupRegistryHive hive, string key, string valueName) =>
+        Values.TryGetValue((hive, key, valueName), out var value) ? value : null;
+
+    public void DeleteValue(SetupRegistryHive hive, string key, string valueName)
+    {
+        Events.Add($"delete {hive} {key}\\{valueName}");
+        Values.Remove((hive, key, valueName));
+    }
+}
+
+/// <summary>In-memory applied volume.</summary>
+internal sealed class FakeSetupFileSystem : ISetupFileSystem
+{
+    public Dictionary<string, byte[]> Files { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public List<string> Events { get; } = [];
+
+    public bool FailWrites { get; set; }
+
+    public void CreateDirectory(string relativePath) => Events.Add($"mkdir {relativePath}");
+
+    public void WriteAllBytes(string relativePath, byte[] bytes)
+    {
+        if (FailWrites)
+        {
+            throw new IOException("The disk is full.");
+        }
+        Events.Add($"write {relativePath}");
+        Files[relativePath] = bytes;
+    }
+
+    public byte[] ReadAllBytes(string relativePath) => Files[relativePath];
+
+    public void DeleteFile(string relativePath)
+    {
+        Events.Add($"delete {relativePath}");
+        Files.Remove(relativePath);
+    }
+
+    public void DeleteTree(string relativePath) => Events.Add($"rmdir {relativePath}");
+
+    public bool FileExists(string relativePath) => Files.ContainsKey(relativePath);
+}

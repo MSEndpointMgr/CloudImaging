@@ -7,8 +7,9 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// Calculates the overall imaging completion percentage from the set of imaging steps (T048, FR-007).
 ///
 /// Calculation rule:
-///   The pipeline the Client actually runs has 5 steps (FormatDisk, DownloadImage, ApplyImage,
-///   ConfigureBoot, ApplyRecoveryImage) — see CloudImaging.Client's ImagingWorkflowViewModel /
+///   The pipeline the Client actually runs has 5 required steps (FormatDisk, DownloadImage,
+///   ApplyImage, ConfigureBoot, ApplyRecoveryImage) and optional steps (PrepareSetup) that only
+///   run when the device has work for them; see CloudImaging.Client's ImagingWorkflowViewModel /
 ///   ProgressViewModel. Each step carries the same weight it does in the Client's own on-device
 ///   progress ring, so the portal and the device agree on the number rather than each telling the
 ///   technician a different story.
@@ -19,27 +20,45 @@ namespace CloudImaging.ImagingCoreApi.Services;
 public static class OverallProgressCalculator
 {
     /// <summary>
-    /// Per-step weight, summing to 100. Mirrors the band each step occupies in the Client's
-    /// <c>ImagingWorkflowViewModel</c> (0–8 format, 8–55 download, 55–80 apply, 80–85 boot config,
-    /// 85–100 recovery) so both surfaces report the same percentage for the same device.
-    /// Declared in pipeline order — <see cref="PipelineStepCount"/> is the authoritative count of
-    /// steps a session must complete before it is considered done.
+    /// Every step in the order the Client runs them, with its weight (summing to 100) and whether
+    /// a session must report it to complete. Weights mirror the band each required step occupies in
+    /// the Client's <c>ImagingWorkflowViewModel</c> (0-8 format, 8-55 download, 55-80 apply, 80-85
+    /// boot config, 85-100 recovery). Optional steps have weight 0 so the overall percentage holds
+    /// while they run, and count only when the device reports them.
     /// </summary>
-    private static readonly (ImagingStepName Name, double Share)[] Steps =
+    private static readonly (ImagingStepName Name, double Share, bool Required)[] Steps =
     [
-        (ImagingStepName.FormatDisk, 8),
-        (ImagingStepName.DownloadImage, 47),
-        (ImagingStepName.ApplyImage, 25),
-        (ImagingStepName.ConfigureBoot, 5),
-        (ImagingStepName.ApplyRecoveryImage, 15),
+        (ImagingStepName.FormatDisk, 8, true),
+        (ImagingStepName.DownloadImage, 47, true),
+        (ImagingStepName.ApplyImage, 25, true),
+        (ImagingStepName.PrepareSetup, 0, false),
+        (ImagingStepName.ConfigureBoot, 5, true),
+        (ImagingStepName.ApplyRecoveryImage, 15, true),
     ];
 
+    /// <summary>Every step name in the order the Client runs them, required and optional.</summary>
+    public static IReadOnlyList<ImagingStepName> PipelineOrder { get; } = [.. Steps.Select(step => step.Name)];
+
     /// <summary>
-    /// Number of steps in the imaging pipeline. Callers use this to decide when a session has
-    /// completed every step, instead of hard-coding a count that silently goes stale whenever a
-    /// step is added to <see cref="ImagingStepName"/>.
+    /// True when every required step is Completed and no reported step is InProgress or Failed.
+    /// Optional steps a device skips are never reported, so they do not hold a session open.
     /// </summary>
-    public static int PipelineStepCount => Steps.Length;
+    public static bool IsPipelineComplete(IReadOnlyList<ImagingStep>? steps)
+    {
+        if (steps is null || steps.Count == 0)
+        {
+            return false;
+        }
+
+        if (steps.Any(step => step.Status is ImagingStepStatus.InProgress or ImagingStepStatus.Failed))
+        {
+            return false;
+        }
+
+        return Steps
+            .Where(step => step.Required)
+            .All(required => steps.Any(step => step.StepName == required.Name && step.Status == ImagingStepStatus.Completed));
+    }
 
     /// <summary>
     /// Calculates the overall progress percentage (0–100).
@@ -53,7 +72,7 @@ public static class OverallProgressCalculator
         }
 
         double total = 0;
-        foreach (var (stepName, share) in Steps)
+        foreach (var (stepName, share, _) in Steps)
         {
             var step = steps.FirstOrDefault(s => s.StepName == stepName);
             if (step is null)

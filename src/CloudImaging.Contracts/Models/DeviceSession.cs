@@ -101,6 +101,15 @@ public sealed record DeviceSession
     /// </summary>
     public string? PartitioningSchemeSnapshotJson { get; init; }
 
+    /// <summary>Setup profile resolved and pinned at assignment, or null when none applied.</summary>
+    public Guid? SetupProfileId { get; init; }
+
+    /// <summary>Pinned setup profile version. Never changes after assignment.</summary>
+    public int? SetupProfileVersion { get; init; }
+
+    /// <summary>Setup profile name at assignment, kept so the timeline still names a deleted profile.</summary>
+    public string? SetupProfileName { get; init; }
+
     // Progress
     /// <summary>Overall imaging progress, 0-100.</summary>
     public int OverallProgressPercent { get; init; }

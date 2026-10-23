@@ -62,6 +62,10 @@
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                     <Setter Property="Stroke" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                 </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Warning">
+                                                    <Setter Property="Fill" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                    <Setter Property="Stroke" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
@@ -77,6 +81,9 @@
                                                         <Setter Property="FontWeight" Value="SemiBold" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding State}" Value="Done">
+                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding State}" Value="Warning">
                                                         <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding State}" Value="Failed">
