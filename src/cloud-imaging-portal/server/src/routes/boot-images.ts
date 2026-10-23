@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { requireRole } from '../middleware/roleGuard.js';
+import { requireOperator, requireRole } from '../middleware/roleGuard.js';
 import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 import { isAllowedImageFile, WIM_ONLY_EXTENSIONS } from '../utils/imageFileValidation.js';
@@ -13,7 +13,7 @@ router.get('/', requireRole('CloudImaging.PortalAccess', 'CloudImaging.Reader'),
   } catch (err) { next(err); }
 });
 
-router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload/start', requireOperator, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { fileName } = req.body as { fileName?: string };
     if (!fileName || !isAllowedImageFile(fileName, WIM_ONLY_EXTENSIONS)) {
@@ -25,7 +25,7 @@ router.post('/upload/start', requireRole('CloudImaging.Administrator'), async (r
 });
 
 // Publish enqueues a background job (202 Accepted); the client polls /api/upload-jobs/:id.
-router.post('/upload/:token/publish', requireRole('CloudImaging.Administrator'), requireGuidParams('token'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/upload/:token/publish', requireOperator, requireGuidParams('token'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const job = await operatorApiClient.publishBootImageUpload(req.params['token'] as string, req.body as unknown);
     res.status(202).json(job);
@@ -33,20 +33,20 @@ router.post('/upload/:token/publish', requireRole('CloudImaging.Administrator'),
 });
 
 // Moves a tested pre-production image to production and makes it latest for its architecture.
-router.post('/:id/promote', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id/promote', requireOperator, requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.promoteBootImage(req.params['id'] as string));
   } catch (err) { next(err); }
 });
 
 // Reverts a promote: back to pre-production, restoring the previously promoted image as latest.
-router.post('/:id/demote', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id/demote', requireOperator, requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.demoteBootImage(req.params['id'] as string));
   } catch (err) { next(err); }
 });
 
-router.delete('/:id', requireRole('CloudImaging.Administrator'), requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireOperator, requireGuidParams('id'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     await operatorApiClient.deleteBootImage(req.params['id'] as string);
     res.status(204).send();

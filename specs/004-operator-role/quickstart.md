@@ -1,4 +1,4 @@
-# Quickstart: Verify the Operations Role
+# Quickstart: Verify the Operator Role
 
 **Feature**: [spec.md](spec.md) | **Contracts**: [contracts/](contracts/)
 
@@ -19,8 +19,8 @@ dotnet test tests/CloudImaging.OperatorApi.Tests -c Release
 ```
 
 Expected: zero lint errors, zero build warnings, all tests pass. The server suite includes the
-route matrix (all 73 routes against Administrator, Operations, Technician, Reader, Approver, and
-Operations plus Technician) from [contracts/portal-server-routes.md](contracts/portal-server-routes.md),
+route matrix (all 73 routes against Administrator, Operator, Technician, Reader, Approver, and
+Operator plus Technician) from [contracts/portal-server-routes.md](contracts/portal-server-routes.md),
 and the session history tests (Technician refused on `GET /api/session-history`; the
 completed-timestamps read returns only `SessionCompleted` times). Route tests mock
 `operatorApiClient` and `updateCheck`, so no test makes a network call.
@@ -55,20 +55,20 @@ Media Builder run needs the `coverlet.collector` package reference added by the 
 ## 2. Tenant setup
 
 1. Deploy the release (backend stream) and install the matching Media Builder.
-2. Add `CloudImaging.Operations` to the **Cloud Imaging Portal** and **Cloud Imaging Media Builder**
+2. Add `CloudImaging.Operator` to the **Cloud Imaging Portal** and **Cloud Imaging Media Builder**
    registrations as the updated setup instructions describe (Users/Groups, value and display name
-   `CloudImaging.Operations`). Confirm the existing roles, their IDs and assignments are untouched.
+   `CloudImaging.Operator`). Confirm the existing roles, their IDs and assignments are untouched.
 3. Create five test users, each assigned exactly one role on the Portal registration:
 
    | Test user | Portal role | Media Builder role | Operator API |
    |---|---|---|---|
    | `ci-admin` | Administrator | Administrator | MediaBuilderAccess |
-   | `ci-ops` | Operations | Operations | MediaBuilderAccess |
+   | `ci-ops` | Operator | Operator | MediaBuilderAccess |
    | `ci-tech` | Technician | Technician | MediaBuilderAccess |
    | `ci-reader` | Reader | none | none |
    | `ci-approver` | AutopilotApprover | none | none |
 
-4. Optional: `ci-ops-mbonly` with Operations on Media Builder only (no Portal role beyond Technician)
+4. Optional: `ci-ops-mbonly` with Operator on Media Builder only (no Portal role beyond Technician)
    for the cross-registration check.
 5. Each user signs out and back in after assignment.
 
@@ -106,8 +106,8 @@ foreach ($Probe in $Probes) { $Method, $Path = $Probe -split " ", 2; $Response =
 | `GET /session-history/completed-timestamps` | pass | pass | pass | pass | 403 |
 
 Every 403 body must list the accepted roles, for example
-`CloudImaging.Operations, CloudImaging.Administrator` on catalog probes and
-`CloudImaging.Reader, CloudImaging.Operations, CloudImaging.Administrator` on `GET /session-history`.
+`CloudImaging.Operator, CloudImaging.Administrator` on catalog probes and
+`CloudImaging.Reader, CloudImaging.Operator, CloudImaging.Administrator` on `GET /session-history`.
 The Technician 403 on `GET /session-history` is the one intended change for an existing role
 (FR-015a); before the release it returned 200.
 
@@ -122,9 +122,9 @@ return 403. The route matrix test already covers them; run these only to confirm
 ## 4. Portal UI per role
 
 **Administrator** (`ci-admin`): everything as before. Navigation shows every item including Branding
-and Configuration. No Operations assignment needed.
+and Configuration. No Operator assignment needed.
 
-**Operations** (`ci-ops`):
+**Operator** (`ci-ops`):
 1. Navigation: Dashboard, Devices, OS Images, Boot Images, Recovery Images, Autopilot, Reports, Locations, Wi-Fi Networks, and Drivers once spec 005 ships. No Branding, no Configuration. No update notice.
 2. Dashboard shows the operations stats and the Locations card; no Branding or Configuration cards.
 3. OS Images: upload a small test image, edit its metadata, delete it. Capacity and in-use rules apply.
@@ -149,7 +149,7 @@ Autopilot Registration History.
 **Autopilot Approver** (`ci-approver`): unchanged. Lands on Autopilot, can decide, opens the history
 report from the Autopilot page.
 
-**Combinations**: Operations plus Technician shows the Operations navigation once, without duplicates.
+**Combinations**: Operator plus Technician shows the Operator navigation once, without duplicates.
 
 ---
 
@@ -161,13 +161,13 @@ report from the Autopilot page.
 | `ci-ops` | Generate Boot Image available (ADK and certificate present) | Production and pre-production |
 | `ci-ops` on a workstation without the ADK | ADK reason, not a role reason | Production and pre-production |
 | `ci-ops` with no active certificate in the Portal | Certificate reason; generation blocked | Production and pre-production |
-| `ci-tech` | Restricted by role, names Operations or Administrator | Production only |
-| user with no Media Builder role | No-role banner naming Technician, Operations or Administrator; both tiles blocked | n/a |
+| `ci-tech` | Restricted by role, names Operator or Administrator | Production only |
+| user with no Media Builder role | No-role banner naming Technician, Operator or Administrator; both tiles blocked | n/a |
 
 Then, as `ci-ops`: generate a boot image, upload it on the Portal's Boot Images page, prepare a test
 USB with it while pre-production, promote it. As `ci-ops-mbonly`, the Portal upload is refused.
 
-Manual-only item: the certificate check runs at shell start for Operations (no automated harness for
+Manual-only item: the certificate check runs at shell start for Operator (no automated harness for
 `ShellViewModel`). Verify by removing the active certificate in a test deployment and confirming the
 certificate reason appears for `ci-ops`.
 
@@ -206,9 +206,9 @@ foreach ($Stream in $Streams.Keys) {
 
 Expected: `True` for `backend` (`mse-ci-v1.1.0`), `client` (`mse-ci-client-v1.1.0`) and
 `mediabuilder` (`mse-ci-mediabuilder-v1.1.0`). The backend and Media Builder notes for this
-feature tell administrators to add `CloudImaging.Operations` to the Portal and Media Builder
+feature tell administrators to add `CloudImaging.Operator` to the Portal and Media Builder
 registrations, assign it, and link to the upgrade instructions; the client notes carry no
-Operations notice. A manual workflow run for a version without a notes file must fail inside
+Operator notice. A manual workflow run for a version without a notes file must fail inside
 "Determine version tag", naming the expected path, before the tag is created or pushed and before
 any build. A prerelease tag (for example `v1.1.0-beta.1`) needs its own notes file.
 
@@ -275,5 +275,5 @@ Expected: `files: 67, missing: 0, hits: 0`. A missing file means a new file of t
 not created or the list is out of date; update the list when the plan's lists change.
 
 In the deployment wizard, the Portal client ID tooltip lists
-`CloudImaging.Administrator`, `CloudImaging.Operations`, `CloudImaging.Technician`,
+`CloudImaging.Administrator`, `CloudImaging.Operator`, `CloudImaging.Technician`,
 `CloudImaging.Reader` and `CloudImaging.AutopilotApprover`.

@@ -1,6 +1,6 @@
-using Microsoft.Identity.Client;
-using Microsoft.Extensions.Logging;
 using System.IO;
+using Microsoft.Extensions.Logging;
+using Microsoft.Identity.Client;
 
 namespace CloudImaging.MediaBuilder.Services;
 
@@ -30,37 +30,42 @@ public sealed partial class EntraAuthenticationService
         _lastResult?.ClaimsPrincipal?.FindFirst("name")?.Value ?? SignedInUserPrincipalName;
 
     /// <summary>
-    /// The Entra ID app role name (Administrator/Technician). Roles are assigned per user on
-    /// the shared enterprise app registration (FR-040b) and carried in the ID token's "roles"
-    /// claim, same convention as the Portal (see authContext.tsx). Not signed in / no role
-    /// assigned both surface as no match here (empty list), which callers treat as least
-    /// privilege — never fail-open to Administrator.
+    /// True when the signed-in user holds the <c>CloudImaging.Administrator</c> app role itself.
+    /// Diagnostics only: no gate reads it, gates use the capabilities below.
     /// </summary>
-    private const string AdministratorRoleClaim = "CloudImaging.Administrator";
-    private const string TechnicianRoleClaim    = "CloudImaging.Technician";
+    public bool IsAdministrator => AssignedRoles.Contains(MediaBuilderRoles.Administrator, StringComparer.Ordinal);
 
     /// <summary>
-    /// True when the signed-in user holds the <c>CloudImaging.Administrator</c> app role.
-    /// Gates Media Builder's Generate Boot Image workflow (FR-050b) — Technician (or no-role)
-    /// users only get Prepare USB Storage Device. False before sign-in completes.
+    /// True when the signed-in user holds the <c>CloudImaging.Technician</c> app role itself.
+    /// Diagnostics only: no gate reads it.
     /// </summary>
-    public bool IsAdministrator => HasRole(AdministratorRoleClaim);
+    public bool IsTechnician => AssignedRoles.Contains(MediaBuilderRoles.Technician, StringComparer.Ordinal);
 
     /// <summary>
-    /// True when the signed-in user holds the <c>CloudImaging.Technician</c> app role.
+    /// True when the expanded role set contains Technician (any Media Builder role). A user with
+    /// no role can sign in but must not reach any workflow, since every one of them calls the
+    /// Operator API and would fail with 403 anyway. False before sign-in completes.
     /// </summary>
-    public bool IsTechnician => HasRole(TechnicianRoleClaim);
+    public bool HasMediaBuilderRole => ExpandedRoles.Contains(MediaBuilderRoles.Technician);
 
     /// <summary>
-    /// True when the signed-in user holds either Media Builder app role. A user with no role
-    /// assigned can sign in but must not reach any workflow, since every one of them calls the
-    /// Operator API and would fail with 403 anyway.
+    /// True when the expanded role set contains Operator (Operator or Administrator). Gates
+    /// the Generate Boot Image workflow and the boot media certificate check (FR-050b).
+    /// False before sign-in completes, so generation is never assumed.
     /// </summary>
-    public bool HasMediaBuilderRole => IsAdministrator || IsTechnician;
+    public bool CanGenerateBootImage => ExpandedRoles.Contains(MediaBuilderRoles.Operator);
 
-    private bool HasRole(string role) =>
-        _lastResult?.ClaimsPrincipal?.Claims.Any(c =>
-            c.Type == "roles" && string.Equals(c.Value, role, StringComparison.Ordinal)) ?? false;
+    /// <summary>
+    /// True when the expanded role set contains Operator. Pre-production boot images are then
+    /// listed in Prepare USB Storage Device so they can be tested before promotion.
+    /// </summary>
+    public bool CanSeePreProductionBootImages => ExpandedRoles.Contains(MediaBuilderRoles.Operator);
+
+    // Roles come from the ID token "roles" claim, the same convention as the Portal.
+    private IEnumerable<string> AssignedRoles =>
+        _lastResult?.ClaimsPrincipal?.Claims.Where(c => c.Type == "roles").Select(c => c.Value) ?? [];
+
+    private IReadOnlySet<string> ExpandedRoles => MediaBuilderRoles.Expand(AssignedRoles);
 
     /// <summary>Builds the service for the given Entra app registration and Operator API scope.</summary>
     public EntraAuthenticationService(
@@ -73,12 +78,23 @@ public sealed partial class EntraAuthenticationService
         _logger = logger;
 
         // Validate configuration up front. Missing values (e.g. an unfilled
-        // appsettings.json) must NOT crash startup — the app still opens and the
+        // appsettings.json) must NOT crash startup; the app still opens and the
         // problem is reported when the user attempts to sign in.
         var missing = new List<string>();
-        if (string.IsNullOrWhiteSpace(clientId)) missing.Add("EntraId:ClientId");
-        if (string.IsNullOrWhiteSpace(tenantId)) missing.Add("EntraId:TenantId");
-        if (string.IsNullOrWhiteSpace(operatorApiScope)) missing.Add("EntraId:OperatorApiScope");
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            missing.Add("EntraId:ClientId");
+        }
+
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            missing.Add("EntraId:TenantId");
+        }
+
+        if (string.IsNullOrWhiteSpace(operatorApiScope))
+        {
+            missing.Add("EntraId:OperatorApiScope");
+        }
 
         if (missing.Count > 0)
         {
@@ -117,7 +133,9 @@ public sealed partial class EntraAuthenticationService
     public async Task<SignInResult> SignInAsync(CancellationToken ct = default)
     {
         if (_msal is null)
+        {
             return new SignInResult(false, null, _configurationError ?? "Entra ID sign-in is not configured.");
+        }
 
         try
         {
@@ -161,7 +179,11 @@ public sealed partial class EntraAuthenticationService
     /// </summary>
     public async Task<string?> GetAccessTokenAsync(CancellationToken ct = default)
     {
-        if (_msal is null || _lastResult is null) return null;
+        if (_msal is null || _lastResult is null)
+        {
+            return null;
+        }
+
         try
         {
             var accounts = await _msal.GetAccountsAsync();
@@ -251,7 +273,7 @@ internal static class BrandedRedirectPages
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>Cloud Imaging &middot; Signed in</title>
+          <title>Cloud Imaging | Signed in</title>
           {Style}
         </head>
         <body>
@@ -262,7 +284,7 @@ internal static class BrandedRedirectPages
             </div>
             <div class="brand">Cloud Imaging Media Builder</div>
             <h1>You're signed in</h1>
-            <p>Authentication completed successfully. Return to the Cloud Imaging Media Builder to continue &mdash; you can close this browser tab.</p>
+            <p>Authentication completed successfully. Return to the Cloud Imaging Media Builder to continue. You can close this browser tab.</p>
             <p class="hint">For your security, don't share the contents of this page or the address bar.</p>
           </main>
         </body>
@@ -279,7 +301,7 @@ internal static class BrandedRedirectPages
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>Cloud Imaging &middot; Sign-in failed</title>
+          <title>Cloud Imaging | Sign-in failed</title>
           {Style}
         </head>
         <body>
@@ -322,7 +344,9 @@ internal static class MsalTokenCache
         try
         {
             if (File.Exists(CacheFilePath))
+            {
                 File.Delete(CacheFilePath);
+            }
         }
         catch (IOException)
         {

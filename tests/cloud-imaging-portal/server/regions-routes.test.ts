@@ -25,6 +25,8 @@ function appFor(claims: Claims) {
 const admin: Claims = { roles: ['CloudImaging.Administrator'] };
 const technician: Claims = { roles: ['CloudImaging.Technician'] };
 const reader: Claims = { roles: ['CloudImaging.Reader'] };
+const operator: Claims = { roles: ['CloudImaging.Operator'] };
+const OPERATOR_DETAIL = 'This operation requires one of the following roles: CloudImaging.Operator, CloudImaging.Administrator.';
 
 describe('Portal backend: region routes', () => {
   beforeEach(() => {
@@ -47,6 +49,21 @@ describe('Portal backend: region routes', () => {
     const res = await request(appFor(admin)).put('/api/regions').send(body);
     expect(res.status).toBe(204);
     expect(operatorApi.putRegions).toHaveBeenCalledWith(body);
+  });
+
+  it('shows the mapping to Operator and forwards its save', async () => {
+    expect((await request(appFor(operator)).get('/api/regions')).status).toBe(200);
+
+    const body = { regions: [{ regionId: 'emea', code: 'EMEA' }] };
+    const res = await request(appFor(operator)).put('/api/regions').send(body);
+    expect(res.status).toBe(204);
+    expect(operatorApi.putRegions).toHaveBeenCalledWith(body);
+  });
+
+  it.each(['get', 'put'] as const)('refuses Technician %s, naming Operator and Administrator', async (method) => {
+    const res = await request(appFor(technician))[method]('/api/regions').send({ regions: [] });
+    expect(res.status).toBe(403);
+    expect(res.body.detail).toBe(OPERATOR_DETAIL);
   });
 
   it('refuses a save from a technician', async () => {

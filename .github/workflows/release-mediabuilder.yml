@@ -70,6 +70,15 @@ jobs:
           if ($tag -notmatch '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
             throw "Could not resolve a Media Builder release tag (got '$tag'). Push a mse-ci-mediabuilder-v#.#.# tag, or pass a version such as '1.0.0' in the tag_name input."
           }
+          # Bare version for display (title already says "Media Builder"; avoid repeating it via the tag).
+          $version = $tag -replace '^mse-ci-mediabuilder-', ''
+          # Checked before the tag is created, pushed or checked out, so a release without notes
+          # changes nothing. Read from the working tree, so notes can be fixed on main and re-run.
+          $notesPath = ".github/release-notes/mediabuilder/$version.md"
+          if (-not (Test-Path -LiteralPath $notesPath -PathType Leaf) -or [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $notesPath -Raw))) {
+            throw "Release notes file '$notesPath' is missing or empty. Commit it to main, then run the release again."
+          }
+          Copy-Item -LiteralPath $notesPath -Destination "$env:RUNNER_TEMP/release-notes.md"
           # Fully qualified: a stray branch-named tag would otherwise make a bare name ambiguous.
           git rev-parse -q --verify "refs/tags/$tag" > $null
           if ($LASTEXITCODE -ne 0) {
@@ -86,8 +95,6 @@ jobs:
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-mediabuilder-' prefix itself contains hyphens, so a naive contains('-') is always true.
           $stable = $tag -match '^mse-ci-mediabuilder-v[0-9]+\.[0-9]+\.[0-9]+$'
-          # Bare version for display (title already says "Media Builder"; avoid repeating it via the tag).
-          $version = $tag -replace '^mse-ci-mediabuilder-', ''
           # MSI ProductVersion must be a bare numeric major.minor.build: Windows Installer rejects a
           # leading 'v' and ignores anything after the third field, so a pre-release suffix is dropped
           # (which is why the MSI is built with AllowSameVersionUpgrades, see the .wixproj).
@@ -162,21 +169,8 @@ jobs:
         with:
           tag_name:  ${{ steps.tag.outputs.tag }}
           name:      "Cloud Imaging Media Builder ${{ steps.tag.outputs.version }}"
-          body:      |
-            Technician-workstation WPF app used to generate WinPE boot images and prepare USB
-            storage devices.
-
-            Deploy it with the MSI: it installs per-machine and takes the tenant configuration as
-            install properties, so there is no need to repackage the payload per tenant. See
-            `docs/setup-instructions.md` → "Deploying the Media Builder with Intune" for the full
-            deployment guide, including MSI properties.
-
-            ### Release artifacts
-            | File | Description |
-            |------|-------------|
-            | `cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.msi` | Per-machine installer (x64). Configured via MSI properties; upgrades in place and keeps existing configuration. |
-            | `cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.zip` | The same self-contained win-x64 payload (net10.0-windows), unpackaged, for xcopy deployment or custom packaging. |
-            | `SHA256SUMS` | SHA-256 checksums for integrity verification |
+          # Staged from .github/release-notes/mediabuilder/<version>.md by "Determine version tag".
+          body_path: ${{ runner.temp }}/release-notes.md
           files: |
             release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.msi
             release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.zip

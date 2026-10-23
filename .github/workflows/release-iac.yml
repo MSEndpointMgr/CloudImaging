@@ -76,6 +76,15 @@ jobs:
           if ($tag -notmatch '^mse-ci-v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$') {
             throw "Could not resolve a backend/IaC release tag (got '$tag'). Push a mse-ci-v#.#.# tag, or pass a version such as '1.0.0' in the tag_name input."
           }
+          # Bare version for display (avoid repeating the full mse-ci- prefix in the title).
+          $version = $tag -replace '^mse-ci-', ''
+          # Checked before the tag is created, pushed or checked out, so a release without notes
+          # changes nothing. Read from the working tree, so notes can be fixed on main and re-run.
+          $notesPath = ".github/release-notes/backend/$version.md"
+          if (-not (Test-Path -LiteralPath $notesPath -PathType Leaf) -or [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $notesPath -Raw))) {
+            throw "Release notes file '$notesPath' is missing or empty. Commit it to main, then run the release again."
+          }
+          Copy-Item -LiteralPath $notesPath -Destination "$env:RUNNER_TEMP/release-notes.md"
           # Fully qualified: a stray branch-named tag would otherwise make a bare name ambiguous.
           git rev-parse -q --verify "refs/tags/$tag" > $null
           if ($LASTEXITCODE -ne 0) {
@@ -92,8 +101,6 @@ jobs:
           # A pre-release tag has a '-suffix' after the numeric version (e.g. -beta.1); the
           # 'mse-ci-' prefix itself contains a hyphen, so a naive contains('-') is always true.
           $stable = $tag -match '^mse-ci-v[0-9]+\.[0-9]+\.[0-9]+$'
-          # Bare version for display (avoid repeating the full mse-ci- prefix in the title).
-          $version = $tag -replace '^mse-ci-', ''
           # The alias release must point at the tag's commit. github.sha is the *branch* head on a
           # manual run, which would make the alias serve code that was never in the tagged build.
           $sha = git rev-parse "refs/tags/$tag^{commit}"
@@ -254,16 +261,8 @@ jobs:
         with:
           tag_name:  ${{ steps.tag.outputs.tag }}
           name:      "Cloud Imaging ${{ steps.tag.outputs.version }}"
-          body:      |
-            Backend/IaC release: the 3 Function Apps, portal (frontend + backend), and
-            Bicep/deploy scripts. Cloud Imaging Client and Media Builder ship from their own
-            release streams (tags `mse-ci-client-v*` / `mse-ci-mediabuilder-v*`).
-
-            ### Release artifacts
-            | File | Description |
-            |------|-------------|
-            | `cloud-imaging-${{ steps.tag.outputs.version }}.zip` | Backend/IaC bundle (5 components + deploy scripts) |
-            | `SHA256SUMS` | SHA-256 checksums for integrity verification |
+          # Staged from .github/release-notes/backend/<version>.md by "Determine version tag".
+          body_path: ${{ runner.temp }}/release-notes.md
           files: |
             release-bundle/cloud-imaging-${{ steps.tag.outputs.version }}.zip
             release-bundle/SHA256SUMS

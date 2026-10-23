@@ -27,7 +27,6 @@ import { Badge } from '../components/ui/badge.tsx';
 
 interface SessionLike { state: string; createdAt: string }
 interface TimestampedLike { createdAt?: string; uploadedAt?: string }
-interface SessionHistoryLike { finalState: string; terminalAt: string }
 
 const ACTIVE_STATES = new Set([
   'SessionInit', 'SessionAllowed', 'SessionAssigned', 'SessionStarted', 'SessionInProgress',
@@ -62,7 +61,8 @@ function startOfDay(date: Date): Date {
  * Buckets timestamps into two consecutive `days`-long windows (previous, then current)
  * and returns the current window's daily counts plus the percent change vs. the previous
  * window. Used to derive trend sparklines for each stat card. The Completed Sessions card
- * sources its timestamps from the durable SessionHistory audit table (`/api/session-history`);
+ * sources its timestamps from the durable SessionHistory audit table through
+ * `/api/session-history/completed-timestamps`, which every Dashboard role may read;
  * the other cards still derive theirs from the existing list endpoints, which is sufficient
  * since active sessions and image catalogs aren't purged the way completed sessions are.
  */
@@ -95,8 +95,8 @@ interface StatCard {
   to: string;
   /** Whether to show the trend pill/sparkline for this card. Off for catalogs that aren't expected to change often. */
   showTrend: boolean;
-  /** Undefined = visible to any signed-in portal role; 'operations' = Administrator/Technician only. */
-  access?: 'operations';
+  /** Undefined = visible to any signed-in portal role; 'imaging' = Administrator, Operator and Technician only. */
+  access?: 'imaging';
 }
 
 /** Duration (ms) of the stat-card count-up animation. */
@@ -131,10 +131,10 @@ function AnimatedNumber({ value }: { value: number }): React.ReactElement {
 }
 
 const STAT_CARDS: StatCard[] = [
-  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions',    showTrend: true,  access: 'operations' },
+  { key: 'activeSessions',    label: 'Active Sessions',    icon: <Monitor      size={16} />, to: '/sessions',    showTrend: true,  access: 'imaging' },
   { key: 'completedSessions', label: 'Completed Sessions', icon: <CheckCircle2 size={16} />, to: '/sessions',    showTrend: true },
-  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images',   showTrend: false, access: 'operations' },
-  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images', showTrend: false, access: 'operations' },
+  { key: 'osImages',          label: 'OS Images',          icon: <HardDrive    size={16} />, to: '/os-images',   showTrend: false, access: 'imaging' },
+  { key: 'bootImages',        label: 'Boot Images',        icon: <Disc         size={16} />, to: '/boot-images', showTrend: false, access: 'imaging' },
 ];
 
 interface NavCard {
@@ -143,7 +143,7 @@ interface NavCard {
   description: string;
   icon: React.ReactNode;
   /** Undefined = visible to any signed-in portal role. */
-  access?: 'operations' | 'autopilot' | 'reports' | 'admin';
+  access?: 'imaging' | 'autopilot' | 'reports' | 'manage' | 'admin';
 }
 
 const NAV_CARDS: NavCard[] = [
@@ -152,28 +152,28 @@ const NAV_CARDS: NavCard[] = [
     title: 'Devices',
     description: 'Monitor and manage active imaging sessions. Couple devices, assign images, and track progress.',
     icon: <Monitor size={18} />,
-    access: 'operations',
+    access: 'imaging',
   },
   {
     to: '/os-images',
     title: 'OS Images',
     description: 'Browse and manage the operating system image catalog uploaded for deployment.',
     icon: <HardDrive size={18} />,
-    access: 'operations',
+    access: 'imaging',
   },
   {
     to: '/boot-images',
     title: 'Boot Images',
     description: 'WinPE boot media published from the Media Builder app.',
     icon: <Disc size={18} />,
-    access: 'operations',
+    access: 'imaging',
   },
   {
     to: '/recovery-images',
     title: 'Recovery Images',
     description: 'Custom Windows Recovery Environment (WinRE) images published for deployment.',
     icon: <LifeBuoy size={18} />,
-    access: 'operations',
+    access: 'imaging',
   },
   {
     to: '/autopilot',
@@ -194,7 +194,7 @@ const NAV_CARDS: NavCard[] = [
     title: 'Locations',
     description: 'Manage the site catalog devices are registered against.',
     icon: <MapPin size={18} />,
-    access: 'admin',
+    access: 'manage',
   },
   {
     to: '/branding',
@@ -217,9 +217,7 @@ const NAV_CARDS: NavCard[] = [
  * into each section. Stat counts load asynchronously with skeleton placeholders.
  */
 export default function DashboardPage(): React.ReactElement {
-  const { isAdministrator, isTechnician, isReader, canViewAutopilot } = useAuth();
-  const canOperations = isAdministrator || isTechnician;
-  const canReports = isAdministrator || isReader;
+  const { isAdministrator, canUseImaging, canManageLocations, canViewReports, canViewAutopilot } = useAuth();
   const { branding } = useBranding();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [trends, setTrends] = useState<DashboardTrends | null>(null);
@@ -232,25 +230,23 @@ export default function DashboardPage(): React.ReactElement {
       try {
         const historyFrom = new Date(Date.now() - TREND_DAYS * 2 * 86_400_000).toISOString();
         // Reader holds none of the roles the sessions/images/boot-images endpoints accept, so
-        // skip those fetches entirely rather than let them 403 — session-history alone covers
-        // Reader's one visible stat (Completed Sessions).
+        // skip those fetches entirely rather than let them 403. The completion-times read alone
+        // covers Reader's one visible stat (Completed Sessions).
         const [sRes, iRes, bRes, hRes] = await Promise.all([
-          canOperations ? apiFetchWithRetry('/api/sessions',    { credentials: 'include' }) : Promise.resolve(null),
-          canOperations ? apiFetchWithRetry('/api/images',      { credentials: 'include' }) : Promise.resolve(null),
-          canOperations ? apiFetchWithRetry('/api/boot-images', { credentials: 'include' }) : Promise.resolve(null),
-          apiFetchWithRetry(`/api/session-history?from=${encodeURIComponent(historyFrom)}`, { credentials: 'include' }),
+          canUseImaging ? apiFetchWithRetry('/api/sessions',    { credentials: 'include' }) : Promise.resolve(null),
+          canUseImaging ? apiFetchWithRetry('/api/images',      { credentials: 'include' }) : Promise.resolve(null),
+          canUseImaging ? apiFetchWithRetry('/api/boot-images', { credentials: 'include' }) : Promise.resolve(null),
+          apiFetchWithRetry(`/api/session-history/completed-timestamps?from=${encodeURIComponent(historyFrom)}`, { credentials: 'include' }),
         ]);
         const sessions   = sRes?.ok ? (await sRes.json() as SessionLike[])   : [];
         const osImages   = iRes?.ok ? (await iRes.json() as TimestampedLike[]) : [];
         const bootImages = bRes?.ok ? (await bRes.json() as TimestampedLike[]) : [];
         // Completed-session counts/trends are sourced from the durable SessionHistory audit
         // table rather than the live `/api/sessions` list, which only ever reflects sessions
-        // still within the (much shorter) live-session purge window — using it here would
+        // still within the (much shorter) live-session purge window; using it here would
         // silently undercount completions older than that window (Reports feature, Phase 7).
-        const history = hRes.ok ? (await hRes.json() as SessionHistoryLike[]) : [];
-        const completedTerminalAts = history
-          .filter(h => h.finalState === 'SessionCompleted')
-          .map(h => h.terminalAt);
+        // The route returns only the terminalAt strings of SessionCompleted records.
+        const completedTerminalAts = hRes.ok ? (await hRes.json() as string[]) : [];
         const cutoff = Date.now() - TREND_DAYS * 86_400_000;
         if (cancelled) return;
         setStats({
@@ -272,16 +268,17 @@ export default function DashboardPage(): React.ReactElement {
       }
     })();
     return () => { cancelled = true; };
-  }, [canOperations]);
+  }, [canUseImaging]);
 
-  const visibleStatCards = STAT_CARDS.filter(c => c.access !== 'operations' || canOperations);
+  const visibleStatCards = STAT_CARDS.filter(c => c.access !== 'imaging' || canUseImaging);
   const visibleNavCards = NAV_CARDS.filter(c => {
     switch (c.access) {
-      case 'operations': return canOperations;
-      case 'autopilot':  return canViewAutopilot;
-      case 'reports':    return canReports;
-      case 'admin':      return isAdministrator;
-      default:           return true;
+      case 'imaging':   return canUseImaging;
+      case 'autopilot': return canViewAutopilot;
+      case 'reports':   return canViewReports;
+      case 'manage':    return canManageLocations;
+      case 'admin':     return isAdministrator;
+      default:          return true;
     }
   });
 
@@ -294,7 +291,7 @@ export default function DashboardPage(): React.ReactElement {
           const changePct = trend?.changePct ?? null;
           // A trend pill comparing against zero is meaningless (e.g. "0%" next to a 0 count), and
           // a null changePct means there's no previous-window baseline to compute a percentage
-          // from at all — show the pill only when there's an actual number to report.
+          // from at all. Show the pill only when there's an actual number to report.
           const showPill = trend != null && !!stats && stats[card.key] > 0 && changePct !== null;
           const badgeVariant = changePct == null ? 'muted' : changePct > 0 ? 'success' : changePct < 0 ? 'negative' : 'muted';
           const TrendIcon = changePct == null || changePct === 0 ? Minus : changePct > 0 ? TrendingUp : TrendingDown;

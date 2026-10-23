@@ -69,10 +69,10 @@ function fmtSize(bytes: number): string {
 /**
  * Recovery Images management page: WinRE images applied to the Recovery partition during
  * imaging. Devices always fetch whichever entry is currently published, the same
- * "isLatestPublished" convention used by the Boot Images catalog. Administrator manages entries.
+ * "isLatestPublished" convention used by the Boot Images catalog. Operator and Administrator manage entries.
  */
 export default function RecoveryImagesPage(): React.ReactElement {
-  const { isAdministrator } = useAuth();
+  const { canManageCatalog } = useAuth();
   const { notify } = useToast();
   const [images, setImages]   = useState<RecoveryImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,7 +130,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
             Windows Recovery Environment (WinRE) images applied to the Recovery partition during imaging.
           </p>
         </div>
-        {isAdministrator && (
+        {canManageCatalog && (
           <Button onClick={() => setUploadOpen(true)}>
             <Upload />
             Upload recovery image
@@ -151,20 +151,20 @@ export default function RecoveryImagesPage(): React.ReactElement {
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
               <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
-                {isAdministrator && <TableHead className="w-px whitespace-nowrap">Actions</TableHead>}
+                {canManageCatalog && <TableHead className="w-px whitespace-nowrap">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSkeletonRows columns={isAdministrator ? 7 : 6} />
+              <TableSkeletonRows columns={canManageCatalog ? 7 : 6} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={isAdministrator ? 7 : 6} className="p-0">
+                <TableCell colSpan={canManageCatalog ? 7 : 6} className="p-0">
                   <EmptyState
                     icon={ShieldCheck}
                     title="No recovery images"
                     description="Upload a recovery image here, or publish one directly from the Media Builder app."
-                    action={isAdministrator ? (
+                    action={canManageCatalog ? (
                       <Button onClick={() => setUploadOpen(true)}>
                         <Upload />
                         Upload recovery image
@@ -199,7 +199,7 @@ export default function RecoveryImagesPage(): React.ReactElement {
                     ? <Badge variant="info" dot>Latest</Badge>
                     : <Badge variant="muted" dot>Active</Badge>}
                 </TableCell>
-                {isAdministrator && (
+                {canManageCatalog && (
                   <TableCell className="w-px whitespace-nowrap">
                     <Tooltip content={img.isLatestPublished ? `Publish a newer ${architectureLabel(img.architecture)} recovery image before deleting` : 'Delete'}>
                       <Button
@@ -244,11 +244,11 @@ interface UploadRecoveryImageDialogProps {
   onPublished: () => void;
 }
 
-/** Staged recovery image upload modal: hash → SAS upload → publish. */
+/** Staged recovery image upload modal: hash, SAS upload, then publish. */
 function UploadRecoveryImageDialog({ activeCounts, existingVersions, onClose, onPublished }: UploadRecoveryImageDialogProps): React.ReactElement {
   const [version, setVersion] = useState('');
   // Tracks whether the current `version` value was populated automatically from the
-  // selected file's name, so a subsequent file pick can safely replace it — but a
+  // selected file's name, so a subsequent file pick can safely replace it. A
   // manual edit to the field immediately "claims" it and stops any further auto-fill.
   const [versionAutoFilled, setVersionAutoFilled] = useState(false);
   const [description, setDescription] = useState('');
@@ -373,7 +373,7 @@ function UploadRecoveryImageDialog({ activeCounts, existingVersions, onClose, on
                 Choose file
               </Button>
               <span className="truncate text-sm text-muted-foreground">
-                {file ? `${file.name} · ${fmtSize(file.size)}` : 'No file selected'}
+                {file ? `${file.name} (${fmtSize(file.size)})` : 'No file selected'}
               </span>
             </div>
           </div>

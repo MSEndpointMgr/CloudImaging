@@ -35,7 +35,8 @@ function deviceLabel(r: AutopilotRequest): string {
  * Autopilot approval queue. Devices submit their Windows Autopilot hardware hash from the boot
  * media; approvers decide here, and Imaging Core imports approved devices into Intune. Only open
  * requests are listed; handled ones move to the Autopilot registration history report.
- * Approver/Administrator can decide; Technician sees the queue read-only.
+ * Approver, Operator and Administrator can decide and get the history link; Technician sees the
+ * queue read-only.
  */
 export default function AutopilotRegistrationsPage(): React.ReactElement {
   const { canDecideAutopilot, canViewAutopilotReport } = useAuth();
@@ -356,7 +357,7 @@ function ReviewDialog({ requestId, canDecide, onClose, onDecided }: {
                   {request.locationName ?? '-'}
                   {(detail.locationRegion || detail.locationCountryCode) && (
                     <span className="block text-xs text-muted-foreground">
-                      {[detail.locationRegion, countryName(detail.locationCountryCode)].filter(Boolean).join(' \u00b7 ')}
+                      {[detail.locationRegion, countryName(detail.locationCountryCode)].filter(Boolean).join(', ')}
                     </span>
                   )}
                 </Meta>

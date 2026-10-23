@@ -9,8 +9,9 @@ namespace CloudImaging.OperatorApi.Functions;
 
 /// <summary>
 /// Portal-facing Autopilot registration endpoints. PortalAccess only (not in the Media Builder
-/// allowlist); the portal backend enforces the Approver/Administrator/Technician user roles and
-/// supplies the deciding user's identity from their validated token.
+/// allowlist); the portal backend enforces the user roles and supplies the deciding user's
+/// identity from their validated token. Decisions are accepted for Operator, AutopilotApprover
+/// or Administrator; group tag settings for Administrator only.
 ///
 /// GET    /api/autopilot/registrations
 /// GET    /api/autopilot/registrations?view=history&amp;from=&amp;to=

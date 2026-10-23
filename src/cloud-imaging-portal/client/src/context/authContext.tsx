@@ -3,10 +3,12 @@ import { useMsal, useIsAuthenticated } from '@azure/msal-react';
 import type { AccountInfo } from '@azure/msal-browser';
 import { getApiScope } from '../lib/msal.ts';
 import { ensureSessionFresh } from '../lib/apiClient.ts';
+import { capabilitiesFromRoles, type PortalCapabilities } from '../lib/portalRoles.ts';
 
 /** Portal application roles carried in a signed-in user's token. */
 export type PortalRole =
   | 'CloudImaging.Administrator'
+  | 'CloudImaging.Operator'
   | 'CloudImaging.Technician'
   | 'CloudImaging.Reader'
   | 'CloudImaging.AutopilotApprover';
@@ -17,36 +19,19 @@ export type PortalRole =
  * name and initials from ID token claims regardless of this scope. It is requested only
  * after sign-in (see {@link AuthProvider}'s avatar effect below), never bundled with the
  * mandatory portal API scope, so a tenant that blocks user consent to Graph (or an admin
- * who hasn't pre-consented it) can never break sign-in — worst case, no avatar photo.
+ * who hasn't pre-consented it) can never break sign-in. Worst case, no avatar photo.
  */
 export const GRAPH_PHOTO_SCOPE = 'User.Read';
 
-interface AuthContextValue {
+/** Capability flags are computed from the expanded role set by {@link capabilitiesFromRoles}. */
+interface AuthContextValue extends PortalCapabilities {
   account: AccountInfo | null;
   isAuthenticated: boolean;
   /** App roles from the user's token (e.g. CloudImaging.Administrator). */
   roles: string[];
-  /** True when the user holds the CloudImaging.Administrator role. */
-  isAdministrator: boolean;
-  /** True when the user holds the CloudImaging.Technician role. */
-  isTechnician: boolean;
-  /** True when the user holds the CloudImaging.Reader role (Dashboard + Reports only). */
-  isReader: boolean;
-  /** True when the user holds the CloudImaging.AutopilotApprover role. */
-  isAutopilotApprover: boolean;
-  /** Can open the Autopilot registrations page (Approver, Administrator, or read-only Technician). */
-  canViewAutopilot: boolean;
-  /** Can approve, reject or retry Autopilot registrations (Approver or Administrator). */
-  canDecideAutopilot: boolean;
-  /** Can open the handled Autopilot registrations audit report (Approver, Administrator, or Reader). */
-  canViewAutopilotReport: boolean;
-  /** Can see the Dashboard. An Approver-only user lands on the Autopilot page instead. */
-  hasDashboardAccess: boolean;
-  /** True when the user holds any portal role (Administrator, Technician, Reader, or Autopilot Approver). */
-  hasPortalAccess: boolean;
   /**
    * Object URL for the signed-in user's Entra ID profile photo, or null when one isn't
-   * available — no photo set, the tenant hasn't consented to {@link GRAPH_PHOTO_SCOPE}, a
+   * available: no photo set, the tenant hasn't consented to {@link GRAPH_PHOTO_SCOPE}, a
    * Graph outage, or it just hasn't finished loading yet. Header renders an initials avatar
    * whenever this is null, so callers never need to handle the failure themselves.
    */
@@ -72,15 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   const account = accounts[0] ?? null;
 
   const roles = rolesFromAccount(account);
-  const isAdministrator = roles.includes('CloudImaging.Administrator');
-  const isTechnician = roles.includes('CloudImaging.Technician');
-  const isReader = roles.includes('CloudImaging.Reader');
-  const isAutopilotApprover = roles.includes('CloudImaging.AutopilotApprover');
-  const canViewAutopilot = isAdministrator || isTechnician || isAutopilotApprover;
-  const canDecideAutopilot = isAdministrator || isAutopilotApprover;
-  const canViewAutopilotReport = isAdministrator || isReader || isAutopilotApprover;
-  const hasDashboardAccess = isAdministrator || isTechnician || isReader;
-  const hasPortalAccess = hasDashboardAccess || isAutopilotApprover;
+  const capabilities = capabilitiesFromRoles(roles);
 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const avatarUrlRef = useRef<string | null>(null);
@@ -133,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         });
         if (cancelled) return;
         if (!res.ok) {
-          // Most commonly 404 (user has no photo) — not an error worth logging.
+          // Most commonly 404 (user has no photo), not an error worth logging.
           setAvatarObjectUrl(null);
           return;
         }
@@ -171,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   };
 
   return (
-    <AuthContext.Provider value={{ account, isAuthenticated, roles, isAdministrator, isTechnician, isReader, isAutopilotApprover, canViewAutopilot, canDecideAutopilot, canViewAutopilotReport, hasDashboardAccess, hasPortalAccess, avatarUrl, getAccessToken, signOut }}>
+    <AuthContext.Provider value={{ ...capabilities, account, isAuthenticated, roles, avatarUrl, getAccessToken, signOut }}>
       {children}
     </AuthContext.Provider>
   );

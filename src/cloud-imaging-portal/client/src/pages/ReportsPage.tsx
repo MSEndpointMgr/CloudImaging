@@ -44,7 +44,7 @@ const REPORT_CARDS: ReportCard[] = [
 
 /**
  * Reports landing page: a card grid linking into each dedicated report (Reports feature).
- * Administrator or Reader only (see App.tsx RequireReportsAccess wrapper + Sidebar.tsx access flag).
+ * Administrator, Operator or Reader only (see App.tsx RequireReportsAccess wrapper and the Sidebar.tsx access flag).
  */
 export default function ReportsPage(): React.ReactElement {
   return (

@@ -7,9 +7,9 @@ namespace CloudImaging.MediaBuilder.Tests;
 
 /// <summary>
 /// OperationSelectionView prerequisite gating tests: Windows ADK (FR-050a) and the
-/// Administrator role (FR-050b).
+/// Operator or Administrator role (FR-050b).
 ///
-/// The Generate Boot Image workflow requires the Windows ADK and the Administrator role;
+/// The Generate Boot Image workflow requires the Windows ADK and the Operator or Administrator role;
 /// when either is missing the user must be informed on this screen and blocked from
 /// navigating. Prepare USB has no ADK or role dependency and stays available.
 /// </summary>
@@ -67,9 +67,9 @@ public sealed class OperationSelectionViewModelTests
     // ── Role-based gating (FR-050b) ────────────────────────────────────────────
 
     [Fact]
-    public void GenerateBootImage_IsBlocked_AndRoleRestricted_WhenNotAdministrator()
+    public void GenerateBootImage_IsBlocked_AndRoleRestricted_WhenCannotGenerateBootImage()
     {
-        var vm = new OperationSelectionViewModel(_ => { }, isAdkInstalled: () => true, isAdministrator: false)
+        var vm = new OperationSelectionViewModel(_ => { }, isAdkInstalled: () => true, canGenerateBootImage: false)
         {
             SelectedOperation = "GenerateBootImage",
         };
@@ -77,13 +77,13 @@ public sealed class OperationSelectionViewModelTests
         vm.IsRestrictedByRole.Should().BeTrue("a Technician (or no-role) user must not see Generate Boot Image as available");
         vm.IsBlockedByMissingAdk.Should().BeFalse("the ADK reason must not also fire when the role is the actual blocker");
         vm.IsGenerateBootImageAvailable.Should().BeFalse();
-        vm.CanContinue.Should().BeFalse("navigation to Generate Boot Image is blocked without the Administrator role");
+        vm.CanContinue.Should().BeFalse("navigation to Generate Boot Image is blocked without the Operator or Administrator role");
     }
 
     [Fact]
-    public void GenerateBootImage_IsAllowed_WhenAdkPresent_AndAdministrator()
+    public void GenerateBootImage_IsAllowed_WhenAdkPresent_AndCanGenerateBootImage()
     {
-        var vm = new OperationSelectionViewModel(_ => { }, isAdkInstalled: () => true, isAdministrator: true)
+        var vm = new OperationSelectionViewModel(_ => { }, isAdkInstalled: () => true, canGenerateBootImage: true)
         {
             SelectedOperation = "GenerateBootImage",
         };
@@ -94,21 +94,21 @@ public sealed class OperationSelectionViewModelTests
     }
 
     [Fact]
-    public void PrepareUsb_IsAlwaysAvailable_EvenWhenNotAdministrator()
+    public void PrepareUsb_IsAlwaysAvailable_EvenWhenCannotGenerateBootImage()
     {
-        var vm = new OperationSelectionViewModel(_ => { }, isAdkInstalled: () => true, isAdministrator: false)
+        var vm = new OperationSelectionViewModel(_ => { }, isAdkInstalled: () => true, canGenerateBootImage: false)
         {
             SelectedOperation = "PrepareUSB",
         };
 
-        vm.CanContinue.Should().BeTrue("Prepare USB Device does not depend on the Administrator role");
+        vm.CanContinue.Should().BeTrue("Prepare USB Device does not depend on the Operator or Administrator role");
     }
 
     [Fact]
     public void BothWorkflows_AreBlocked_WhenNoRoleAssigned()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: false, hasMediaBuilderRole: false);
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: false, hasMediaBuilderRole: false);
 
         vm.HasNoRole.Should().BeTrue();
         vm.IsPrepareUsbAvailable.Should().BeFalse("a user with no role must not reach Prepare USB Device either");
@@ -122,27 +122,27 @@ public sealed class OperationSelectionViewModelTests
     }
 
     [Fact]
-    public void NoRole_ReportsRoleRequirement_WithoutClaimingAdministratorIsNeeded()
+    public void NoRole_ReportsRoleRequirement_NamingTechnicianOperatorOrAdministrator()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: false, hasMediaBuilderRole: false);
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: false, hasMediaBuilderRole: false);
 
         vm.IsRestrictedByRole.Should().BeFalse("that reason is the Technician case, not the no-role case");
-        vm.GenerateBootImageUnavailableReason.Should().Be("Requires the Technician or Administrator role.");
-        vm.PrepareUsbUnavailableReason.Should().Be("Requires the Technician or Administrator role.");
+        vm.GenerateBootImageUnavailableReason.Should().Be("Requires the Technician, Operator or Administrator role.");
+        vm.PrepareUsbUnavailableReason.Should().Be("Requires the Technician, Operator or Administrator role.");
     }
 
     [Fact]
-    public void Technician_KeepsPrepareUsb_AndIsToldOnlyGenerateNeedsAdministrator()
+    public void Technician_KeepsPrepareUsb_AndIsToldGenerateNeedsOperatorOrAdministrator()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: false, hasMediaBuilderRole: true);
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: false, hasMediaBuilderRole: true);
 
         vm.HasNoRole.Should().BeFalse();
         vm.IsRestrictedByRole.Should().BeTrue();
         vm.IsPrepareUsbAvailable.Should().BeTrue();
         vm.PrepareUsbUnavailableReason.Should().BeNull();
-        vm.GenerateBootImageUnavailableReason.Should().Be("Requires the Administrator role.");
+        vm.GenerateBootImageUnavailableReason.Should().Be("Requires the Operator or Administrator role.");
     }
 
     // ── Boot media certificate gating (T151, FR-050a) ─────────────────────────
@@ -151,7 +151,7 @@ public sealed class OperationSelectionViewModelTests
     public void GenerateBootImage_IsBlocked_AndCertWarned_WhenCertificateMissing()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: true, certificateStatus: BootMediaCertificateStatus.NotConfigured)
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: true, certificateStatus: BootMediaCertificateStatus.NotConfigured)
         {
             SelectedOperation = "GenerateBootImage",
         };
@@ -166,7 +166,7 @@ public sealed class OperationSelectionViewModelTests
     public void AccessDenied_IsReportedAsRoleAssignment_NotAsMissingCertificate()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: true, certificateStatus: BootMediaCertificateStatus.AccessDenied)
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: true, certificateStatus: BootMediaCertificateStatus.AccessDenied)
         {
             SelectedOperation = "GenerateBootImage",
         };
@@ -181,7 +181,7 @@ public sealed class OperationSelectionViewModelTests
     public void FailedCheck_IsReportedDistinctly_FromMissingCertificate()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: true, certificateStatus: BootMediaCertificateStatus.CheckFailed);
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: true, certificateStatus: BootMediaCertificateStatus.CheckFailed);
 
         vm.IsBlockedByFailedCertificateCheck.Should().BeTrue();
         vm.IsBlockedByMissingCertificate.Should().BeFalse();
@@ -189,10 +189,10 @@ public sealed class OperationSelectionViewModelTests
     }
 
     [Fact]
-    public void GenerateBootImage_IsAllowed_WhenAdkPresent_Administrator_AndCertificateConfigured()
+    public void GenerateBootImage_IsAllowed_WhenAdkPresent_CanGenerateBootImage_AndCertificateConfigured()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: true, certificateStatus: BootMediaCertificateStatus.Configured)
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: true, certificateStatus: BootMediaCertificateStatus.Configured)
         {
             SelectedOperation = "GenerateBootImage",
         };
@@ -208,7 +208,7 @@ public sealed class OperationSelectionViewModelTests
         // Mirrors real usage: the cert check completes asynchronously after the screen is
         // already showing (fail-closed until confirmed present).
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: true, certificateStatus: BootMediaCertificateStatus.NotConfigured)
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: true, certificateStatus: BootMediaCertificateStatus.NotConfigured)
         {
             SelectedOperation = "GenerateBootImage",
         };
@@ -224,11 +224,81 @@ public sealed class OperationSelectionViewModelTests
     public void PrepareUsb_IsAlwaysAvailable_EvenWhenCertificateMissing()
     {
         var vm = new OperationSelectionViewModel(
-            _ => { }, isAdkInstalled: () => true, isAdministrator: true, certificateStatus: BootMediaCertificateStatus.NotConfigured)
+            _ => { }, isAdkInstalled: () => true, canGenerateBootImage: true, certificateStatus: BootMediaCertificateStatus.NotConfigured)
         {
             SelectedOperation = "PrepareUSB",
         };
 
         vm.CanContinue.Should().BeTrue("Prepare USB Device does not depend on the boot media certificate");
     }
+
+    // Operator: the expanded set holds Operator and Technician, so both capabilities are true.
+
+    [Fact]
+    public void Operator_WithAdkAndConfiguredCertificate_CanGenerateBootImageAndPrepareUsb()
+    {
+        var vm = CreateOperatorViewModel(adkInstalled: true, BootMediaCertificateStatus.Configured);
+
+        vm.IsGenerateBootImageAvailable.Should().BeTrue();
+        vm.IsPrepareUsbAvailable.Should().BeTrue();
+        vm.IsRestrictedByRole.Should().BeFalse();
+        vm.HasNoRole.Should().BeFalse();
+        vm.GenerateBootImageUnavailableReason.Should().BeNull();
+        vm.CanContinue.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Operator_WithoutAdk_IsGivenTheAdkReason_NotTheRoleReason()
+    {
+        var vm = CreateOperatorViewModel(adkInstalled: false, BootMediaCertificateStatus.Configured);
+
+        vm.IsRestrictedByRole.Should().BeFalse();
+        vm.IsBlockedByMissingAdk.Should().BeTrue();
+        vm.ShowAdkWarning.Should().BeTrue();
+        vm.IsGenerateBootImageAvailable.Should().BeFalse();
+        vm.GenerateBootImageUnavailableReason.Should().Be("Install the Windows ADK to unlock this section.");
+    }
+
+    [Fact]
+    public void Operator_WithCertificateNotConfigured_IsGivenTheMissingCertificateReason()
+    {
+        var vm = CreateOperatorViewModel(adkInstalled: true, BootMediaCertificateStatus.NotConfigured);
+
+        vm.IsBlockedByMissingCertificate.Should().BeTrue();
+        vm.ShowCertificateWarning.Should().BeTrue();
+        vm.IsGenerateBootImageAvailable.Should().BeFalse();
+        vm.GenerateBootImageUnavailableReason.Should().Be("Generate a boot media certificate in Portal Configuration before generating boot images.");
+    }
+
+    [Fact]
+    public void Operator_WithCertificateAccessDenied_IsGivenTheOperatorApiAccessReason()
+    {
+        var vm = CreateOperatorViewModel(adkInstalled: true, BootMediaCertificateStatus.AccessDenied);
+
+        vm.IsBlockedByApiAccess.Should().BeTrue();
+        vm.IsGenerateBootImageAvailable.Should().BeFalse();
+        vm.GenerateBootImageUnavailableReason.Should().Be(OperatorApiErrorDescription.AccessDenied);
+    }
+
+    [Fact]
+    public void Operator_WithCertificateCheckFailed_IsGivenTheFailedCheckReason()
+    {
+        var vm = CreateOperatorViewModel(adkInstalled: true, BootMediaCertificateStatus.CheckFailed);
+
+        vm.IsBlockedByFailedCertificateCheck.Should().BeTrue();
+        vm.IsGenerateBootImageAvailable.Should().BeFalse();
+        vm.GenerateBootImageUnavailableReason.Should().Be("The boot media certificate could not be verified. Check your connection to the Cloud Imaging Operator API and relaunch.");
+    }
+
+    [Fact]
+    public void AccessDeniedReason_NamesEveryMediaBuilderRole_AsGrantedSeparately()
+    {
+        OperatorApiErrorDescription.AccessDenied.Should().Contain("granted separately from your Technician, Operator or Administrator role");
+    }
+
+    private static OperationSelectionViewModel CreateOperatorViewModel(bool adkInstalled, BootMediaCertificateStatus certificateStatus) =>
+        new(_ => { }, isAdkInstalled: () => adkInstalled, canGenerateBootImage: true, certificateStatus: certificateStatus, hasMediaBuilderRole: true)
+        {
+            SelectedOperation = "GenerateBootImage",
+        };
 }

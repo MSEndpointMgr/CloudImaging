@@ -47,13 +47,13 @@ function fmtSize(bytes: number): string {
 }
 
 // Per specs/001-cloud-windows-imaging/plan.md, the OS image catalog is sized for up to 500
-// entries — a much larger ceiling than the Boot/Recovery media's 5-entry rotation, so it's
+// entries, a much larger ceiling than the Boot/Recovery media's 5-entry rotation, so it's
 // enforced as a hard reject (see OsImageRepository.MaxActiveEntries) rather than an auto-demote.
 const MAX_OS_IMAGES = 500;
 
 /** OS Images management page (T087, FR-036, FR-037). */
 export default function OsImagesPage(): React.ReactElement {
-  const { isAdministrator } = useAuth();
+  const { canManageCatalog } = useAuth();
   const { notify } = useToast();
   const [images, setImages]   = useState<OsImage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -119,7 +119,7 @@ export default function OsImagesPage(): React.ReactElement {
     }
   };
 
-  const columnCount = isAdministrator ? 9 : 8;
+  const columnCount = canManageCatalog ? 9 : 8;
   const selectedCount = checked.size;
   const atCapacity = images.length >= MAX_OS_IMAGES;
   const activeCounts = countByArchitecture(images);
@@ -131,7 +131,7 @@ export default function OsImagesPage(): React.ReactElement {
         <p className="text-sm text-muted-foreground">
           Windows images deployed to devices during imaging.
         </p>
-        {isAdministrator && (
+        {canManageCatalog && (
           <Button onClick={() => setUploadOpen(true)} disabled={atCapacity} title={atCapacity ? 'Catalog is at capacity' : undefined}>
             <Plus /> Upload Image
           </Button>
@@ -140,13 +140,13 @@ export default function OsImagesPage(): React.ReactElement {
 
       <OsImageCatalogCards counts={activeCounts} total={images.length} max={MAX_OS_IMAGES} />
 
-      {isAdministrator && atCapacity && (
+      {canManageCatalog && atCapacity && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
           The OS image catalog is at capacity ({MAX_OS_IMAGES} images). Remove an unused image before uploading another.
         </p>
       )}
 
-      {isAdministrator && selectedCount > 0 && (
+      {canManageCatalog && selectedCount > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
           <span className="font-medium">{selectedCount} image{selectedCount !== 1 ? 's' : ''} selected</span>
           <Button
@@ -163,7 +163,7 @@ export default function OsImagesPage(): React.ReactElement {
         <Table className="table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              {isAdministrator && (
+              {canManageCatalog && (
                 <TableHead className="w-10">
                   <input
                     type="checkbox"
@@ -197,7 +197,7 @@ export default function OsImagesPage(): React.ReactElement {
                     icon={ImageOff}
                     title="No images found in the catalog"
                     description="Upload an OS image to make it available for imaging."
-                    action={isAdministrator && !atCapacity ? (
+                    action={canManageCatalog && !atCapacity ? (
                       <Button onClick={() => setUploadOpen(true)}>
                         <Plus /> Upload Image
                       </Button>
@@ -210,7 +210,7 @@ export default function OsImagesPage(): React.ReactElement {
                 key={img.imageId}
                 data-state={checked.has(img.imageId) ? 'selected' : undefined}
               >
-                {isAdministrator && (
+                {canManageCatalog && (
                   <TableCell className="w-10">
                     <input
                       type="checkbox"
@@ -250,7 +250,7 @@ export default function OsImagesPage(): React.ReactElement {
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-1">
-                    {isAdministrator ? (
+                    {canManageCatalog ? (
                       <>
                         <Tooltip content="Edit image details">
                           <Button

@@ -12,7 +12,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 {
     private readonly Action<string> _navigate;
     private readonly bool _adkAvailable;
-    private readonly bool _isAdministrator;
+    private readonly bool _canGenerateBootImage;
     private readonly bool _hasMediaBuilderRole;
     private string? _selectedOperation;
     private bool _showAdkWarning;
@@ -23,16 +23,16 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public OperationSelectionViewModel(
         Action<string> navigate,
         Func<bool>? isAdkInstalled = null,
-        bool isAdministrator = true,
+        bool canGenerateBootImage = true,
         BootMediaCertificateStatus certificateStatus = BootMediaCertificateStatus.Configured,
         bool hasMediaBuilderRole = true)
     {
         _navigate = navigate;
         _adkAvailable = (isAdkInstalled ?? BootImageGenerationService.IsAdkInstalled)();
-        _isAdministrator = isAdministrator;
-        // An Administrator implicitly holds a role, so callers passing only isAdministrator keep
-        // their existing behaviour.
-        _hasMediaBuilderRole = hasMediaBuilderRole || isAdministrator;
+        _canGenerateBootImage = canGenerateBootImage;
+        // Operator and Administrator imply Technician, so callers passing only canGenerateBootImage
+        // keep their existing behaviour.
+        _hasMediaBuilderRole = hasMediaBuilderRole || canGenerateBootImage;
         _certificateStatus = certificateStatus;
         SelectOperationCommand = new RelayCommand(op => SelectedOperation = op?.ToString());
         ContinueCommand = new RelayCommand(_ => _navigate(_selectedOperation!), _ => CanContinue);
@@ -76,8 +76,8 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
         private set { _showCertificateWarning = value; OnPropertyChanged(); }
     }
 
-    // Generate Boot Image requires the ADK (FR-050a), the Administrator role (FR-050b), AND
-    // a configured boot media certificate (T151, FR-050a); Prepare USB only requires a role.
+    // Generate Boot Image requires the ADK (FR-050a), the Operator or Administrator role (FR-050b),
+    // AND a configured boot media certificate (FR-050a); Prepare USB only requires a role.
     /// <summary>True when the currently selected operation is reachable and Continue can be pressed.</summary>
     public bool CanContinue =>
         _selectedOperation is not null
@@ -90,11 +90,11 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// disabled up front rather than only warning about it after the user picks it.
     /// </summary>
     public bool IsGenerateBootImageAvailable =>
-        _adkAvailable && _isAdministrator && _certificateStatus == BootMediaCertificateStatus.Configured;
+        _adkAvailable && _canGenerateBootImage && _certificateStatus == BootMediaCertificateStatus.Configured;
 
     /// <summary>
-    /// True when the Prepare USB Device tile/nav item should be reachable. Open to both roles,
-    /// but closed to a signed-in user holding no role at all.
+    /// True when the Prepare USB Device tile/nav item should be reachable. Open to every Media
+    /// Builder role, but closed to a signed-in user holding no role at all.
     /// </summary>
     public bool IsPrepareUsbAvailable => _hasMediaBuilderRole;
 
@@ -110,18 +110,18 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     /// the ADK-missing reason, and the two are always mutually exclusive with
     /// <see cref="IsBlockedByMissingAdk"/>.
     /// </summary>
-    public bool IsRestrictedByRole => _hasMediaBuilderRole && !_isAdministrator;
+    public bool IsRestrictedByRole => _hasMediaBuilderRole && !_canGenerateBootImage;
 
     /// <summary>
-    /// True when the Administrator role check passes but the ADK is the only remaining
-    /// blocker (FR-050a). Mutually exclusive with <see cref="IsRestrictedByRole"/>.
+    /// True when the Operator or Administrator role check passes but the ADK is the only
+    /// remaining blocker (FR-050a). Mutually exclusive with <see cref="IsRestrictedByRole"/>.
     /// </summary>
-    public bool IsBlockedByMissingAdk => _isAdministrator && !_adkAvailable;
+    public bool IsBlockedByMissingAdk => _canGenerateBootImage && !_adkAvailable;
 
     /// <summary>
-    /// True when the Administrator role and ADK checks both pass but no active boot media
-    /// certificate is configured in the portal (T151, FR-050a) — generating a boot image
-    /// without one would produce media that can never authenticate to the Device Gateway API.
+    /// True when the role and ADK checks both pass but no active boot media certificate is
+    /// configured in the portal (FR-050a). Generating a boot image without one would
+    /// produce media that can never authenticate to the Device Gateway API.
     /// </summary>
     public bool IsBlockedByMissingCertificate => IsBlockedByCertificateStatus(BootMediaCertificateStatus.NotConfigured);
 
@@ -135,12 +135,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public bool IsBlockedByFailedCertificateCheck => IsBlockedByCertificateStatus(BootMediaCertificateStatus.CheckFailed);
 
     private bool IsBlockedByCertificateStatus(BootMediaCertificateStatus status) =>
-        _isAdministrator && _adkAvailable && _certificateStatus == status;
+        _canGenerateBootImage && _adkAvailable && _certificateStatus == status;
 
     /// <summary>Tooltip shown when the Generate Boot Image tile is disabled; role restriction takes precedence.</summary>
     public string? GenerateBootImageUnavailableReason =>
-        HasNoRole ? "Requires the Technician or Administrator role."
-        : IsRestrictedByRole ? "Requires the Administrator role."
+        HasNoRole ? "Requires the Technician, Operator or Administrator role."
+        : IsRestrictedByRole ? "Requires the Operator or Administrator role."
         : IsBlockedByMissingAdk ? "Install the Windows ADK to unlock this section."
         : IsBlockedByApiAccess ? OperatorApiErrorDescription.AccessDenied
         : IsBlockedByFailedCertificateCheck ? "The boot media certificate could not be verified. Check your connection to the Cloud Imaging Operator API and relaunch."
@@ -149,12 +149,12 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     /// <summary>Tooltip shown when the Prepare USB Device tile is disabled.</summary>
     public string? PrepareUsbUnavailableReason =>
-        HasNoRole ? "Requires the Technician or Administrator role." : null;
+        HasNoRole ? "Requires the Technician, Operator or Administrator role." : null;
 
     /// <summary>Highlights the given operation tile without navigating.</summary>
     public ICommand SelectOperationCommand { get; }
     /// <summary>Navigates to the currently selected operation.</summary>
-    public ICommand ContinueCommand        { get; }
+    public ICommand ContinueCommand { get; }
 
     /// <summary>Single-tap navigation used by the Home tiles: select, then continue immediately if allowed.</summary>
     public ICommand NavigateCommand { get; }
@@ -167,7 +167,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     public void SetCertificateStatus(BootMediaCertificateStatus status)
     {
         if (_certificateStatus == status)
+        {
             return;
+        }
 
         _certificateStatus = status;
         OnPropertyChanged(nameof(IsGenerateBootImageAvailable));
@@ -181,7 +183,7 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
 
     private void UpdateWarnings()
     {
-        ShowAdkWarning         = _selectedOperation == "GenerateBootImage" && IsBlockedByMissingAdk;
+        ShowAdkWarning = _selectedOperation == "GenerateBootImage" && IsBlockedByMissingAdk;
         ShowCertificateWarning = _selectedOperation == "GenerateBootImage" && IsBlockedByMissingCertificate;
     }
 
@@ -189,7 +191,9 @@ public sealed class OperationSelectionViewModel : INotifyPropertyChanged
     {
         SelectedOperation = operation;
         if (CanContinue)
+        {
             _navigate(_selectedOperation!);
+        }
     }
 
     /// <inheritdoc/>

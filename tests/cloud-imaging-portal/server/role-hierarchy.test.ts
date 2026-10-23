@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Response } from 'express';
-import { getUserRoles, requireRole, isAdministrator } from '@/middleware/roleGuard.js';
+import { getUserRoles, requireRole, requireOperator, isAdministrator } from '@/middleware/roleGuard.js';
 import type { AuthenticatedRequest } from '@/middleware/auth.js';
 
 /**
@@ -76,5 +76,87 @@ describe('Portal backend: role hierarchy', () => {
   it('Reader is accepted only where explicitly allowlisted alongside PortalAccess', () => {
     expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.PortalAccess', 'CloudImaging.Reader'])).toBe(200);
     expect(runGuard(reqWithRoles(['CloudImaging.Reader']), ['CloudImaging.Administrator'])).toBe(403);
+  });
+});
+
+const ADMIN = 'CloudImaging.Administrator';
+const OPS = 'CloudImaging.Operator';
+const TECH = 'CloudImaging.Technician';
+const PORTAL = 'CloudImaging.PortalAccess';
+const READER = 'CloudImaging.Reader';
+const APPROVER = 'CloudImaging.AutopilotApprover';
+const ALL_ROLES = [ADMIN, OPS, TECH, PORTAL, READER, APPROVER];
+
+function expand(roles: string[]): string[] {
+  return [...getUserRoles(reqWithRoles(roles))].sort();
+}
+
+/** Runs a prebuilt guard and returns the status and response body it produced. */
+function runPrebuilt(
+  guard: ReturnType<typeof requireRole>,
+  req: AuthenticatedRequest,
+): { status: number; body: { detail?: string } | undefined } {
+  let status = 200;
+  let body: { detail?: string } | undefined;
+  const res = {
+    status(code: number) { status = code; return this; },
+    json(payload: { detail?: string }) { body = payload; return this; },
+  } as unknown as Response;
+  guard(req, res, () => undefined);
+  return { status, body };
+}
+
+describe('Portal backend: Operator role hierarchy', () => {
+  it('Administrator expands to Operator, Technician and PortalAccess', () => {
+    expect(expand([ADMIN])).toEqual([ADMIN, OPS, PORTAL, TECH].sort());
+  });
+
+  it('Operator expands to Technician and PortalAccess', () => {
+    expect(expand([OPS])).toEqual([OPS, PORTAL, TECH].sort());
+  });
+
+  it('Technician expands to PortalAccess', () => {
+    expect(expand([TECH])).toEqual([PORTAL, TECH].sort());
+  });
+
+  it.each([READER, APPROVER])('%s expands to itself only', (role) => {
+    expect(expand([role])).toEqual([role]);
+  });
+
+  it.each(ALL_ROLES)('implication table is closed for %s', (role) => {
+    const expanded = expand([role]);
+    for (const implied of expanded) {
+      for (const transitive of expand([implied])) expect(expanded).toContain(transitive);
+    }
+  });
+
+  it.each(ALL_ROLES.filter(r => r !== ADMIN))('%s does not imply Administrator', (role) => {
+    expect(expand([role])).not.toContain(ADMIN);
+  });
+
+  it.each([[[]], [[OPS]], [[TECH, READER]], [[OPS, APPROVER]], [ALL_ROLES]])('expansion of %j is a superset and idempotent', (roles) => {
+    const once = expand(roles);
+    for (const role of roles) expect(once).toContain(role);
+    expect(expand(once)).toEqual(once);
+  });
+
+  it('requireOperator accepts Operator and Administrator and refuses other roles', () => {
+    expect(runPrebuilt(requireOperator, reqWithRoles([OPS])).status).toBe(200);
+    expect(runPrebuilt(requireOperator, reqWithRoles([ADMIN])).status).toBe(200);
+    for (const role of [TECH, READER, APPROVER]) {
+      expect(runPrebuilt(requireOperator, reqWithRoles([role])).status).toBe(403);
+    }
+  });
+
+  it('requireOperator 403 detail names Operator and Administrator', () => {
+    const { status, body } = runPrebuilt(requireOperator, reqWithRoles([TECH]));
+    expect(status).toBe(403);
+    expect(body?.detail).toBe('This operation requires one of the following roles: CloudImaging.Operator, CloudImaging.Administrator.');
+  });
+
+  it('Operator passes PortalAccess routes but not Administrator-only routes', () => {
+    expect(runGuard(reqWithRoles([OPS]), [PORTAL])).toBe(200);
+    expect(runGuard(reqWithRoles([OPS]), [ADMIN])).toBe(403);
+    expect(isAdministrator(reqWithRoles([OPS]))).toBe(false);
   });
 });

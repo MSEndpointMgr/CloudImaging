@@ -36,6 +36,7 @@ const approver: Claims = { roles: ['CloudImaging.AutopilotApprover'], preferred_
 const admin: Claims = { roles: ['CloudImaging.Administrator'], preferred_username: 'admin@contoso.com', oid: 'oid-admin' };
 const technician: Claims = { roles: ['CloudImaging.Technician'], preferred_username: 'tech@contoso.com' };
 const reader: Claims = { roles: ['CloudImaging.Reader'], preferred_username: 'reader@contoso.com' };
+const operator: Claims = { roles: ['CloudImaging.Operator'], preferred_username: 'ops@contoso.com', oid: 'oid-ops' };
 
 describe('Portal backend: Autopilot registration routes', () => {
   beforeEach(() => {
@@ -103,6 +104,40 @@ describe('Portal backend: Autopilot registration routes', () => {
     const res = await request(appFor(approver)).post(`/api/autopilot/registrations/${REQUEST_ID}/approve`).send({ groupTagDefinitionId: 'EMEA' });
     expect(res.status).toBe(400);
     expect(operatorApi.decideAutopilotRegistration).not.toHaveBeenCalled();
+  });
+
+  it.each(['approve', 'reject', 'retry'] as const)('lets Operator %s and records the Operator user as the decider', async (action) => {
+    const res = await request(appFor(operator)).post(`/api/autopilot/registrations/${REQUEST_ID}/${action}`).send({});
+    expect(res.status).toBe(200);
+    expect(operatorApi.decideAutopilotRegistration).toHaveBeenCalledWith(REQUEST_ID, action, expect.objectContaining({
+      decidedByUpn: 'ops@contoso.com',
+      decidedByObjectId: 'oid-ops',
+    }));
+  });
+
+  it('shows handled requests and group tags to Operator', async () => {
+    const app = appFor(operator);
+    expect((await request(app).get('/api/autopilot/history')).status).toBe(200);
+    expect((await request(app).get('/api/autopilot/group-tags')).status).toBe(200);
+  });
+
+  it.each([
+    ['post', '/api/autopilot/group-tags'],
+    ['put', `/api/autopilot/group-tags/${TAG_ID}`],
+    ['delete', `/api/autopilot/group-tags/${TAG_ID}`],
+  ] as const)('refuses Operator %s %s, naming only Administrator', async (method, path) => {
+    const res = await request(appFor(operator))[method](path).send({ name: 'EMEA', kind: 'Static', value: 'EMEA' });
+    expect(res.status).toBe(403);
+    expect(res.body.detail).toBe('This operation requires one of the following roles: CloudImaging.Administrator.');
+    expect(operatorApi.createAutopilotGroupTag).not.toHaveBeenCalled();
+    expect(operatorApi.updateAutopilotGroupTag).not.toHaveBeenCalled();
+    expect(operatorApi.deleteAutopilotGroupTag).not.toHaveBeenCalled();
+  });
+
+  it('names Operator in the queue 403 detail', async () => {
+    const res = await request(appFor(reader)).get('/api/autopilot/registrations');
+    expect(res.status).toBe(403);
+    expect(res.body.detail).toContain('CloudImaging.Operator');
   });
 
   it('trims the reject reason and caps its length', async () => {

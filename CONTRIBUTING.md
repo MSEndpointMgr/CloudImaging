@@ -139,16 +139,39 @@ Builder workflows erase USB drives.
 - Use a clear, plain, user-facing title describing the visible outcome, not a
   Conventional Commit-style prefix (write "Fixed the sign-in loop caused by
   stale v1 tokens", not "fix(portal): sign-in loop, v1/v2 token validation").
-  Release notes are generated from PR titles, and the fix/feature/docs
-  category is already conveyed by the PR's label, so repeating it in the text
-  is redundant.
-- Apply a `bug`, `enhancement`, or `documentation` label as appropriate; this
-  is what buckets the change under the right heading in the generated release
-  notes.
+  The fix/feature/docs category is already conveyed by the PR's label, so
+  repeating it in the text is redundant.
+- Apply a `bug`, `enhancement`, or `documentation` label as appropriate.
 - Explain the reason for the change, what changed, and how you validated it.
 - Link related issues with `Closes #123` where applicable.
 - Include screenshots for visible Portal UI changes.
 - Call out breaking changes, contract changes, and any known limitations.
+- If administrators must act on the change (a new app role, a manual Entra ID
+  step, an infrastructure change), add it to the release notes file for the
+  next release of that stream (see below).
 
 Maintainers may request changes to keep component boundaries, security
 posture, and documentation accurate.
+
+### Release notes
+
+Release bodies are not generated. Each release workflow publishes a committed
+file, `.github/release-notes/<stream>/<version>.md`, as the GitHub release
+body, so the published text equals the file:
+
+| Stream | Workflow | Tag | Example file |
+|---|---|---|---|
+| `backend` | `release-iac.yml` | `mse-ci-v1.1.0` | `.github/release-notes/backend/v1.1.0.md` |
+| `client` | `release-client.yml` | `mse-ci-client-v1.1.0` | `.github/release-notes/client/v1.1.0.md` |
+| `mediabuilder` | `release-mediabuilder.yml` | `mse-ci-mediabuilder-v1.1.0` | `.github/release-notes/mediabuilder/v1.1.0.md` |
+
+- The version is the tag minus its stream prefix, for example `v1.1.0`.
+  Prerelease tags such as `v1.1.0-beta.1` need their own file.
+- A release run fails before any tag is created and before any build when its
+  file is missing or empty. The error names the expected path.
+- The file must be on `main` before the release tag task runs, because the tag
+  tasks tag `origin/main`.
+- Start a new file as a copy of the previous one for the same stream, then
+  update the version in the artifact table and replace the notices.
+- The `-latest` alias releases keep their one-line body pointing at the
+  versioned release.

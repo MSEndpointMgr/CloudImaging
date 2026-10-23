@@ -15,11 +15,11 @@ namespace CloudImaging.MediaBuilder.ViewModels;
 /// View model for the PrepareStorageDeviceView (FR-053, FR-054, FR-055, FR-056, FR-057).
 ///
 /// Orchestrates the "Prepare USB Storage Device" workflow over the existing services:
-///   1. Refresh   — list published boot images (Operator API) and enumerate local disks (WMI).
-///   2. Validate  — block non-USB / non-removable / system disks (FR-054).
-///   3. Prepare   — request SAS, download + hash-verify the WIM (FR-056), provision the two
-///                  partitions (FR-055, DESTRUCTIVE), then deploy the boot image and configure
-///                  WinPE auto-start (FR-057).
+///   1. Refresh: list published boot images (Operator API) and enumerate local disks (WMI).
+///   2. Validate: block non-USB / non-removable / system disks (FR-054).
+///   3. Prepare: request SAS, download + hash-verify the WIM (FR-056), provision the two
+///      partitions (FR-055, DESTRUCTIVE), then deploy the boot image and configure
+///      WinPE auto-start (FR-057).
 ///
 /// The destructive step requires an explicit confirmation gate (<see cref="ConfirmErase"/>).
 /// </summary>
@@ -41,7 +41,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private bool _confirmErase;
     private bool _prepareAsIso;
     private string? _isoOutputPath = Path.Combine(GetDefaultIsoOutputFolder(), "cloud-imaging-boot.iso");
-    // True once the technician has explicitly chosen an ISO path via BrowseIsoOutputCommand —
+    // True once the technician has explicitly chosen an ISO path via BrowseIsoOutputCommand;
     // from that point on their choice of folder/filename is respected as-is, even if they later
     // pick a different boot image. Until then, IsoOutputPath is a suggested default that stays
     // in sync with SelectedBootImage so it is already version-specific without requiring a
@@ -84,23 +84,23 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         IsoGenerationService? isoGeneration = null,
         Func<bool>? isAdkInstalled = null)
     {
-        _operatorApi   = operatorApi;
-        _authService   = authService;
-        _validator     = validator;
-        _downloader    = downloader;
-        _preparation   = preparation;
-        _cache         = cache;
+        _operatorApi = operatorApi;
+        _authService = authService;
+        _validator = validator;
+        _downloader = downloader;
+        _preparation = preparation;
+        _cache = cache;
         _isoGeneration = isoGeneration;
-        _navigateBack  = navigateBack;
+        _navigateBack = navigateBack;
         _deviceWatcher = deviceWatcher;
 
-        // Generating an ISO needs the same Windows ADK (WinPE add-on) as Generate Boot Image —
+        // Generating an ISO needs the same Windows ADK (WinPE add-on) as Generate Boot Image,
         // gated the same way (Func<bool> injection point for tests), and additionally requires
         // an IsoGenerationService instance to actually be wired up by the caller.
         IsIsoGenerationAvailable = _isoGeneration is not null && (isAdkInstalled ?? IsoGenerationService.IsAdkInstalled)();
 
-        _downloader.ProgressChanged   += OnDownloadProgress;
-        _preparation.ProgressChanged  += OnPreparationProgress;
+        _downloader.ProgressChanged += OnDownloadProgress;
+        _preparation.ProgressChanged += OnPreparationProgress;
 
         // T071/FR-054: auto-refresh the disk list when a USB device is plugged/unplugged,
         // instead of relying solely on the manual Refresh button. Never disrupts an
@@ -113,8 +113,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
         RefreshCommand = new RelayCommand(async _ => await RefreshBootImagesAsync(), _ => !IsBusy && !IsRefreshingBootImages);
         PrepareCommand = new RelayCommand(async _ => await PrepareAsync(), _ => CanPrepare);
-        CancelCommand  = new RelayCommand(_ => Cancel(), _ => IsBusy);
-        BackCommand    = new RelayCommand(_ => _navigateBack());
+        CancelCommand = new RelayCommand(_ => Cancel(), _ => IsBusy);
+        BackCommand = new RelayCommand(_ => _navigateBack());
         DismissResultCommand = new RelayCommand(_ => CloseResultDialog());
         BrowseIsoOutputCommand = new RelayCommand(_ => BrowseIsoOutput());
         OpenResultFolderCommand = new RelayCommand(_ => OpenResultFolder(), _ => ResultFilePath is not null);
@@ -125,7 +125,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         // Load the eligible USB disk list (fast, local WMI) and kick off the published boot
         // image list from the portal as soon as this view is reached, instead of requiring a
         // manual Refresh click first. The Refresh button next to the boot image dropdown only
-        // re-fetches boot images (FR-053) — disks already refresh automatically on USB
+        // re-fetches boot images (FR-053); disks already refresh automatically on USB
         // plug/unplug via _deviceWatcher (OnDeviceChanged), so re-scanning them here too would
         // just be redundant work that briefly toggles IsBusy and flickers the whole page.
         try { LoadDisks(); } catch { /* best-effort; the disk list stays empty, no fallback needed */ }
@@ -165,7 +165,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                     ? Path.GetDirectoryName(_isoOutputPath)
                     : null;
                 if (string.IsNullOrWhiteSpace(directory))
+                {
                     directory = GetDefaultIsoOutputFolder();
+                }
+
                 IsoOutputPath = Path.Combine(directory, GetDefaultIsoFileName());
             }
         }
@@ -189,7 +192,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>
     /// The site label (Location Labels feature) the technician has optionally tagged this USB
-    /// boot media with — threaded through the prepared manifest and, eventually, the device's
+    /// boot media with, threaded through the prepared manifest and, eventually, the device's
     /// registration payload so operators can filter/group devices by location in the portal.
     /// Entirely optional: leaving it unset does not block <see cref="CanPrepare"/>.
     /// </summary>
@@ -241,12 +244,23 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         get
         {
             var where = SelectedLocation is null ? "this media" : SelectedLocation.Name;
-            if (IsLoadingWifi) return "Loading the Wi-Fi networks for " + where + "…";
-            if (WifiLoadError is not null) return "The Wi-Fi networks could not be loaded. " + WifiLoadError;
+            if (IsLoadingWifi)
+            {
+                return "Loading the Wi-Fi networks for " + where + "…";
+            }
+
+            if (WifiLoadError is not null)
+            {
+                return "The Wi-Fi networks could not be loaded. " + WifiLoadError;
+            }
+
             if (HasWifiNetworks)
+            {
                 return SelectedLocation is null
                     ? "Saved on the USB media so devices can get online without Ethernet. Encrypted with the boot media certificate."
                     : $"Saved on the USB media so devices at {where} can get online without Ethernet. Encrypted with the boot media certificate.";
+            }
+
             return SelectedLocation is null
                 ? "No networks are saved for all locations. Choose a location, or add networks in the portal under Wi-Fi Networks. Devices need Ethernet, or a technician types the password on the device."
                 : $"No networks are saved for {where}. Devices need Ethernet, or a technician types the password on the device. Add networks in the portal under Wi-Fi Networks.";
@@ -265,7 +279,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>
     /// True when the Windows ADK (WinPE add-on) needed to package an ISO is installed AND an
-    /// <see cref="IsoGenerationService"/> was supplied — gates the "Generate ISO File" target
+    /// <see cref="IsoGenerationService"/> was supplied. Gates the "Generate ISO File" target
     /// option (disabled, not hidden, so it's discoverable with a reason) the same way
     /// <c>ShellViewModel.AdkAvailable</c> gates Generate Boot Image (FR-050a).
     /// </summary>
@@ -277,7 +291,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         get => !_prepareAsIso;
         set
         {
-            if (!value || !_prepareAsIso) return;
+            if (!value || !_prepareAsIso)
+            {
+                return;
+            }
+
             _prepareAsIso = false;
             OnPropertyChanged();
             OnPropertyChanged(nameof(PrepareAsIso));
@@ -297,7 +315,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         get => _prepareAsIso;
         set
         {
-            if (!value || _prepareAsIso) return;
+            if (!value || _prepareAsIso)
+            {
+                return;
+            }
+
             _prepareAsIso = true;
             OnPropertyChanged();
             OnPropertyChanged(nameof(PrepareAsUsb));
@@ -318,15 +340,15 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         set { _isoOutputPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanPrepare)); }
     }
 
-    /// <summary>Footer action button label — changes with the selected target.</summary>
+    /// <summary>Footer action button label; changes with the selected target.</summary>
     public string PrepareButtonLabel => PrepareAsIso ? "Generate ISO File" : "Prepare USB Device";
 
-    /// <summary>Footer caption explaining what the action button does — changes with the selected target.</summary>
+    /// <summary>Footer caption explaining what the action button does; changes with the selected target.</summary>
     public string PrepareDescription => PrepareAsIso
         ? "Downloads (or reuses a cached copy of) the selected boot image and packages it into a bootable ISO file you can attach to a virtual machine's DVD drive or burn to physical media."
         : "Downloads (or reuses a cached copy of) the selected boot image, partitions the USB device, and deploys WinPE with auto-start onto it.";
 
-    /// <summary>Success modal title — changes with the selected target.</summary>
+    /// <summary>Success modal title; changes with the selected target.</summary>
     public string SuccessTitle => PrepareAsIso ? "ISO file generated" : "USB device prepared";
 
     /// <summary>Cancelled modal title, for the selected target.</summary>
@@ -351,7 +373,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged(nameof(IsDiskSelectionEnabled));
             // RelayCommand.CanExecuteChanged is wired to CommandManager.RequerySuggested, which
             // WPF only re-raises automatically on certain UI input events (click, keypress,
-            // focus change) — not when a bound property changes from a background/async
+            // focus change), not when a bound property changes from a background/async
             // continuation. Without this, the Refresh/Prepare/Cancel buttons' enabled state can
             // visually lag behind their real CanExecute value until the user happens to
             // interact with the window.
@@ -360,11 +382,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     }
 
     /// <summary>
-    /// False while a Prepare operation is in flight (<see cref="IsBusy"/>) — disables the
+    /// False while a Prepare operation is in flight (<see cref="IsBusy"/>). Disables the
     /// destructive-confirmation checkbox (and, via the more specific properties below, the boot
     /// image/disk pickers) so nothing about the target selection can change mid-operation.
-    /// Re-enabled the instant the workflow reaches ANY terminal outcome — success, failure, or
-    /// cancellation — not gated on the result modal being dismissed.
+    /// Re-enabled the instant the workflow reaches ANY terminal outcome (success, failure, or
+    /// cancellation), not gated on the result modal being dismissed.
     /// </summary>
     public bool IsFormEnabled => !IsBusy;
 
@@ -418,7 +440,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// result modal instead of being embedded in <see cref="StatusMessage"/>'s prose (Fluent
     /// dialog guidance: keep the content message simple; surface actionable details, like a file
     /// location, as their own row with a supporting action rather than a wall of text). Null for
-    /// the USB target (there's no output file — the disk info fits in one short summary line).
+    /// the USB target (there's no output file; the disk info fits in one short summary line).
     /// </summary>
     public string? ResultFilePath
     {
@@ -470,7 +492,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     public string ErrorDetails => OperationResultText.ErrorDetails(ErrorTitle, ErrorMessage, ErrorReference);
 
     /// <summary>
-    /// Heading shown alongside <see cref="ErrorMessage"/> — distinguishes a failure while merely
+    /// Heading shown alongside <see cref="ErrorMessage"/>. Distinguishes a failure while merely
     /// listing boot images/disks ("Refresh failed") from a failure during the destructive
     /// download/partition/deploy workflow ("Preparation failed"), so a refresh error can never be
     /// mistaken for the USB device having been touched.
@@ -492,7 +514,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// True once the Prepare workflow has reached a terminal outcome (success, error, or
     /// cancellation) that hasn't yet been dismissed. Drives a modal overlay (instead of inline
     /// InfoBars competing for space with the still-visible form) so the result is impossible to
-    /// miss and the next action — <see cref="DismissResultCommand"/> — is unambiguous.
+    /// miss and the next action (<see cref="DismissResultCommand"/>) is unambiguous.
     /// </summary>
     public bool ShowResultDialog => IsComplete || HasError || WasCancelled;
 
@@ -542,9 +564,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private async Task RefreshBootImagesAsync()
     {
         IsRefreshingBootImages = true;
-        IsComplete             = false;
-        ErrorMessage           = null;
-        ErrorReference         = null;
+        IsComplete = false;
+        ErrorMessage = null;
+        ErrorReference = null;
 
         try
         {
@@ -553,7 +575,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         catch (Exception ex)
         {
-            ErrorTitle   = OperatorApiErrorDescription.IsAccessDenied(ex) ? "Access denied" : "Refresh failed";
+            ErrorTitle = OperatorApiErrorDescription.IsAccessDenied(ex) ? "Access denied" : "Refresh failed";
             ErrorMessage = OperatorApiErrorDescription.Describe(ex);
         }
         finally
@@ -567,16 +589,18 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         Disks.Clear();
         foreach (var disk in _validator.EnumerateDisks())
         {
-            // FR-054: only USB, removable disks ever appear in this list at all — internal,
+            // FR-054: only USB, removable disks ever appear in this list at all. Internal,
             // fixed, and virtual (e.g. Hyper-V SCSI) disks are excluded entirely rather than
             // merely grayed out. Validate() still runs below for the disks that DO pass this
             // filter, to catch the rare case of a USB removable disk that is also the host's
             // system disk (e.g. booting from a USB stick).
             if (!disk.BusType.Equals("USB", StringComparison.OrdinalIgnoreCase) || !disk.IsRemovable)
+            {
                 continue;
+            }
 
             var result = _validator.Validate(disk);
-            var label  = string.Create(CultureInfo.InvariantCulture,
+            var label = string.Create(CultureInfo.InvariantCulture,
                 $"Disk {disk.DiskNumber}: {disk.Caption} ({FormatBytes(disk.SizeBytes)}, {disk.BusType})");
             Disks.Add(new DiskChoice(disk.DiskNumber, label, disk, result.Valid, result.FailureReason, result.Warning));
         }
@@ -600,13 +624,13 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         var images = await _operatorApi.GetBootImagesAsync();
 
         BootImages.Clear();
-        foreach (var image in VisibleBootImages(images, _authService.IsAdministrator)
+        foreach (var image in VisibleBootImages(images, _authService.CanSeePreProductionBootImages)
             .OrderByDescending(i => i.Version, Comparer<string>.Create(CompareVersions)))
         {
             var stage = image.IsLatestPublished ? " (latest)" : image.IsProduction ? string.Empty : " (pre-production)";
-            var wifi = image.Base == BootImageBase.WindowsRE ? " · Wi-Fi" : string.Empty;
-            var label  = string.Create(CultureInfo.InvariantCulture,
-                $"v{image.Version} · {DisplayArchitecture(image.Architecture)}{wifi} ({FormatBytes(image.SizeBytes)}){stage}");
+            var wifi = image.Base == BootImageBase.WindowsRE ? ", Wi-Fi" : string.Empty;
+            var label = string.Create(CultureInfo.InvariantCulture,
+                $"v{image.Version}, {DisplayArchitecture(image.Architecture)}{wifi} ({FormatBytes(image.SizeBytes)}){stage}");
             BootImages.Add(new BootImageChoice(image.BootImageId, label, image));
         }
 
@@ -617,23 +641,26 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                             ?? BootImages.FirstOrDefault();
         OnPropertyChanged(nameof(HasBootImages));
         OnPropertyChanged(nameof(IsBootImageSelectionEnabled));
-        StatusMessage = BootImages.Count > 0
-            ? "Confirm the destructive action, then prepare the USB device."
-            : "No production boot images are available yet. An Administrator must promote one in the portal.";
+        StatusMessage = BootImageListStatus(BootImages.Count);
     }
 
+    /// <summary>Status caption once the boot image list has loaded with <paramref name="visibleCount"/> entries.</summary>
+    internal static string BootImageListStatus(int visibleCount) => visibleCount > 0
+        ? "Confirm the destructive action, then prepare the USB device."
+        : "No production boot images are available yet. An Operator or Administrator user must promote one in the portal.";
+
     /// <summary>
-    /// Pre-production images are only offered to Administrators, who test them before promoting.
-    /// The Operator API cannot tell the roles apart (both use MediaBuilderAccess), so this is a
-    /// workflow filter rather than an access control.
+    /// Pre-production images are only offered to Operator and Administrator users, who test them
+    /// before promoting. The Operator API cannot tell the roles apart (all use MediaBuilderAccess),
+    /// so this is a workflow filter rather than an access control.
     /// </summary>
-    public static IEnumerable<BootImageDto> VisibleBootImages(IEnumerable<BootImageDto> images, bool isAdministrator) =>
-        images.Where(i => i.IsActive && (i.IsProduction || isAdministrator));
+    public static IEnumerable<BootImageDto> VisibleBootImages(IEnumerable<BootImageDto> images, bool canSeePreProduction) =>
+        images.Where(i => i.IsActive && (i.IsProduction || canSeePreProduction));
 
     /// <summary>
     /// Loads the admin-managed location catalog (Location Labels feature) so the technician can
     /// optionally tag this USB boot media with a site label. Best-effort: an empty catalog (or a
-    /// failed fetch) just leaves <see cref="SelectedLocation"/> unset — location is never required
+    /// failed fetch) just leaves <see cref="SelectedLocation"/> unset; location is never required
     /// to prepare a device.
     /// </summary>
     private async Task LoadLocationsAsync()
@@ -641,7 +668,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         try
         {
             var token = await _authService.GetAccessTokenAsync();
-            if (token is null) return;
+            if (token is null)
+            {
+                return;
+            }
 
             _operatorApi.SetAccessToken(token);
             var locations = await _operatorApi.GetLocationsAsync();
@@ -649,7 +679,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             var previouslySelectedId = SelectedLocation?.Id;
             Locations.Clear();
             foreach (var location in locations.OrderBy(l => l.Name, StringComparer.OrdinalIgnoreCase))
+            {
                 Locations.Add(new LocationChoice(location.LocationId, location.Name, location));
+            }
 
             SelectedLocation = previouslySelectedId is Guid id
                 ? Locations.FirstOrDefault(l => l.Id == id)
@@ -657,7 +689,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         catch
         {
-            // Best-effort — location tagging is optional, so a failed fetch here should never
+            // Best-effort: location tagging is optional, so a failed fetch here should never
             // block the rest of the Prepare workflow.
         }
     }
@@ -667,7 +699,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private async Task PrepareAsync()
     {
         if (SelectedBootImage is null)
+        {
             return;
+        }
 
         if (PrepareAsIso)
         {
@@ -676,10 +710,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
 
         if (SelectedDisk is null)
+        {
             return;
+        }
 
-        IsBusy       = true;
-        IsComplete   = false;
+        IsBusy = true;
+        IsComplete = false;
         WasCancelled = false;
         ErrorMessage = null;
         ProgressPercent = 0;
@@ -694,7 +730,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _currentStage = "DVI";
             var validation = _validator.Validate(SelectedDisk.Info);
             if (!validation.Valid)
+            {
                 throw new InvalidOperationException(validation.FailureReason ?? "Selected disk is not eligible.");
+            }
 
             var token = await _authService.GetAccessTokenAsync()
                 ?? throw new InvalidOperationException("Sign in to the Operator API before preparing USB media.");
@@ -742,7 +780,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             // Partitioning (diskpart.exe) and boot-partition activation (bootsect.exe) both
             // require Administrator privileges. PrepareElevatedAsync transparently relaunches
             // this executable elevated (one UAC prompt) for just that work when the current
-            // process isn't already Administrator — mirrors
+            // process isn't already Administrator. Mirrors
             // BootImageGenerationService.GenerateElevatedAsync for DISM image mounting. The
             // boot image has already been downloaded to wimPath above (in this, non-elevated,
             // process) so no Operator API/network calls are needed from the elevated worker.
@@ -773,11 +811,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             SetProgress("USB device prepared successfully.", 100);
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
                 $"Boot image v{SelectedBootImage.Dto.Version} was written to disk {SelectedDisk.DiskNumber} ({SelectedDisk.Info.Caption}, {FormatBytes(SelectedDisk.Info.SizeBytes)}). Boot the target machine from it to start imaging.");
-            IsComplete    = true;
+            IsComplete = true;
         }
         catch (OperationCanceledException)
         {
-            WasCancelled  = true;
+            WasCancelled = true;
             StatusMessage = "Preparation cancelled.";
             ProgressMessage = "Preparation cancelled. Cleaning up temporary files…";
         }
@@ -788,14 +826,14 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         finally
         {
-            try { if (File.Exists(wimPath)) File.Delete(wimPath); } catch { /* best-effort cleanup */ }
+            try { if (File.Exists(wimPath)) { File.Delete(wimPath); } } catch { /* best-effort cleanup */ }
             _cts.Dispose();
             _cts = null;
             IsBusy = false;
 
             // Whatever the outcome (success, failure, or cancellation), the destructive
             // confirmation must be re-armed explicitly for the next device rather than staying
-            // checked — otherwise a technician could click Prepare again on a newly-inserted
+            // checked; otherwise a technician could click Prepare again on a newly-inserted
             // disk without re-confirming the erase.
             ConfirmErase = false;
         }
@@ -805,7 +843,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>
     /// Downloads (or reuses a cached copy of) the selected boot image and packages it into a
-    /// bootable ISO file at <see cref="IsoOutputPath"/> — an alternative to
+    /// bootable ISO file at <see cref="IsoOutputPath"/>, an alternative to
     /// <see cref="PrepareAsync"/>'s USB partitioning path for booting a Hyper-V VM (or burning
     /// physical media) without needing a physical USB device at all. Never touches a disk, so
     /// there is no destructive-confirmation gate for this path.
@@ -813,10 +851,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private async Task GenerateIsoAsync()
     {
         if (SelectedBootImage is null || string.IsNullOrWhiteSpace(IsoOutputPath) || _isoGeneration is null)
+        {
             return;
+        }
 
-        IsBusy       = true;
-        IsComplete   = false;
+        IsBusy = true;
+        IsComplete = false;
         WasCancelled = false;
         ErrorMessage = null;
         ProgressPercent = 0;
@@ -861,7 +901,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             SetProgress("Building bootable ISO…", 30);
 
             // ISO packaging (copype.cmd/MakeWinPEMedia.cmd) occupies the 30-100% band, remapped
-            // from IsoGenerationService's own internal 0-100% progress — the same remapping
+            // from IsoGenerationService's own internal 0-100% progress, the same remapping
             // pattern UsbPreparationService's partition/deploy steps already use.
             void OnIsoProgress(string message, int percent) =>
                 SetProgress(message, 30 + (int)(0.70 * percent));
@@ -869,13 +909,13 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
             var isoSizeBytes = new FileInfo(IsoOutputPath).Length;
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
-                $"Boot image v{SelectedBootImage.Dto.Version} \u00B7 {DisplayArchitecture(SelectedBootImage.Dto.Architecture)} \u00B7 {FormatBytes(isoSizeBytes)}");
+                $"Boot image v{SelectedBootImage.Dto.Version}, {DisplayArchitecture(SelectedBootImage.Dto.Architecture)}, {FormatBytes(isoSizeBytes)}");
             ResultFilePath = IsoOutputPath;
-            IsComplete    = true;
+            IsComplete = true;
         }
         catch (OperationCanceledException)
         {
-            WasCancelled  = true;
+            WasCancelled = true;
             StatusMessage = "ISO generation cancelled.";
             ProgressMessage = "ISO generation cancelled. Cleaning up temporary files…";
         }
@@ -885,7 +925,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         }
         finally
         {
-            try { if (File.Exists(wimPath)) File.Delete(wimPath); } catch { /* best-effort cleanup */ }
+            try { if (File.Exists(wimPath)) { File.Delete(wimPath); } } catch { /* best-effort cleanup */ }
             _cts.Dispose();
             _cts = null;
             IsBusy = false;
@@ -899,20 +939,22 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     internal string? BuildIsoManifestJson()
     {
         if (SelectedLocation is null || SelectedBootImage is null)
+        {
             return null;
+        }
 
         var manifest = new UsbPreparationManifest
         {
-            ManifestVersion  = UsbPreparationManifest.ManifestSchemaVersion,
-            PreparedAt       = DateTimeOffset.UtcNow,
-            ToolVersion      = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown",
+            ManifestVersion = UsbPreparationManifest.ManifestSchemaVersion,
+            PreparedAt = DateTimeOffset.UtcNow,
+            ToolVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "unknown",
             BootImageVersion = SelectedBootImage.Dto.Version,
-            BootImageId      = SelectedBootImage.Dto.BootImageId,
-            SelectedDiskId   = "iso",
-            Architecture     = SelectedBootImage.Dto.Architecture,
-            BootImageBase    = SelectedBootImage.Dto.Base,
-            LocationId       = SelectedLocation.Id,
-            LocationName     = SelectedLocation.Name,
+            BootImageId = SelectedBootImage.Dto.BootImageId,
+            SelectedDiskId = "iso",
+            Architecture = SelectedBootImage.Dto.Architecture,
+            BootImageBase = SelectedBootImage.Dto.Base,
+            LocationId = SelectedLocation.Id,
+            LocationName = SelectedLocation.Name,
         };
         return System.Text.Json.JsonSerializer.Serialize(manifest, IsoManifestJsonOptions);
     }
@@ -925,23 +967,25 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         var defaultName = GetDefaultIsoFileName();
 
         // Defaults to the same folder as the currently-configured output path (initially the
-        // "Cloud Imaging Media Builder\ISO Files" folder under Documents — see
+        // "Cloud Imaging Media Builder\ISO Files" folder under Documents; see
         // GetDefaultIsoOutputFolder), so re-opening Browse after a prior choice starts from
         // wherever the technician last saved an ISO rather than jumping back to Documents.
         var initialDirectory = !string.IsNullOrWhiteSpace(IsoOutputPath)
             ? Path.GetDirectoryName(IsoOutputPath)
             : null;
         if (string.IsNullOrWhiteSpace(initialDirectory))
+        {
             initialDirectory = GetDefaultIsoOutputFolder();
+        }
 
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
-            Title            = "Save ISO file as",
-            Filter           = "ISO image (*.iso)|*.iso",
-            DefaultExt       = ".iso",
-            FileName         = defaultName,
+            Title = "Save ISO file as",
+            Filter = "ISO image (*.iso)|*.iso",
+            DefaultExt = ".iso",
+            FileName = defaultName,
             InitialDirectory = initialDirectory,
-            AddExtension     = true,
+            AddExtension = true,
         };
         if (dialog.ShowDialog() == true)
         {
@@ -972,16 +1016,20 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         var raw = await WimMetadataReader.ReadProcessorArchitectureAsync(wimPath, ct);
         if (raw is null)
+        {
             return;
+        }
 
         if (WimMetadataReader.ToMachineArchitecture(raw.Value) != image.Architecture)
+        {
             throw new InvalidOperationException(string.Create(CultureInfo.InvariantCulture,
                 $"Boot image v{image.Version} is labeled {DisplayArchitecture(image.Architecture)} in the portal, but the image itself targets {WimMetadataReader.DescribeProcessorArchitecture(raw.Value)}. Nothing was written. Delete it in the portal and upload it again."));
+        }
     }
 
     /// <summary>
     /// Default ISO output location: a "Cloud Imaging Media Builder\ISO Files" subfolder under
-    /// the current user's Documents folder — the same base folder (and fallback chain) as
+    /// the current user's Documents folder, the same base folder (and fallback chain) as
     /// <c>GenerateBootImageViewModel.GetDefaultOutputFolder</c> uses for generated boot images,
     /// just under a distinct "ISO Files" subfolder rather than "Boot Images". Writable without
     /// elevation.
@@ -990,9 +1038,14 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         var basePath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         if (string.IsNullOrEmpty(basePath))
+        {
             basePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
         if (string.IsNullOrEmpty(basePath))
+        {
             basePath = Path.GetTempPath();
+        }
 
         return Path.Combine(basePath, "Cloud Imaging Media Builder", "ISO Files");
     }
@@ -1000,7 +1053,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private void Cancel()
     {
         if (_cts is null)
+        {
             return;
+        }
 
         ProgressMessage = "Cancelling. Waiting for cleanup to finish…";
         _cts.Cancel();
@@ -1011,20 +1066,20 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// USB device can be prepared immediately, without leaving the app or re-navigating.
     /// Re-scans the disk list (the just-prepared device may have been removed and a new one
     /// inserted while the modal was open) and requires <see cref="ConfirmErase"/> to be
-    /// re-checked for the next device as a safety measure — the boot image selection is left
+    /// re-checked for the next device as a safety measure. The boot image selection is left
     /// as-is since it's almost always the same for consecutive devices.
     /// </summary>
     private void CloseResultDialog()
     {
-        IsComplete      = false;
-        ErrorMessage    = null;
-        ErrorReference  = null;
-        WasCancelled    = false;
-        ConfirmErase    = false;
+        IsComplete = false;
+        ErrorMessage = null;
+        ErrorReference = null;
+        WasCancelled = false;
+        ConfirmErase = false;
         ProgressPercent = 0;
         ProgressMessage = string.Empty;
-        ResultFilePath  = null;
-        StatusMessage   = PrepareAsIso
+        ResultFilePath = null;
+        StatusMessage = PrepareAsIso
             ? "Select an output path to generate another ISO."
             : "Select a USB device to begin.";
 
@@ -1034,13 +1089,15 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>
     /// Opens File Explorer with the generated ISO pre-selected (FR-057-adjacent UX: the Fluent
     /// dialog guidance favors an actionable button over asking the technician to manually copy
-    /// a path and navigate there themselves). Best-effort — the path remains visible/selectable
+    /// a path and navigate there themselves). Best-effort: the path remains visible/selectable
     /// in the modal regardless, so a failure here is never fatal to the workflow.
     /// </summary>
     private void OpenResultFolder()
     {
         if (ResultFilePath is null)
+        {
             return;
+        }
 
         try
         {
@@ -1055,9 +1112,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private void ShowFailure(string title, string message, Func<string> createReference)
     {
         var (reason, reference) = OperationResultText.SplitSupportReference(message, createReference);
-        ErrorTitle     = title;
+        ErrorTitle = title;
         ErrorReference = reference;
-        ErrorMessage   = reason;
+        ErrorMessage = reason;
     }
 
     // ── Progress plumbing ──────────────────────────────────────────────────────
@@ -1065,9 +1122,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private void OnDownloadProgress(object? sender, (long Downloaded, long Total) e)
     {
         if (e.Total <= 0)
+        {
             return;
+        }
 
-        // Download occupies the 15–55% band of the overall workflow (skipped entirely on a cache hit).
+        // Download occupies the 15-55% band of the overall workflow (skipped entirely on a cache hit).
         ProgressPercent = 15 + (int)(40.0 * e.Downloaded / e.Total);
         ProgressMessage = string.Create(CultureInfo.InvariantCulture,
             $"Downloading boot image… {FormatBytes(e.Downloaded)} / {FormatBytes(e.Total)}");
@@ -1075,9 +1134,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     private void OnPreparationProgress(object? sender, (string Message, int Percent) e)
     {
-        // UsbPreparationService already reports the overall 60–100% band for the
+        // UsbPreparationService already reports the overall 60-100% band for the
         // partition/deploy/manifest workflow (including the "Requesting Administrator
-        // privileges" step at 58% when an elevation relaunch is required) — no remapping needed.
+        // privileges" step at 58% when an elevation relaunch is required), so no remapping is needed.
         ProgressPercent = e.Percent;
         ProgressMessage = e.Message;
     }
@@ -1085,14 +1144,16 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>
     /// Handles a debounced USB plug/unplug notification from <see cref="UsbDeviceChangeWatcher"/>
     /// (T071, FR-054). Fires on a background thread, so refresh work is marshaled onto the UI
-    /// thread. Never runs while a destructive Prepare operation is in progress — re-enumerating
+    /// thread. Never runs while a destructive Prepare operation is in progress, because re-enumerating
     /// disks mid-operation could otherwise change <see cref="SelectedDisk"/> out from under it.
     /// The manual Refresh button remains available as a fallback regardless of this.
     /// </summary>
     private void OnDeviceChanged(object? sender, EventArgs e) => OnUi(() =>
     {
         if (IsBusy)
+        {
             return;
+        }
 
         try { LoadDisks(); } catch { /* best-effort; manual Refresh remains available */ }
     });
@@ -1102,9 +1163,13 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
+        {
             action();
+        }
         else
+        {
             dispatcher.Invoke(action);
+        }
     }
 
     private void SetProgress(string message, int percent)
@@ -1128,7 +1193,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>
     /// Compares boot image versions ("YYYY.MM.DD.N", see versionSuggestion.ts) segment-by-segment
-    /// as integers, so e.g. "2026.08.10.1" correctly sorts after "2026.08.9.1" — plain ordinal
+    /// as integers, so e.g. "2026.08.10.1" correctly sorts after "2026.08.9.1"; plain ordinal
     /// string comparison would rank them the other way round. Falls back to ordinal comparison
     /// if either version doesn't parse cleanly as dotted integers.
     /// </summary>
@@ -1144,7 +1209,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             {
                 return string.CompareOrdinal(a, b);
             }
-            if (numA != numB) return numA.CompareTo(numB);
+            if (numA != numB)
+            {
+                return numA.CompareTo(numB);
+            }
         }
         return 0;
     }
@@ -1159,7 +1227,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         _cts?.Dispose();
         if (_deviceWatcher is not null)
+        {
             _deviceWatcher.DeviceChanged -= OnDeviceChanged;
+        }
     }
 
     /// <summary>A selectable disk plus its pre-computed eligibility (FR-054).</summary>
@@ -1203,11 +1273,16 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         {
             var token = await _authService.GetAccessTokenAsync();
             if (token is null)
+            {
                 return;
+            }
+
             _operatorApi.SetAccessToken(token);
             var set = await _operatorApi.GetManagedWifiNetworksAsync(SelectedLocation?.Id);
             if (version == _wifiLoadVersion)
+            {
                 WifiNetworks = [.. set.Networks.Select(n => new WifiNetworkRow(n.Ssid, DescribeWifi(n)))];
+            }
         }
         catch (Exception ex)
         {
@@ -1220,7 +1295,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         finally
         {
             if (version == _wifiLoadVersion)
+            {
                 IsLoadingWifi = false;
+            }
         }
     }
 
@@ -1232,7 +1309,9 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     {
         var set = await _operatorApi.GetManagedWifiNetworksAsync(locationId, ct);
         if (set.Networks.Count == 0)
+        {
             return null;
+        }
 
         var pfx = await _operatorApi.GetBootMediaCertPfxAsync(ct);
         using var withKey = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadPkcs12(

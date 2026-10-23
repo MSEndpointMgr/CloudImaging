@@ -1,10 +1,10 @@
+using System.IO;
+using System.Net.Http;
 using CloudImaging.Contracts.Models;
 using CloudImaging.MediaBuilder.Services;
 using CloudImaging.MediaBuilder.ViewModels;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.IO;
-using System.Net.Http;
 using Xunit;
 
 namespace CloudImaging.MediaBuilder.Tests;
@@ -45,8 +45,8 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var vm = CreateViewModel();
         vm.SelectedBootImage = CreateBootImage();
-        vm.SelectedDisk      = CreateValidDisk();
-        vm.ConfirmErase      = false;
+        vm.SelectedDisk = CreateValidDisk();
+        vm.ConfirmErase = false;
 
         vm.CanPrepare.Should().BeFalse("the destructive action requires explicit confirmation (FR-055)");
     }
@@ -56,8 +56,8 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var vm = CreateViewModel();
         vm.SelectedBootImage = CreateBootImage();
-        vm.SelectedDisk      = CreateInvalidDisk();
-        vm.ConfirmErase      = true;
+        vm.SelectedDisk = CreateInvalidDisk();
+        vm.ConfirmErase = true;
 
         vm.CanPrepare.Should().BeFalse("system / non-removable disks must never be selectable targets (FR-054)");
     }
@@ -77,8 +77,8 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var vm = CreateViewModel();
         vm.SelectedBootImage = CreateBootImage();
-        vm.SelectedDisk      = CreateValidDisk();
-        vm.ConfirmErase      = true;
+        vm.SelectedDisk = CreateValidDisk();
+        vm.ConfirmErase = true;
 
         vm.CanPrepare.Should().BeTrue("a valid disk, a boot image, and confirmation satisfy all gates");
     }
@@ -140,13 +140,13 @@ public sealed class PrepareStorageDeviceViewModelTests
 
         var otherImage = new PrepareStorageDeviceViewModel.BootImageChoice(Guid.NewGuid(), "v2.0.0", new BootImageDto
         {
-            BootImageId       = Guid.NewGuid(),
-            Version           = "2.0.0",
-            SizeBytes         = 500_000_000,
-            Sha256Hash        = "def",
+            BootImageId = Guid.NewGuid(),
+            Version = "2.0.0",
+            SizeBytes = 500_000_000,
+            Sha256Hash = "def",
             IsLatestPublished = true,
-            IsActive          = true,
-            Architecture      = MachineArchitecture.Arm64,
+            IsActive = true,
+            Architecture = MachineArchitecture.Arm64,
         });
         vm.SelectedBootImage = otherImage;
 
@@ -154,20 +154,41 @@ public sealed class PrepareStorageDeviceViewModelTests
             "the suggested filename keeps tracking the selected boot image (including its architecture) until the technician explicitly picks a path via Browse");
     }
 
-    [Theory]
-    [InlineData(true, 2)]
-    [InlineData(false, 1)]
-    public void PreProductionBootImages_AreOnlyOfferedToAdministrators(bool isAdministrator, int expectedCount)
+    [Fact]
+    public void VisibleBootImages_CanSeePreProduction_ListsActiveProductionAndPreProductionImages()
     {
-        var images = new[]
-        {
-            new BootImageDto { Version = "1.0", IsActive = true, IsProduction = true, IsLatestPublished = true },
-            new BootImageDto { Version = "2.0", IsActive = true, IsProduction = false },
-            new BootImageDto { Version = "0.9", IsActive = false, IsProduction = true },
-        };
-
-        PrepareStorageDeviceViewModel.VisibleBootImages(images, isAdministrator).Should().HaveCount(expectedCount);
+        PrepareStorageDeviceViewModel.VisibleBootImages(CreateCatalog(), canSeePreProduction: true)
+            .Select(i => i.Version).Should().BeEquivalentTo(["1.0", "2.0"]);
     }
+
+    [Fact]
+    public void VisibleBootImages_CannotSeePreProduction_ListsActiveProductionImagesOnly()
+    {
+        PrepareStorageDeviceViewModel.VisibleBootImages(CreateCatalog(), canSeePreProduction: false)
+            .Select(i => i.Version).Should().BeEquivalentTo(["1.0"]);
+    }
+
+    [Fact]
+    public void BootImageListStatus_NoVisibleImages_TellsTheUserOperatorOrAdministratorMustPromoteOne()
+    {
+        PrepareStorageDeviceViewModel.BootImageListStatus(0)
+            .Should().Be("No production boot images are available yet. An Operator or Administrator user must promote one in the portal.");
+    }
+
+    [Fact]
+    public void BootImageListStatus_VisibleImages_PromptsForTheDestructiveConfirmation()
+    {
+        PrepareStorageDeviceViewModel.BootImageListStatus(1)
+            .Should().Be("Confirm the destructive action, then prepare the USB device.");
+    }
+
+    private static BootImageDto[] CreateCatalog() =>
+    [
+        new BootImageDto { Version = "1.0", IsActive = true, IsProduction = true, IsLatestPublished = true },
+        new BootImageDto { Version = "2.0", IsActive = true, IsProduction = false },
+        new BootImageDto { Version = "0.9", IsActive = false, IsProduction = true },
+        new BootImageDto { Version = "0.8", IsActive = false, IsProduction = false },
+    ];
 
     [Fact]
     public async Task EnsureWimMatchesCatalogArchitecture_Throws_WhenWimContradictsCatalogLabel()
@@ -207,8 +228,8 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var vm = CreateViewModel(isAdkInstalled: () => true);
         vm.SelectedBootImage = CreateBootImage();
-        vm.PrepareAsIso       = true;
-        vm.IsoOutputPath      = null; // IsoOutputPath otherwise defaults to a real path
+        vm.PrepareAsIso = true;
+        vm.IsoOutputPath = null; // IsoOutputPath otherwise defaults to a real path
 
         vm.CanPrepare.Should().BeFalse("an ISO output path must be chosen before generating an ISO");
     }
@@ -218,8 +239,8 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var vm = CreateViewModel(isAdkInstalled: () => true);
         vm.SelectedBootImage = CreateBootImage();
-        vm.PrepareAsIso       = true;
-        vm.IsoOutputPath      = Path.Combine(Path.GetTempPath(), "boot.iso");
+        vm.PrepareAsIso = true;
+        vm.IsoOutputPath = Path.Combine(Path.GetTempPath(), "boot.iso");
 
         vm.CanPrepare.Should().BeTrue("a boot image and an ISO output path satisfy all gates for the ISO target");
     }
@@ -229,10 +250,10 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var vm = CreateViewModel(isAdkInstalled: () => true);
         vm.SelectedBootImage = CreateBootImage();
-        vm.PrepareAsIso       = true;
-        vm.IsoOutputPath      = Path.Combine(Path.GetTempPath(), "boot.iso");
-        vm.SelectedDisk       = null;
-        vm.ConfirmErase       = false;
+        vm.PrepareAsIso = true;
+        vm.IsoOutputPath = Path.Combine(Path.GetTempPath(), "boot.iso");
+        vm.SelectedDisk = null;
+        vm.ConfirmErase = false;
 
         vm.CanPrepare.Should().BeTrue("the ISO target never touches a disk, so no disk selection or erase confirmation is required");
     }
@@ -258,11 +279,11 @@ public sealed class PrepareStorageDeviceViewModelTests
     public async Task PrepareAsync_SurfacesSupportReferenceCode_OnFailure()
     {
         // No Entra sign-in is performed in this test, so GetAccessTokenAsync returns null
-        // and the workflow fails right after disk (re-)validation — i.e. during the DVI stage.
+        // and the workflow fails right after disk (re-)validation, i.e. during the DVI stage.
         var vm = CreateViewModel();
         vm.SelectedBootImage = CreateBootImage();
-        vm.SelectedDisk      = CreateValidDisk();
-        vm.ConfirmErase      = true;
+        vm.SelectedDisk = CreateValidDisk();
+        vm.ConfirmErase = true;
 
         vm.PrepareCommand.Execute(null);
         await WaitUntilIdleAsync(vm);
@@ -298,7 +319,9 @@ public sealed class PrepareStorageDeviceViewModelTests
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (vm.IsBusy && DateTime.UtcNow < deadline)
+        {
             await Task.Delay(10);
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -306,12 +329,12 @@ public sealed class PrepareStorageDeviceViewModelTests
     private static PrepareStorageDeviceViewModel.BootImageChoice CreateBootImage() =>
         new(Guid.NewGuid(), "v1.0.0", new BootImageDto
         {
-            BootImageId       = Guid.NewGuid(),
-            Version           = "1.0.0",
-            SizeBytes         = 500_000_000,
-            Sha256Hash        = "abc",
+            BootImageId = Guid.NewGuid(),
+            Version = "1.0.0",
+            SizeBytes = 500_000_000,
+            Sha256Hash = "abc",
             IsLatestPublished = true,
-            IsActive          = true,
+            IsActive = true,
         });
 
     private static PrepareStorageDeviceViewModel.DiskChoice CreateValidDisk() =>
@@ -324,21 +347,21 @@ public sealed class PrepareStorageDeviceViewModelTests
 
     private static PrepareStorageDeviceViewModel CreateViewModel(Func<bool>? isAdkInstalled = null)
     {
-        var http           = new HttpClient();
-        var operatorApi    = new OperatorApiClient(http, NullLogger<OperatorApiClient>.Instance);
-        var authService    = new EntraAuthenticationService(
+        var http = new HttpClient();
+        var operatorApi = new OperatorApiClient(http, NullLogger<OperatorApiClient>.Instance);
+        var authService = new EntraAuthenticationService(
             "test-client", "test-tenant", "api://test-client/.default",
             NullLogger<EntraAuthenticationService>.Instance);
-        var validator      = new UsbSafetyValidationService(NullLogger<UsbSafetyValidationService>.Instance);
-        var downloader     = new BootImageDownloadService(http, NullLogger<BootImageDownloadService>.Instance);
-        var provisioner    = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
-        var deployer       = new BootImageDeploymentService(NullLogger<BootImageDeploymentService>.Instance);
-        var preparation    = new UsbPreparationService(
+        var validator = new UsbSafetyValidationService(NullLogger<UsbSafetyValidationService>.Instance);
+        var downloader = new BootImageDownloadService(http, NullLogger<BootImageDownloadService>.Instance);
+        var provisioner = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
+        var deployer = new BootImageDeploymentService(NullLogger<BootImageDeploymentService>.Instance);
+        var preparation = new UsbPreparationService(
             NullLogger<UsbPreparationService>.Instance, provisioner, deployer);
-        var cache          = new BootImageCacheService(
+        var cache = new BootImageCacheService(
             Path.Combine(Path.GetTempPath(), $"ci-cache-tests-{Guid.NewGuid():N}"),
             NullLogger<BootImageCacheService>.Instance);
-        var isoGeneration  = new IsoGenerationService(NullLogger<IsoGenerationService>.Instance);
+        var isoGeneration = new IsoGenerationService(NullLogger<IsoGenerationService>.Instance);
 
         return new PrepareStorageDeviceViewModel(
             operatorApi, authService, validator, downloader, preparation, cache,

@@ -8,22 +8,22 @@ problem response, unchanged in shape:
 
 ```json
 { "type": "https://cloudimaging.io/errors/forbidden", "title": "Forbidden", "status": 403,
-  "detail": "This operation requires one of the following roles: CloudImaging.Operations, CloudImaging.Administrator." }
+  "detail": "This operation requires one of the following roles: CloudImaging.Operator, CloudImaging.Administrator." }
 ```
 
 The `detail` lists exactly the roles in the guard, so guards name every accepted role (research R2).
 
-**Legend**: Adm = Administrator, Ops = Operations, Tech = Technician, Rdr = Reader, Appr = AutopilotApprover,
+**Legend**: Adm = Administrator, Ops = Operator, Tech = Technician, Rdr = Reader, Appr = AutopilotApprover,
 PA = PortalAccess (implied by Adm, Ops, Tech; never in a user token).
 "Accepted" columns list the single-role users accepted, after implication.
 
 **Change types**:
-- **Edit**: guard changes in the router file to accept Operations.
+- **Edit**: guard changes in the router file to accept Operator.
 - **Narrow**: guard changes in the router file to stop accepting Technician (FR-015a).
 - **New**: route added by this feature.
-- **Implied**: guard unchanged; Operations accepted through the implication table.
-- **Message**: Operations already accepted through implication; guard edited so the 403 detail names it.
-- **None**: unchanged; Operations refused (FR-012).
+- **Implied**: guard unchanged; Operator accepted through the implication table.
+- **Message**: Operator already accepted through implication; guard edited so the 403 detail names it.
+- **None**: unchanged; Operator refused (FR-012).
 
 ---
 
@@ -133,7 +133,7 @@ remains `MediaBuilderAccess` only and is not proxied by the Portal.
 | PUT | `/api/autopilot/group-tags/:tagId` | Adm | Adm | Adm | None |
 | DELETE | `/api/autopilot/group-tags/:tagId` | Adm | Adm | Adm | None |
 
-The deciding user's identity is still taken from the token (`decidingUser`), so an Operations
+The deciding user's identity is still taken from the token (`decidingUser`), so an Operator
 decision is recorded the same way as an Approver's (FR-017).
 
 ## Reports data (`routes/session-history.ts`)
@@ -164,7 +164,7 @@ A Technician calling `GET /api/session-history` receives:
 
 ```json
 { "type": "https://cloudimaging.io/errors/forbidden", "title": "Forbidden", "status": 403,
-  "detail": "This operation requires one of the following roles: CloudImaging.Reader, CloudImaging.Operations, CloudImaging.Administrator." }
+  "detail": "This operation requires one of the following roles: CloudImaging.Reader, CloudImaging.Operator, CloudImaging.Administrator." }
 ```
 
 ## Branding (`routes/branding.ts`)
@@ -215,7 +215,7 @@ Any future route for it uses the inline Administrator guard.
 | Caller | Operator API role | Change |
 |---|---|---|
 | Portal backend managed identity | `CloudImaging.PortalAccess` (full allowlist) | None. Called only after the Portal backend's own guard passes. |
-| Media Builder user | `CloudImaging.MediaBuilderAccess` (read allowlist) | None. Cannot distinguish Technician, Operations, Administrator. |
+| Media Builder user | `CloudImaging.MediaBuilderAccess` (read allowlist) | None. Cannot distinguish Technician, Operator, Administrator. |
 
 Doc comments corrected (FR-025): `ImageCatalogFunctions`, `BootImageLifecycleFunctions`,
 `LocationFunctions`, `WifiNetworkFunctions`, `AutopilotFunctions`.

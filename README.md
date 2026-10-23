@@ -9,20 +9,20 @@ Cloud-hosted Windows imaging for bare-metal devices running WinPE.
 ![Deploys with](https://img.shields.io/badge/deploys%20with-Bicep-1BA1E2)
 
 **Guides** &nbsp;
-[**Set up a deployment**](docs/setup-instructions.md) ·
-[Upgrade](docs/upgrade-instructions.md) ·
-[Roles and access](docs/roles-and-access.md) ·
-[Operations runbook](docs/operations-runbook.md) ·
-[Releases](https://github.com/MSEndpointMgr/CloudImaging/releases) ·
+[**Set up a deployment**](docs/setup-instructions.md) |
+[Upgrade](docs/upgrade-instructions.md) |
+[Roles and access](docs/roles-and-access.md) |
+[Operations runbook](docs/operations-runbook.md) |
+[Releases](https://github.com/MSEndpointMgr/CloudImaging/releases) |
 [Report an issue](https://github.com/MSEndpointMgr/CloudImaging/issues)
 
 **This page** &nbsp;
-[Overview](#overview) ·
-[How it works](#how-it-works) ·
-[Requirements](#requirements) ·
-[Architecture](#architecture) ·
-[Features](#features) ·
-[Deployment](#deployment) ·
+[Overview](#overview) |
+[How it works](#how-it-works) |
+[Requirements](#requirements) |
+[Architecture](#architecture) |
+[Features](#features) |
+[Deployment](#deployment) |
 [Release model](#release-model)
 
 ---
@@ -58,21 +58,21 @@ several coupled sessions at a time.
    your Azure subscription as a Template Spec (see [Deployment](#deployment)
    below).
 2. **Set up Entra ID access.** Create three app registrations, one each for the
-   Portal, the Operator API, and Media Builder. Add the
-   `CloudImaging.Administrator` and `CloudImaging.Technician` app roles to the
-   Portal and Media Builder registrations (the Portal registration also gets a
-   read-only `CloudImaging.Reader` role, scoped to the Dashboard and Reports),
-   and assign at least one person or group the Administrator role so someone can
-   sign in to the portal. See
-   [docs/roles-and-access.md](docs/roles-and-access.md) for the full role model.
+   Portal, the Operator API, and Media Builder. Add the user roles
+   (`CloudImaging.Administrator`, `CloudImaging.Operator` and
+   `CloudImaging.Technician` on the Portal and Media Builder registrations, plus
+   `CloudImaging.Reader` and the optional `CloudImaging.AutopilotApprover` on the
+   Portal registration), and assign at least one person or group the
+   Administrator role so someone can sign in to the portal. See
+   [docs/roles-and-access.md](docs/roles-and-access.md) for what each role can do.
 3. **Configure the environment.** An administrator signs in to the Cloud
    Imaging Portal and sets up the prerequisites: generates the boot media
    certificate used for mutual TLS (mTLS), adds OS images to the catalog, and
    optionally configures branding and device pre-flight authorization.
-4. **Generate a boot image.** An administrator generates a WinPE boot image
-   in Media Builder, embedding the client app and the configured
-   certificate/branding. Administrator-only, since the image embeds the
-   active mTLS boot-media certificate.
+4. **Generate a boot image.** An Operator or Administrator user generates a
+   WinPE boot image in Media Builder, embedding the client app and the
+   configured certificate/branding. Technicians cannot, since the image embeds
+   the active mTLS boot-media certificate.
 5. **Prepare a USB drive.** A technician (or administrator) writes the
    generated boot image to a USB drive in Media Builder. One boot image can
    be written to as many USB drives as needed for a bulk rollout.
@@ -213,8 +213,9 @@ flowchart TB
 ### Cloud Imaging Media Builder
 
 - Entra ID sign-in required at launch; role-based workflow visibility
-  (`CloudImaging.Administrator` sees both workflows; `CloudImaging.Technician`
-  sees Prepare USB Storage Device only)
+  (`CloudImaging.Administrator` and `CloudImaging.Operator` see both
+  workflows; `CloudImaging.Technician` sees Prepare USB Storage Device only; see
+  [docs/roles-and-access.md](docs/roles-and-access.md))
 - Checks that Windows ADK and the WinPE add-on are installed before enabling any
   workflow
 - **Generate Boot Image**: builds a WinPE boot image WIM embedding the Cloud Imaging
@@ -238,8 +239,10 @@ flowchart TB
   deployed as additive edge enforcement via the `deployApplicationGateway`
   deployment parameter
 - **Entra ID + app roles**: the Portal and Media Builder each have their own app
-  registration, but share the same two user-level roles (`CloudImaging.Administrator`,
-  `CloudImaging.Technician`), assigned independently per registration; service-level
+  registration, and the user roles are assigned independently per registration
+  (`CloudImaging.Administrator`, `CloudImaging.Operator` and
+  `CloudImaging.Technician` on both; `CloudImaging.Reader` and
+  `CloudImaging.AutopilotApprover` on the Portal only); service-level
   roles (`CloudImaging.PortalAccess`, `CloudImaging.MediaBuilderAccess`) control
   Operator API service access. See [docs/roles-and-access.md](docs/roles-and-access.md)
   for the full access model

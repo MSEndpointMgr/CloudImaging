@@ -8,10 +8,10 @@ import type { AuthenticatedRequest } from '../middleware/auth.js';
  * Autopilot registration router. Devices submit hardware hashes through the Device Gateway;
  * this router lets portal users review and decide on them.
  *
- * Approval queue (open requests only): Approver, Administrator, Technician (read-only).
- * Handled requests (audit report): Approver, Administrator, Reader.
- * Approve, reject, retry: Approver or Administrator.
- * Group tag definitions: readable by Approver and Administrator, managed by Administrator.
+ * Approval queue (open requests only): Approver, Administrator, Operator, Technician (read-only).
+ * Handled requests (audit report): Approver, Administrator, Operator, Reader.
+ * Approve, reject, retry: Approver, Administrator or Operator.
+ * Group tag definitions: readable by Approver, Administrator and Operator, managed by Administrator.
  *
  * The deciding user's identity comes from their validated token, never from the request body,
  * because the Operator API only sees the portal backend's own service identity.
@@ -22,9 +22,10 @@ const MAX_REASON_LENGTH = 500;
 const GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d{1,7})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
 
-const canView = requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Technician');
-const canAudit = requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Reader');
-const canDecide = requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator');
+// Operator already passes canView through Technician; it is listed so the 403 detail names it.
+const canView = requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Operator', 'CloudImaging.Technician');
+const canAudit = requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Operator', 'CloudImaging.Reader');
+const canDecide = requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Operator');
 
 type Decision = { decidedByUpn: string; decidedByObjectId?: string; groupTagDefinitionId?: string; reason?: string };
 
@@ -126,7 +127,7 @@ router.post('/registrations/:requestId/retry', canDecide, requireGuidParams('req
   } catch (err) { next(err); }
 });
 
-router.get('/group-tags', requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator'), async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+router.get('/group-tags', requireRole('CloudImaging.AutopilotApprover', 'CloudImaging.Administrator', 'CloudImaging.Operator'), async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.listAutopilotGroupTags());
   } catch (err) { next(err); }

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { capabilitiesFromRoles } from '../../../src/cloud-imaging-portal/client/src/lib/portalRoles.ts';
 
 /**
  * Portal frontend auth guard contract tests (T018a, FR-030).
@@ -40,34 +41,35 @@ describe('Portal frontend: auth guard', () => {
     expect(mandatoryScopes).not.toContain('User.Read');
   });
 
-  // ── CloudImaging.Reader (Dashboard + Reports only) ────────────────────────
+  // ── Role gates, asserted against the real capability map ─────────────────
+
+  it('Operator-only token passes the Access denied gate and reaches the Dashboard and imaging pages', () => {
+    const caps = capabilitiesFromRoles(['CloudImaging.Operator']);
+    expect(caps.hasPortalAccess).toBe(true);
+    expect(caps.hasDashboardAccess).toBe(true);
+    expect(caps.canUseImaging).toBe(true);
+  });
 
   it('Reader satisfies hasPortalAccess, so ProtectedRoute does not show AccessDenied', () => {
-    const roles = ['CloudImaging.Reader'];
-    const hasPortalAccess = roles.includes('CloudImaging.Administrator')
-      || roles.includes('CloudImaging.Technician')
-      || roles.includes('CloudImaging.Reader');
-    expect(hasPortalAccess).toBe(true);
+    expect(capabilitiesFromRoles(['CloudImaging.Reader']).hasPortalAccess).toBe(true);
   });
 
-  it('Reader is redirected away from an operations-only route (RequireOperationsAccess)', () => {
-    const roles = ['CloudImaging.Reader'];
-    const canOperations = roles.includes('CloudImaging.Administrator') || roles.includes('CloudImaging.Technician');
-    expect(canOperations).toBe(false);
+  it('Reader is redirected away from the imaging routes', () => {
+    expect(capabilitiesFromRoles(['CloudImaging.Reader']).canUseImaging).toBe(false);
   });
 
-  it('Reader can reach the Reports routes (RequireReportsAccess)', () => {
-    const roles = ['CloudImaging.Reader'];
-    const canReports = roles.includes('CloudImaging.Administrator') || roles.includes('CloudImaging.Reader');
-    expect(canReports).toBe(true);
+  it('Reader can reach the Reports routes', () => {
+    expect(capabilitiesFromRoles(['CloudImaging.Reader']).canViewReports).toBe(true);
+  });
+
+  it('a token with no portal role is shown AccessDenied', () => {
+    expect(capabilitiesFromRoles([]).hasPortalAccess).toBe(false);
   });
 
   // ── Locations: admin page vs. picker read access ──────────────────────────
 
-  it('Technician is redirected away from the Locations admin page (RequireAdmin)', () => {
-    const roles = ['CloudImaging.Technician'];
-    const isAdministrator = roles.includes('CloudImaging.Administrator');
-    expect(isAdministrator).toBe(false);
+  it('Technician is redirected away from the Locations page', () => {
+    expect(capabilitiesFromRoles(['CloudImaging.Technician']).canManageLocations).toBe(false);
   });
 
   it('Header account menu location picker has no role gate, so Technician can select a location', () => {

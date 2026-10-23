@@ -96,7 +96,7 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 
 #### Registration 1: Cloud Imaging Portal (browser SPA)
 
-1. In Entra ID → App Registrations → **New registration**
+1. In Entra ID > App Registrations > **New registration**
 2. Name: `Cloud Imaging Portal` (or your branding)
 3. Supported account types: **Single tenant**
 4. Under **Redirect URI (optional)**, select **Single-page application (SPA)** as the platform
@@ -107,9 +107,9 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
    (e.g. `https://<swa-name>.azurestaticapps.net`). Do **not** pick
    *Public client/native (mobile & desktop)* here; that reclassifies the app and breaks SPA
    sign-in with **AADSTS9002326**.
-5. Once created, record the **Application (client) ID** shown on the **Overview** page → this
+5. Once created, record the **Application (client) ID** shown on the **Overview** page; this
    is `portalClientId`. You'll need it in a couple of the steps below.
-6. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No**. Setting it to **Yes** breaks the browser portal: the SPA's cross-origin token redemption is then rejected with **AADSTS9002326** (*cross-origin token redemption is permitted only for the 'Single-Page Application' client-type*).
+6. Under **Authentication** > **Advanced settings**, leave **Allow public client flows** = **No**. Setting it to **Yes** breaks the browser portal: the SPA's cross-origin token redemption is then rejected with **AADSTS9002326** (*cross-origin token redemption is permitted only for the 'Single-Page Application' client-type*).
 7. Under **Expose an API**:
    - Set the **Application ID URI** to `api://<portalClientId>` (accept the default; Entra
      pre-fills this with the `portalClientId` you already recorded above).
@@ -122,12 +122,18 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
      - **State**: Enabled
      - Click **Add scope**.
      - The browser portal (an MSAL SPA) requests `api://<portalClientId>/user_impersonation` to obtain an access token for the portal backend; without it, sign-in fails with **AADSTS500011 (invalid_resource)** and the portal renders a blank page after sign-in.
-8. Under **App roles**, add these three roles. Each needs a **Display name** (use the same text
-   as the value), **Value**, **Allowed member types**, and **Description**:
+8. Under **App roles**, add these four roles. Each needs a **Display name** (use the same text
+   as the value), **Value**, **Allowed member types**, and **Description**, and must be enabled:
    - **`CloudImaging.Administrator`**
      - Value: `CloudImaging.Administrator`
      - Allowed member types: Users/Groups
      - Description: `Full access to Cloud Imaging: catalog writes, branding, configuration, and the boot-media certificate.`
+   - **`CloudImaging.Operator`**
+     - Value: `CloudImaging.Operator`
+     - Allowed member types: Users/Groups
+     - Description: `Day-to-day operational administration: OS, boot and recovery images, drivers, locations, Wi-Fi networks, Autopilot approvals and reports. No security or tenant-wide settings.`
+     - Everything except Branding, Configuration, the boot media certificate and pre-flight
+       overrides; see [roles-and-access.md](roles-and-access.md).
    - **`CloudImaging.Technician`**
      - Value: `CloudImaging.Technician`
      - Allowed member types: Users/Groups
@@ -143,7 +149,14 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
      - Value: `CloudImaging.AutopilotApprover`
      - Allowed member types: Users/Groups
      - Description: `Approve or reject Windows Autopilot registrations submitted from boot media.`
-9. *(Optional)* Under **API permissions**, grant admin consent for the **Microsoft Graph →
+
+   > **Adding a role to an existing registration?** Only add the roles that are missing. Adding
+   > `CloudImaging.Operator` (or any other role) must not change, remove or re-create any
+   > existing role definition, role ID or role assignment on any registration, and the step is
+   > skipped for a role that already exists. Existing tenants follow
+   > [upgrade-instructions.md, Add the Operator role](upgrade-instructions.md#add-the-operator-role).
+
+9. *(Optional)* Under **API permissions**, grant admin consent for the **Microsoft Graph >
    User.Read** delegated permission; Entra adds it to every new registration by default, so
    there's nothing to add, only consent to grant. It's used only to show the signed-in user's
    **profile photo** in the header (their name always displays regardless, from the sign-in
@@ -160,7 +173,7 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 2. Supported account types: **Single tenant**
 3. Leave **Redirect URI (optional)** blank on this same page; this registration is a pure API
    resource with no interactive sign-in of its own, so it never needs a redirect URI or platform.
-4. Once created, record the **Application (client) ID** shown on the **Overview** page → this
+4. Once created, record the **Application (client) ID** shown on the **Overview** page; this
    is `operatorApiClientId`. You'll need it in the next step below.
 5. Under **Expose an API**:
    - Set the **Application ID URI** to `api://<operatorApiClientId>` (accept the default;
@@ -194,24 +207,30 @@ Cloud Imaging uses three separate Entra ID App Registrations, each with a single
 3. Under **Redirect URI (optional)**, select **Public client/native (mobile & desktop)** as the
    platform and enter `http://localhost` as the URI. The Media Builder signs in with the
    interactive loopback (authorization code + PKCE) flow.
-4. Once created, record the **Application (client) ID** shown on the **Overview** page → this
+4. Once created, record the **Application (client) ID** shown on the **Overview** page; this
    is `mediaBuilderClientId`.
-5. Under **Authentication** → **Advanced settings**, leave **Allow public client flows** = **No**; the loopback flow is already identified as a public client by its `http://localhost` redirect and does not need this flag.
-6. Under **App roles**, add the same two role names, but with descriptions scoped to what they
+5. Under **Authentication** > **Advanced settings**, leave **Allow public client flows** = **No**; the loopback flow is already identified as a public client by its `http://localhost` redirect and does not need this flag.
+6. Under **App roles**, add the same three role names, but with descriptions scoped to what they
    mean *in the Media Builder* (this is a separate app role definition from the Portal
    registration's roles above, even though the names match). Each needs a **Display name** (use
-   the same text as the value), **Value**, **Allowed member types**, and **Description**:
+   the same text as the value), **Value**, **Allowed member types**, and **Description**, and
+   must be enabled. The same rule as on the Portal registration applies: never change, remove or
+   re-create an existing role, and skip a role that already exists:
    - **`CloudImaging.Administrator`**
      - Value: `CloudImaging.Administrator`
      - Allowed member types: Users/Groups
      - Description: `Full Media Builder access: generate boot images (embeds the active boot-media certificate and branding) and prepare USB storage devices.`
+   - **`CloudImaging.Operator`**
+     - Value: `CloudImaging.Operator`
+     - Allowed member types: Users/Groups
+     - Description: `Generate boot images and prepare USB storage devices, including pre-production boot images.`
    - **`CloudImaging.Technician`**
      - Value: `CloudImaging.Technician`
      - Allowed member types: Users/Groups
-     - Description: `Prepare USB storage devices with an already-published boot image. Cannot generate new boot images (Administrator-only).`
-7. **Grant access to the Operator API (required):** Under **API permissions** → **Add a
-   permission** → **My APIs** → select **Cloud Imaging Operator API** → **Delegated
-   permissions** → check `user_impersonation` → **Add permissions**. Then click **Grant admin
+     - Description: `Prepare USB storage devices with an already-published boot image. Cannot generate new boot images.`
+7. **Grant access to the Operator API (required):** Under **API permissions** > **Add a
+   permission** > **My APIs** > select **Cloud Imaging Operator API** > **Delegated
+   permissions** > check `user_impersonation` > **Add permissions**. Then click **Grant admin
    consent for &lt;your tenant&gt;**. The Media Builder requests the
    `api://<operatorApiClientId>/.default` scope, which only succeeds once this permission is
    consented; skipping it fails sign-in with **AADSTS650057**.
@@ -267,8 +286,8 @@ The script publishes a **Template Spec** named `CloudImaging` into that resource
 prints a direct link to it in the Azure Portal (the marketplace `#create` URL doesn't work for
 Template Specs, so this manual link is how you reach it). Open the link (signed in to the target
 tenant) and click **Deploy** on the Template Spec resource's page; that launches the Form View
-wizard used in Step 2. To navigate manually instead: **Resource groups → your resource group →
-CloudImaging → Deploy**.
+wizard used in Step 2. To navigate manually instead: **Resource groups > your resource group >
+CloudImaging > Deploy**.
 
 ---
 
@@ -345,7 +364,7 @@ is done.**
 
 1. Open the deployed resource group and select the **Static Web App** resource.
 2. Copy its **URL** from the Overview page, for example `https://<swa-name>.azurestaticapps.net`.
-3. Go to **Microsoft Entra ID** → **App registrations** → **Cloud Imaging Portal** →
+3. Go to **Microsoft Entra ID** > **App registrations** > **Cloud Imaging Portal** >
    **Authentication**.
 4. Under **Single-page application**, replace the placeholder redirect URI you added in
    [Phase 1, Step 1](#registration-1-cloud-imaging-portal-browser-spa) with that URL, then
@@ -436,45 +455,50 @@ start, so create one group per persona first and assign the groups instead.
 
 #### 1. Create a group per persona
 
-Entra ID → **Groups** → **New group** (type: Security, membership: Assigned). Create two:
+Entra ID > **Groups** > **New group** (type: Security, membership: Assigned). Create three:
 
 - **Cloud Imaging Administrators**
+- **Cloud Imaging Operators**: people who manage the image catalogs, Locations, Wi-Fi networks,
+  Autopilot decisions and Reports, and generate boot images, without Branding or Configuration
 - **Cloud Imaging Technicians**
 
-Add a third, **Cloud Imaging Readers**, only if you want people who can view the Dashboard and
+Add a fourth, **Cloud Imaging Readers**, only if you want people who can view the Dashboard and
 Reports but change nothing. Readers exist in the Portal only.
 
 Put your people in the groups now. From here on, onboarding somebody is a single group membership
-change rather than five separate role assignments.
+change rather than up to three separate role assignments.
 
 #### 2. Assign the groups to every applicable enterprise application
 
-For each row below: Entra ID → **Enterprise applications** → select the application →
-**Users and groups** → **Add user/group** → pick the group → choose the role → **Assign**.
+For each row below: Entra ID > **Enterprise applications** > select the application >
+**Users and groups** > **Add user/group** > pick the group > choose the role > **Assign**.
 
-| Enterprise application | Cloud Imaging Administrators | Cloud Imaging Technicians | Cloud Imaging Readers |
-|---|---|---|---|
-| **Cloud Imaging Portal** | `CloudImaging.Administrator` | `CloudImaging.Technician` | `CloudImaging.Reader` |
-| **Cloud Imaging Media Builder** | `CloudImaging.Administrator` | `CloudImaging.Technician` | not applicable |
-| **Cloud Imaging Operator API** | `CloudImaging.MediaBuilderAccess` | `CloudImaging.MediaBuilderAccess` | not applicable |
+| Enterprise application | Cloud Imaging Administrators | Cloud Imaging Operators | Cloud Imaging Technicians | Cloud Imaging Readers |
+|---|---|---|---|---|
+| **Cloud Imaging Portal** | `CloudImaging.Administrator` | `CloudImaging.Operator` | `CloudImaging.Technician` | `CloudImaging.Reader` |
+| **Cloud Imaging Media Builder** | `CloudImaging.Administrator` | `CloudImaging.Operator` | `CloudImaging.Technician` | not applicable |
+| **Cloud Imaging Operator API** | `CloudImaging.MediaBuilderAccess` | `CloudImaging.MediaBuilderAccess` | `CloudImaging.MediaBuilderAccess` | not applicable |
 
-That is **five** assignments in total, across three applications.
+That is up to **ten** assignments in total, across three applications.
 
 Points worth understanding before you skip a row:
 
 - **Portal and Media Builder assignments are not shared.** They are separate app registrations, so
-  granting Administrator on the Portal grants nothing on the Media Builder. Skip the Media Builder
-  row and your administrators can sign in to it but reach no workflow.
+  granting Administrator or Operator on the Portal grants nothing on the Media Builder. Skip the
+  Media Builder row and those users can sign in to it but reach no workflow.
 - **The Operator API row is a different kind of permission.** The Portal and Media Builder roles
   decide what each app *shows* a person. `CloudImaging.MediaBuilderAccess` is what lets the Media
   Builder *call the Operator API at all*. Skip this row and sign-in still succeeds, but every call
   returns `403` and the Media Builder reports that access was denied.
-- **Readers and Portal-only technicians** need only the Portal row. The Media Builder and Operator
-  API rows apply to whoever builds boot media.
+- **Readers, and technicians or operators who work only in the Portal**, need only the
+  Portal row. The Media Builder and Operator API rows apply to whoever builds boot media or
+  prepares USB media. Operator users who generate boot images need all three rows: the Portal
+  role is what authorises uploading the generated image on the Boot Images page.
 - **Do not assign `CloudImaging.PortalAccess`** to anyone here. It belongs to the portal backend's
   managed identity and is granted by `post-install.ps1` in Step 1.
-- **Autopilot approvers** who are not administrators need `CloudImaging.AutopilotApprover` on the
-  **Cloud Imaging Portal** application only. Administrators can already approve.
+- **Autopilot approvers** who are not administrators or operators need
+  `CloudImaging.AutopilotApprover` on the **Cloud Imaging Portal** application only. Administrator
+  and Operator users can already approve.
 
 #### 3. Have each person sign out and back in
 
@@ -483,9 +507,9 @@ token until they sign out and back in, so a correct assignment can still look br
 
 #### 4. Confirm the assignments took
 
-Entra ID → **Enterprise applications** → select each of the three applications → **Users and
+Entra ID > **Enterprise applications** > select each of the three applications > **Users and
 groups**, and check the group is listed with the expected role. The Operator API application should
-show your two persona groups with `CloudImaging.MediaBuilderAccess`, alongside the portal's managed
+show your three persona groups with `CloudImaging.MediaBuilderAccess`, alongside the portal's managed
 identity with `CloudImaging.PortalAccess` that `post-install.ps1` created.
 
 A user with no role assigned on a registration can still sign in, but sees an "Access denied"
@@ -500,13 +524,13 @@ complete these one-time setup tasks. The first two are **required**; imaging can
 without them; the rest are optional and can be revisited any time from **Configuration**.
 
 1. **Generate the boot media certificate** (required).
-   - Navigate to **Configuration** → **Certificates** tab → click **Generate Certificate** and
+   - Navigate to **Configuration** > **Certificates** tab > click **Generate Certificate** and
      wait for confirmation.
    - This certificate secures the mTLS handshake between booted devices and the Device Gateway
      API, and is embedded into every boot image Media Builder generates.
    - Without an active certificate, **Generate Boot Image** (Phase 4) refuses to run.
 2. **Add at least one OS image to the catalog** (required).
-   - Navigate to **OS Images** → **Upload** and provide the WIM/ESD file, a name, and a version.
+   - Navigate to **OS Images** > **Upload** and provide the WIM/ESD file, a name, and a version.
    - Devices have nothing to image without at least one catalog entry.
 3. **Configure branding** *(optional)*.
    - Navigate to **Branding** to set your organization's logo and colors.
@@ -523,8 +547,8 @@ without them; the rest are optional and can be revisited any time from **Configu
 5. **Configure device pre-flight authorization** *(optional, off by default)*.
    - Before enabling it, confirm the Microsoft Graph permission script above ended with `[OK]`.
    - Add at least one test device to Windows Autopilot, or add its exact manufacturer, model, and
-     serial-number tuple under **Intune → Devices → Enrollment → Corporate device identifiers**.
-   - Under **Configuration** → **Preflight**, turn on **Require pre-flight authorization**, select
+     serial-number tuple under **Intune > Devices > Enrollment > Corporate device identifiers**.
+   - Under **Configuration** > **Preflight**, turn on **Require pre-flight authorization**, select
      **Require Autopilot presence**, save, then boot that device and verify its session reaches
      `SessionAllowed`.
    - Test an unknown device too, and verify that it appears under **Devices › Blocked**.
@@ -533,11 +557,11 @@ without them; the rest are optional and can be revisited any time from **Configu
    - Disable the setting again if either result is unexpected. When disabled, registration skips
      Microsoft Graph and proceeds.
 6. **Review Security and Miscellaneous settings** *(optional)*.
-   - **Configuration** → **Security**: certificate/token validity periods and clock skew tolerance.
-   - **Configuration** → **Miscellaneous**: session history retention.
+   - **Configuration** > **Security**: certificate/token validity periods and clock skew tolerance.
+   - **Configuration** > **Miscellaneous**: session history retention.
    - Both have working defaults and only need attention for organization-specific requirements.
 7. **Turn on version checking** *(optional)*.
-   - **Configuration** → **Miscellaneous** → **Version** shows the release this deployment is
+   - **Configuration** > **Miscellaneous** > **Version** shows the release this deployment is
      running.
    - Enabling **Check GitHub for new releases** lets the portal backend periodically read the
      latest published release number from github.com and notify administrators when an upgrade is
@@ -560,9 +584,9 @@ four values first:
 
 | # | Value | Where it comes from |
 |---|---|---|
-| 1 | Media Builder client ID | [Phase 1, Registration 3](#registration-3-cloud-imaging-media-builder-desktop-public-client) → Application (client) ID |
-| 2 | Tenant ID | Entra ID → Overview → Directory (tenant) ID |
-| 3 | Operator API client ID | [Phase 1, Registration 2](#registration-2-cloud-imaging-operator-api-service-to-service) → Application (client) ID |
+| 1 | Media Builder client ID | [Phase 1, Registration 3](#registration-3-cloud-imaging-media-builder-desktop-public-client) > Application (client) ID |
+| 2 | Tenant ID | Entra ID > Overview > Directory (tenant) ID |
+| 3 | Operator API client ID | [Phase 1, Registration 2](#registration-2-cloud-imaging-operator-api-service-to-service) > Application (client) ID |
 | 4 | Operator API URL | The `operatorApiUrl` deployment output from [Phase 2, Step 2](#step-2-deploy-via-template-spec-wizard) |
 
 All four are public identifiers, not secrets. The Media Builder is an MSAL *public client* and has
@@ -641,13 +665,17 @@ The registry values take precedence over `appsettings.json`, value by value, so 
 workstation ignores whatever the file contains. Leave the shipped file at its empty defaults when
 you deploy the MSI.
 
-> **Two things are needed for a working Media Builder sign-in. Don't skip either:**
+> **Three things are needed for a working Media Builder sign-in. Don't skip any:**
 > 1. The **`user_impersonation` delegated permission** on the Media Builder registration, added
 >    *and* admin-consented ([Phase 1, Registration 3](#registration-3-cloud-imaging-media-builder-desktop-public-client));
 >    prevents `AADSTS650057` at sign-in.
 > 2. The **`CloudImaging.MediaBuilderAccess` role assignment** to the user or group on the Operator
 >    API enterprise application ([Phase 3, Step 2](#step-2-assign-access-to-your-administrators-and-technicians));
 >    prevents `403` on API calls.
+> 3. A **Media Builder role** on the Media Builder enterprise application: `CloudImaging.Technician`
+>    to prepare USB media, `CloudImaging.Operator` or `CloudImaging.Administrator` to also generate
+>    boot images ([Phase 3, Step 2](#step-2-assign-access-to-your-administrators-and-technicians));
+>    without one, sign-in succeeds but every workflow is blocked.
 
 #### Installing the Windows ADK on technician workstations
 
@@ -708,14 +736,14 @@ process.
 IntuneWinAppUtil.exe -c <folder containing the msi> -s cloud-imaging-mediabuilder-<version>.msi -o <output folder>
 ```
 
-**2. Create the Win32 app** (**Apps → Windows → Add → Windows app (Win32)**):
+**2. Create the Win32 app** (**Apps > Windows > Add > Windows app (Win32)**):
 
 | Setting | Value |
 |---|---|
 | Install command | The single-line `msiexec` command from [Building the msiexec command line](#building-the-msiexec-command-line) |
 | Uninstall command | `msiexec /x {ProductCode} /qn /norestart` |
 | Install behavior | **System** (the app installs per-machine) |
-| Detection rule | **MSI** → the product code, with *"MSI product version check"* set to greater-than-or-equal the version you are deploying |
+| Detection rule | **MSI**: the product code, with *"MSI product version check"* set to greater-than-or-equal the version you are deploying |
 | Requirement | 64-bit Windows |
 | Dependency | Windows ADK + WinPE add-on |
 
@@ -744,7 +772,7 @@ the above.
 
 1. Open the **Cloud Imaging Media Builder** on a technician workstation with the Windows ADK
    + WinPE add-on installed (see [Installing the Windows ADK](#installing-the-windows-adk-on-technician-workstations))
-2. Sign in with your Entra ID credentials (must have `CloudImaging.Administrator` or `CloudImaging.Technician` role)
+2. Sign in with your Entra ID credentials (must have `CloudImaging.Operator` or `CloudImaging.Administrator` on the Media Builder registration; `CloudImaging.Technician` can only prepare USB media)
 3. Select **Generate Boot Image**
 4. Choose **Auto-download** (fetches latest Cloud Imaging Client from GitHub) or specify a local path
 5. Under **Boot Image Base**, choose:
@@ -757,7 +785,8 @@ the above.
 6. Optionally check **Enable command prompt access** under **Support Tools** (see
    [Client support tools](#client-support-tools) below); off by default
 7. Click **Generate**; the wizard produces a `.wim` file
-8. Upload the WIM to the portal: **Boot Images** → **Upload**. The portal detects the base and
+8. Upload the WIM to the portal: **Boot Images** > **Upload** (Operator or Administrator on the
+   Portal registration). The portal detects the base and
    shows a **Wi-Fi** badge on Windows RE images. Windows PE and Windows RE are separate streams:
    each has its own production image per architecture, and USB media only self-updates within
    its own stream.
@@ -836,7 +865,7 @@ Imaging is never blocked by a pending request. The feature is off by default.
    [Phase 3, Step 1](#step-1-complete-the-microsoft-entra-grants)).
 2. *(Optional)* Create the `CloudImaging.AutopilotApprover` app role on the Portal registration and
    assign it to your approvers.
-3. Portal → **Configuration** → **Autopilot**: turn on **Allow Autopilot registration**, decide
+3. Portal > **Configuration** > **Autopilot**: turn on **Allow Autopilot registration**, decide
    whether a group tag is required, set how many days a pending request stays open (default 7),
    and how long handled requests are kept for auditing (default 365 days).
 4. On the same tab, define the group tags approvers can choose. A tag is either static text or a
@@ -846,7 +875,7 @@ Imaging is never blocked by a pending request. The feature is off by default.
    safe in Intune CSV imports, Microsoft Graph and Entra dynamic group rules.
 5. If you use templates, choose a **Country** on each location under **Locations**. The region
    follows from the country: the Portal ships an ISO 3166 map that puts every country in EMEA,
-   AMER or APAC. Under **Locations** → **Regions** you can rename those regions (for example AMER
+   AMER or APAC. Under **Locations** > **Regions** you can rename those regions (for example AMER
    to AMCS), add your own, and move a country to another region or to no region. A template such
    as `E-R-{Region}-C-{CountryCode}-P-PAW-B-PRD` then resolves to `E-R-EMEA-C-SE-P-PAW-B-PRD` for a
    location in Sweden. Locations that had a region typed in by hand keep it until they are edited.
@@ -892,7 +921,7 @@ yet self-updated to this release signs without it, so its submissions arrive wit
 the stick updates.
 
 Handled requests (imported, already registered, group tag updated, rejected or expired) leave the
-approval queue straight away. **Reports** → **Autopilot Registration History** lists them with the
+approval queue straight away. **Reports** > **Autopilot Registration History** lists them with the
 approver, group tag and outcome, and exports them to CSV. Approvers open it from the Autopilot page
 with **Handled requests**. Requests are deleted once they are older than the retention period.
 The group tag list records who last changed each tag.

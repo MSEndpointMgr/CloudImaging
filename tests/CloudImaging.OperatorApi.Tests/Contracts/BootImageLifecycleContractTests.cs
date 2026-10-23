@@ -18,7 +18,7 @@ public sealed class BootImageLifecycleContractTests
     public void PublishEndpoint_RequiresAdministratorRole()
     {
         "CloudImaging.Administrator".Should().Be("CloudImaging.Administrator",
-            "publishing a boot image requires CloudImaging.Administrator role");
+            "the Portal backend accepts CloudImaging.Operator or CloudImaging.Administrator for publishing a boot image");
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public sealed class BootImageLifecycleContractTests
     public void DeleteEndpoint_RequiresAdministratorRole()
     {
         "CloudImaging.Administrator".Should().Be("CloudImaging.Administrator",
-            "deleting a boot image requires CloudImaging.Administrator role");
+            "the Portal backend accepts CloudImaging.Operator or CloudImaging.Administrator for deleting a boot image");
     }
 
     [Fact]
