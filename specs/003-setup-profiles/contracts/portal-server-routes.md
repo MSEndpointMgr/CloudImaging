@@ -188,4 +188,5 @@ entries, each `message` at most 300 characters, and nothing else from the upstre
 | 409 | Stale `baseVersion` or concurrent name/targeting change | "This profile was changed by ops2@contoso.com at 2026-10-23 10:41. Reload to see their changes." |
 | 409 | Duplicate name | "A setup profile named "Stockholm" already exists. Choose another name." |
 | 409 | Location delete refused (route 11) | "Stockholm HQ is the only location of setup profile "Stockholm". Add another location to the profile or delete the profile, then try again." |
+| 409 | Location delete while the targeting profile keeps being saved (route 11, after three attempts) | "A setup profile that targets Stockholm HQ is being changed. Try again." |
 | 413 | Body above 4 MB | Existing body-parser response. Not reachable with valid content. |

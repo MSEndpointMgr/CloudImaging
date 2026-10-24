@@ -31,6 +31,7 @@ Start with the symptom visible to the technician or administrator. The linked ru
 | Prepare setup shows warnings, or fails the deployment | Open the timeline card; failed items are listed first with their reason. See the table below and [Failure handling](setup-profiles.md#failure-handling). |
 | A During Windows setup script or driver installer did not run or failed | Read `C:\Windows\Logs\CloudImaging\SetupRunner.log` on the device. See the table below. |
 | Deleting a location fails with "... is the only location of setup profile ..." | Add another location to the profile or delete the profile, then try again. [How a device gets its profile](setup-profiles.md#how-a-device-gets-its-profile) |
+| Deleting a location fails with "A setup profile that targets ... is being changed" | Someone is saving the profile that targets the location at the same moment. Wait for their save to finish, then delete the location again. |
 
 When investigating session behavior, record the session ID and current state first. Use [Session lifecycle](session-lifecycle.md) to identify the expected next transition, then correlate the same session ID across Client logs and Application Insights. Log locations and starter queries are listed in the [Operations runbook](operations-runbook.md#4-log-locations).
 
