@@ -2,6 +2,16 @@
 
 **Feature**: [../spec.md](../spec.md) | **Model**: [../data-model.md](../data-model.md) | **Upstream**: [operator-and-core-api.md](operator-and-core-api.md)
 
+> **Amendment 2026-10-24** (research R18, wins over the text below): the descriptor gains
+> `scripts: [{ id, contentSha256, sizeBytes, contentUrl, contentUrlExpiresAt }]`, listing only the
+> scripts that apply to the session's location (all-locations scripts plus those whose effective
+> locations include `session.locationId`), each URL a 15-minute read SAS for `content/{sha256}`.
+> The Gateway relays it unchanged. The Client downloads the version document, then each listed
+> script, reading at most `sizeBytes + 1` bytes and checking length and SHA-256, all within the
+> same three attempts and before Format disk. The answer file text is fetched the same way from
+> `answerFile.contentUrl`. A script in the version document that is not in `scripts` does not run
+> on this device and is not reported.
+
 Both endpoints sit behind the existing device middleware: mTLS boot media certificate,
 `DeviceSessionTokenValidationMiddleware` (Bearer device session token; the session id in the route
 must match the token's, else 403) and `RateLimitingMiddleware` (10 calls per 30 seconds per token,

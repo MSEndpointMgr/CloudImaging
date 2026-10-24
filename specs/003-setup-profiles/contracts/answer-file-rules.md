@@ -2,6 +2,13 @@
 
 **Feature**: [../spec.md](../spec.md) | **Research**: [../research.md](../research.md) R9
 
+> **Amendment 2026-10-24** (research R18, wins over the text below): `tooLarge` matches more than
+> 2,097,152 bytes of UTF-8, not counting a leading BOM, with the message "The answer file is larger
+> than 2 MB. Remove settings you do not need." The case file's size boundary cases move to
+> 2,097,152 and 2,097,153 bytes. Core also runs these rules when the answer file is uploaded
+> (`kind=answerFile`) and returns the problems with the upload result; the save re-validates the
+> referenced blob.
+
 One rule set, implemented twice and pinned by one case file:
 
 | Implementation | File | Runs |

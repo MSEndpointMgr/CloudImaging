@@ -24,12 +24,13 @@ export const CodeTextArea = React.forwardRef<HTMLTextAreaElement, {
   return (
     <div
       className={cn(
-        'grid grid-cols-[40px_minmax(0,1fr)] overflow-hidden rounded-md border bg-background font-mono text-xs leading-5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
+        'grid grid-cols-[auto_minmax(0,1fr)] overflow-hidden rounded-md border bg-background font-mono text-xs leading-5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
         invalid ? 'border-destructive' : 'border-input',
       )}
       style={{ height: `${String(rows * 20 + 16)}px` }}
     >
-      <div ref={gutter} aria-hidden="true" className="overflow-hidden border-r border-border bg-muted/30 py-2 pr-2 text-right text-muted-foreground">
+      {/* Sized to the widest line number, so a 12-line script and a 100,000-line one both fit snugly. */}
+      <div ref={gutter} aria-hidden="true" className="min-w-[calc(2ch+16px)] overflow-hidden border-r border-border bg-muted/30 px-2 py-2 text-right text-muted-foreground">
         <pre className="m-0 whitespace-pre font-mono">{numbers}</pre>
       </div>
       <textarea

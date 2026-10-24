@@ -604,3 +604,77 @@ sessions at five steps and makes a skipped profile on an old Client visible.
   `portal-roles.test.ts` (new flags), `session-progress-details.test.tsx` (dynamic rail, warning
   marker, Not run, old five-step sessions unchanged).
 - **Manual** (WinPE, specialize, hardware): [quickstart.md](quickstart.md) sections 5 and 6.
+
+---
+
+## R18. Uploaded script content, scripts per location and phase names (2026-10-24)
+
+Supersedes, where they conflict: the 64 KB, 20-script and 256 KB limits and the inline script and
+answer file text in R1, R3, R6 and R9, the "In WinPE" and "During Windows setup" labels in R6, R14
+and R15, and the move up and move down buttons in R14. Design source:
+`docs/design/setup-profile-scripts-options.html` (agreed 2026-10-24), which wins over
+`docs/design/os-customisation.html` for the scripts card, the script dialog and the phase names.
+
+**Decision**:
+
+- **Limits**: 1000 scripts per profile, 24 MiB (25,165,824 bytes of UTF-8, the BOM not counted)
+  per script, 2 MiB (2,097,152 bytes) answer file, 200 registry values, no total. 24 MiB is 80% of
+  the documented 30 MB Static Web Apps request limit; the isolated Functions hosts (ASP.NET Core
+  integration, Kestrel default about 28.6 MB) and blob storage are above it.
+- **Content store**: every script text and the answer file text is a blob
+  `content/{sha256}` in the existing `setup-profiles` container, immutable and stored once per
+  SHA-256 (lowercase hex of the bytes without BOM), shared by every version and profile that
+  references it. Blob metadata `uploadedAt` drives cleanup.
+- **Upload**: one request per text, sent when the dialog's Done is pressed. Portal
+  `POST /api/setup-profiles/content?kind=script|answerFile` (`requireOperator`, body
+  `application/octet-stream`, raw parser limited to 25 MiB on this route only) relays the bytes to
+  Operator API `POST /api/setup-profiles/content`, which relays to Core
+  `POST /api/internal/setup-profiles/content`. Core reads at most the limit plus one byte, refuses
+  larger with 413 and the size, computes the SHA-256, uploads with `If-None-Match: *` (an existing
+  blob is success) and returns `{ sha256, sizeBytes }`. For `answerFile` Core also runs the
+  answer file rules and returns `{ sha256, sizeBytes, passes, problems }`; problems do not block
+  the upload but do block the save.
+- **Read**: portal `GET /api/setup-profiles/:profileId/content/:sha256` (`requireTechnician`)
+  streams the text from Core, which serves it only when a retained version of that profile
+  references the hash. The editor loads a text when its dialog opens; the profile detail and
+  version reads carry references only.
+- **Version document**: a script carries `contentSha256`, `sizeBytes` and
+  `locations: { all: bool, locationIds: Guid[] }` instead of `content`; the answer file carries
+  `contentSha256`, `sizeBytes` and `passes`. Save checks that every referenced blob exists and is
+  within its limit, re-validates the answer file from its blob, and refuses unknown hashes with
+  400. The change summary compares references, so an unchanged script costs nothing on save.
+- **Scripts per location**: `locations.all` true means every location of the profile (and media
+  without a location). Otherwise `locationIds` must be a subset of the profile's targeting (any
+  existing location for an All devices profile). The effective locations of a script are its
+  `locationIds` intersected with the current targeting; Save refuses a script whose effective set
+  is empty with "\"<name>\" has no locations left. Choose a location or delete the script.".
+  Location deletion and targeting changes therefore never rewrite an immutable version.
+- **Device**: Core's descriptor keeps the version document URL and adds `scripts`: only the
+  scripts that apply to the session's location (all-locations scripts plus those whose effective
+  locations include `session.locationId`), each with `contentSha256`, `sizeBytes` and a 15-minute
+  read SAS. The Client downloads and verifies each text before Format disk, writes Offline scripts
+  to `<W>:\Windows\Temp\CloudImaging\Scripts\NNNN.ps1` on the applied volume (not the WinPE RAM
+  disk) and deletes them after the run, and stages Specialize scripts as before with four-digit
+  names. The step item cap rises from 500 to 1500 per report.
+- **Cleanup**: the lifecycle timer, at most once a day, deletes `content/` blobs uploaded more than
+  24 hours ago that no retained version of any profile references.
+- **Order**: contiguous from 1 within each phase. The table changes it by typing a number or by
+  dragging a row by its handle (arrow keys on the focused handle); the client inserts and
+  renumbers, so numbers never clash. Move up and move down buttons are removed.
+- **Phase names**: Offline and Specialize in every label, message, timeline item kind label and
+  doc (`Offline script`, `Specialize script`). Wire values (`WinPE`, `WindowsSetup`,
+  `WinPEScript`, `WindowsSetupScript`) stay, so no stored data changes.
+- **Script environment dialog**: opened from an info icon next to the PowerShell label; the help
+  line under the label is "Exit code 0 is success. Scripts cannot restart the device."
+
+**Rationale**: One request per text keeps every request inside the platform limit and makes the
+save small and fast whatever the profile holds; content addressing removes duplication across
+versions and profiles; reading content on demand keeps the profile reads within the portal's
+300 ms budget. Filtering scripts by location at descriptor time means a device downloads only what
+it runs.
+
+**Alternatives considered**: raising the inline limits (every save and every editor open would
+carry tens of MB, and two large scripts could not be saved at all); uploading from the browser
+straight to blob storage with a write SAS (needs storage CORS and public network access from
+browsers, which the deployment avoids); per-location profiles instead of per-script locations
+(forces one profile per location and duplicates the shared scripts).

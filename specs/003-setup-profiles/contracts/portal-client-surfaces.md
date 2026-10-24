@@ -7,6 +7,46 @@ All surfaces follow `.github/instructions/portal-ui.instructions.md` (tokens, 40
 actions). Timestamps are absolute (`2026-10-22 02:00`, `formatTimestamp`). Table rows are one line
 high and truncate. All text is ASCII. Strings below are the proposed user-facing text.
 
+> **Amendment 2026-10-24** (research R18, design source
+> `docs/design/setup-profile-scripts-options.html`, wins over the text below and over
+> `os-customisation.html` for these surfaces):
+>
+> - **Phase names**: Runs options and column values "Offline" and "Specialize"; option
+>   descriptions "Right after the image is applied, in the boot image. Shown on the timeline. A
+>   failure follows the profile's failure handling." and "During Windows setup, after the restart
+>   and before OOBE and Autopilot. Logged on the device only."; timeline item kinds "Offline
+>   script" and "Specialize script"; summary texts "2 Offline scripts succeeded", "1 Offline script
+>   failed", "1 script and 5 driver installers queued for Specialize".
+> - **Scripts card**: description "PowerShell, run as SYSTEM in the order below within each phase. A
+>   device runs the scripts for all locations and the ones for its own location."; a toolbar with
+>   a search input ("Search scripts") and a 260 px location `Select` ("All scripts" or a location);
+>   columns Order (88 px: drag handle `GripVertical` plus the number, which turns into a 44 px
+>   number input on click; Enter moves, Escape cancels), Name, Locations (240 px, `TargetingBadges`
+>   with `allLabel` "All locations"), Runs (130 px), Timeout (90 px), Actions (96 px: edit,
+>   delete). Last modified moves into the dialog. With a location selected the footer reads "4 of
+>   186 scripts run on devices from Oslo Office". Moving a script inserts it and renumbers its
+>   phase; with a filter on, a move places it among the visible rows. A script with no effective
+>   locations shows a muted "No locations" badge and the save bar reads "\"<name>\" has no
+>   locations left. Choose a location or delete the script." with Save disabled.
+> - **Script dialog**: rows Name, Runs, Timeout as today; then a 360 px "Locations" `Select` ("All
+>   locations of this profile", "Selected locations") with the shared `LocationPicker` limited to
+>   the profile's targeting (footer "4 of 120 selected" and "Only locations this profile
+>   targets"); then the "PowerShell" label with an info icon button ("Script environment") and
+>   the help "Exit code 0 is success. Scripts cannot restart the device.", the "Upload file"
+>   `outline` button centred against that label block, the `CodeTextArea`, and "1.8 of 24 MB. Do
+>   not put secrets in scripts: everyone with access to this page can read them." Opening an
+>   existing script shows "Loading the script (12.4 MB)" until its text arrives. Done uploads,
+>   showing a progress bar and "Uploading 9.8 of 18.2 MB"; over 24 MB shows "This script is 25.3
+>   MB. A script can be at most 24 MB." with Done disabled; a failed upload shows "The script was
+>   not uploaded." and replaces Done with "Retry" (`RotateCw`). Cancel stops an upload.
+> - **Script environment dialog** (new `components/setup-profiles/ScriptEnvironmentDialog.tsx`):
+>   title "Script environment", description "What a script can rely on in each phase.", a table
+>   with columns Offline and Specialize and rows When, Runs in, PowerShell, Installed Windows,
+>   Native variables, Registry, Network, Result, Timeout, Restarts, Secrets, worded as in the
+>   design source; footer "Close" (`outline`).
+> - **Answer file**: limit 2 MB ("2.4 of 2048 KB" style size line reads "0.1 of 2 MB"); Done
+>   uploads like a script and shows the problems Core returns.
+
 **Design source**: [docs/design/os-customisation.html](../../../docs/design/os-customisation.html).
 Layout, wording and component choices follow the mockup; where this contract and the mockup
 disagree, the mockup wins and this contract is corrected. Section cards use the icon chip header

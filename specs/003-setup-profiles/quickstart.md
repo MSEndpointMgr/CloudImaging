@@ -132,12 +132,14 @@ Use one Windows 11 23H2, one 24H2 and one 25H2 OS image (spec risk 1), x64, and 
 | 6.13 | Network needed in specialize: Windows setup script that resolves an internal name | Logged result shows whether the NIC driver was available (spec risk 2); record per model. |
 | 6.14 | Delete the profile while a device is imaging | Device completes with the pinned version; afterwards (sweep, within 5 minutes of the session ending) its version blobs are gone; history kept. |
 | 6.15 | Image a device from a boot image built before this release, with a profile pinned | Timeline shows Prepare setup "Not run" with the update tooltip. |
+| 6.16 | Profile "Nordics" targets Oslo Office and Bergen Office; one script for all locations, one for Oslo Office only; image from Bergen Office media, then from Oslo Office media | Bergen runs and lists only the all-locations script; Oslo runs and lists both, in order. |
+| 6.17 | An Offline script of about 20 MB that embeds a base64 payload and writes it to `$env:CI_WINDOWS_DRIVE\Temp` | Runs from the applied volume (not X:), the payload is on the installed Windows after first boot, and the script file is gone. |
 
 ## 7. Performance
 
 | # | Measure | Budget |
 |---|---|---|
-| 7.1 | Prepare setup duration minus the sum of script durations (from the step's start and end times and item durations), profile with 200 registry values, 20 scripts and a 256 KB answer file | At most 30 seconds (SC-005). |
-| 7.2 | Portal `GET /api/setup-profiles` and `GET /api/setup-profiles/:id` p95 at 50 concurrent users (existing load harness in `tests/performance`) | At most 300 ms (constitution V). |
-| 7.3 | Save of a maximum-size profile (about 2 MB) through Static Web Apps | Succeeds (no platform body limit hit); duration recorded. See plan Complexity Tracking. |
+| 7.1 | Prepare setup duration minus the sum of script durations (from the step's start and end times and item durations), profile with 200 registry values, 20 scripts and a 2 MB answer file | At most 30 seconds (SC-005). |
+| 7.2 | Portal `GET /api/setup-profiles` and `GET /api/setup-profiles/:id` p95 at 50 concurrent users (existing load harness in `tests/performance`), profile with 1000 scripts | At most 300 ms (constitution V). |
+| 7.3 | Upload of a 24 MB script through Static Web Apps on a 20 Mbps upstream, then save the profile | Upload within 45 seconds (Static Web Apps API limit) and save succeeds; durations recorded. |
 | 7.4 | End-to-end deployment of the reference workload with a three-value, one-script profile | Within 15 minutes (constitution V), no regression above 10% against the recorded baseline. |

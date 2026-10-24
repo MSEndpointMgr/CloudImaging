@@ -510,3 +510,52 @@ Task: "T129 portal client history and configuration tests"
 ## Phase 10: Convergence
 
 - [X] T178 [P] Document the location delete conflict that `SetupProfileService.DetachLocationAsync` returns after three concurrent-save retries ("A setup profile that targets <location> is being changed. Try again.") in the 409 table of specs/003-setup-profiles/contracts/portal-server-routes.md and the location delete row of docs/troubleshooting-index.md per FR-007 (unrequested)
+
+## Phase 11: Uploaded script content, scripts per location and phase names (FR-011, FR-012, FR-018, FR-045 to FR-048)
+
+Source of truth: research R18 and the "Amendment 2026-10-24" blocks in data-model.md and every contract; design source `docs/design/setup-profile-scripts-options.html`. Tests first within each layer.
+
+**Shared**
+
+- [ ] T179 [P] In src/CloudImaging.Contracts/Models/SetupProfiles/ change `SetupScript` (drop `Content`, add `Locations { All, LocationIds }`, `ContentSha256`, `SizeBytes`), `SetupAnswerFile` (drop `Content`, add `ContentSha256`, `SizeBytes`), add `SetupProfileContentUploadResult` (`Sha256`, `SizeBytes`, `Passes`, `Problems`), add `Scripts` (`Id`, `ContentSha256`, `SizeBytes`, `ContentUrl`, `ContentUrlExpiresAt`) and answer file URL fields to the descriptor, set the version document `SchemaVersion` to 2, and add the limit constants (1000 scripts, 25,165,824 bytes per script, 2,097,152 bytes answer file)
+- [ ] T180 [P] Update tests/fixtures/answer-file-cases.json: `tooLarge` message "The answer file is larger than 2 MB. Remove settings you do not need." and the boundary cases at 2,097,152 and 2,097,153 bytes (both suites read it)
+
+**Imaging Core (tests first)**
+
+- [ ] T181 [P] Create tests/CloudImaging.ImagingCoreApi.Tests/Services/SetupProfileContentRepositoryTests.cs and Functions/SetupProfileContentFunctionsTests.cs: upload stores `content/{sha256}` once (an existing hash is success), the hash and size exclude a leading BOM, `uploadedAt` and `kind` metadata are set, 24 MiB plus one byte is 413 with "This script is 25.3 MB. A script can be at most 24 MB.", an answer file over 2 MiB is 413 with the answer file message, an unknown `kind` or empty body is 400, `kind=answerFile` returns `passes` and `problems`, and the read route returns 404 for a hash no retained version of that profile references
+- [ ] T182 [P] Extend tests/CloudImaging.ImagingCoreApi.Tests/Services/SetupProfileValidatorTests.cs and SetupProfileServiceTests.cs: 1000 scripts accepted and 1001 refused; a script or answer file hash that was not uploaded is refused with "The text of \"<name>\" was not uploaded. Open the script and press Done again."; selected locations outside the targeting are refused; a script whose effective locations are empty is refused with "\"<name>\" has no locations left. Choose a location or delete the script."; the answer file is re-validated from its blob on save; the change summary compares references and locations; a schemaVersion 1 document is converted to schemaVersion 2 on first read with equal content
+- [ ] T183 [P] Extend tests/CloudImaging.ImagingCoreApi.Tests/Integration/SetupProfileIntegrationTests.cs: the descriptor lists only the scripts for the session's location (all-locations scripts plus matching effective locations; none of the location ones for media without a location), each with a read SAS for `content/{sha256}`; the sweep deletes content uploaded more than 24 hours ago that no retained version references and keeps referenced or recent content; a progress report keeps up to 1500 items
+
+**Imaging Core (implementation)**
+
+- [ ] T184 Create src/CloudImaging.ImagingCoreApi/Repositories/SetupProfileContentRepository.cs and Functions/SetupProfileContentFunctions.cs (upload reading at most the limit plus one byte, SHA-256, `If-None-Match: *`, answer file rules on `kind=answerFile`; read route authorised by the profile's retained versions) and register both in Program.cs (T181 green)
+- [ ] T185 Update src/CloudImaging.ImagingCoreApi/Services/SetupProfileValidator.cs, SetupProfileService.cs and ChangeSummaryBuilder.cs for the new limits, reference checks, locations and effective locations, answer file validation from its blob, and the schemaVersion 1 conversion (T182 green)
+- [ ] T186 Update the setup profile descriptor function to list the session's scripts with SAS URLs, extend `SetupProfileService.SweepAsync` with the daily content cleanup, and raise the step item cap in ImagingStepItemRepository and ReportProgressFunction to 1500 (T183 green)
+
+**Operator API and portal server**
+
+- [ ] T187 [P] Extend tests/CloudImaging.OperatorApi.Tests for the content upload relay (raw body, content type and status relayed, nothing parsed) and the content read relay, then add both functions to src/CloudImaging.OperatorApi/Functions/SetupProfileFunctions.cs
+- [ ] T188 [P] Extend tests/cloud-imaging-portal/server/setup-profiles-routes.test.ts and role-route-matrix.test.ts for routes 14 and 15 (raw body up to 25 MB on route 14 only, 413 above, `kind` passed through, actor from the token, `:sha256` not 64 lowercase hex is 400 without an upstream call, Operator and Administrator upload, Technician and above read), then implement them in src/cloud-imaging-portal/server/src/routes/setup-profiles.ts and mount `express.raw({ limit: '25mb' })` for route 14 in src/cloud-imaging-portal/server/src/app.ts
+
+**Portal client (tests first)**
+
+- [ ] T189 [P] Extend tests/cloud-imaging-portal/client/setup-profiles.test.ts: Runs labels "Offline" and "Specialize" and timeline kinds "Offline script" and "Specialize script"; `moveScriptTo` inserts and renumbers within the phase, including a move made with a location filter on (placed among the visible rows); the location filter returns exactly the scripts a device from that location runs, in run order; effective locations and the "no locations left" save message; size lines "1.8 of 24 MB" and "0.1 of 2 MB" and the too-large message
+- [ ] T190 [P] Create tests/cloud-imaging-portal/client/script-dialog.test.tsx and extend setup-profile-editor.test.tsx: Locations select with the picker limited to the profile's targeting; Done uploads with progress and closes; over 24 MB disables Done with the size message; a failed upload shows "The script was not uploaded." and Retry; opening a script shows the loading line until its text arrives; the info icon opens the Script environment dialog with every row; the scripts card search, location filter and footer count; typing an order and pressing Enter moves the row; the drag handle moves with the arrow keys; the answer file dialog uploads on Done and shows Core's problems
+
+**Portal client (implementation)**
+
+- [ ] T191 Update src/cloud-imaging-portal/client/src/lib/setupProfiles.ts (labels, limits, `moveScriptTo`, location filter, effective locations, content upload and read calls with progress) (T189 green)
+- [ ] T192 Update src/cloud-imaging-portal/client/src/components/setup-profiles/ScriptDialog.tsx and AnswerFileDialog.tsx, create components/setup-profiles/ScriptEnvironmentDialog.tsx, and rework the scripts card in src/cloud-imaging-portal/client/src/pages/SetupProfileEditorPage.tsx (search, location filter, Locations column, Order column with inline number input and drag handle using native drag and drop plus arrow keys, no move buttons) per contracts/portal-client-surfaces.md (T190 green)
+- [ ] T193 [P] Update the timeline kind labels and summary texts in src/cloud-imaging-portal/client/src/lib/setupProfiles.ts and components/SessionProgressDetails.tsx, and the on-device status lines in src/CloudImaging.Client ("Running Offline scripts (2 of 3)", "Staging Specialize work"), with their tests
+
+**Client (tests first, then implementation)**
+
+- [ ] T194 [P] Extend tests/CloudImaging.Client.Tests/SetupProfileContentLoaderTests.cs and PrepareSetupServiceTests.cs: the loader downloads the version document, then only the listed scripts and the answer file, checks each length and SHA-256 within the three attempts, and fails before Format disk with the download message; Offline scripts are written to `<W>:\Windows\Temp\CloudImaging\Scripts\NNNN.ps1`, deleted after each run and the folder removed; only descriptor scripts run and are reported; staged Specialize scripts use four-digit names
+- [ ] T195 Implement T194 in src/CloudImaging.Client/Services/Setup/SetupProfileContentLoader.cs, PrepareSetupService.cs, WinPeScriptRunner.cs and SetupRunnerManifestBuilder.cs (T194 green)
+- [ ] T196 [P] Update src/CloudImaging.ImagingCoreApi/Services/AnswerFileValidator.cs and src/cloud-imaging-portal/client/src/lib/answerFileValidation.ts for the 2 MiB limit and message (T180 green in both suites)
+
+**Docs and gates**
+
+- [ ] T197 [P] Update docs/setup-profiles.md (limits, scripts per location, Offline and Specialize, the Script environment table, uploads and Retry), docs/troubleshooting-index.md (upload too large or failed, "no locations left"), docs/session-lifecycle.md (phase names) and the v1.1.0 backend and client release notes; no em dashes, no identifiers
+- [ ] T198 Run the quickstart section 2 text scans over every file this phase changed and the section 1 gates (lint, tsc, all suites, Release build with zero warnings, `dotnet format --verify-no-changes` on changed C# files, coverage at least 80% on the changed services and libraries)
+- [ ] T199 Manual: quickstart 6.16, 6.17 and 7.3 (scripts per location on two devices, a 20 MB Offline script, a 24 MB upload through Static Web Apps within 45 seconds)

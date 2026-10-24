@@ -96,6 +96,28 @@ Derived at read time (not stored): `isCurrent`, `inUseCount` (sessions in the `a
 
 ### 4.2 Version document (blob, immutable)
 
+> **Amendment 2026-10-24** (research R18, wins over the example and rules below):
+>
+> - `schemaVersion` is 2. A script has no `content`; it carries `contentSha256` (lowercase hex
+>   SHA-256 of the UTF-8 text without BOM), `sizeBytes` and
+>   `locations: { "all": true, "locationIds": [] }` (`all` false needs at least one id from the
+>   profile's targeting, or any existing location for an All devices profile). The answer file
+>   has no `content`; it carries `contentSha256`, `sizeBytes` and `passes`.
+> - Limits: at most 1000 scripts, each at most 25,165,824 bytes (24 MiB); the answer file at most
+>   2,097,152 bytes (2 MiB); 200 registry values; no total. The version document itself stays
+>   small (about 1 KB per script), so the portal router's 4 MB JSON limit is unchanged.
+> - **Script Content** (new, blob `content/{sha256}` in container `setup-profiles`, metadata
+>   `uploadedAt`, `kind`): immutable, stored once per hash, shared across versions and profiles,
+>   deleted by the daily sweep when uploaded more than 24 hours ago and referenced by no retained
+>   version.
+> - Effective locations of a script = `locationIds` intersected with the profile's current
+>   targeting (or all when `all`). A device runs a script when it is `all`, or its effective
+>   locations contain `session.locationId`.
+> - A schemaVersion 1 document (pre-release deployments only) is converted by Core the first time
+>   it is read: inline texts are written to content and the document is rewritten as
+>   schemaVersion 2 with the same version number and equal content.
+> - Section 8.2: at most 1500 items per report (was 500).
+
 ```json
 {
   "schemaVersion": 1,

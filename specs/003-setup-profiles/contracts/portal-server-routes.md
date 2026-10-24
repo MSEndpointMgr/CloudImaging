@@ -2,6 +2,20 @@
 
 **Feature**: [../spec.md](../spec.md) | **Model**: [../data-model.md](../data-model.md) | **Upstream**: [operator-and-core-api.md](operator-and-core-api.md)
 
+> **Amendment 2026-10-24** (research R18, wins over the text below): two routes are added to the
+> setup profiles router.
+>
+> | # | Method and path | Guard | Upstream | Success |
+> |---|---|---|---|---|
+> | 14 | `POST /api/setup-profiles/content?kind=script\|answerFile` | requireOperator | `POST /api/setup-profiles/content?kind=` | 200 `{ sha256, sizeBytes }` (plus `passes`, `problems` for `answerFile`) |
+> | 15 | `GET /api/setup-profiles/:profileId/content/:sha256` | requireTechnician, requireGuidParams | `GET /api/setup-profiles/{id}/content/{sha256}` | 200 text |
+>
+> Route 14 takes `application/octet-stream` through `express.raw({ limit: '25mb' })` mounted on
+> that path only, before the JSON parsers, and streams the bytes upstream; `:sha256` must be 64
+> lowercase hex characters, else 400 without an upstream call. Both routes join the role matrix
+> (14 with the write routes, 15 with the read routes). The 4 MB JSON limit on the router stays;
+> saves now carry references only.
+
 Every route passes Entra authentication, then the role guard, then (where shown)
 `requireGuidParams`. A refused request returns the existing 403 problem response; its `detail`
 names exactly the roles in the guard (spec 004 research R2).
