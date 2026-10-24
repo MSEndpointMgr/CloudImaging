@@ -73,30 +73,18 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
             start.ArgumentList.Add(argument);
         }
         start.Environment["SystemDrive"] = _root;
+
+        // Windows setup starts the runner with a clean environment. A test host launched from pwsh inherits
+        // PowerShell 7 module paths, and Windows PowerShell then fails to load its own Security module.
+        start.Environment.Remove("PSModulePath");
         using var process = Process.Start(start)!;
         var stdErr = process.StandardError.ReadToEndAsync();
         var stdOut = process.StandardOutput.ReadToEnd();
         process.WaitForExit(120_000).Should().BeTrue();
 
         // Every run logs at least a Start or End line; without one, the runner's own output says why.
-        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}. {Diagnose()}");
+        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}");
         return (process.ExitCode, File.ReadAllLines(_logPath));
-    }
-
-    private string Diagnose()
-    {
-        var command = $"$PSVersionTable.PSVersion.ToString(); $ExecutionContext.SessionState.LanguageMode; $env:SystemDrive; (Get-Item -LiteralPath '{RunnerPath}').Length; Get-ExecutionPolicy -List | Out-String; & '{RunnerPath}' -ManifestPath '{_manifestPath}' -LogPath '{_logPath}'; \"after: $LASTEXITCODE $(Test-Path -LiteralPath '{_logPath}')\"";
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command })
-        {
-            start.ArgumentList.Add(argument);
-        }
-        start.Environment["SystemDrive"] = _root;
-        using var process = Process.Start(start)!;
-        var stdErr = process.StandardError.ReadToEndAsync();
-        var stdOut = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(120_000);
-        return $"Diagnose exit {process.ExitCode}: {stdOut} | {stdErr.Result}";
     }
 
     [Fact]
