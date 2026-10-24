@@ -91,12 +91,18 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
     {
         var copy = Path.Combine(Path.GetTempPath(), "ci-runner-copy.ps1");
         File.Copy(RunnerPath, copy, overwrite: true);
+        var trivial = Path.Combine(Path.GetTempPath(), "ci-trivial.ps1");
+        var marker = Path.Combine(Path.GetTempPath(), "ci-trivial.txt");
+        File.WriteAllText(trivial, $"[CmdletBinding()]\r\nparam ([string] $X)\r\nBegin {{ }}\r\nProcess {{ Set-Content -LiteralPath '{marker}' -Value \"ran $X\" }}\r\nEnd {{ exit 0 }}\r\n");
         var args = $"-ManifestPath '{_manifestPath}' -LogPath '{_logPath}'";
         var command = string.Join("; ",
-            $"Get-Item -LiteralPath '{RunnerPath}' -Stream * | ForEach-Object {{ 'stream ' + $_.Stream }}",
-            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{RunnerPath}' {args} 2>&1; \"A file-on-D exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
-            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{copy}' {args} 2>&1; \"B file-copy exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
-            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& '{RunnerPath}' {args}\" 2>&1; \"C command exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"");
+            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{trivial}' -X y 2>&1; \"D trivial exit $LASTEXITCODE marker $(Test-Path -LiteralPath '{marker}') out $o\"",
+            $"$o = powershell.exe -NoProfile -ExecutionPolicy Bypass -File '{copy}' {args} 2>&1; \"E interactive exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
+            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{copy}' {args} -Verbose 2>&1; \"F verbose exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
+            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& '{copy}' {args}; exit $LASTEXITCODE\" 2>&1; \"C command exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}')\"",
+            "[Environment]::OSVersion.VersionString",
+            "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell' -ErrorAction SilentlyContinue | Out-String)",
+            "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell' -ErrorAction SilentlyContinue | Out-String)");
         var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command })
         {
