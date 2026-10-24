@@ -74,10 +74,13 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
         }
         start.Environment["SystemDrive"] = _root;
         using var process = Process.Start(start)!;
-        process.StandardOutput.ReadToEnd();
-        process.StandardError.ReadToEnd();
+        var stdErr = process.StandardError.ReadToEndAsync();
+        var stdOut = process.StandardOutput.ReadToEnd();
         process.WaitForExit(120_000).Should().BeTrue();
-        return (process.ExitCode, File.Exists(_logPath) ? File.ReadAllLines(_logPath) : []);
+
+        // Every run logs at least a Start or End line; without one, the runner's own output says why.
+        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}");
+        return (process.ExitCode, File.ReadAllLines(_logPath));
     }
 
     [Fact]
