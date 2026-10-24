@@ -321,7 +321,9 @@ Process {
             $NameField = "`"$($Item.name)`""
             $Outcome = "Failed"
             $Detail = ""
-            $Duration = ""
+
+            # An item that never started still gets a duration, so every log line has the same fields.
+            $Duration = "0.0 s"
             try {
                 if (-not $GuardReady) {
                     $Detail = "Not run because restarts could not be blocked on this device"
@@ -365,7 +367,7 @@ Process {
                         $Duration = "$($Stopwatch.Elapsed.TotalSeconds.ToString('0.0', [System.Globalization.CultureInfo]::InvariantCulture)) s"
                         if ($ExitCode -eq -1) {
                             $Detail = "Not run because restarts could not be blocked on this device"
-                            $Duration = ""
+                            $Duration = "0.0 s"
                         }
                         elseif ($ExitCode -eq -2) {
                             $Minutes = [int][Math]::Ceiling([int]$Item.timeoutSeconds / 60)
@@ -398,12 +400,7 @@ Process {
                 Outcome = $Outcome
                 Detail = $Detail
             })
-            if ($Duration -ne "") {
-                Write-RunnerLog -Fields @($ItemLabel, $Item.kind, $NameField, $Outcome, $Detail, $Duration)
-            }
-            else {
-                Write-RunnerLog -Fields @($ItemLabel, $Item.kind, $NameField, $Outcome, $Detail)
-            }
+            Write-RunnerLog -Fields @($ItemLabel, $Item.kind, $NameField, $Outcome, $Detail, $Duration)
         }
         Write-Progress -Activity "Cloud Imaging setup" -Completed
         Write-RunnerLog -Fields @("End", $ProfileLabel, "$($SucceededCount) succeeded, $($FailedCount) failed")

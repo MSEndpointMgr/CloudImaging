@@ -135,6 +135,18 @@ public sealed class SetupProfileContentLoaderTests
     }
 
     [Fact]
+    public async Task MalformedDescriptor_IsRetried_ThenFailsWithTheDownloadMessage()
+    {
+        var h = Create(_ => Json("{ not json"));
+
+        var result = await h.Loader.LoadAsync(SessionId);
+
+        result.Status.Should().Be(SetupProfileLoadStatus.Failed);
+        result.FailureMessage.Should().Be(SetupProfileContentLoader.DownloadFailedMessage);
+        h.Gateway.Requests.Should().HaveCount(3);
+    }
+
+    [Fact]
     public async Task RateLimited_WaitsRetryAfter_AndCountsAsAnAttempt()
     {
         var document = Document();

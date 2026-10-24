@@ -60,6 +60,51 @@ public sealed class SetupProfileIntegrationTests
     }
 
     [Fact]
+    public async Task Create_NameClaimedByACreateInFlight_IsRefused()
+    {
+        (await _bed.Profiles.TryReserveNameAsync("Lab", Guid.NewGuid(), _bed.Time.Now)).Should().BeTrue();
+
+        var result = await _bed.Service.CreateAsync(new CreateSetupProfileRequest { Name = "LAB", Targeting = At(_bed.Stockholm), Content = Content(), Actor = Actor() });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Conflict);
+        result.Detail.Should().Be("A setup profile named \"LAB\" already exists. Choose another name.");
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Create_NameClaimAbandonedByAFailedCreate_IsTakenOver()
+    {
+        await _bed.Profiles.TryReserveNameAsync("Lab", Guid.NewGuid(), _bed.Time.Now);
+        _bed.Time.Advance(TimeSpan.FromMinutes(6));
+
+        (await _bed.CreateAsync("Lab", At(_bed.Stockholm))).Name.Should().Be("Lab");
+    }
+
+    [Fact]
+    public async Task Rename_ToANameClaimedByACreateInFlight_IsRefused_AndTheOldNameStaysClaimed()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        await _bed.Profiles.TryReserveNameAsync("Lab", Guid.NewGuid(), _bed.Time.Now);
+
+        var result = await _bed.SaveAsync(profile, name: "lab");
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Conflict);
+        (await _bed.Profiles.TryReserveNameAsync("Stockholm", Guid.NewGuid(), _bed.Time.Now)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Rename_ReleasesTheOldName_AndDeleteReleasesTheNewOne()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        (await _bed.SaveAsync(profile, name: "Stockholm HQ profile")).Outcome.Should().Be(SetupProfileOutcome.Ok);
+        (await _bed.CreateAsync("Stockholm", At(_bed.Gothenburg))).Name.Should().Be("Stockholm");
+
+        await _bed.Service.DeleteAsync(profile.ProfileId, "ops@contoso.com");
+        (await _bed.CreateAsync("Stockholm HQ profile", At(_bed.Stockholm))).Name.Should().Be("Stockholm HQ profile");
+    }
+
+    [Fact]
     public async Task Assign_PinsTheResolvedProfileVersion_AndLaterSavesDoNotChangeIt()
     {
         var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
@@ -169,6 +214,31 @@ public sealed class SetupProfileIntegrationTests
         (await response.ReadJsonAsync()).GetProperty("detail").GetString().Should()
             .Be("Stockholm HQ is the only location of setup profile \"Stockholm\". Add another location to the profile or delete the profile, then try again.");
         (await _bed.Locations.GetByIdAsync(_bed.Stockholm)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task DeleteLocation_DetachesUnderTheProfileETag_SoAConcurrentSaveSeesAStaleProfile()
+    {
+        var profile = await _bed.CreateAsync("Stockholm and Gothenburg", At(_bed.Stockholm, _bed.Gothenburg));
+        var loaded = await _bed.Profiles.GetAsync(profile.ProfileId);
+        _bed.Time.Advance(TimeSpan.FromMinutes(1));
+
+        (await _bed.Service.DetachLocationAsync(_bed.Gothenburg, "Gothenburg Office", "ops2@contoso.com")).Should().BeNull();
+
+        (await _bed.Profiles.ReplaceAsync(loaded! with { LastModifiedBy = "ops@contoso.com" })).Should().BeFalse();
+        var latest = await _bed.Profiles.GetAsync(profile.ProfileId);
+        latest!.LastModifiedBy.Should().Be("ops2@contoso.com");
+        (await _bed.Targets.ListByProfileAsync(profile.ProfileId)).Should().Equal(_bed.Stockholm.ToString("D"));
+    }
+
+    [Fact]
+    public async Task RemoveDeletedLocation_NeverLeavesAProfileWithoutALocation()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        (await _bed.Service.RemoveDeletedLocationAsync(_bed.Stockholm, "Stockholm HQ", "ops@contoso.com")).Should().BeNull();
+
+        (await _bed.Targets.ListByProfileAsync(profile.ProfileId)).Should().ContainSingle();
     }
 
     [Fact]

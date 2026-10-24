@@ -193,7 +193,8 @@ public static class AnswerFileValidator
 
     private static int? DoctypeLine(string text)
     {
-        var blanked = Regex.Replace(text, "<!--.*?-->", m => Regex.Replace(m.Value, "[^\n]", " "), RegexOptions.Singleline, TimeSpan.FromSeconds(1));
+        // A DOCTYPE only counts in markup, so comments, CDATA and processing instructions are blanked first.
+        var blanked = Regex.Replace(text, @"<!--.*?-->|<!\[CDATA\[.*?\]\]>|<\?.*?\?>", m => Regex.Replace(m.Value, "[^\n]", " "), RegexOptions.Singleline, TimeSpan.FromSeconds(1));
         var index = blanked.IndexOf("<!DOCTYPE", StringComparison.Ordinal);
         return index < 0 ? null : blanked.AsSpan(0, index).Count('\n') + 1;
     }

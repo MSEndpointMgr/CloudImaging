@@ -123,7 +123,7 @@ public sealed partial class PrepareSetupService(
             else
             {
                 progress("Staging Windows setup work", Percent(processed, total));
-                queued = StageWindowsSetupWork(input, installers, setupScripts, items);
+                queued = StageWindowsSetupWork(input, installers, setupScripts, items, failDeployment);
                 processed += installers.Count + setupScripts.Count;
                 progress("Staging Windows setup work", Percent(processed, total));
             }
@@ -155,12 +155,18 @@ public sealed partial class PrepareSetupService(
     /// adds one item per installer and script. Returns how many items the runner will start; when
     /// none is left, the staging folder is removed so the answer file gets no runner command.
     /// </summary>
-    private int StageWindowsSetupWork(PrepareSetupInput input, IReadOnlyList<SpecializeInstaller> installers, List<SetupScript> setupScripts, List<ImagingStepItem> items)
+    private int StageWindowsSetupWork(PrepareSetupInput input, IReadOnlyList<SpecializeInstaller> installers, List<SetupScript> setupScripts, List<ImagingStepItem> items, bool failDeployment)
     {
+        bool Stopped() => failDeployment && items.Any(i => i.Outcome == StepItemOutcome.Failed);
         var readyInstallers = new List<SpecializeInstaller>();
         var installerItems = new List<int>();
         foreach (var installer in installers)
         {
+            if (Stopped())
+            {
+                items.Add(Item(items.Count, StepItemKind.DriverInstaller, installer.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
+                continue;
+            }
             var missing = installer.Files.FirstOrDefault(f => !files.FileExists(f.Path));
             installerItems.Add(items.Count);
             if (missing is not null)
@@ -185,6 +191,11 @@ public sealed partial class PrepareSetupService(
         for (var i = 0; i < setupScripts.Count; i++)
         {
             var script = setupScripts[i];
+            if (Stopped())
+            {
+                items.Add(Item(items.Count, StepItemKind.WindowsSetupScript, script.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
+                continue;
+            }
             var path = SetupRunnerManifestBuilder.ScriptPath(i + 1);
             scriptItems.Add(items.Count);
             try

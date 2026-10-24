@@ -95,6 +95,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<SetupProfileApiError | null>(null);
+  // The answer file text the server refused, so Save stays off until it changes.
+  const [refusedAnswerFile, setRefusedAnswerFile] = useState<string | null>(null);
   const [registryDialog, setRegistryDialog] = useState<RegistryDialog>(null);
   const [scriptDialog, setScriptDialog] = useState<ScriptDialogState>(null);
   const [answerDialog, setAnswerDialog] = useState<{ serverProblems: { code: string; line: number; message: string }[] } | null>(null);
@@ -152,7 +154,10 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const nameProblem = draft.name.trim().length === 0 || draft.name.trim().length > 100 ? 'Enter a profile name of 1 to 100 characters.' : null;
   const otherNames = useMemo(() => profiles.filter((p) => p.profileId !== profileId).map((p) => p.name.toLowerCase()), [profiles, profileId]);
   const duplicateNameProblem = otherNames.includes(draft.name.trim().toLowerCase()) ? `A setup profile named "${draft.name.trim()}" already exists. Choose another name.` : null;
-  const blocked = targetProblem ?? nameProblem ?? duplicateNameProblem;
+  const answerFileProblem = refusedAnswerFile !== null && draft.content.answerFile?.content === refusedAnswerFile
+    ? 'The answer file has problems. Fix them before saving.'
+    : null;
+  const blocked = targetProblem ?? nameProblem ?? duplicateNameProblem ?? answerFileProblem;
 
   // Leaving with unsaved changes asks first. In-app links are caught before the router sees them;
   // closing or reloading the tab gets the browser's own prompt.
@@ -254,7 +259,10 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       const error = err instanceof SetupProfileApiError ? err : new SetupProfileApiError('Could not reach the server.', 0);
       setSaveError(error);
       // Refused answer file problems belong next to the file, so the dialog opens with them.
-      if (error.errors.length > 0 && draft.content.answerFile) setAnswerDialog({ serverProblems: answerFileProblems(error.errors) });
+      if (error.errors.length > 0 && draft.content.answerFile) {
+        setRefusedAnswerFile(draft.content.answerFile.content);
+        setAnswerDialog({ serverProblems: answerFileProblems(error.errors) });
+      }
     } finally {
       setSaving(false);
     }
@@ -305,7 +313,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
               value={draft.name}
               maxLength={100}
               onChange={(e) => set({ name: e.target.value })}
-              className="h-9 max-w-md text-xl font-semibold"
+              className="max-w-md text-xl font-semibold"
             />
           )}
           {duplicateNameProblem && <p className="mt-1 text-sm text-destructive">{duplicateNameProblem}</p>}
@@ -655,7 +663,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
           retention={retention}
           canRestore={canManageSetupProfiles}
           onClose={() => setHistoryOpen(false)}
-          onView={(v) => { setHistoryOpen(false); leave(v === detail.currentVersion ? `/setup-profiles/${detail.profileId}` : `/setup-profiles/${detail.profileId}/versions/${String(v)}`); }}
+          onView={(v) => { setHistoryOpen(false); leave(`/setup-profiles/${detail.profileId}/versions/${String(v)}`); }}
           onRestored={(restored) => {
             setHistoryOpen(false);
             notify({ status: 'success', title: `Restored as version ${String(restored.currentVersion)}.` });

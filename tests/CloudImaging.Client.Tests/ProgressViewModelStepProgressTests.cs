@@ -19,7 +19,7 @@ public sealed class ProgressViewModelStepProgressTests
     {
         var vm = new ProgressViewModel();
         var raised = 0;
-        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProgressViewModel.StepPercent)) raised++; };
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(ProgressViewModel.StepPercent)) { raised++; } };
 
         vm.StepPercent = 42;
         vm.StepPercent = 42; // the download loop re-reports the same integer percent constantly

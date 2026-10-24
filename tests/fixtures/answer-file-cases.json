@@ -50,6 +50,16 @@
       "expected": [{ "code": "notWellFormed", "line": 3 }]
     },
     {
+      "name": "DOCTYPE text inside CDATA does not turn a later parse error into a DTD problem",
+      "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"specialize\"><![CDATA[<!DOCTYPE x>]]></settings>\n  <settings pass=\"oobeSystem\"></setting>\n</unattend>",
+      "expected": [{ "code": "notWellFormed", "line": 4 }]
+    },
+    {
+      "name": "DOCTYPE text inside a processing instruction does not turn a later parse error into a DTD problem",
+      "xml": "<?xml version=\"1.0\"?>\n<?note <!DOCTYPE x> ?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\"></setting>\n</unattend>",
+      "expected": [{ "code": "notWellFormed", "line": 4 }]
+    },
+    {
       "name": "a bare ampersand",
       "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\"><RegisteredOrganization>A & B</RegisteredOrganization></component>\n  </settings>\n</unattend>",
       "expected": [{ "code": "notWellFormed", "line": 4 }]

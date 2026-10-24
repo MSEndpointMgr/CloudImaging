@@ -68,13 +68,13 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         ILoggerFactory loggerFactory,
         string? cacheRoot = null)
     {
-        _gatewayClient      = gatewayClient;
-        _sessionId          = sessionId;
+        _gatewayClient = gatewayClient;
+        _sessionId = sessionId;
         _deviceSerialNumber = deviceSerialNumber;
-        _status             = initialStatus;
-        _progress           = progress;
-        _navigateToResults  = navigateToResults;
-        _loggerFactory      = loggerFactory;
+        _status = initialStatus;
+        _progress = progress;
+        _navigateToResults = navigateToResults;
+        _loggerFactory = loggerFactory;
 
         // Resolve immediately if possible: an explicit override (tests) always wins, otherwise try
         // the USB boot media's dedicated CACHE-labelled NTFS partition (created by
@@ -104,7 +104,9 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             {
                 var letter = volume["DriveLetter"]?.ToString();
                 if (!string.IsNullOrWhiteSpace(letter))
+                {
                     return letter;
+                }
             }
         }
         catch (ManagementException)
@@ -250,7 +252,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 var cacheService = new Services.ImageCacheService(_cacheRoot, _loggerFactory.CreateLogger<Services.ImageCacheService>());
                 var cacheMaintenance = new Services.ImageCacheMaintenanceService(cacheService, _loggerFactory.CreateLogger<Services.ImageCacheMaintenanceService>());
                 await cacheMaintenance.RunAsync(ct);
-                if (cacheMaintenance.CacheWriteEnabled) cache = cacheService;
+                if (cacheMaintenance.CacheWriteEnabled)
+                {
+                    cache = cacheService;
+                }
             }
 
             var downloadService = new Services.ImageDownloadService(
@@ -390,7 +395,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(deviceArchitecture, ct);
             // A mismatched WinRE would leave the OS unrecoverable; the OS image's own embedded WinRE always matches.
             if (recoveryInfo is not null && !Services.ArchitecturePreflight.IsRecoveryImageCompatible(deviceArchitecture, recoveryInfo.Architecture))
+            {
                 recoveryInfo = null;
+            }
+
             var recoveryService = new Services.RecoveryImageService(pipelineLoggerFactory.CreateLogger<Services.RecoveryImageService>());
 
             if (recoveryInfo is null)
@@ -623,11 +631,17 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     /// </summary>
     private void CleanUpTargetVolumeCacheRoot()
     {
-        if (!_cacheRootIsTargetVolume || _cacheRoot is null) return;
+        if (!_cacheRootIsTargetVolume || _cacheRoot is null)
+        {
+            return;
+        }
 
         try
         {
-            if (Directory.Exists(_cacheRoot)) Directory.Delete(_cacheRoot, recursive: true);
+            if (Directory.Exists(_cacheRoot))
+            {
+                Directory.Delete(_cacheRoot, recursive: true);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -665,7 +679,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             catch (OperationCanceledException) { return false; }
 
             var next = await _gatewayClient.GetSessionStatusAsync(_sessionId, ct);
-            if (next is not null) _status = next;
+            if (next is not null)
+            {
+                _status = next;
+            }
         }
 
         FireAndForgetLogUpload();

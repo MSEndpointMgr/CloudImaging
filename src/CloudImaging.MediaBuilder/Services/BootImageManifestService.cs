@@ -57,10 +57,14 @@ public static class BootImageManifestService
         }
 
         if (logoBytes is { Length: > 0 })
+        {
             componentChecksums["brandingLogo"] = Sha256Hex(logoBytes);
+        }
 
         if (pfxBytes is { Length: > 0 })
+        {
             componentChecksums["bootMediaCertificate"] = Sha256Hex(pfxBytes);
+        }
 
         return new BootImageManifest
         {

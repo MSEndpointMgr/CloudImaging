@@ -25,11 +25,11 @@ export function TargetingBadges({ all, locationIds, locations, allLabel, editNou
   if (names.length === 0) return <span className="text-sm text-muted-foreground">No locations</span>;
   const rest = names.slice(1);
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <Badge variant="outline">{names[0]}</Badge>
+    <div className="flex min-w-0 flex-nowrap items-center gap-1">
+      <Badge variant="outline" className="min-w-0"><span className="truncate" title={names[0]}>{names[0]}</span></Badge>
       {rest.length > 0 && (
-        <Tooltip content={`${describeNames(rest.slice(0, 5))}${rest.length > 5 ? ` and ${String(rest.length - 5)} more` : ''}. Edit the ${editNoun} to see and search all ${String(names.length)}.`}>
-          <Badge variant="muted" tabIndex={0} className="focus-visible:ring-2 focus-visible:ring-ring">+{rest.length} more</Badge>
+        <Tooltip className="shrink-0" content={`${describeNames(rest.slice(0, 5))}${rest.length > 5 ? ` and ${String(rest.length - 5)} more` : ''}. Edit the ${editNoun} to see and search all ${String(names.length)}.`}>
+          <Badge variant="muted" tabIndex={0} className="shrink-0 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring">+{rest.length} more</Badge>
         </Tooltip>
       )}
     </div>

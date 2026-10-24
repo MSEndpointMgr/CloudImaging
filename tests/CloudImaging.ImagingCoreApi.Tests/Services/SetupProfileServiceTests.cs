@@ -72,6 +72,33 @@ public sealed class SetupProfileServiceTests
     }
 
     [Fact]
+    public async Task Create_VersionUploadFails_ReleasesTheTargetedLocations()
+    {
+        _bed.Blobs.FailNextUpload = true;
+
+        var act = () => _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        await act.Should().ThrowAsync<Azure.RequestFailedException>();
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().BeNull();
+        (await _bed.Service.ListAsync()).Should().BeEmpty();
+        (await _bed.CreateAsync("Stockholm", At(_bed.Stockholm))).CurrentVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Save_VersionUploadFails_RestoresTheTargetingItHadBefore()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        _bed.Blobs.FailNextUpload = true;
+
+        var act = () => _bed.SaveAsync(detail, Content(Value(data: "0")), At(_bed.Gothenburg));
+
+        await act.Should().ThrowAsync<Azure.RequestFailedException>();
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().Be(detail.ProfileId);
+        (await _bed.Targets.GetOwnerAsync(_bed.Gothenburg.ToString("D"))).Should().BeNull();
+        (await _bed.Service.GetDetailAsync(detail.ProfileId))!.CurrentVersion.Should().Be(1);
+    }
+
+    [Fact]
     public async Task Create_AllDevicesTaken_IsRefused()
     {
         await _bed.CreateAsync("Everywhere", AllDevices);
@@ -263,6 +290,22 @@ public sealed class SetupProfileServiceTests
 
         await _bed.SaveAsync(current, Content(Value(data: "8")));
         (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().BeEquivalentTo([8, 7, 6, 5, 4]);
+    }
+
+    [Fact]
+    public async Task Sweep_AfterLoweringRetention_DeletesNothingUntilTheNextSave()
+    {
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        for (var i = 2; i <= 7; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+
+        var swept = await _bed.Service.SweepAsync();
+
+        swept.Should().Be(0);
+        (await _bed.Versions.ListAsync(current.ProfileId)).Should().HaveCount(7);
     }
 
     [Fact]

@@ -189,16 +189,16 @@ public sealed partial class LocationFunctions
         }
 
         var ct = context.CancellationToken;
-        var refused = await _setupProfiles.CheckLocationDeletionAsync(locationId, ct);
+        var existing = await _repo.GetByIdAsync(locationId, ct);
+        var changedBy = System.Web.HttpUtility.ParseQueryString(req.Url.Query)["changedBy"];
+        var refused = await _setupProfiles.DetachLocationAsync(locationId, existing?.Name ?? "This location", changedBy, ct);
         if (refused is not null)
         {
             return await SetupProfileFunctions.ProblemAsync(req, new SetupProfileResult(SetupProfileOutcome.Conflict, Detail: refused), ct);
         }
 
-        var existing = await _repo.GetByIdAsync(locationId, ct);
         await _repo.DeleteAsync(locationId, ct);
         var networks = await _wifiNetworks.RemoveLocationAsync(locationId, ct);
-        var changedBy = System.Web.HttpUtility.ParseQueryString(req.Url.Query)["changedBy"];
         await _setupProfiles.RemoveDeletedLocationAsync(locationId, existing?.Name ?? "A location", changedBy, ct);
         LogDeleted(_logger, locationId, networks.Count);
 

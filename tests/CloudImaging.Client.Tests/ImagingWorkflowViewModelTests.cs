@@ -82,9 +82,9 @@ public sealed class ImagingWorkflowViewModelTests
     {
         var vm = new ProgressViewModel();
 
-        vm.UpdateStep(ImagingStepName.FormatDisk,    ImagingStepStatus.Completed);
+        vm.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.Completed);
         vm.UpdateStep(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress);
-        vm.UpdateStep(ImagingStepName.ApplyImage,    ImagingStepStatus.Pending);
+        vm.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.Pending);
 
         vm.Steps.Single(s => s.Step == ImagingStepName.FormatDisk).State.Should().Be(ProgressStepState.Done, "FormatDisk is Completed");
         vm.Steps.Single(s => s.Step == ImagingStepName.DownloadImage).State.Should().Be(ProgressStepState.Active, "DownloadImage is InProgress");

@@ -1,5 +1,5 @@
-using System.IO;
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -122,11 +122,11 @@ public sealed partial class BootImageGenerationService
         Func<bool>? isElevatedOverride = null,
         Func<string, string, System.Diagnostics.Process>? startElevatedProcessOverride = null)
     {
-        _logger                    = logger;
-        _operatorApiClient         = operatorApiClient;
-        _brandingLogoEmbedService  = brandingLogoEmbedService;
-        _isElevated                = isElevatedOverride ?? ElevationHelper.IsElevated;
-        _startElevatedProcess      = startElevatedProcessOverride ?? ElevationHelper.StartElevatedProcess;
+        _logger = logger;
+        _operatorApiClient = operatorApiClient;
+        _brandingLogoEmbedService = brandingLogoEmbedService;
+        _isElevated = isElevatedOverride ?? ElevationHelper.IsElevated;
+        _startElevatedProcess = startElevatedProcessOverride ?? ElevationHelper.StartElevatedProcess;
     }
 
     /// <summary>
@@ -184,7 +184,9 @@ public sealed partial class BootImageGenerationService
         // the elevated worker via the same file-based IPC used for everything else (see
         // RunElevatedChildProcessAsync).
         if (pfxBytes is null && _operatorApiClient is not null)
+        {
             pfxBytes = await ResolveBootMediaCertificateAsync(ct);
+        }
 
         byte[]? logoBytes = _brandingLogoEmbedService is not null
             ? await _brandingLogoEmbedService.TryDownloadLogoAsync(ct)
@@ -195,7 +197,9 @@ public sealed partial class BootImageGenerationService
             : null;
 
         if (_isElevated())
+        {
             return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
+        }
 
         return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
     }
@@ -216,7 +220,9 @@ public sealed partial class BootImageGenerationService
         {
             var pfx = await _operatorApiClient!.GetBootMediaCertPfxAsync(ct);
             if (pfx is not { Length: > 0 })
+            {
                 throw new InvalidOperationException("The Operator API returned an empty boot media certificate.");
+            }
 
             LogCertRetrieved(_logger);
             return pfx;
@@ -246,7 +252,9 @@ public sealed partial class BootImageGenerationService
         {
             var endpoints = await _operatorApiClient!.GetEndpointConfigurationAsync(ct);
             if (string.IsNullOrWhiteSpace(endpoints.DeviceGatewayApiBaseUrl))
+            {
                 throw new InvalidOperationException("The Operator API returned an empty Device Gateway base URL.");
+            }
 
             LogDeviceGatewayUrlResolved(_logger, endpoints.DeviceGatewayApiBaseUrl);
             return endpoints.DeviceGatewayApiBaseUrl;
@@ -275,10 +283,10 @@ public sealed partial class BootImageGenerationService
         var ipcDir = Path.Combine(Path.GetTempPath(), $"{ElevatedIpcDirPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(ipcDir);
         ElevationHelper.WriteOwnerMarker(ipcDir);
-        var paramsFile   = Path.Combine(ipcDir, "params.json");
+        var paramsFile = Path.Combine(ipcDir, "params.json");
         var progressFile = Path.Combine(ipcDir, "progress.txt");
-        var resultFile   = Path.Combine(ipcDir, "result.json");
-        var cancelFile   = Path.Combine(ipcDir, "cancel.flag");
+        var resultFile = Path.Combine(ipcDir, "result.json");
+        var cancelFile = Path.Combine(ipcDir, "cancel.flag");
 
         try
         {
@@ -355,7 +363,9 @@ public sealed partial class BootImageGenerationService
                     var linesBefore = linesRead;
                     linesRead = TailProgress(progressFile, linesRead);
                     if (linesRead > linesBefore)
+                    {
                         lastActivityUtc = DateTime.UtcNow;
+                    }
 
                     if (ct.IsCancellationRequested)
                     {
@@ -386,7 +396,10 @@ public sealed partial class BootImageGenerationService
             if (!File.Exists(resultFile))
             {
                 if (ct.IsCancellationRequested)
+                {
                     throw new OperationCanceledException("Boot image generation was cancelled.", ct);
+                }
+
                 throw new InvalidOperationException(
                     "The elevated boot image generation process exited without reporting a result.");
             }
@@ -398,7 +411,10 @@ public sealed partial class BootImageGenerationService
             if (!result.Success)
             {
                 if (ct.IsCancellationRequested)
+                {
                     throw new OperationCanceledException(result.Error ?? "Boot image generation was cancelled.", ct);
+                }
+
                 throw new InvalidOperationException(result.Error ?? "Boot image generation failed in the elevated process.");
             }
 
@@ -427,7 +443,9 @@ public sealed partial class BootImageGenerationService
             {
                 var parts = line.Split('\t', 3);
                 if (parts.Length == 3 && int.TryParse(parts[1], out var percent))
+                {
                     ReportProgress(parts[2], percent);
+                }
             }
             else if (line.StartsWith("L\t", StringComparison.Ordinal))
             {
@@ -484,8 +502,8 @@ public sealed partial class BootImageGenerationService
                 }
             }
             svc.ProgressChanged += (_, e) => Append($"P\t{e.Percent}\t{e.Message}");
-            svc.LogMessage      += (_, line) => Append($"L\t{line}");
-            svc.LogHeartbeat    += (_, line) => Append($"H\t{line}");
+            svc.LogMessage += (_, line) => Append($"L\t{line}");
+            svc.LogHeartbeat += (_, line) => Append($"H\t{line}");
 
             // "K" lines are never displayed; they only prove to the parent that this worker is alive.
             _ = KeepAliveAsync(() => Append("K"), cts.Token);
@@ -535,7 +553,9 @@ public sealed partial class BootImageGenerationService
         {
             var dir = Path.GetDirectoryName(resultFile);
             if (!string.IsNullOrEmpty(dir))
+            {
                 Directory.CreateDirectory(dir);
+            }
 
             await File.WriteAllTextAsync(resultFile, JsonSerializer.Serialize(result));
         }
@@ -631,9 +651,11 @@ public sealed partial class BootImageGenerationService
             ReportProgress("Verifying ADK installation", 5);
             var adkPath = FindAdkPath();
             if (adkPath is null)
+            {
                 throw new InvalidOperationException(
                     "Windows ADK with WinPE add-on is not installed. " +
                     "Download both from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
+            }
 
             // Checked before any copying so an unusable option fails in seconds, not after copype and the DISM mount.
             if (includeAutopilotTooling
@@ -658,7 +680,7 @@ public sealed partial class BootImageGenerationService
 
             var winPeRoot = Path.Combine(workDir, "WinPE");
             await CopyWinPeFilesAsync(adkPath, winPeRoot, architecture, ct);
-            var wimPath  = Path.Combine(winPeRoot, "media", "sources", "boot.wim");
+            var wimPath = Path.Combine(winPeRoot, "media", "sources", "boot.wim");
 
             // copype still lays out the media folder and boot files; only the image itself is swapped.
             var bootImageBase = windowsSourcePath is null ? BootImageBase.WindowsPE : BootImageBase.WindowsRE;
@@ -721,7 +743,9 @@ public sealed partial class BootImageGenerationService
                     {
                         var target = Path.Combine(mountDir, "Windows", "System32", dll);
                         if (!File.Exists(target))
+                        {
                             File.Copy(Path.Combine(recoveryFilesDir, dll), target);
+                        }
                     }
                 }
 
@@ -811,7 +835,9 @@ public sealed partial class BootImageGenerationService
                 // even cancellation): never leave the WIM mounted. Discard rather than
                 // commit, since a partially-customized mount shouldn't be treated as good.
                 if (mounted)
+                {
                     await TryDiscardMountAsync(mountDir, ct);
+                }
             }
 
             ReportProgress("Copying output WIM", 88);
@@ -824,7 +850,7 @@ public sealed partial class BootImageGenerationService
             // x64 and ARM64 builds in the same output folder never collide or get confused for
             // one another outside the product (todo/arm64-support.md, Milestone 1 §1).
             var baseSlug = bootImageBase == BootImageBase.WindowsRE ? "-winre" : string.Empty;
-            var outputWim  = Path.Combine(outputDirectory, $"cloud-imaging-boot-{MachineArchitecturePlatform.Slug(architecture)}{baseSlug}-{timestamp}.wim");
+            var outputWim = Path.Combine(outputDirectory, $"cloud-imaging-boot-{MachineArchitecturePlatform.Slug(architecture)}{baseSlug}-{timestamp}.wim");
             DiskSpaceGuard.EnsureFreeSpace(outputDirectory, new FileInfo(wimPath).Length, "copy the finished boot image to the output folder");
             File.Copy(wimPath, outputWim, overwrite: false);
 
@@ -842,7 +868,9 @@ public sealed partial class BootImageGenerationService
             // finds (and re-reports) on the next run, so surface it now instead of leaving the
             // technician to wonder why that count keeps growing.
             if (!TryDeleteDirectoryRecursive(workDir, out var failureReason))
+            {
                 RaiseLog($"Could not fully clean up working folder \"{workDir}\". It will be swept up on the next run. ({failureReason})");
+            }
         }
     }
 
@@ -880,7 +908,9 @@ public sealed partial class BootImageGenerationService
     {
         ct.ThrowIfCancellationRequested();
         if (MountCleanup.FindOrphanedWorkDirs().Count == 0)
+        {
             return;
+        }
 
         ReportProgress("Cleaning up after an interrupted run", 2);
         await MountCleanup.SweepAsync(RaiseLog);
@@ -902,7 +932,9 @@ public sealed partial class BootImageGenerationService
             {
                 // Its elevated worker may still be writing here even if the parent GUI exited.
                 if (ElevationHelper.IsOwnedByLiveProcess(dir))
+                {
                     continue;
+                }
 
                 TryDeleteDirectoryRecursive(dir);
             }
@@ -988,7 +1020,9 @@ public sealed partial class BootImageGenerationService
             .ToArray();
 
         if (missing.Length == 0)
+        {
             return;
+        }
 
         RaiseLog($"FAILED: Deployment Tools \"{oscdimgDir}\" is missing: {string.Join(", ", missing)}");
         throw new InvalidOperationException(
@@ -1017,7 +1051,7 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     private async Task InjectWmiOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, CancellationToken ct)
     {
-        var ocsDir  = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
+        var ocsDir = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
         var baseCab = Path.Combine(ocsDir, "WinPE-WMI.cab");
         var langCab = Path.Combine(ocsDir, "en-us", "WinPE-WMI_en-us.cab");
 
@@ -1053,7 +1087,7 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     private async Task InjectNetFxOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, CancellationToken ct)
     {
-        var ocsDir  = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
+        var ocsDir = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
         var baseCab = Path.Combine(ocsDir, "WinPE-NetFx.cab");
         var langCab = Path.Combine(ocsDir, "en-us", "WinPE-NetFx_en-us.cab");
 
@@ -1134,12 +1168,15 @@ public sealed partial class BootImageGenerationService
     {
         var clientExePath = Path.Combine(clientBinariesPath, "CloudImaging.Client.exe");
         if (!File.Exists(clientExePath))
+        {
             throw new InvalidOperationException(
                 $"\"{clientBinariesPath}\" does not contain CloudImaging.Client.exe. Point the local client " +
                 "binaries source at a folder produced by \"dotnet publish -r win-x64 --self-contained\" (or a " +
                 "downloaded cloud-imaging-client release), not a plain build output folder.");
+        }
 
         if (!File.Exists(Path.Combine(clientBinariesPath, "hostfxr.dll")))
+        {
             throw new InvalidOperationException(
                 $"\"{clientBinariesPath}\" looks like a framework-dependent build (no hostfxr.dll present) " +
                 "rather than a self-contained publish. WinPE has no .NET runtime installed, so a " +
@@ -1147,14 +1184,17 @@ public sealed partial class BootImageGenerationService
                 "Desktop Runtime to run this application.\" Publish it with \"dotnet publish " +
                 "src\\CloudImaging.Client\\CloudImaging.Client.csproj -c Release -r win-x64 --self-contained\" " +
                 "(matching the release pipeline), or use \"Auto-download latest from GitHub Releases\" instead.");
+        }
 
         var actualArchitecture = PeArchitectureInspector.ReadArchitecture(clientExePath);
         if (actualArchitecture is not null && actualArchitecture != architecture)
+        {
             throw new InvalidOperationException(
                 $"\"{clientExePath}\" is a {MachineArchitecturePlatform.Slug(actualArchitecture.Value)} build, but " +
                 $"{MachineArchitecturePlatform.Slug(architecture)} is selected as the target architecture. Point " +
                 $"the local client binaries source at a {MachineArchitecturePlatform.Slug(architecture)} publish, " +
                 "or change the selected target architecture to match.");
+        }
     }
 
     private async Task CopyWinPeFilesAsync(string adkPath, string winPeRoot, MachineArchitecture architecture, CancellationToken ct)
@@ -1184,9 +1224,9 @@ public sealed partial class BootImageGenerationService
         // architecture is passed to copype.
         var env = new Dictionary<string, string>
         {
-            ["WinPERoot"]   = Path.Combine(adkPath, "Windows Preinstallation Environment"),
+            ["WinPERoot"] = Path.Combine(adkPath, "Windows Preinstallation Environment"),
             ["OSCDImgRoot"] = Path.Combine(adkPath, "Deployment Tools", hostArch, "Oscdimg"),
-            ["DISMRoot"]    = Path.Combine(adkPath, "Deployment Tools", hostArch, "DISM"),
+            ["DISMRoot"] = Path.Combine(adkPath, "Deployment Tools", hostArch, "DISM"),
         };
 
         // cmd.exe's /C switch only preserves quotes verbatim when the command tail contains
@@ -1217,11 +1257,15 @@ public sealed partial class BootImageGenerationService
     private async Task<int> InjectDriversAsync(string mountDir, string? driverRootPath, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(driverRootPath))
+        {
             return 0;
+        }
 
         if (!Directory.Exists(driverRootPath))
+        {
             throw new DirectoryNotFoundException(
                 $"Driver root folder not found: {driverRootPath}");
+        }
 
         var infCount = Directory
             .EnumerateFiles(driverRootPath, "*.inf", SearchOption.AllDirectories)
@@ -1254,11 +1298,15 @@ public sealed partial class BootImageGenerationService
     private int InjectSupportTools(string mountDir, string? toolsRootPath, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(toolsRootPath))
+        {
             return 0;
+        }
 
         if (!Directory.Exists(toolsRootPath))
+        {
             throw new DirectoryNotFoundException(
                 $"Support tools folder not found: {toolsRootPath}");
+        }
 
         var fileCount = Directory.EnumerateFiles(toolsRootPath, "*", SearchOption.AllDirectories).Count();
         if (fileCount == 0)
@@ -1315,18 +1363,20 @@ public sealed partial class BootImageGenerationService
     {
         var startInfo = new System.Diagnostics.ProcessStartInfo
         {
-            FileName               = exe,
-            Arguments              = args,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
+            FileName = exe,
+            Arguments = args,
+            UseShellExecute = false,
+            CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError  = true,
+            RedirectStandardError = true,
         };
 
         if (environment is not null)
         {
             foreach (var (key, value) in environment)
+            {
                 startInfo.EnvironmentVariables[key] = value;
+            }
         }
 
         // Surface the exact command being executed in the live UI log (FR-051d).
@@ -1334,7 +1384,7 @@ public sealed partial class BootImageGenerationService
 
         using var process = new System.Diagnostics.Process
         {
-            StartInfo           = startInfo,
+            StartInfo = startInfo,
             EnableRaisingEvents = true,
         };
 
@@ -1357,12 +1407,16 @@ public sealed partial class BootImageGenerationService
             // inconsistent once every line shares one flush-left log column.
             var trimmed = data.Trim();
             if (DismProgressBarLineRegex.IsMatch(trimmed))
+            {
                 RaiseHeartbeat(trimmed);
+            }
             else
+            {
                 RaiseLog(trimmed);
+            }
         }
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) HandleOutputLine(e.Data); };
-        process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) HandleOutputLine(e.Data); };
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { HandleOutputLine(e.Data); } };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { HandleOutputLine(e.Data); } };
 
         var tcs = new TaskCompletionSource<int>();
         process.Exited += (_, _) => tcs.TrySetResult(process.ExitCode);
@@ -1387,7 +1441,7 @@ public sealed partial class BootImageGenerationService
         if (code != 0)
         {
             var captured = output.ToString().Trim();
-            var detail   = captured.Length > 0 ? $" Output: {captured}" : string.Empty;
+            var detail = captured.Length > 0 ? $" Output: {captured}" : string.Empty;
             RaiseLog($"FAILED: {System.IO.Path.GetFileName(exe)} exited with code {code}.");
             throw new InvalidOperationException($"{exe} exited with code {code}.{detail}");
         }
@@ -1420,7 +1474,9 @@ public sealed partial class BootImageGenerationService
     private static void CopyDirectory(string source, string dest, CancellationToken ct, bool applyClientExclusions = true)
     {
         foreach (var dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+        {
             Directory.CreateDirectory(dir.Replace(source, dest));
+        }
 
         foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
         {
@@ -1439,10 +1495,14 @@ public sealed partial class BootImageGenerationService
                 // file (the more/bigger the injected Client binaries and drivers, the longer it
                 // takes): it isn't a sign that anything has stalled.
                 if (string.Equals(Path.GetExtension(file), ".pdb", StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
 
                 if (ExcludedFromBootImage.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase))
+                {
                     continue;
+                }
             }
 
             File.Copy(file, file.Replace(source, dest), overwrite: true);
@@ -1461,11 +1521,15 @@ public sealed partial class BootImageGenerationService
     public static async Task StampDeviceGatewayBaseUrlAsync(string clientDestDir, string? baseUrl, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
+        {
             return;
+        }
 
         var appSettingsPath = Path.Combine(clientDestDir, "appsettings.json");
         if (!File.Exists(appSettingsPath))
+        {
             return;
+        }
 
         var json = await File.ReadAllTextAsync(appSettingsPath, ct);
         var root = JsonNode.Parse(json)?.AsObject() ?? [];
@@ -1491,7 +1555,9 @@ public sealed partial class BootImageGenerationService
     {
         var appSettingsPath = Path.Combine(clientDestDir, "appsettings.json");
         if (!File.Exists(appSettingsPath))
+        {
             return;
+        }
 
         var json = await File.ReadAllTextAsync(appSettingsPath, ct);
         var root = JsonNode.Parse(json)?.AsObject() ?? [];

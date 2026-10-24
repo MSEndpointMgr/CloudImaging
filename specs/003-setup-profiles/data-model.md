@@ -49,6 +49,12 @@ portal TypeScript types mirror them in `client/src/lib/setupProfiles.ts`.
 **State**: Active (normal), Deleted (tombstone). No other states; a profile always has a current
 version and always targets something.
 
+**Name reservations** (same table, PK `name`, RK lowercase hex SHA-256 of the trimmed, upper-cased
+name; fields `profileId`, `reservedAt`): created before a create or rename writes anything, so two
+concurrent requests cannot both take a name. Released on rename, delete and any failed create or
+save. A reservation whose holder is deleted or renamed, or that has no profile row after 5
+minutes, is taken over.
+
 ---
 
 ## 3. Targeting index (table `SetupProfileTargets`, PK `target`)
@@ -83,6 +89,7 @@ Rules:
 | `restoredFrom` | int? | Set when this version was created by Restore. |
 | `duplicatedFrom` | object? | `{ profileId, profileName, version }` on version 1 of a duplicated profile. |
 | `changeSummary` | object | See 4.3. Computed by Core against the previous version. |
+| `prunePending` | bool | Set by prune on a version outside the retention window that an active session pins; the lifecycle sweep deletes it once nothing pins it. Cleared when a later prune finds it inside the window. |
 
 Derived at read time (not stored): `isCurrent`, `inUseCount` (sessions in the `active` partition of
 `DeviceSessions` whose `setupProfileId` and `setupProfileVersion` match).

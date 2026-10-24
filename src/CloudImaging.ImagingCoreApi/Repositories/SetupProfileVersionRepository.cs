@@ -40,6 +40,9 @@ public sealed record SetupProfileVersionRecord
 
     /// <summary>What changed compared with the previous version.</summary>
     public SetupProfileChangeSummary ChangeSummary { get; init; } = new();
+
+    /// <summary>Outside the retention window at the last prune and kept only because a running deployment pinned it.</summary>
+    public bool PrunePending { get; init; }
 }
 
 /// <summary>Serialized version document with its hash and size.</summary>
@@ -139,6 +142,10 @@ public sealed class SetupProfileVersionRepository
         return versions;
     }
 
+    /// <summary>Sets whether the last prune kept this version only because a running deployment pinned it.</summary>
+    public async Task SetPrunePendingAsync(SetupProfileVersionRecord record, bool prunePending, CancellationToken ct = default) =>
+        await _table.UpdateEntityAsync(ToEntity(record with { PrunePending = prunePending }), ETag.All, TableUpdateMode.Replace, ct);
+
     /// <summary>Deletes a version: the blob first, then the row, so a row never points at nothing for long.</summary>
     public async Task DeleteAsync(SetupProfileVersionRecord record, CancellationToken ct = default)
     {
@@ -162,6 +169,7 @@ public sealed class SetupProfileVersionRepository
         ["RestoredFrom"] = r.RestoredFrom,
         ["DuplicatedFromJson"] = r.DuplicatedFrom is null ? null : JsonSerializer.Serialize(r.DuplicatedFrom, JsonOptions),
         ["ChangeSummaryJson"] = JsonSerializer.Serialize(r.ChangeSummary, JsonOptions),
+        ["PrunePending"] = r.PrunePending,
     };
 
     private static SetupProfileVersionRecord FromEntity(TableEntity e) => new()
@@ -176,6 +184,7 @@ public sealed class SetupProfileVersionRepository
         RestoredFrom = e.GetInt32("RestoredFrom"),
         DuplicatedFrom = Deserialize<SetupProfileDuplicatedFrom>(e.GetString("DuplicatedFromJson")),
         ChangeSummary = Deserialize<SetupProfileChangeSummary>(e.GetString("ChangeSummaryJson")) ?? new(),
+        PrunePending = e.GetBoolean("PrunePending") ?? false,
     };
 
     private static T? Deserialize<T>(string? json) where T : class

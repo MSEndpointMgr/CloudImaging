@@ -120,7 +120,8 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
     {
         WriteManifest(CmdItem(1, "Missing", "/c exit 0", new SetupRunnerManifestFile(@"Windows\Setup\CloudImaging\Scripts\09.ps1", "00")));
 
-        Run().Log.Should().Contain(l => l.Contains("\"Missing\"  Failed  File does not match the manifest", StringComparison.Ordinal));
+        Run().Log.Should().Contain(l => l.Contains("\"Missing\"  Failed  File does not match the manifest", StringComparison.Ordinal)
+            && l.EndsWith("  0.0 s", StringComparison.Ordinal) && l.Split("  ").Length == 7);
     }
 
     [Fact]

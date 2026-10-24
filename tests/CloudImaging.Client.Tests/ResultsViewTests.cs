@@ -269,10 +269,10 @@ public sealed class ResultsViewModelTests
     // ── Mutual exclusivity ────────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(ResultsViewModel.Outcome.Success,       true,  false, false, false)]
-    [InlineData(ResultsViewModel.Outcome.Failure,       false, true,  false, false)]
-    [InlineData(ResultsViewModel.Outcome.NotAuthorized, false, false, true,  false)]
-    [InlineData(ResultsViewModel.Outcome.Expired,       false, false, false, true)]
+    [InlineData(ResultsViewModel.Outcome.Success, true, false, false, false)]
+    [InlineData(ResultsViewModel.Outcome.Failure, false, true, false, false)]
+    [InlineData(ResultsViewModel.Outcome.NotAuthorized, false, false, true, false)]
+    [InlineData(ResultsViewModel.Outcome.Expired, false, false, false, true)]
     public void Outcomes_AreExclusive(
         ResultsViewModel.Outcome outcome,
         bool expectSuccess, bool expectFailure, bool expectNotAuthorized, bool expectExpired)

@@ -71,6 +71,7 @@ describe('Portal frontend: setup profile history', () => {
     expect(versionsFootnote(1, null)).toBe('1 version. The most recent are kept, plus older ones running deployments still use.');
     expect(restoreImpact(6, 7)).toBe("Saves version 6's registry values, scripts, answer file and failure handling as version 8. Devices imaged from now on get it; running deployments keep the version they started with. Targeting is not changed.");
     expect(readOnlyVersionBanner(5, 8)).toBe('Version 5, read-only. The current version is 8.');
+    expect(readOnlyVersionBanner(8, 8)).toBe('Version 8, read-only. This is the current version.');
   });
 
   it('keeps version entries out of the Targeting tab', () => {

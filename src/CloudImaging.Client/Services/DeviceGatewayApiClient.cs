@@ -111,7 +111,10 @@ public sealed partial class DeviceGatewayApiClient
 
         var result = await response.Content.ReadFromJsonAsync<CreateSessionResponse>(JsonOptions, ct);
         if (result is not null)
+        {
             LogCreateSessionResponse(_logger, result.SessionId, result.State);
+        }
+
         return result;
     }
 
@@ -122,7 +125,9 @@ public sealed partial class DeviceGatewayApiClient
     private DeviceRegistrationPayload SignPayload(DeviceRegistrationPayload payload)
     {
         if (_signingCertificate is null)
+        {
             return payload;
+        }
 
         using var rsa = _signingCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
@@ -136,18 +141,18 @@ public sealed partial class DeviceGatewayApiClient
         {
             SerialNumber = payload.SerialNumber,
             Manufacturer = payload.Manufacturer,
-            Model        = payload.Model,
-            MacAddress   = payload.MacAddress,
-            Hardware     = payload.Hardware,
-            LocationId   = payload.LocationId,
+            Model = payload.Model,
+            MacAddress = payload.MacAddress,
+            Hardware = payload.Hardware,
+            LocationId = payload.LocationId,
             LocationName = payload.LocationName,
             Architecture = payload.Architecture,
             SecurityPosture = payload.SecurityPosture,
             ProofOfPossession = new DeviceProofOfPossession
             {
-                Nonce        = nonce,
+                Nonce = nonce,
                 TimestampUtc = timestampUtc,
-                Signature    = Convert.ToBase64String(signature),
+                Signature = Convert.ToBase64String(signature),
             },
         };
     }
@@ -178,7 +183,10 @@ public sealed partial class DeviceGatewayApiClient
 
         var result = await response.Content.ReadFromJsonAsync<SessionStatusResponse>(JsonOptions, ct);
         if (result is not null)
+        {
             LogSessionStatusResponse(_logger, sessionId, result.State, result.CurrentStep, result.OverallProgressPercent);
+        }
+
         return result;
     }
 
@@ -331,7 +339,9 @@ public sealed partial class DeviceGatewayApiClient
     {
         const string path = "/api/v1/wifi-networks";
         if (_signingCertificate is null)
+        {
             return null;
+        }
 
         using var rsa = _signingCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
@@ -412,7 +422,10 @@ public sealed partial class DeviceGatewayApiClient
 
         var result = await response.Content.ReadFromJsonAsync<LogUploadUrlResponse>(JsonOptions, ct);
         if (result is not null)
+        {
             LogLogUploadUrlIssued(_logger, sessionId, result.FileName);
+        }
+
         return result;
     }
 
@@ -427,7 +440,9 @@ public sealed partial class DeviceGatewayApiClient
     {
         const string path = "/api/v1/autopilot/availability";
         if (_http.BaseAddress is null)
+        {
             return new GatewayProbeResult(GatewayReachability.NotConfigured, null);
+        }
 
         try
         {
@@ -534,7 +549,9 @@ public sealed partial class DeviceGatewayApiClient
     private AutopilotHashSubmission SignAutopilotSubmission(AutopilotHashSubmission submission)
     {
         if (_signingCertificate is null)
+        {
             return submission;
+        }
 
         using var rsa = _signingCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
@@ -572,7 +589,11 @@ public sealed partial class DeviceGatewayApiClient
     /// </summary>
     private static string RedactSasUrl(string? url)
     {
-        if (string.IsNullOrEmpty(url)) return "(none)";
+        if (string.IsNullOrEmpty(url))
+        {
+            return "(none)";
+        }
+
         var queryIndex = url.IndexOf('?');
         return queryIndex >= 0 ? url[..queryIndex] + "?<redacted>" : url;
     }
@@ -797,7 +818,9 @@ public sealed class DeviceGatewayApiException : Exception
             var trimmed = body.Trim();
             var isHtml = string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith('<');
             if (detail is null && !isHtml && trimmed.Length <= MaxPlainTextDetailLength && !trimmed.Contains('\n'))
+            {
                 detail = trimmed;
+            }
         }
 
         return new DeviceGatewayApiException(response.StatusCode, problemType, detail);

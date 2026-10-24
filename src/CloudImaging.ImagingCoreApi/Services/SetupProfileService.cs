@@ -214,15 +214,18 @@ public sealed partial class SetupProfileService
         }
 
         var (adds, deletes) = TargetChanges([], request.Targeting);
+        if (!await _profiles.TryReserveNameAsync(name, profileId, now, ct))
+        {
+            return DuplicateName(name);
+        }
         var targetResult = await _targets.ApplyChangesAsync(profileId, adds, deletes, ct);
         if (!targetResult.Succeeded)
         {
+            await _profiles.ReleaseNameAsync(name, profileId, CancellationToken.None);
             return await TargetConflictAsync(targetResult, locations, ct);
         }
 
         var content = Normalize(request.Content, null, profileId, 1, now, actor.Upn);
-        var row = await WriteVersionAsync(content, null, now, actor.Upn, restoredFrom: null, duplicatedFrom, ct);
-
         var record = new SetupProfileRecord
         {
             ProfileId = profileId,
@@ -237,14 +240,21 @@ public sealed partial class SetupProfileService
             LastModifiedAt = now,
             LastModifiedBy = actor.Upn,
         };
+        SetupProfileVersionRecord? row = null;
         try
         {
+            row = await WriteVersionAsync(content, null, now, actor.Upn, restoredFrom: null, duplicatedFrom, ct);
             await _profiles.AddAsync(record, ct);
         }
         catch
         {
-            await _targets.RevertChangesAsync(profileId, adds, deletes, ct);
-            await _versions.DeleteAsync(row, CancellationToken.None);
+            // Otherwise the locations stay claimed by a profile that was never stored.
+            await _targets.RevertChangesAsync(profileId, adds, deletes, CancellationToken.None);
+            await _profiles.ReleaseNameAsync(name, profileId, CancellationToken.None);
+            if (row is not null)
+            {
+                await _versions.DeleteAsync(row, CancellationToken.None);
+            }
             throw;
         }
 
@@ -331,20 +341,43 @@ public sealed partial class SetupProfileService
             }
         }
 
-        // 4. Targeting, as one transaction.
+        // 4. Name claim, then targeting as one transaction.
+        var renamed = !string.Equals(name, profile.Name.Trim(), StringComparison.OrdinalIgnoreCase);
+        if (renamed && !await _profiles.TryReserveNameAsync(name, profileId, now, ct))
+        {
+            return DuplicateName(name);
+        }
+        async Task UndoAsync()
+        {
+            if (renamed)
+            {
+                await _profiles.ReleaseNameAsync(name, profileId, CancellationToken.None);
+            }
+        }
         var owners = await _targets.ListAllAsync(ct);
         var before = TargetingFrom(owners, profileId);
         var (adds, deletes) = TargetChanges(Keys(before), targeting!);
         var targetResult = await _targets.ApplyChangesAsync(profileId, adds, deletes, ct);
         if (!targetResult.Succeeded)
         {
+            await UndoAsync();
             return await TargetConflictAsync(targetResult, locations, ct);
         }
 
         // 5. Version document and row.
-        if (next is not null)
+        SetupProfileVersionRecord? written = null;
+        try
         {
-            await WriteVersionAsync(next, current, now, actor.Upn, restoredFrom, duplicatedFrom: null, ct);
+            if (next is not null)
+            {
+                written = await WriteVersionAsync(next, current, now, actor.Upn, restoredFrom, duplicatedFrom: null, ct);
+            }
+        }
+        catch
+        {
+            await _targets.RevertChangesAsync(profileId, adds, deletes, CancellationToken.None);
+            await UndoAsync();
+            throw;
         }
 
         // 6. Profile row, guarded by the ETag from step 1.
@@ -365,12 +398,32 @@ public sealed partial class SetupProfileService
             LastModifiedAt = now,
             LastModifiedBy = actor.Upn,
         };
-        if (!await _profiles.ReplaceAsync(updated, ct))
+        bool replaced;
+        try
+        {
+            replaced = await _profiles.ReplaceAsync(updated, ct);
+        }
+        catch
+        {
+            await _targets.RevertChangesAsync(profileId, adds, deletes, CancellationToken.None);
+            await UndoAsync();
+            if (written is not null)
+            {
+                await _versions.DeleteAsync(written, CancellationToken.None);
+            }
+            throw;
+        }
+        if (!replaced)
         {
             // The orphaned version, if any, is removed by the next prune.
             await _targets.RevertChangesAsync(profileId, adds, deletes, ct);
+            await UndoAsync();
             var latest = await _profiles.GetAsync(profileId, ct);
             return latest is null || latest.IsDeleted ? SetupProfileResult.NotFound() : SetupProfileResult.Conflict(StaleMessage(latest));
+        }
+        if (renamed)
+        {
+            await _profiles.ReleaseNameAsync(profile.Name, profileId, CancellationToken.None);
         }
 
         // 7. History and audit.
@@ -423,6 +476,7 @@ public sealed partial class SetupProfileService
 
         var keys = await _targets.ListByProfileAsync(profileId, ct);
         await _targets.ApplyChangesAsync(profileId, [], keys, ct);
+        await _profiles.ReleaseNameAsync(profile.Name, profileId, ct);
         var actor = new SetupProfileActor { Upn = changedBy };
         await AddHistoryAsync(profileId, SetupProfileHistoryKind.Deleted, actor, now, "Deleted", ct: ct);
         LogAudit(_logger, "deleted", profileId, changedBy, null, profile.CurrentVersion);
@@ -432,31 +486,58 @@ public sealed partial class SetupProfileService
     // ── Location deletion ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Checks a location before it is deleted. Refuses when it is a profile's only target, so a
-    /// profile never targets nothing; nothing is changed in that case.
+    /// Removes a location that is about to be deleted from the profile that targets it and records
+    /// the change, or returns why the deletion is refused (it is the profile's only location). The
+    /// profile row's ETag orders this against a concurrent save, so a profile never targets nothing.
     /// </summary>
-    public async Task<string?> CheckLocationDeletionAsync(Guid locationId, CancellationToken ct = default)
+    public async Task<string?> DetachLocationAsync(Guid locationId, string locationName, string? changedBy, CancellationToken ct = default)
     {
         var key = SetupProfileTargetRepository.LocationKey(locationId);
-        if (await _targets.GetOwnerAsync(key, ct) is not { } owner)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            return null;
+            if (await _targets.GetOwnerAsync(key, ct) is not { } owner)
+            {
+                return null;
+            }
+            var profile = await _profiles.GetAsync(owner, ct);
+            if (profile is null || profile.IsDeleted)
+            {
+                await _targets.DeleteAsync(key, ct);
+                return null;
+            }
+            var keys = await _targets.ListByProfileAsync(owner, ct);
+            if (keys.Count <= 1)
+            {
+                return $"{locationName} is the only location of setup profile \"{profile.Name}\". Add another location to the profile or delete the profile, then try again.";
+            }
+
+            await _targets.ApplyChangesAsync(owner, [], [key], ct);
+            var now = _time.GetUtcNow();
+            var actor = new SetupProfileActor { Upn = string.IsNullOrWhiteSpace(changedBy) ? "unknown" : changedBy };
+            if (await _profiles.ReplaceAsync(profile with { LastModifiedAt = now, LastModifiedBy = actor.Upn }, ct))
+            {
+                await AddHistoryAsync(owner, SetupProfileHistoryKind.LocationDeleted, actor, now, $"Removed {locationName} because the location was deleted", removed: [locationId], ct: ct);
+                return null;
+            }
+
+            // A save changed the profile meanwhile: put the location back and look again.
+            await _targets.RevertChangesAsync(owner, [], [key], ct);
         }
-        var keys = await _targets.ListByProfileAsync(owner, ct);
-        if (keys.Count > 1)
-        {
-            return null;
-        }
-        var profile = await _profiles.GetAsync(owner, ct);
-        var location = await _locations.GetByIdAsync(locationId, ct);
-        return $"{location?.Name ?? "This location"} is the only location of setup profile \"{profile?.Name}\". Add another location to the profile or delete the profile, then try again.";
+        return $"A setup profile that targets {locationName} is being changed. Try again.";
     }
 
-    /// <summary>Removes a deleted location from the profile that targeted it and records the change.</summary>
+    /// <summary>
+    /// Removes a location deleted after <see cref="DetachLocationAsync"/> from a profile that targeted
+    /// it again meanwhile, unless that would leave the profile with no location.
+    /// </summary>
     public async Task<Guid?> RemoveDeletedLocationAsync(Guid locationId, string locationName, string? changedBy, CancellationToken ct = default)
     {
         var key = SetupProfileTargetRepository.LocationKey(locationId);
         if (await _targets.GetOwnerAsync(key, ct) is not { } owner)
+        {
+            return null;
+        }
+        if ((await _targets.ListByProfileAsync(owner, ct)).Count <= 1)
         {
             return null;
         }
@@ -481,9 +562,20 @@ public sealed partial class SetupProfileService
             var pinned = await _sessions.CountActiveBySetupProfileVersionAsync(profileId, ct);
             var rows = await _versions.ListAsync(profileId, ct);
             var kept = rows.Where(r => r.Version <= currentVersion).Take(retention).Select(r => r.Version).ToHashSet();
-            foreach (var row in rows.Where(r => !kept.Contains(r.Version) && !pinned.ContainsKey(r.Version) && r.Version != currentVersion))
+            foreach (var row in rows.Where(r => !kept.Contains(r.Version) && r.Version != currentVersion))
             {
-                await _versions.DeleteAsync(row, ct);
+                if (!pinned.ContainsKey(row.Version))
+                {
+                    await _versions.DeleteAsync(row, ct);
+                }
+                else if (!row.PrunePending)
+                {
+                    await _versions.SetPrunePendingAsync(row, true, ct);
+                }
+            }
+            foreach (var row in rows.Where(r => r.PrunePending && (kept.Contains(r.Version) || r.Version == currentVersion)))
+            {
+                await _versions.SetPrunePendingAsync(row, false, ct);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -514,7 +606,18 @@ public sealed partial class SetupProfileService
         }
         foreach (var profile in await _profiles.ListActiveAsync(ct))
         {
-            await PruneAsync(profile.ProfileId, profile.CurrentVersion, ct);
+            // Only versions the last prune already let go; a changed retention waits for the next save.
+            var pending = (await _versions.ListAsync(profile.ProfileId, ct)).Where(r => r.PrunePending && r.Version != profile.CurrentVersion).ToList();
+            if (pending.Count == 0)
+            {
+                continue;
+            }
+            var pinned = await _sessions.CountActiveBySetupProfileVersionAsync(profile.ProfileId, ct);
+            foreach (var row in pending.Where(r => !pinned.ContainsKey(r.Version)))
+            {
+                await _versions.DeleteAsync(row, ct);
+                deleted++;
+            }
         }
         return deleted;
     }
@@ -548,7 +651,7 @@ public sealed partial class SetupProfileService
 
         if (await _profiles.FindActiveByNameAsync(name, ct) is { } existing && existing.ProfileId != profileId)
         {
-            return SetupProfileResult.Conflict($"A setup profile named \"{name}\" already exists. Choose another name.");
+            return DuplicateName(name);
         }
         return null;
     }
@@ -789,6 +892,9 @@ public sealed partial class SetupProfileService
 
     private static string StaleMessage(SetupProfileRecord latest) =>
         string.Create(CultureInfo.InvariantCulture, $"This profile was changed by {latest.LastModifiedBy ?? "another user"} at {latest.LastModifiedAt.UtcDateTime:yyyy-MM-dd HH:mm}. Reload to see their changes.");
+
+    private static SetupProfileResult DuplicateName(string name) =>
+        SetupProfileResult.Conflict($"A setup profile named \"{name}\" already exists. Choose another name.");
 
     private Task AddHistoryAsync(
         Guid profileId, SetupProfileHistoryKind kind, SetupProfileActor actor, DateTimeOffset at, string change,

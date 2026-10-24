@@ -539,6 +539,7 @@ export function restoreImpact(version: number, currentVersion: number): string {
 }
 
 export function readOnlyVersionBanner(version: number, currentVersion: number): string {
+  if (version === currentVersion) return `Version ${String(version)}, read-only. This is the current version.`;
   return `Version ${String(version)}, read-only. The current version is ${String(currentVersion)}.`;
 }
 

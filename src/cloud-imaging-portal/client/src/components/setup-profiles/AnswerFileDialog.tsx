@@ -43,11 +43,13 @@ export default function AnswerFileDialog({ content, serverProblems, onClose, onA
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
-    if (file.size > MAX_ANSWER_FILE_BYTES * 2) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const bom = bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+    if (bytes.length - bom > MAX_ANSWER_FILE_BYTES) {
       setUploadError('The file is larger than 256 KB. Choose a smaller answer file.');
       return;
     }
-    const value = (await file.text()).replace(/\r\n/g, '\n');
+    const value = new TextDecoder('utf-8').decode(bytes).replace(/\r\n/g, '\n');
     change(value);
     setResult(validateAnswerFile(value));
     setChecked(value);

@@ -72,7 +72,9 @@ public static class WindowsRecoverySource
     public static SourceProblem? EvaluateRecovery(WimImageInfo recovery, WimImageInfo? adk)
     {
         if (recovery.Build is not { } build || adk?.Build is not { } adkBuild || build == adkBuild)
+        {
             return null;
+        }
 
         return new SourceProblem(
             string.Create(CultureInfo.InvariantCulture, $"Windows RE build {build} in this source doesn't match Windows ADK build {adkBuild}."),
@@ -88,7 +90,9 @@ public static class WindowsRecoverySource
         var adkWim = AdkWinPeWimPath(adkPath, architecture);
         var adk = adkWim is not null ? await WimMetadataReader.ReadImageInfoAsync(adkWim, ct) : null;
         if (recovery is not null && EvaluateRecovery(recovery, adk) is { } problem)
+        {
             throw new InvalidOperationException($"{problem.Problem} {problem.Fix}");
+        }
     }
 
     /// <summary>
@@ -98,11 +102,15 @@ public static class WindowsRecoverySource
     public static async Task<SourceCheckResult> CheckAsync(string sourcePath, MachineArchitecture target, CancellationToken ct = default)
     {
         if (!File.Exists(sourcePath))
+        {
             return Fail("The file does not exist.", "Choose a Windows ISO or install.wim.");
+        }
 
         var adkPath = BootImageGenerationService.FindAdkPath();
         if (adkPath is null)
+        {
             return Fail("The Windows ADK with the Windows PE add-on is not installed.", "Install both, then check again.");
+        }
 
         try
         {
@@ -116,7 +124,9 @@ public static class WindowsRecoverySource
 
             var info = await WimMetadataReader.ReadImageInfoAsync(source.InstallWimPath, ct);
             if (info is null)
+            {
                 return Fail("The install.wim could not be read.", "Choose another Windows installation source.");
+            }
 
             var adkWim = AdkWinPeWimPath(adkPath, target);
             var adkInfo = adkWim is not null ? await WimMetadataReader.ReadImageInfoAsync(adkWim, ct) : null;
@@ -143,7 +153,9 @@ public static class WindowsRecoverySource
     public static async Task<string> ExtractAsync(string sourcePath, string workDir, string destinationDir, Func<string, CancellationToken, Task> runDism, CancellationToken ct)
     {
         if (sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
+        {
             MountCleanup.RecordDiskImage(workDir, sourcePath);
+        }
 
         await using var source = await OpenAsync(sourcePath, ct);
         var installWim = source.InstallWimPath
@@ -160,7 +172,9 @@ public static class WindowsRecoverySource
 
             var winre = Path.Combine(mountDir, "Windows", "System32", "Recovery", "Winre.wim");
             if (!File.Exists(winre))
+            {
                 throw new InvalidOperationException("The Windows image has no Windows\\System32\\Recovery\\Winre.wim. Choose another Windows installation source.");
+            }
 
             var winreCopy = Path.Combine(destinationDir, "winre.wim");
             File.Copy(winre, winreCopy, overwrite: true);
@@ -170,7 +184,10 @@ public static class WindowsRecoverySource
             {
                 var path = Path.Combine(mountDir, "Windows", "System32", dll);
                 if (!File.Exists(path))
+                {
                     throw new InvalidOperationException($"The Windows image has no {dll}, which Wi-Fi in Windows RE needs. Choose another Windows installation source.");
+                }
+
                 var copy = Path.Combine(destinationDir, dll);
                 File.Copy(path, copy, overwrite: true);
                 File.SetAttributes(copy, FileAttributes.Normal);
@@ -189,7 +206,9 @@ public static class WindowsRecoverySource
                 catch { /* the sweep at the start of the next run undoes it */ }
             }
             if (sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
+            {
                 MountCleanup.Forget(workDir, sourcePath);
+            }
         }
     }
 
@@ -205,7 +224,10 @@ public static class WindowsRecoverySource
     {
         var ocs = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
         if (!Directory.Exists(ocs))
+        {
             return [];
+        }
+
         return [.. Directory.GetDirectories(ocs)
             .Select(Path.GetFileName)
             .OfType<string>()
@@ -219,7 +241,9 @@ public static class WindowsRecoverySource
     private static async Task<OpenedSource> OpenAsync(string sourcePath, CancellationToken ct)
     {
         if (!sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
+        {
             return new OpenedSource(sourcePath, null, false);
+        }
 
         var (root, wasAttached) = await AttachIsoAsync(sourcePath, ct);
         var wim = Path.Combine(root, "sources", "install.wim");
@@ -233,7 +257,10 @@ public static class WindowsRecoverySource
         var output = await RunPowerShellAsync(script, ct);
         var parts = output.Trim().Split('|');
         if (parts.Length != 2 || parts[1].Length != 1)
+        {
             throw new InvalidOperationException("Windows could not mount the ISO.");
+        }
+
         return ($"{parts[1]}:\\", string.Equals(parts[0], "True", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -254,7 +281,10 @@ public static class WindowsRecoverySource
         var stderr = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
         if (process.ExitCode != 0)
+        {
             throw new InvalidOperationException((await stderr).Trim() is { Length: > 0 } error ? error : "PowerShell failed.");
+        }
+
         return await stdout;
     }
 
@@ -267,12 +297,17 @@ public static class WindowsRecoverySource
         public async ValueTask DisposeAsync()
         {
             if (isoToDetach is null)
+            {
                 return;
+            }
+
             try
             {
                 using var process = Process.Start(new ProcessStartInfo("powershell.exe", MountCleanup.DismountDiskImageArguments(isoToDetach)) { UseShellExecute = false, CreateNoWindow = true });
                 if (process is not null)
+                {
                     await process.WaitForExitAsync();
+                }
             }
             catch { /* the sweep at the start of the next elevated run detaches it */ }
         }

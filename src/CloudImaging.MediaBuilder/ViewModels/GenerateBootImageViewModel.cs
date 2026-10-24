@@ -82,10 +82,10 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         Func<MachineArchitecture, string?>? autopilotToolingCheck = null,
         Func<string, MachineArchitecture, CancellationToken, Task<SourceCheckResult>>? sourceCheck = null)
     {
-        _genService           = genService;
-        _authService          = authService;
+        _genService = genService;
+        _authService = authService;
         _gitHubReleasesClient = gitHubReleasesClient;
-        _navigateBack         = navigateBack;
+        _navigateBack = navigateBack;
         _autopilotToolingCheck = autopilotToolingCheck ?? AutopilotTooling.GetUnavailableReason;
         _checkSource = sourceCheck ?? WindowsRecoverySource.CheckAsync;
         RefreshAutopilotToolingAvailability();
@@ -122,14 +122,14 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _genService.LogMessage += (_, line) => OnUi(() => AppendLogLine(line));
         _genService.LogHeartbeat += (_, line) => OnUi(() => UpdateHeartbeatLine(line));
 
-        GenerateCommand    = new RelayCommand(async _ => await GenerateAsync(), _ => CanGenerate);
-        CancelCommand      = new RelayCommand(_ => Cancel(), _ => IsGenerating && !IsCancelling);
-        BrowseCommand      = new RelayCommand(_ => BrowseLocalPath());
+        GenerateCommand = new RelayCommand(async _ => await GenerateAsync(), _ => CanGenerate);
+        CancelCommand = new RelayCommand(_ => Cancel(), _ => IsGenerating && !IsCancelling);
+        BrowseCommand = new RelayCommand(_ => BrowseLocalPath());
         BrowseOutputCommand = new RelayCommand(_ => BrowseOutputFolder());
         BrowseDriverRootCommand = new RelayCommand(_ => BrowseDriverRoot());
         BrowseToolsRootCommand = new RelayCommand(_ => BrowseToolsRoot());
         BrowseWindowsSourceCommand = new RelayCommand(_ => BrowseWindowsSource(), _ => !IsGenerating && !IsCheckingSource);
-        BackCommand        = new RelayCommand(_ => _navigateBack(), _ => !IsGenerating);
+        BackCommand = new RelayCommand(_ => _navigateBack(), _ => !IsGenerating);
         NewGenerationCommand = new RelayCommand(_ => ResetToConfiguration(), _ => !IsGenerating);
         OpenResultFolderCommand = new RelayCommand(_ => OpenOutputFolder(), _ => HasResultFilePath);
         CopyResultPathCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ResultFilePath), _ => HasResultFilePath);
@@ -315,7 +315,10 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private void SetWindowsRe(bool value)
     {
         if (_useWindowsRe == value)
+        {
             return;
+        }
+
         _useWindowsRe = value;
         OnPropertyChanged(nameof(IsWindowsPeSelected));
         OnPropertyChanged(nameof(IsWindowsReSelected));
@@ -349,7 +352,10 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         }
 
         if (version != _sourceCheckVersion)
+        {
             return;
+        }
+
         SetSourceCheck(result);
         IsCheckingSource = false;
     }
@@ -567,7 +573,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             }
 
             if (activeIndex >= 0)
+            {
                 return $"Step {activeIndex + 1} of {Steps.Count}";
+            }
 
             var doneOrSkipped = Steps.Count(s => s.State is GenerationStepState.Done or GenerationStepState.Skipped);
             return $"Step {Math.Min(doneOrSkipped + 1, Steps.Count)} of {Steps.Count}";
@@ -581,16 +589,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public bool ShowProgressView => IsGenerating || IsComplete || HasError || WasCancelled;
 
     /// <summary>True once generation has ended in failure.</summary>
-    public bool HasError    => ErrorMessage is not null;
+    public bool HasError => ErrorMessage is not null;
 
     /// <summary>
     /// Progress-view heading, reflecting the current end state instead of always reading
     /// "Generating Boot Image" once generation has actually finished, failed, or been cancelled.
     /// </summary>
     public string ProgressTitle =>
-        IsComplete    ? "Generated Boot Image" :
-        HasError      ? "Generation Failed" :
-        WasCancelled  ? "Generation Cancelled" :
+        IsComplete ? "Generated Boot Image" :
+        HasError ? "Generation Failed" :
+        WasCancelled ? "Generation Cancelled" :
         "Generating Boot Image";
 
     /// <summary>
@@ -598,9 +606,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// result dialog, so the header stays one line once generation has finished.
     /// </summary>
     public string ProgressSubtitle =>
-        IsComplete    ? "Upload the WIM in the portal under Boot Images to publish it." :
-        HasError      ? "The log below shows where generation stopped." :
-        WasCancelled  ? "Temporary files were cleaned up." :
+        IsComplete ? "Upload the WIM in the portal under Boot Images to publish it." :
+        HasError ? "The log below shows where generation stopped." :
+        WasCancelled ? "Temporary files were cleaned up." :
         "Mounting the WinPE image and injecting the Cloud Imaging Client. This can take a few minutes.";
 
     /// <summary>True when the current configuration is valid enough to start generation.</summary>
@@ -612,11 +620,11 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         && (!IsWindowsReSelected || SourceCheckPassed);
 
     /// <summary>Starts boot image generation.</summary>
-    public ICommand GenerateCommand     { get; }
+    public ICommand GenerateCommand { get; }
     /// <summary>Cancels an in-progress generation.</summary>
-    public ICommand CancelCommand       { get; }
+    public ICommand CancelCommand { get; }
     /// <summary>Browses for the local client binaries source folder.</summary>
-    public ICommand BrowseCommand       { get; }
+    public ICommand BrowseCommand { get; }
     /// <summary>Browses for the output folder.</summary>
     public ICommand BrowseOutputCommand { get; }
     /// <summary>Browses for the driver injection root folder.</summary>
@@ -626,7 +634,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// <summary>Browses for the Windows ISO or install.wim a Windows RE base is built from.</summary>
     public ICommand BrowseWindowsSourceCommand { get; }
     /// <summary>Navigates back without starting generation.</summary>
-    public ICommand BackCommand         { get; }
+    public ICommand BackCommand { get; }
     /// <summary>Resets the view model back to the configuration screen for another generation.</summary>
     public ICommand NewGenerationCommand { get; }
     /// <summary>Opens File Explorer with the generated WIM pre-selected.</summary>
@@ -645,7 +653,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private void OpenOutputFolder()
     {
         if (ResultFilePath is null)
+        {
             return;
+        }
 
         try
         {
@@ -663,18 +673,22 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private async Task GenerateAsync()
     {
         ClearLog();
-        foreach (var step in Steps) step.State = GenerationStepState.Pending;
+        foreach (var step in Steps)
+        {
+            step.State = GenerationStepState.Pending;
+        }
+
         OnPropertyChanged(nameof(StepProgressLabel));
         ProgressPercent = 0;
         ProgressMessage = "Starting";
-        ResultFilePath  = null;
+        ResultFilePath = null;
         IsResultDialogOpen = false;
-        IsGenerating  = true;
-        IsCancelling  = false;
-        IsComplete    = false;
-        WasCancelled  = false;
+        IsGenerating = true;
+        IsCancelling = false;
+        IsComplete = false;
+        WasCancelled = false;
         ErrorReference = null;
-        ErrorMessage  = null;
+        ErrorMessage = null;
 
         _generationStartedAtUtc = DateTime.UtcNow;
         UpdateElapsedTimeText();
@@ -713,13 +727,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 ct: _cts.Token);
 
             ResultFilePath = result.WimPath;
-            StatusMessage  = string.Create(CultureInfo.CurrentCulture,
+            StatusMessage = string.Create(CultureInfo.CurrentCulture,
                 $"{(SelectedArchitecture == MachineArchitecture.Arm64 ? "ARM64" : "x64")}{(IsWindowsReSelected ? " \u00B7 Windows RE (Wi-Fi)" : string.Empty)} \u00B7 {FormatSize(new FileInfo(result.WimPath).Length)}. Upload it in the portal under Boot Images to publish it.");
-            IsComplete     = true;
+            IsComplete = true;
         }
         catch (OperationCanceledException)
         {
-            WasCancelled    = true;
+            WasCancelled = true;
             ProgressMessage = "Generation cancelled.";
             AppendLogLine("Generation cancelled. Cleaning up (unmounting/discarding any in-progress WIM mount, deleting temp files).");
             MarkActiveStepFailed();
@@ -738,7 +752,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 OperatorApiErrorDescription.Describe(ex),
                 () => SupportReferenceCode.ForMediaBuilder("GENBOOT", _currentStage).ToString());
             ErrorReference = reference;
-            ErrorMessage   = reason;
+            ErrorMessage = reason;
             AppendLogLine($"FAILED: {reason} (Error reference: {reference})");
             MarkActiveStepFailed();
         }
@@ -773,14 +787,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private void Cancel()
     {
         if (_cts is null || IsCancelling)
+        {
             return;
+        }
 
         // Set IsCancelling (disables the button, reverses the spinner) and log the request
         // immediately, at the moment the user clicks Cancel: the later "Generation cancelled"
         // banner only appears once cleanup has actually finished unwinding, which can take a
         // few seconds (e.g. a DISM unmount already in flight), so without this the button would
         // look unresponsive and the log would show nothing happened until cleanup completes.
-        IsCancelling    = true;
+        IsCancelling = true;
         ProgressMessage = "Cancelling. Waiting for cleanup to finish";
         AppendLogLine("Cancellation requested by user. Waiting for cleanup to finish.");
         _cts.Cancel();
@@ -795,9 +811,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 // Per-chunk byte progress (Replace) overwrites the same line in place, same as the
                 // DISM heartbeat ticker below, instead of flooding the log with one line per tick.
                 if (e.Replace)
+                {
                     UpdateHeartbeatLine(e.Message);
+                }
                 else
+                {
                     AppendLogLine(e.Message);
+                }
             });
 
         _gitHubReleasesClient.ProgressChanged += OnProgress;
@@ -815,21 +835,27 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select Client binaries folder" };
         if (dialog.ShowDialog() == true)
+        {
             LocalSourcePath = dialog.FolderName;
+        }
     }
 
     private void BrowseOutputFolder()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select output folder" };
         if (dialog.ShowDialog() == true)
+        {
             OutputFolderPath = dialog.FolderName;
+        }
     }
 
     private void BrowseDriverRoot()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select driver root folder (optional)" };
         if (dialog.ShowDialog() == true)
+        {
             DriverRootPath = dialog.FolderName;
+        }
     }
 
     private void BrowseWindowsSource()
@@ -840,21 +866,25 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             Filter = "Windows installation source (*.iso;*.wim)|*.iso;*.wim",
         };
         if (dialog.ShowDialog() == true)
+        {
             WindowsSourcePath = dialog.FileName;
+        }
     }
 
     private void BrowseToolsRoot()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Select support tools folder (optional)" };
         if (dialog.ShowDialog() == true)
+        {
             ToolsRootPath = dialog.FolderName;
+        }
     }
 
     /// <summary>Returns to the configuration view to start a fresh generation.</summary>
     private void ResetToConfiguration()
     {
         IsResultDialogOpen = false;
-        IsComplete   = false;
+        IsComplete = false;
         WasCancelled = false;
         ErrorReference = null;
         ErrorMessage = null;
@@ -862,7 +892,11 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         ProgressPercent = 0;
         ProgressMessage = string.Empty;
         ClearLog();
-        foreach (var step in Steps) step.State = GenerationStepState.Pending;
+        foreach (var step in Steps)
+        {
+            step.State = GenerationStepState.Pending;
+        }
+
         OnPropertyChanged(nameof(StepProgressLabel));
     }
 
@@ -876,7 +910,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     {
         var trimmed = line.TrimEnd();
         if (string.IsNullOrWhiteSpace(trimmed) || trimmed.All(c => c is '=' or '-'))
+        {
             return;
+        }
 
         // A real line follows any pending heartbeat tick: the next heartbeat should start
         // a fresh line rather than overwrite this one.
@@ -893,9 +929,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private void UpdateHeartbeatLine(string line)
     {
         if (_heartbeatLineStart >= 0)
+        {
             _logBuilder.Length = _heartbeatLineStart;
+        }
         else
+        {
             _heartbeatLineStart = _logBuilder.Length;
+        }
 
         _logBuilder.Append(TimestampPrefix()).Append(line.TrimEnd()).Append(Environment.NewLine);
         OnPropertyChanged(nameof(LogText));
@@ -917,9 +957,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     {
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null || dispatcher.CheckAccess())
+        {
             action();
+        }
         else
+        {
             dispatcher.Invoke(action);
+        }
     }
 
     private static IEnumerable<GenerationStep> CreateSteps() =>
@@ -960,9 +1004,13 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 step.State = (noDriversToInject || noToolsToCopy || windowsPeBase) ? GenerationStepState.Skipped : GenerationStepState.Done;
             }
             else if (percent >= step.StartPercent)
+            {
                 step.State = GenerationStepState.Active;
+            }
             else
+            {
                 step.State = GenerationStepState.Pending;
+            }
         }
     }
 
@@ -976,7 +1024,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     {
         var activeStep = Steps.FirstOrDefault(s => s.State == GenerationStepState.Active);
         if (activeStep is not null)
+        {
             activeStep.State = GenerationStepState.Failed;
+        }
     }
 
     /// <summary>
@@ -988,9 +1038,14 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     {
         var basePath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         if (string.IsNullOrEmpty(basePath))
+        {
             basePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
         if (string.IsNullOrEmpty(basePath))
+        {
             basePath = Path.GetTempPath();
+        }
 
         return Path.Combine(basePath, "Cloud Imaging Media Builder", "Boot Images");
     }
@@ -1047,7 +1102,11 @@ public sealed class GenerationStep(string label, int startPercent, string? skipp
         get => _state;
         set
         {
-            if (_state == value) return;
+            if (_state == value)
+            {
+                return;
+            }
+
             _state = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(Glyph));
@@ -1065,11 +1124,11 @@ public sealed class GenerationStep(string label, int startPercent, string? skipp
     /// <summary>Symbol shown next to the step label: done ✓, active ▶, failed ✕, skipped , , pending ○.</summary>
     public string Glyph => _state switch
     {
-        GenerationStepState.Done    => "\u2713", // ✓
-        GenerationStepState.Active  => "\u25B6", // ▶
-        GenerationStepState.Failed  => "\u2715", // ✕
+        GenerationStepState.Done => "\u2713", // ✓
+        GenerationStepState.Active => "\u25B6", // ▶
+        GenerationStepState.Failed => "\u2715", // ✕
         GenerationStepState.Skipped => "\u2013", // en dash
-        _                           => "\u25CB", // ○
+        _ => "\u25CB", // ○
     };
 
     /// <inheritdoc/>

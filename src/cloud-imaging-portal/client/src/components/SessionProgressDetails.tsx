@@ -311,8 +311,7 @@ export function SessionProgressDetails({
         </div>
       </div>
 
-      {/* Both class names appear literally so Tailwind generates them. */}
-      <ol className={cn('grid', resolved.length === 6 ? 'grid-cols-6' : 'grid-cols-5')}>
+      <ol className="grid" style={{ gridTemplateColumns: `repeat(${String(resolved.length)}, minmax(0, 1fr))` }}>
         {resolved.map((step, index) => (
           <li key={step.name} className="relative pt-7 text-center">
             {/* Two half-width connectors rather than one full-width bar, so the first and last

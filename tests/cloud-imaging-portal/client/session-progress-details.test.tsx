@@ -135,7 +135,7 @@ describe('Portal frontend: session progress details', () => {
       const { container } = render(<SessionProgressDetails overallPercent={0} currentStep={null} />);
 
       expect(container.querySelectorAll('ol > li')).toHaveLength(5);
-      expect(container.querySelector('ol')?.className).toContain('grid-cols-5');
+      expect(container.querySelector('ol')?.getAttribute('style')).toContain('repeat(5, minmax(0, 1fr))');
       expect(screen.queryByText('Prepare setup')).toBeNull();
     });
 
@@ -144,7 +144,7 @@ describe('Portal frontend: session progress details', () => {
 
       const labels = [...container.querySelectorAll('ol > li > p:first-of-type')].map((p) => p.textContent);
       expect(labels).toEqual(['Prepare disk', 'Download image', 'Apply image', 'Prepare setup', 'Configure boot', 'Configure recovery']);
-      expect(container.querySelector('ol')?.className).toContain('grid-cols-6');
+      expect(container.querySelector('ol')?.getAttribute('style')).toContain('repeat(6, minmax(0, 1fr))');
       expect(screen.getByText('Setup profile: Stockholm and Gothenburg, version 8')).toBeTruthy();
     });
 

@@ -53,4 +53,25 @@ describe('Portal frontend: answer file dialog', () => {
     expect(answerFileSizeLabel('x'.repeat(2458))).toBe('2.4 KB');
     expect(answerFileProblems([{ code: 'tooLarge', line: null, message: 'm' }])).toEqual([{ code: 'tooLarge', line: 0, message: 'm' }]);
   });
+
+  const uploadFile = (file: File) =>
+    fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [file] } });
+
+  it('refuses an uploaded file over 256 KB, even when its line endings would shrink it', async () => {
+    render(<AnswerFileDialog content="" onClose={() => undefined} onApply={() => undefined} />);
+    const crlf = `<!--${'x\r\n'.repeat(90_000)}-->\r\n${VALID}`;
+
+    uploadFile(new File([crlf], 'unattend.xml'));
+
+    expect(await screen.findByText('The file is larger than 256 KB. Choose a smaller answer file.')).toBeTruthy();
+  });
+
+  it('accepts a 256 KB upload with a byte order mark, which does not count', async () => {
+    render(<AnswerFileDialog content="" onClose={() => undefined} onApply={() => undefined} />);
+    const padded = VALID + ' '.repeat(262_144 - new TextEncoder().encode(VALID).length);
+
+    uploadFile(new File([new Uint8Array([0xef, 0xbb, 0xbf]), padded], 'unattend.xml'));
+
+    expect(await screen.findByText(/Valid\. Passes: specialize, oobeSystem\./)).toBeTruthy();
+  });
 });

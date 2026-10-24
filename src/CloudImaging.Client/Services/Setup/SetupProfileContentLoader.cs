@@ -65,7 +65,7 @@ public sealed partial class SetupProfileContentLoader(
             {
                 fetch = await gateway.GetSetupProfileAsync(sessionId, ct);
             }
-            catch (Exception ex) when (ex is HttpRequestException or IOException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+            catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
             {
                 LogAttemptFailed(logger, attempt, ex.Message);
                 await WaitBeforeRetryAsync(attempt, RetryDelay * attempt, ct);

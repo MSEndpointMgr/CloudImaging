@@ -174,7 +174,7 @@ public sealed class OverallProgressIntegrationTests
             .Select(_ => new ImagingStep
             {
                 StepName = ImagingStepName.ApplyImage,
-                Status   = ImagingStepStatus.Completed,
+                Status = ImagingStepStatus.Completed,
             })
             .ToList();
 

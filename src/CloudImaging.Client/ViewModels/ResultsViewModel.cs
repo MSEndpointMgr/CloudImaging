@@ -56,12 +56,12 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
         Action? tryAgain = null,
         ILogger? logger = null)
     {
-        _outcome            = outcome;
+        _outcome = outcome;
         _deviceSerialNumber = deviceSerialNumber;
-        _errorDetail        = errorDetail;
-        _navigateToStart    = navigateToStart;
-        _restartSystem      = restartSystem;
-        SessionId           = sessionId;
+        _errorDetail = errorDetail;
+        _navigateToStart = navigateToStart;
+        _restartSystem = restartSystem;
+        SessionId = sessionId;
 
         // Only requirements that were switched on are shown; a switched-off check blocks nothing.
         var required = (preFlightChecks ?? [])
@@ -100,7 +100,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
                     .ToString();
 
         RetryCommand = new RelayCommand(_ => _navigateToStart());
-        ExitCommand  = new RelayCommand(_ => System.Windows.Application.Current?.Shutdown());
+        ExitCommand = new RelayCommand(_ => System.Windows.Application.Current?.Shutdown());
         TryAgainCommand = new RelayCommand(_ => (tryAgain ?? _navigateToStart)());
 
         // FR-025: on success, count down and restart the device automatically instead of
@@ -115,10 +115,10 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     }
 
     /// <summary>All imaging steps completed successfully.</summary>
-    public bool IsSuccess       => _outcome == Outcome.Success;
+    public bool IsSuccess => _outcome == Outcome.Success;
 
     /// <summary>A step failed, or an active/coupled session timed out.</summary>
-    public bool IsFailure       => _outcome == Outcome.Failure;
+    public bool IsFailure => _outcome == Outcome.Failure;
 
     /// <summary>The device failed a required pre-flight check and is listed under Devices › Blocked.</summary>
     public bool IsNotAuthorized => _outcome == Outcome.NotAuthorized;
@@ -128,7 +128,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     /// timeout, not a diagnosable failure (FR-021). Shown with warning (not error) styling, and
     /// still offers Retry so the technician can simply request a fresh session.
     /// </summary>
-    public bool IsExpired      => _outcome == Outcome.Expired;
+    public bool IsExpired => _outcome == Outcome.Expired;
 
     /// <summary>Failed and expired sessions offer Retry, which starts a new session.</summary>
     public bool CanRetry => IsFailure || IsExpired;
@@ -140,7 +140,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     public string? SupportReferenceCode { get; }
 
     /// <summary>Error detail captured from the failed step, if applicable.</summary>
-    public string? ErrorDetail  => _errorDetail;
+    public string? ErrorDetail => _errorDetail;
 
     /// <summary>On success, the note that some setup items failed; null otherwise.</summary>
     public string? WarningMessage => IsSuccess ? _errorDetail : null;
@@ -196,7 +196,9 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     {
         RestartCountdownSecondsRemaining--;
         if (RestartCountdownSecondsRemaining > 0)
+        {
             return;
+        }
 
         _restartTimer!.Stop();
         _restartTimer.Tick -= OnRestartTimerTick;

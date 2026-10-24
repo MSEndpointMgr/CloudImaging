@@ -181,7 +181,11 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
             var clamped = Math.Clamp(value, 0, 100);
             // The download loop reports far more often than the value actually changes; skipping
             // no-op notifications keeps this from queueing thousands of redundant UI updates.
-            if (_stepPercent == clamped) return;
+            if (_stepPercent == clamped)
+            {
+                return;
+            }
+
             _stepPercent = clamped;
             OnPropertyChanged();
         }
@@ -197,7 +201,11 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         get => _transferDetail;
         private set
         {
-            if (_transferDetail == value) return;
+            if (_transferDetail == value)
+            {
+                return;
+            }
+
             _transferDetail = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasTransferDetail));
@@ -220,7 +228,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     }
 
     /// <summary>Error message shown when a step fails; null while imaging is proceeding normally.</summary>
-    public string? ErrorMessage  { get => _errorMessage;   set { _errorMessage   = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); } }
+    public string? ErrorMessage { get => _errorMessage; set { _errorMessage = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasError)); } }
 
     /// <summary>Support code shown alongside a failure, so the operator can reference it when asking for help.</summary>
     public string? SupportReferenceCode { get => _supportReferenceCode; set { _supportReferenceCode = value; OnPropertyChanged(); } }
@@ -261,7 +269,10 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         get
         {
             var activeIndex = Steps.ToList().FindIndex(s => s.State == ProgressStepState.Active);
-            if (activeIndex >= 0) return activeIndex + 1;
+            if (activeIndex >= 0)
+            {
+                return activeIndex + 1;
+            }
 
             var lastDoneIndex = Steps.ToList().FindLastIndex(s => s.State is ProgressStepState.Done or ProgressStepState.Warning);
             return lastDoneIndex >= 0 ? Math.Min(lastDoneIndex + 2, Steps.Count) : 1;
@@ -288,18 +299,18 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         {
             ImagingStepStatus.InProgress => ProgressStepState.Active,
             ImagingStepStatus.Completed when warningCount > 0 => ProgressStepState.Warning,
-            ImagingStepStatus.Completed  => ProgressStepState.Done,
-            ImagingStepStatus.Failed     => ProgressStepState.Failed,
-            _                            => ProgressStepState.Pending,
+            ImagingStepStatus.Completed => ProgressStepState.Done,
+            ImagingStepStatus.Failed => ProgressStepState.Failed,
+            _ => ProgressStepState.Pending,
         };
 
         item.Caption = item.State switch
         {
             ProgressStepState.Active => Track(step),
-            ProgressStepState.Done   => Completed(step),
+            ProgressStepState.Done => Completed(step),
             ProgressStepState.Warning => "Completed with warnings",
             ProgressStepState.Failed => "Failed",
-            _                        => null,
+            _ => null,
         };
 
         OnPropertyChanged(nameof(CurrentStepTitle));
@@ -341,7 +352,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         const double Gb = Mb * 1024d;
 
         var useGb = totalBytes > 0 ? totalBytes >= Gb : transferredBytes >= Gb;
-        var unit  = useGb ? "GB" : "MB";
+        var unit = useGb ? "GB" : "MB";
         var scale = useGb ? Gb : Mb;
 
         TransferDetail = totalBytes > 0
@@ -360,10 +371,16 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     /// </summary>
     public void AppendActivity(string message)
     {
-        if (string.IsNullOrWhiteSpace(message)) return;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
 
         _activityLines.Add($"{DateTime.Now:HH:mm:ss}  {message}");
-        while (_activityLines.Count > MaxActivityLines) _activityLines.RemoveAt(0);
+        while (_activityLines.Count > MaxActivityLines)
+        {
+            _activityLines.RemoveAt(0);
+        }
 
         LogText = string.Join('\n', _activityLines);
     }

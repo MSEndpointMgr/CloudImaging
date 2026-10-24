@@ -311,6 +311,26 @@ public sealed class PrepareSetupServiceTests
     }
 
     [Fact]
+    public void AMissingInstallerFile_UnderFailTheDeployment_StopsStagingAndEverythingAfterIsNotRun()
+    {
+        var (service, _, _, files) = CreateWithScripts();
+        files.Files[@"CloudImaging\Drivers\b.exe"] = [1];
+        var content = new SetupProfileContent { FailureHandling = SetupFailureHandling.FailDeployment, Scripts = [Script("Setup", SetupScriptPhase.WindowsSetup, 1)] };
+
+        var result = RunWith(service, content, [Installer("Realtek Audio Console", @"CloudImaging\Drivers\a.exe"), Installer("HP Hotkey Support", @"CloudImaging\Drivers\b.exe")]);
+
+        result.Status.Should().Be(ImagingStepStatus.Failed);
+        result.ErrorDetail.Should().Be(@"Realtek Audio Console: A file this installer needs is missing: CloudImaging\Drivers\a.exe.");
+        result.Items.Select(i => (i.Name, i.Outcome)).Should().Equal(
+            ("Realtek Audio Console", StepItemOutcome.Failed),
+            ("HP Hotkey Support", StepItemOutcome.NotRun),
+            ("Setup", StepItemOutcome.NotRun),
+            ("Answer file", StepItemOutcome.NotRun));
+        result.Items.Where(i => i.Outcome == StepItemOutcome.NotRun).Should().OnlyContain(i => i.Reason == "Not run because an earlier item failed and this profile fails the deployment.");
+        files.Files.Keys.Should().NotContain(@"Windows\Setup\CloudImaging\manifest.json");
+    }
+
+    [Fact]
     public void ARunnerThatCannotBeStaged_FailsEveryQueuedItem_AndTheAnswerFileHasNoRunnerCommand()
     {
         var (service, _, _, files) = CreateWithScripts();

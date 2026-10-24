@@ -26,6 +26,7 @@ export function ConfirmImpactDialog({
   titleId = 'confirm-impact-title',
   details,
   icon: Icon = AlertTriangle,
+  confirmDisabled = false,
 }: {
   copy: ConfirmImpactCopy;
   busy: boolean;
@@ -37,6 +38,8 @@ export function ConfirmImpactDialog({
   details?: React.ReactNode;
   /** Icon beside the heading; a warning triangle unless the action has its own. */
   icon?: LucideIcon;
+  /** Holds the confirm button while the impact text is still being completed. */
+  confirmDisabled?: boolean;
 }): React.ReactElement {
   // Portalled to document.body so the dimming overlay always covers the full viewport (including
   // the app header) regardless of any stacking context introduced by this dialog's call site.
@@ -63,18 +66,14 @@ export function ConfirmImpactDialog({
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
           <Button
+            variant={copy.destructive ? 'destructive' : 'default'}
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             loading={busy}
-            className={
-              copy.destructive
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : undefined
-            }
           >
             {copy.confirmLabel}
           </Button>

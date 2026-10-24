@@ -57,9 +57,9 @@ public sealed partial class ImagingProgressReporter
         TimeProvider? timeProvider = null)
     {
         _gatewayClient = gatewayClient;
-        _sessionId     = sessionId;
-        _logger        = logger;
-        _timeProvider  = timeProvider ?? TimeProvider.System;
+        _sessionId = sessionId;
+        _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>Reports a step status update to the Device Gateway API.</summary>
@@ -81,8 +81,8 @@ public sealed partial class ImagingProgressReporter
         {
             await _gatewayClient.ReportProgressAsync(_sessionId, new
             {
-                stepName            = stepName.ToString(),
-                status              = status.ToString(),
+                stepName = stepName.ToString(),
+                status = status.ToString(),
                 stepProgressPercent,
                 errorDetail,
             }, ct);
@@ -143,15 +143,15 @@ public sealed partial class ImagingProgressReporter
         lock (_throttleGate)
         {
             var now = _timeProvider.GetUtcNow();
-            var isNewStep       = _lastProgressStep != stepName;
-            var intervalPassed  = now - _lastProgressReportUtc >= MinProgressReportInterval;
+            var isNewStep = _lastProgressStep != stepName;
+            var intervalPassed = now - _lastProgressReportUtc >= MinProgressReportInterval;
 
             if (!isNewStep && !intervalPassed)
             {
                 return false;
             }
 
-            _lastProgressStep      = stepName;
+            _lastProgressStep = stepName;
             _lastProgressReportUtc = now;
             return true;
         }
