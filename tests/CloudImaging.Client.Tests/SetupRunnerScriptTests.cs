@@ -83,8 +83,32 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
         process.WaitForExit(120_000).Should().BeTrue();
 
         // Every run logs at least a Start or End line; without one, the runner's own output says why.
-        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}");
+        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}. {Diagnose()}");
         return (process.ExitCode, File.ReadAllLines(_logPath));
+    }
+
+    private string Diagnose()
+    {
+        var copy = Path.Combine(Path.GetTempPath(), "ci-runner-copy.ps1");
+        File.Copy(RunnerPath, copy, overwrite: true);
+        var args = $"-ManifestPath '{_manifestPath}' -LogPath '{_logPath}'";
+        var command = string.Join("; ",
+            $"Get-Item -LiteralPath '{RunnerPath}' -Stream * | ForEach-Object {{ 'stream ' + $_.Stream }}",
+            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{RunnerPath}' {args} 2>&1; \"A file-on-D exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
+            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{copy}' {args} 2>&1; \"B file-copy exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
+            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& '{RunnerPath}' {args}\" 2>&1; \"C command exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"");
+        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command })
+        {
+            start.ArgumentList.Add(argument);
+        }
+        start.Environment["SystemDrive"] = _root;
+        start.Environment.Remove("PSModulePath");
+        using var process = Process.Start(start)!;
+        var stdErr = process.StandardError.ReadToEndAsync();
+        var stdOut = process.StandardOutput.ReadToEnd();
+        process.WaitForExit(120_000);
+        return $"Diagnose exit {process.ExitCode}: {stdOut} | {stdErr.Result}";
     }
 
     [Fact]
