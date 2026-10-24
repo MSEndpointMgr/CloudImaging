@@ -68,53 +68,22 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
             RedirectStandardError = true,
             CreateNoWindow = true,
         };
-        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", RunnerPath, "-ManifestPath", _manifestPath, "-LogPath", _logPath })
+        // -Command rather than -File: on the GitHub Windows Server 2025 runners, powershell.exe -File exits 0
+        // without running the script at all, even a trivial one, while -Command runs it normally.
+        var command = $"& '{RunnerPath.Replace("'", "''")}' -ManifestPath '{_manifestPath.Replace("'", "''")}' -LogPath '{_logPath.Replace("'", "''")}'; exit $LASTEXITCODE";
+        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command })
         {
             start.ArgumentList.Add(argument);
         }
         start.Environment["SystemDrive"] = _root;
-
-        // Windows setup starts the runner with a clean environment. A test host launched from pwsh inherits
-        // PowerShell 7 module paths, and Windows PowerShell then fails to load its own Security module.
-        start.Environment.Remove("PSModulePath");
         using var process = Process.Start(start)!;
         var stdErr = process.StandardError.ReadToEndAsync();
         var stdOut = process.StandardOutput.ReadToEnd();
         process.WaitForExit(120_000).Should().BeTrue();
 
         // Every run logs at least a Start or End line; without one, the runner's own output says why.
-        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}. {Diagnose()}");
+        File.Exists(_logPath).Should().BeTrue($"the runner always writes its log. Exit {process.ExitCode}. Output: {stdOut} {stdErr.Result}");
         return (process.ExitCode, File.ReadAllLines(_logPath));
-    }
-
-    private string Diagnose()
-    {
-        var copy = Path.Combine(Path.GetTempPath(), "ci-runner-copy.ps1");
-        File.Copy(RunnerPath, copy, overwrite: true);
-        var trivial = Path.Combine(Path.GetTempPath(), "ci-trivial.ps1");
-        var marker = Path.Combine(Path.GetTempPath(), "ci-trivial.txt");
-        File.WriteAllText(trivial, $"[CmdletBinding()]\r\nparam ([string] $X)\r\nBegin {{ }}\r\nProcess {{ Set-Content -LiteralPath '{marker}' -Value \"ran $X\" }}\r\nEnd {{ exit 0 }}\r\n");
-        var args = $"-ManifestPath '{_manifestPath}' -LogPath '{_logPath}'";
-        var command = string.Join("; ",
-            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{trivial}' -X y 2>&1; \"D trivial exit $LASTEXITCODE marker $(Test-Path -LiteralPath '{marker}') out $o\"",
-            $"$o = powershell.exe -NoProfile -ExecutionPolicy Bypass -File '{copy}' {args} 2>&1; \"E interactive exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
-            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File '{copy}' {args} -Verbose 2>&1; \"F verbose exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}') out $o\"",
-            $"$o = powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"& '{copy}' {args}; exit $LASTEXITCODE\" 2>&1; \"C command exit $LASTEXITCODE log $(Test-Path -LiteralPath '{_logPath}')\"",
-            "[Environment]::OSVersion.VersionString",
-            "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell' -ErrorAction SilentlyContinue | Out-String)",
-            "(Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\PowerShell\\1\\ShellIds\\Microsoft.PowerShell' -ErrorAction SilentlyContinue | Out-String)");
-        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        foreach (var argument in new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command })
-        {
-            start.ArgumentList.Add(argument);
-        }
-        start.Environment["SystemDrive"] = _root;
-        start.Environment.Remove("PSModulePath");
-        using var process = Process.Start(start)!;
-        var stdErr = process.StandardError.ReadToEndAsync();
-        var stdOut = process.StandardOutput.ReadToEnd();
-        process.WaitForExit(120_000);
-        return $"Diagnose exit {process.ExitCode}: {stdOut} | {stdErr.Result}";
     }
 
     [Fact]
