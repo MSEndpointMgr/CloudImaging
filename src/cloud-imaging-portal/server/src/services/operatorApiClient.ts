@@ -24,7 +24,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const PUBLISH_TIMEOUT_MS = 40_000;
 
 /**
- * Typed HTTP client for portal backend → Operator API calls over Private Link (T041, FR-013).
+ * Typed HTTP client for portal backend -> Operator API calls over Private Link (T041, FR-013).
  * Every request is authenticated with the portal backend's OWN managed-identity token (which
  * carries the `CloudImaging.PortalAccess` service role) via a request interceptor. The user's
  * browser token is never forwarded downstream. User RBAC is enforced separately at the portal
@@ -468,6 +468,30 @@ export class OperatorApiClient {
   async getSetupProfileHistory(profileId: string): Promise<unknown> {
     const { data } = await this.http.get<unknown>(`/api/setup-profiles/${encodeURIComponent(profileId)}/history`);
     return data;
+  }
+
+  /** Sends one script or answer file text as raw bytes; Imaging Core applies every limit. */
+  async uploadSetupProfileContent(kind: string | undefined, body: Buffer, uploadedBy?: string): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/setup-profiles/content', body, {
+      params: uploadedBy ? { kind: kind ?? '', uploadedBy } : { kind: kind ?? '' },
+      headers: { 'Content-Type': 'application/octet-stream' },
+      maxBodyLength: Infinity,
+      timeout: PUBLISH_TIMEOUT_MS,
+    });
+    return data;
+  }
+
+  /** Reads a script or answer file text a retained version of the profile uses. */
+  async getSetupProfileContent(profileId: string, sha256: string): Promise<{ data: Buffer; contentType: string }> {
+    const res = await this.http.get(`/api/setup-profiles/${encodeURIComponent(profileId)}/content/${encodeURIComponent(sha256)}`, {
+      responseType: 'arraybuffer',
+      maxContentLength: Infinity,
+      timeout: PUBLISH_TIMEOUT_MS,
+    });
+    return {
+      data: Buffer.from(res.data as ArrayBuffer),
+      contentType: (res.headers['content-type'] as string | undefined) ?? 'text/plain; charset=utf-8',
+    };
   }
 
   async getSessionStepItems(sessionId: string, stepName: string): Promise<unknown> {

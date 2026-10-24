@@ -14,8 +14,8 @@ public sealed class SetupProfileServiceTests
 {
     private readonly SetupProfileTestBed _bed = new();
 
-    private static SetupScript Script(string name = "Enable Wake on LAN", string content = "exit 0", Guid? id = null, int order = 1) =>
-        new() { Id = id, Name = name, Runs = SetupScriptPhase.WinPE, Order = order, TimeoutMinutes = 5, Content = content };
+    private SetupScript Script(string name = "Enable Wake on LAN", string content = "exit 0", Guid? id = null, int order = 1) =>
+        _bed.Script(name, content, id, order);
 
     [Fact]
     public async Task Create_WritesVersionOne_BlobRowTargetsAndHistory()
@@ -66,9 +66,49 @@ public sealed class SetupProfileServiceTests
         var result = await _bed.Service.CreateAsync(new CreateSetupProfileRequest { Name = "Lab", Targeting = At(_bed.Gothenburg, _bed.Stockholm), Content = Content(), Actor = Actor() });
 
         result.Outcome.Should().Be(SetupProfileOutcome.Conflict);
-        result.Detail.Should().Be("Stockholm HQ is already targeted by \"Stockholm\". Remove it there first.");
+        result.Detail.Should().Be("Stockholm HQ is already targeted by the setup profile \"Stockholm\". Remove it from that profile first.");
         (await _bed.Service.ListAsync()).Should().ContainSingle();
         (await _bed.Targets.GetOwnerAsync(_bed.Gothenburg.ToString("D"))).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Create_LocationHeldByAProfileThatNoLongerExists_ReleasesItAndSucceeds()
+    {
+        var orphan = Guid.NewGuid();
+        await _bed.Targets.ApplyChangesAsync(orphan, [_bed.Stockholm.ToString("D")], []);
+
+        var result = await _bed.Service.CreateAsync(new CreateSetupProfileRequest { Name = "Lab", Targeting = At(_bed.Stockholm), Content = Content(), Actor = Actor() });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Created);
+        var created = (await _bed.Service.ListAsync()).Should().ContainSingle().Subject;
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().Be(created.ProfileId);
+    }
+
+    [Fact]
+    public async Task Create_VersionUploadFails_ReleasesTheTargetedLocations()
+    {
+        _bed.Blobs.FailNextUpload = true;
+
+        var act = () => _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        await act.Should().ThrowAsync<Azure.RequestFailedException>();
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().BeNull();
+        (await _bed.Service.ListAsync()).Should().BeEmpty();
+        (await _bed.CreateAsync("Stockholm", At(_bed.Stockholm))).CurrentVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Save_VersionUploadFails_RestoresTheTargetingItHadBefore()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        _bed.Blobs.FailNextUpload = true;
+
+        var act = () => _bed.SaveAsync(detail, Content(Value(data: "0")), At(_bed.Gothenburg));
+
+        await act.Should().ThrowAsync<Azure.RequestFailedException>();
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().Be(detail.ProfileId);
+        (await _bed.Targets.GetOwnerAsync(_bed.Gothenburg.ToString("D"))).Should().BeNull();
+        (await _bed.Service.GetDetailAsync(detail.ProfileId))!.CurrentVersion.Should().Be(1);
     }
 
     [Fact]
@@ -79,7 +119,7 @@ public sealed class SetupProfileServiceTests
         var result = await _bed.Service.CreateAsync(new CreateSetupProfileRequest { Name = "Second", Targeting = AllDevices, Content = Content(), Actor = Actor() });
 
         result.Outcome.Should().Be(SetupProfileOutcome.Conflict);
-        result.Detail.Should().Be("All devices is already used by \"Everywhere\". Change that profile first.");
+        result.Detail.Should().Be("All devices is already used by the setup profile \"Everywhere\". Change that profile first.");
     }
 
     [Fact]
@@ -190,11 +230,12 @@ public sealed class SetupProfileServiceTests
     }
 
     [Fact]
-    public async Task Save_Scripts_HashesContent_AndCarriesModifiedFieldsForUnchangedScripts()
+    public async Task Save_Scripts_TakeTheUploadedSize_AndCarryModifiedFieldsForUnchangedScripts()
     {
         var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm), Content() with { Scripts = [Script()] });
         var script = detail.Content.Scripts.Single();
-        script.Sha256.Should().Be(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes("exit 0"))));
+        script.ContentSha256.Should().Be(Sha("exit 0"));
+        script.SizeBytes.Should().Be(6);
         script.LastModifiedAt.Should().Be(Start);
 
         _bed.Time.Advance(TimeSpan.FromHours(1));
@@ -206,6 +247,113 @@ public sealed class SetupProfileServiceTests
         var scripts = ((SetupProfileDetail)result.Value!).Content.Scripts;
         scripts.Single(s => s.Name == "Enable Wake on LAN").LastModifiedAt.Should().Be(Start);
         scripts.Single(s => s.Name == "Second").LastModifiedBy.Should().Be("ops2@contoso.com");
+    }
+
+    [Fact]
+    public async Task Save_RefusedAnswerFile_ReturnsEveryProblem_AndWritesNothing()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        const string file = "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"windowsPE\"/>\n  <settings pass=\"specialize\"><component name=\"Microsoft-Windows-UnattendedJoin\"/></settings>\n</unattend>";
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { AnswerFile = _bed.AnswerFile(file) });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.BadRequest);
+        result.Detail.Should().Be("The answer file has 2 problems.");
+        result.Errors!.Select(e => (e.Code, e.Line)).Should().Equal(("windowsPePass", 3), ("domainJoin", 4));
+        (await _bed.Versions.ListAsync(detail.ProfileId)).Should().ContainSingle();
+
+        var one = await _bed.SaveAsync(detail, detail.Content with { AnswerFile = _bed.AnswerFile("<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><AutoLogon/></unattend>") });
+        one.Detail.Should().Be("The answer file has 1 problem.");
+    }
+
+    [Fact]
+    public async Task Save_ValidAnswerFile_GetsPassesSizeHashAndModifiedFields_AndNullRemovesIt()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        const string file = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><settings pass=\"specialize\"/><settings pass=\"oobeSystem\"/></unattend>";
+        _bed.Time.Advance(TimeSpan.FromHours(1));
+
+        var saved = (SetupProfileDetail)(await _bed.SaveAsync(detail, detail.Content with { AnswerFile = _bed.AnswerFile(file) }, upn: "ops2@contoso.com")).Value!;
+
+        var answerFile = saved.Content.AnswerFile!;
+        answerFile.Passes.Should().Equal("specialize", "oobeSystem");
+        answerFile.SizeBytes.Should().Be(Encoding.UTF8.GetByteCount(file));
+        answerFile.ContentSha256.Should().Be(Sha(file));
+        answerFile.LastModifiedBy.Should().Be("ops2@contoso.com");
+        answerFile.LastModifiedAt.Should().Be(Start.AddHours(1));
+        saved.HasAnswerFile.Should().BeTrue();
+
+        var removed = (SetupProfileDetail)(await _bed.SaveAsync(saved, saved.Content with { AnswerFile = null })).Value!;
+        removed.Content.AnswerFile.Should().BeNull();
+        removed.HasAnswerFile.Should().BeFalse();
+        removed.CurrentVersion.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task LoweringRetention_DeletesNothingUntilTheNextSave_AndEveryVersionCarriesASummary()
+    {
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        for (var i = 2; i <= 7; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+        (await _bed.Versions.ListAsync(current.ProfileId)).Should().HaveCount(7);
+        (await _bed.Versions.ListAsync(current.ProfileId)).Should().OnlyContain(v => v.ChangeSummary.Total > 0);
+
+        await _bed.SaveAsync(current, Content(Value(data: "8")));
+        (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().BeEquivalentTo([8, 7, 6, 5, 4]);
+    }
+
+    [Fact]
+    public async Task Sweep_AfterLoweringRetention_DeletesNothingUntilTheNextSave()
+    {
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        for (var i = 2; i <= 7; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+
+        var swept = await _bed.Service.SweepAsync();
+
+        swept.Should().Be(0);
+        (await _bed.Versions.ListAsync(current.ProfileId)).Should().HaveCount(7);
+    }
+
+    [Fact]
+    public async Task Restore_OfAPrunedVersion_IsNotFound()
+    {
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        for (var i = 2; i <= 6; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+
+        var result = await _bed.Service.RestoreAsync(current.ProfileId, new RestoreSetupProfileVersionRequest { Version = 1, BaseVersion = 6, Actor = Actor() });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.NotFound);
+    }
+
+    [Fact]
+    public async Task Sweep_DeletesAPrunedVersion_OnceNoRunningDeploymentPinsIt()
+    {
+        await _bed.Config.UpsertAsync(new PortalConfiguration { SetupProfileVersionRetention = 5 });
+        var current = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        var session = await _bed.AddSessionAsync(SessionState.SessionInProgress, _bed.Stockholm, current.ProfileId, 1);
+        for (var i = 2; i <= 6; i++)
+        {
+            current = (SetupProfileDetail)(await _bed.SaveAsync(current, Content(Value(data: i.ToString(System.Globalization.CultureInfo.InvariantCulture))))).Value!;
+        }
+        (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().Contain(1);
+
+        await _bed.Sessions.UpdateAsync(session with { State = SessionState.SessionCompleted });
+        await _bed.Service.SweepAsync();
+
+        (await _bed.Versions.ListAsync(current.ProfileId)).Select(v => v.Version).Should().BeEquivalentTo([6, 5, 4, 3, 2]);
+        _bed.Blobs.Blobs.Keys.Should().NotContain($"{current.ProfileId:D}/000001.json");
     }
 
     [Fact]
@@ -313,5 +461,152 @@ public sealed class SetupProfileServiceTests
         await _bed.Service.SweepAsync();
         _bed.Blobs.Blobs.Should().BeEmpty();
         (await _bed.History.ListAsync(detail.ProfileId)).Should().NotBeEmpty();
+    }
+
+    // ── Uploaded texts, script locations and schema version 1 ───────────────
+
+    [Fact]
+    public async Task Save_AHashThatWasNotUploaded_IsRefused_NamingTheScript()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        var missing = new SetupScript { Name = "Wake", Runs = SetupScriptPhase.WinPE, Order = 1, ContentSha256 = Sha("never uploaded") };
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { Scripts = [missing] });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.BadRequest);
+        result.Detail.Should().Be("The text of \"Wake\" was not uploaded. Open the script and press Done again.");
+        (await _bed.Versions.ListAsync(detail.ProfileId)).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Save_AnAnswerFileThatWasNotUploaded_IsRefused()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { AnswerFile = new SetupAnswerFile { ContentSha256 = Sha("<unattend/>") } });
+
+        result.Detail.Should().Be("The text of the answer file was not uploaded. Open the answer file and press Done again.");
+    }
+
+    [Fact]
+    public async Task Save_AnOversizedText_IsRefusedAsNotUploaded()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        var big = new string('x', SetupProfileContent.MaxScriptBytes + 1);
+        var sha = await _bed.Texts.StoreAsync(Encoding.UTF8.GetBytes(big), "script", Start);
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { Scripts = [new SetupScript { Name = "Big", Runs = SetupScriptPhase.WinPE, Order = 1, ContentSha256 = sha.Sha256 }] });
+
+        result.Detail.Should().Be("The text of \"Big\" was not uploaded. Open the script and press Done again.");
+    }
+
+    [Fact]
+    public async Task Save_ScriptLocations_OutsideTheTargeting_AreRefused_InsideAreKeptSorted()
+    {
+        var detail = await _bed.CreateAsync("Two cities", At(_bed.Stockholm, _bed.Gothenburg));
+
+        var outside = await _bed.SaveAsync(detail, detail.Content with { Scripts = [_bed.Script("Wake", locations: [_bed.Malmo])] });
+        outside.Detail.Should().Be("\"Wake\" runs at a location this profile does not target. Choose its locations again.");
+
+        var saved = (SetupProfileDetail)(await _bed.SaveAsync(detail, detail.Content with { Scripts = [_bed.Script("Wake", locations: [_bed.Gothenburg, _bed.Stockholm])] })).Value!;
+        saved.Content.Scripts.Single().Locations.Should().BeEquivalentTo(new SetupScriptLocations { All = false, LocationIds = [_bed.Gothenburg, _bed.Stockholm] });
+    }
+
+    [Fact]
+    public async Task Save_AnAllDevicesProfile_AllowsAnyExistingLocationForAScript()
+    {
+        var detail = await _bed.CreateAsync("Everywhere", AllDevices);
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { Scripts = [_bed.Script("Wake", locations: [_bed.Malmo])] });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Ok);
+    }
+
+    [Fact]
+    public async Task Save_TargetingThatLeavesAScriptWithNoLocations_IsRefused_NamingTheScript()
+    {
+        var detail = await _bed.CreateAsync("Two cities", At(_bed.Stockholm, _bed.Gothenburg), Content() with { Scripts = [_bed.Script("Gothenburg only", locations: [_bed.Gothenburg])] });
+
+        var result = await _bed.SaveAsync(detail, targeting: At(_bed.Stockholm));
+
+        result.Outcome.Should().Be(SetupProfileOutcome.BadRequest);
+        result.Detail.Should().Be("\"Gothenburg only\" has no locations left. Choose a location or delete the script.");
+        (await _bed.Targets.GetOwnerAsync(_bed.Gothenburg.ToString("D"))).Should().Be(detail.ProfileId);
+    }
+
+    [Fact]
+    public async Task Restore_DropsLocationsTheProfileNoLongerTargets()
+    {
+        var v1 = await _bed.CreateAsync("Two cities", At(_bed.Stockholm, _bed.Gothenburg), Content() with { Scripts = [_bed.Script("Both", locations: [_bed.Stockholm, _bed.Gothenburg])] });
+        var v2 = (SetupProfileDetail)(await _bed.SaveAsync(v1, Content(), At(_bed.Stockholm))).Value!;
+
+        var restored = (SetupProfileDetail)(await _bed.Service.RestoreAsync(v1.ProfileId, new RestoreSetupProfileVersionRequest { Version = 1, BaseVersion = v2.CurrentVersion, Actor = Actor() })).Value!;
+
+        restored.Content.Scripts.Single().Locations.LocationIds.Should().Equal(_bed.Stockholm);
+    }
+
+    [Fact]
+    public async Task Save_TheAnswerFile_IsRevalidatedFromItsStoredText()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        const string bad = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><AutoLogon/></unattend>";
+        var stored = _bed.AnswerFile(bad);
+
+        var result = await _bed.SaveAsync(detail, detail.Content with { AnswerFile = stored with { Passes = ["oobeSystem"] } });
+
+        result.Errors!.Single().Code.Should().Be("autoLogon");
+    }
+
+    [Fact]
+    public async Task Save_AnUnchangedScript_IsNotLookedUpAgain_AndCostsNoVersion()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm), Content() with { Scripts = [Script()] });
+        await _bed.Texts.DeleteAsync(detail.Content.Scripts[0].ContentSha256);
+
+        var result = await _bed.SaveAsync(detail, detail.Content, name: "Renamed");
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Ok);
+        ((SetupProfileDetail)result.Value!).CurrentVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ASchemaVersion1Document_IsConvertedOnFirstRead_WithEqualContent()
+    {
+        var detail = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        var blobName = $"{detail.ProfileId:D}/000001.json";
+        var scriptId = Guid.NewGuid();
+        var legacy = $$$"""
+            {"schemaVersion":1,"profileId":"{{{detail.ProfileId}}}","version":1,"failureHandling":"CompleteWithWarnings","registryValues":[],
+             "scripts":[{"id":"{{{scriptId}}}","name":"Wake","runs":"WinPE","order":1,"timeoutMinutes":5,"content":"\uFEFFexit 0","sha256":"old","lastModifiedBy":"ops@contoso.com"}],
+             "answerFile":{"content":"<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"/>","passes":[],"sizeBytes":52,"sha256":"old"}}
+            """;
+        await _bed.Blobs.GetBlobClient(blobName).UploadAsync(BinaryData.FromString(legacy), new Azure.Storage.Blobs.Models.BlobUploadOptions());
+
+        var content = (await _bed.Service.GetDetailAsync(detail.ProfileId))!.Content;
+
+        content.SchemaVersion.Should().Be(2);
+        var script = content.Scripts.Single();
+        script.Id.Should().Be(scriptId);
+        script.ContentSha256.Should().Be(Sha("exit 0"));
+        script.SizeBytes.Should().Be(6);
+        script.Locations.All.Should().BeTrue();
+        script.LastModifiedBy.Should().Be("ops@contoso.com");
+        content.AnswerFile!.ContentSha256.Should().Be(Sha("<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"/>"));
+        (await _bed.Texts.DownloadAsync(Sha("exit 0")))!.ToString().Should().Be("exit 0");
+        _bed.Blobs.Blobs[blobName].ToString().Should().Contain("\"schemaVersion\":2").And.NotContain("\"content\"");
+        var row = await _bed.Versions.GetAsync(detail.ProfileId, 1);
+        row!.ContentSha256.Should().Be(Sha(_bed.Blobs.Blobs[blobName].ToString()));
+    }
+
+    [Fact]
+    public async Task GetContent_ServesOnlyTextsARetainedVersionOfThatProfileUses()
+    {
+        var mine = await _bed.CreateAsync("Mine", At(_bed.Stockholm), Content() with { Scripts = [Script("Mine", "Write-Output mine")] });
+        await _bed.CreateAsync("Other", At(_bed.Gothenburg), Content() with { Scripts = [Script("Other", "Write-Output other")] });
+
+        (await _bed.Service.GetContentAsync(mine.ProfileId, Sha("Write-Output mine")))!.ToString().Should().Be("Write-Output mine");
+        (await _bed.Service.GetContentAsync(mine.ProfileId, Sha("Write-Output other"))).Should().BeNull();
+        (await _bed.Service.GetContentAsync(mine.ProfileId, "not-a-hash")).Should().BeNull();
+        (await _bed.Service.GetContentAsync(Guid.NewGuid(), Sha("Write-Output mine"))).Should().BeNull();
     }
 }

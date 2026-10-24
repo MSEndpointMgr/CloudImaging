@@ -30,7 +30,7 @@ public sealed class SetupProfileIntegrationTests
         new(_bed.Sessions, _images, _bed.Config, _bed.BlobService, _bed.Resolver, NullLogger<AssignSessionFunction>.Instance);
 
     private SessionSetupProfileFunction DescriptorFunction() =>
-        new(_bed.Sessions, _bed.Profiles, _bed.Versions, _bed.BlobService, _bed.Time, NullLogger<SessionSetupProfileFunction>.Instance);
+        new(_bed.Sessions, _bed.Profiles, _bed.Versions, _bed.Service, _bed.BlobService, _bed.Time, NullLogger<SessionSetupProfileFunction>.Instance);
 
     private LocationFunctions Locations() =>
         new(_bed.Locations, new RegionConfigurationRepository(_bed.Tables, NullLogger<RegionConfigurationRepository>.Instance), new WifiNetworkRepository(_bed.Tables), _bed.Service, NullLogger<LocationFunctions>.Instance);
@@ -57,6 +57,51 @@ public sealed class SetupProfileIntegrationTests
         results.Count(r => r.Outcome == SetupProfileOutcome.Conflict).Should().Be(1);
         var owners = await _bed.Targets.ListAllAsync();
         owners.Keys.Count(k => k == _bed.Gothenburg.ToString("D")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_NameClaimedByACreateInFlight_IsRefused()
+    {
+        (await _bed.Profiles.TryReserveNameAsync("Lab", Guid.NewGuid(), _bed.Time.Now)).Should().BeTrue();
+
+        var result = await _bed.Service.CreateAsync(new CreateSetupProfileRequest { Name = "LAB", Targeting = At(_bed.Stockholm), Content = Content(), Actor = Actor() });
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Conflict);
+        result.Detail.Should().Be("A setup profile named \"LAB\" already exists. Choose another name.");
+        (await _bed.Targets.GetOwnerAsync(_bed.Stockholm.ToString("D"))).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Create_NameClaimAbandonedByAFailedCreate_IsTakenOver()
+    {
+        await _bed.Profiles.TryReserveNameAsync("Lab", Guid.NewGuid(), _bed.Time.Now);
+        _bed.Time.Advance(TimeSpan.FromMinutes(6));
+
+        (await _bed.CreateAsync("Lab", At(_bed.Stockholm))).Name.Should().Be("Lab");
+    }
+
+    [Fact]
+    public async Task Rename_ToANameClaimedByACreateInFlight_IsRefused_AndTheOldNameStaysClaimed()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+        await _bed.Profiles.TryReserveNameAsync("Lab", Guid.NewGuid(), _bed.Time.Now);
+
+        var result = await _bed.SaveAsync(profile, name: "lab");
+
+        result.Outcome.Should().Be(SetupProfileOutcome.Conflict);
+        (await _bed.Profiles.TryReserveNameAsync("Stockholm", Guid.NewGuid(), _bed.Time.Now)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Rename_ReleasesTheOldName_AndDeleteReleasesTheNewOne()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        (await _bed.SaveAsync(profile, name: "Stockholm HQ profile")).Outcome.Should().Be(SetupProfileOutcome.Ok);
+        (await _bed.CreateAsync("Stockholm", At(_bed.Gothenburg))).Name.Should().Be("Stockholm");
+
+        await _bed.Service.DeleteAsync(profile.ProfileId, "ops@contoso.com");
+        (await _bed.CreateAsync("Stockholm HQ profile", At(_bed.Stockholm))).Name.Should().Be("Stockholm HQ profile");
     }
 
     [Fact]
@@ -172,6 +217,31 @@ public sealed class SetupProfileIntegrationTests
     }
 
     [Fact]
+    public async Task DeleteLocation_DetachesUnderTheProfileETag_SoAConcurrentSaveSeesAStaleProfile()
+    {
+        var profile = await _bed.CreateAsync("Stockholm and Gothenburg", At(_bed.Stockholm, _bed.Gothenburg));
+        var loaded = await _bed.Profiles.GetAsync(profile.ProfileId);
+        _bed.Time.Advance(TimeSpan.FromMinutes(1));
+
+        (await _bed.Service.DetachLocationAsync(_bed.Gothenburg, "Gothenburg Office", "ops2@contoso.com")).Should().BeNull();
+
+        (await _bed.Profiles.ReplaceAsync(loaded! with { LastModifiedBy = "ops@contoso.com" })).Should().BeFalse();
+        var latest = await _bed.Profiles.GetAsync(profile.ProfileId);
+        latest!.LastModifiedBy.Should().Be("ops2@contoso.com");
+        (await _bed.Targets.ListByProfileAsync(profile.ProfileId)).Should().Equal(_bed.Stockholm.ToString("D"));
+    }
+
+    [Fact]
+    public async Task RemoveDeletedLocation_NeverLeavesAProfileWithoutALocation()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm));
+
+        (await _bed.Service.RemoveDeletedLocationAsync(_bed.Stockholm, "Stockholm HQ", "ops@contoso.com")).Should().BeNull();
+
+        (await _bed.Targets.ListByProfileAsync(profile.ProfileId)).Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task Purge_DeletesTheSessionsStepItems()
     {
         var session = await _bed.AddSessionAsync(SessionState.SessionCompleted);
@@ -182,5 +252,108 @@ public sealed class SetupProfileIntegrationTests
         await lifecycle.PurgeTerminalSessionsAsync();
 
         (await _bed.Items.ListAsync(session.SessionId, ImagingStepName.PrepareSetup)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Descriptor_ListsOnlyTheScriptsForTheSessionsLocation_EachWithAReadUrl()
+    {
+        var content = Content() with
+        {
+            Scripts =
+            [
+                _bed.Script("Everywhere", "Write-Output all", order: 1),
+                _bed.Script("Stockholm only", "Write-Output sto", order: 2, locations: [_bed.Stockholm]),
+                _bed.Script("Gothenburg only", "Write-Output got", order: 3, locations: [_bed.Gothenburg]),
+            ],
+            AnswerFile = _bed.AnswerFile("<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><settings pass=\"oobeSystem\"/></unattend>"),
+        };
+        await _bed.CreateAsync("Everywhere", AllDevices, content);
+
+        var stockholm = await DescriptorJsonAsync(await AssignAsync(_bed.Stockholm));
+        var noLocation = await DescriptorJsonAsync(await AssignAsync(null));
+
+        var scripts = stockholm.GetProperty("scripts").EnumerateArray().ToList();
+        scripts.Select(s => s.GetProperty("contentSha256").GetString()).Should().Equal(Sha("Write-Output all"), Sha("Write-Output sto"));
+        scripts[1].GetProperty("sizeBytes").GetInt64().Should().Be(16);
+        scripts[1].GetProperty("contentUrl").GetString().Should().Contain($"setup-profiles/content/{Sha("Write-Output sto")}").And.Contain("sp=r");
+        scripts[1].GetProperty("contentUrlExpiresAt").GetDateTimeOffset().Should().Be(_bed.Time.Now.AddMinutes(15));
+        stockholm.GetProperty("answerFile").GetProperty("contentUrl").GetString().Should().Contain("setup-profiles/content/");
+        noLocation.GetProperty("scripts").EnumerateArray().Select(s => s.GetProperty("contentSha256").GetString()).Should().Equal(Sha("Write-Output all"));
+    }
+
+    [Fact]
+    public async Task Descriptor_LeavesOutAScriptWhoseLocationWasDeleted_EvenForOldMediaOfThatLocation()
+    {
+        var content = Content() with
+        {
+            Scripts =
+            [
+                _bed.Script("Everywhere", "Write-Output all", order: 1),
+                _bed.Script("Gothenburg only", "Write-Output got", order: 2, locations: [_bed.Gothenburg]),
+            ],
+        };
+        await _bed.CreateAsync("Everywhere", AllDevices, content);
+        await _bed.Locations.DeleteAsync(_bed.Gothenburg);
+
+        // USB media prepared for Gothenburg still carries its id and falls back to All devices.
+        var oldMedia = await DescriptorJsonAsync(await AssignAsync(_bed.Gothenburg));
+
+        oldMedia.GetProperty("scripts").EnumerateArray().Select(s => s.GetProperty("contentSha256").GetString()).Should().Equal(Sha("Write-Output all"));
+    }
+
+    [Fact]
+    public async Task Descriptor_LeavesOutAScriptWhoseLocationTheProfileNoLongerTargets()
+    {
+        var content = Content() with { Scripts = [_bed.Script("Gothenburg only", "Write-Output got", locations: [_bed.Gothenburg])] };
+        var profile = await _bed.CreateAsync("West", At(_bed.Stockholm, _bed.Gothenburg), content);
+        (await _bed.Service.DetachLocationAsync(_bed.Gothenburg, "Gothenburg Office", "ops2@contoso.com")).Should().BeNull();
+        var pinned = await _bed.AddSessionAsync(SessionState.SessionInProgress, _bed.Gothenburg, profile.ProfileId, profile.CurrentVersion);
+
+        var descriptor = await DescriptorJsonAsync(pinned);
+
+        descriptor.GetProperty("scripts").EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Sweep_DeletesOldUnreferencedContent_AndKeepsReferencedOrRecentContent()
+    {
+        await _bed.CreateAsync("Stockholm", At(_bed.Stockholm), Content() with { Scripts = [_bed.Script("Used", "Write-Output used")] });
+        var orphan = _bed.Upload("Write-Output orphan");
+        _bed.Time.Advance(TimeSpan.FromHours(25));
+        var recent = _bed.Upload("Write-Output recent");
+
+        await _bed.Service.SweepAsync();
+
+        _bed.Blobs.Blobs.Keys.Should().Contain($"content/{Sha("Write-Output used")}").And.Contain($"content/{recent}").And.NotContain($"content/{orphan}");
+
+        // At most once a day: a sweep within the day of the last one leaves an old orphan alone.
+        var old = (await _bed.Texts.StoreAsync(System.Text.Encoding.UTF8.GetBytes("Write-Output old"), "script", Start)).Sha256;
+        _bed.Time.Advance(TimeSpan.FromHours(23));
+        await _bed.Service.SweepAsync();
+        _bed.Blobs.Blobs.Keys.Should().Contain($"content/{old}");
+        _bed.Time.Advance(TimeSpan.FromHours(1));
+        await _bed.Service.SweepAsync();
+        _bed.Blobs.Blobs.Keys.Should().NotContain($"content/{old}").And.NotContain($"content/{recent}");
+    }
+
+    [Fact]
+    public async Task Sweep_KeepsContentAPinnedVersionOfADeletedProfileStillUses()
+    {
+        var profile = await _bed.CreateAsync("Stockholm", At(_bed.Stockholm), Content() with { Scripts = [_bed.Script("Used", "Write-Output pinned")] });
+        await AssignAsync(_bed.Stockholm);
+        await _bed.Service.DeleteAsync(profile.ProfileId, "ops@contoso.com");
+        _bed.Time.Advance(TimeSpan.FromDays(2));
+
+        await _bed.Service.SweepAsync();
+
+        _bed.Blobs.Blobs.Keys.Should().Contain($"content/{Sha("Write-Output pinned")}");
+    }
+
+    private async Task<System.Text.Json.JsonElement> DescriptorJsonAsync(DeviceSession session)
+    {
+        await _bed.Sessions.UpdateAsync(session with { State = SessionState.SessionInProgress });
+        var response = await DescriptorFunction().Run(FunctionTestHost.Request("GET", "https://core/x"), session.SessionId.ToString(), FunctionTestHost.Context);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await response.ReadJsonAsync();
     }
 }

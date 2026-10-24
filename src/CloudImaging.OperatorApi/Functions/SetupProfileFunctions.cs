@@ -20,6 +20,8 @@ namespace CloudImaging.OperatorApi.Functions;
 /// GET    /api/setup-profiles/{id}/versions            retained versions
 /// GET    /api/setup-profiles/{id}/versions/{version}  one version with content
 /// GET    /api/setup-profiles/{id}/history             targeting and profile history
+/// POST   /api/setup-profiles/content?kind=&amp;uploadedBy=  upload a script or answer file text
+/// GET    /api/setup-profiles/{id}/content/{sha256}    read a text the profile uses
 /// </summary>
 public sealed partial class SetupProfileFunctions
 {
@@ -163,6 +165,42 @@ public sealed partial class SetupProfileFunctions
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
         return await ProxyResponseAsync(req, await _coreClient.GetSetupProfileHistoryAsync(profileId, context.CancellationToken), context.CancellationToken);
+    }
+
+    /// <summary>POST setup-profiles/content?kind=. The raw body goes to Core unparsed; Core applies every limit.</summary>
+    [Function("UploadSetupProfileContent")]
+    public async Task<HttpResponseData> UploadSetupProfileContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "setup-profiles/content")] HttpRequestData req,
+        FunctionContext context)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var contentType = req.Headers.TryGetValues("Content-Type", out var types) ? types.FirstOrDefault() : null;
+        long? length = req.Headers.TryGetValues("Content-Length", out var lengths) && long.TryParse(lengths.FirstOrDefault(), out var parsed) ? parsed : null;
+        var coreResponse = await _coreClient.UploadSetupProfileContentAsync(query["kind"], req.Body, contentType, length, query["uploadedBy"], context.CancellationToken);
+        return await ProxyResponseAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    /// <summary>GET setup-profiles/{id}/content/{sha256}. Relays the text's bytes and media type.</summary>
+    [Function("GetSetupProfileContent")]
+    public async Task<HttpResponseData> GetSetupProfileContent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "setup-profiles/{id}/content/{sha256}")] HttpRequestData req,
+        string id,
+        string sha256,
+        FunctionContext context)
+    {
+        if (!Guid.TryParse(id, out var profileId))
+        {
+            return req.CreateResponse(HttpStatusCode.BadRequest);
+        }
+        using var coreResponse = await _coreClient.GetSetupProfileContentAsync(profileId, sha256, context.CancellationToken);
+        var response = req.CreateResponse((HttpStatusCode)(int)coreResponse.StatusCode);
+        if (coreResponse.IsSuccessStatusCode)
+        {
+            response.Headers.Add("Content-Type", coreResponse.Content.Headers.ContentType?.ToString() ?? "text/plain; charset=utf-8");
+            await using var stream = await coreResponse.Content.ReadAsStreamAsync(context.CancellationToken);
+            await stream.CopyToAsync(response.Body, context.CancellationToken);
+        }
+        return response;
     }
 
     private static async Task<object?> ReadPayloadAsync(HttpRequestData req, CancellationToken ct)

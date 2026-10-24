@@ -1,5 +1,5 @@
 import { createPortal } from 'react-dom';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, type LucideIcon } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 
 /** Copy shown in an impact confirmation overlay before a high-impact action runs. */
@@ -25,6 +25,8 @@ export function ConfirmImpactDialog({
   onConfirm,
   titleId = 'confirm-impact-title',
   details,
+  icon: Icon = AlertTriangle,
+  confirmDisabled = false,
 }: {
   copy: ConfirmImpactCopy;
   busy: boolean;
@@ -34,6 +36,10 @@ export function ConfirmImpactDialog({
   titleId?: string;
   /** Optional extra content under the impact text, for example the list of affected items. */
   details?: React.ReactNode;
+  /** Icon beside the heading; a warning triangle unless the action has its own. */
+  icon?: LucideIcon;
+  /** Holds the confirm button while the impact text is still being completed. */
+  confirmDisabled?: boolean;
 }): React.ReactElement {
   // Portalled to document.body so the dimming overlay always covers the full viewport (including
   // the app header) regardless of any stacking context introduced by this dialog's call site.
@@ -45,9 +51,9 @@ export function ConfirmImpactDialog({
       aria-labelledby={titleId}
     >
       <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
-        <div className="flex items-start gap-3 p-5">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+        <div className="flex items-center gap-3 p-5">
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${copy.destructive ? 'bg-destructive/10 text-destructive' : 'bg-primary/15 text-primary'}`}>
+            <Icon className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0 space-y-2">
             <h2 id={titleId} className="text-base font-semibold break-words">
@@ -60,18 +66,14 @@ export function ConfirmImpactDialog({
           </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
-          <Button variant="outline" onClick={onCancel} disabled={busy}>
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
             Cancel
           </Button>
           <Button
+            variant={copy.destructive ? 'destructive' : 'default'}
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             loading={busy}
-            className={
-              copy.destructive
-                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
-                : undefined
-            }
           >
             {copy.confirmLabel}
           </Button>

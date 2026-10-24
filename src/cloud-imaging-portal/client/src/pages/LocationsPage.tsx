@@ -98,6 +98,7 @@ export default function LocationsPage(): React.ReactElement {
   const [deletingBusy, setDeletingBusy] = useState(false);
   const [wifiNetworks, setWifiNetworks] = useState<WifiNetwork[]>([]);
   const [setupProfiles, setSetupProfiles] = useState<SetupProfileSummary[]>([]);
+  const [setupProfilesLoaded, setSetupProfilesLoaded] = useState(false);
   const [wifiFor, setWifiFor] = useState<{ location: LocationEntry; afterAdd: boolean } | null>(null);
   const [importing, setImporting] = useState(false);
 
@@ -152,7 +153,11 @@ export default function LocationsPage(): React.ReactElement {
   // loses the location. A failure only drops that sentence; the server still refuses unsafe deletes.
   useEffect(() => {
     if (!deleting) return;
-    fetchSetupProfiles().then(setSetupProfiles).catch(() => setSetupProfiles([]));
+    setSetupProfilesLoaded(false);
+    fetchSetupProfiles()
+      .then(setSetupProfiles)
+      .catch(() => setSetupProfiles([]))
+      .finally(() => setSetupProfilesLoaded(true));
   }, [deleting]);
 
   // Shared by the add form and the importer, so both go through the same endpoint and validation.
@@ -392,7 +397,7 @@ export default function LocationsPage(): React.ReactElement {
                 <TableCell className="text-xs text-muted-foreground">{formatDateTime(loc.createdAt)}</TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Tooltip content="Save changes">
+                    <Tooltip content="Save">
                       <Button variant="ghost" size="icon" aria-label={`Save location ${loc.name}`}
                         disabled={saving || !editDraft.name.trim()} onClick={() => void handleSaveEdit()}>
                           <Check />
@@ -485,6 +490,7 @@ export default function LocationsPage(): React.ReactElement {
             destructive: true,
           }}
           busy={deletingBusy}
+          confirmDisabled={!setupProfilesLoaded}
           onCancel={() => setDeleting(null)}
           onConfirm={() => void handleDelete()}
           titleId="delete-location-title"

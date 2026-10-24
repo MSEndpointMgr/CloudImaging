@@ -106,6 +106,10 @@ public static class MountCleanup
         // Clears stale mount registrations that a per-folder unmount cannot.
         await TryRunAsync(runProcess, "dism.exe", "/Cleanup-Mountpoints");
 
+        // A hive left loaded by the Wi-Fi check keeps its file open and would block the unmount.
+        foreach (var hive in MountedRecoveryImage.HiveNames)
+            await TryRunAsync(runProcess, "reg.exe", $"unload HKLM\\{hive}");
+
         foreach (var dir in orphaned)
         {
             foreach (var record in RecordsToUndo(dir))

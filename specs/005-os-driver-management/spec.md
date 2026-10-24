@@ -25,6 +25,10 @@
 
 - Q: Who writes `Panther\unattend.xml` and runs Specialize installers? A: Setup Profiles (spec 003). Its Prepare setup step, which runs right after Install drivers, writes the device's single answer file with one setup runner command; the setup runner runs driver installers first, then setup profile scripts. This applies whether or not a setup profile targets the device.
 
+### Session 2026-10-24
+
+- Q: What are the action names? A: Offline, Offline + Specialize, Specialize and Skip, matching the phase names Setup Profiles uses (spec 003). "WinPE" in the action names, the Action column, the summary tiles and the timeline ("26 installed in WinPE") reads "Offline" instead, because a Windows RE boot image runs the same step. Every later mention of the "WinPE" action in this spec means Offline.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Onboard an HP model and have its drivers installed during deployment (Priority: P1)

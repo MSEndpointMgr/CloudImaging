@@ -22,13 +22,13 @@ public sealed partial class ImagingProgressReporter
 
     // Device Gateway API enforces 10 calls / 30s per session (RateLimitingMiddleware), shared
     // across EVERY authenticated endpoint the client calls for that session (progress, status
-    // poll, SAS refresh, ...) — not a separate budget per endpoint. A percent-progress callback
+    // poll, SAS refresh, ...): not a separate budget per endpoint. A percent-progress callback
     // fires on every ~80 KB download chunk / every DISM console line, which for a multi-GB WIM is
-    // easily hundreds of calls a second if sent unthrottled — that flooded the gateway with 429s
+    // easily hundreds of calls a second if sent unthrottled: that flooded the gateway with 429s
     // (visible as a wall of "Failed to report progress" warnings) and, since ReportProgressFunction
     // is also what updates the session's LastHeartbeatAt, made it look like heartbeat reporting
     // itself was broken. Only ever throttle percent-progress ("InProgress" + a percent value)
-    // updates — step start/completion/failure reports are rare, one-off events and must always go
+    // updates: step start/completion/failure reports are rare, one-off events and must always go
     // through immediately.
     //
     // Budget for the shared 10-calls/30s session bucket: 3 progress reports (this 10s interval)
@@ -40,7 +40,7 @@ public sealed partial class ImagingProgressReporter
     // of this gate did exactly that (to guarantee the very first/last update always got through),
     // but integer-truncated percent legitimately stays at 0 for a long stretch at the start of a
     // large download (or briefly at 100 right at the end), so that "boundary" bypass fired on
-    // every single tick during those stretches and defeated the whole throttle — the exact 429
+    // every single tick during those stretches and defeated the whole throttle: the exact 429
     // flood this class exists to prevent. isNewStep alone already guarantees the first update for
     // a step gets through; nothing else may bypass the interval check.
     private static readonly TimeSpan MinProgressReportInterval = TimeSpan.FromSeconds(10);
@@ -57,9 +57,9 @@ public sealed partial class ImagingProgressReporter
         TimeProvider? timeProvider = null)
     {
         _gatewayClient = gatewayClient;
-        _sessionId     = sessionId;
-        _logger        = logger;
-        _timeProvider  = timeProvider ?? TimeProvider.System;
+        _sessionId = sessionId;
+        _logger = logger;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>Reports a step status update to the Device Gateway API.</summary>
@@ -81,8 +81,8 @@ public sealed partial class ImagingProgressReporter
         {
             await _gatewayClient.ReportProgressAsync(_sessionId, new
             {
-                stepName            = stepName.ToString(),
-                status              = status.ToString(),
+                stepName = stepName.ToString(),
+                status = status.ToString(),
                 stepProgressPercent,
                 errorDetail,
             }, ct);
@@ -92,7 +92,7 @@ public sealed partial class ImagingProgressReporter
         catch (Exception ex)
         {
             LogReportFailed(_logger, LoggedFailure.StackTrace(ex), stepName, LoggedFailure.Reason(ex));
-            // Do NOT rethrow — progress reporting is best-effort; imaging continues
+            // Do NOT rethrow: progress reporting is best-effort; imaging continues
         }
     }
 
@@ -143,15 +143,15 @@ public sealed partial class ImagingProgressReporter
         lock (_throttleGate)
         {
             var now = _timeProvider.GetUtcNow();
-            var isNewStep       = _lastProgressStep != stepName;
-            var intervalPassed  = now - _lastProgressReportUtc >= MinProgressReportInterval;
+            var isNewStep = _lastProgressStep != stepName;
+            var intervalPassed = now - _lastProgressReportUtc >= MinProgressReportInterval;
 
             if (!isNewStep && !intervalPassed)
             {
                 return false;
             }
 
-            _lastProgressStep      = stepName;
+            _lastProgressStep = stepName;
             _lastProgressReportUtc = now;
             return true;
         }

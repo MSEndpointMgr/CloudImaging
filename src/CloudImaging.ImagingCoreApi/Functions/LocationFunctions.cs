@@ -11,7 +11,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 
 /// <summary>
 /// Internal location-catalog CRUD endpoints consumed by the Operator API (Location Labels
-/// feature). Simple admin-managed labels — no rotation/entry-count cap, unlike BootImages.
+/// feature). Simple admin-managed labels: no rotation/entry-count cap, unlike BootImages.
 ///
 /// GET    /api/internal/locations: lists all locations
 /// POST   /api/internal/locations: creates a new location
@@ -76,7 +76,7 @@ public sealed partial class LocationFunctions
         FunctionContext context)
     {
         // Deserialize into a plain DTO rather than the `Location` entity directly: `Location.LocationId`
-        // is a `required` member, and callers (the portal) only ever send `{ "name": "..." }` — System.Text.Json
+        // is a `required` member, and callers (the portal) only ever send `{ "name": "..." }`: System.Text.Json
         // throws JsonException for a missing required property, which was surfacing as an unconditional
         // 400 Bad Request for every create attempt.
         CreateLocationRequest? payload;
@@ -189,16 +189,16 @@ public sealed partial class LocationFunctions
         }
 
         var ct = context.CancellationToken;
-        var refused = await _setupProfiles.CheckLocationDeletionAsync(locationId, ct);
+        var existing = await _repo.GetByIdAsync(locationId, ct);
+        var changedBy = System.Web.HttpUtility.ParseQueryString(req.Url.Query)["changedBy"];
+        var refused = await _setupProfiles.DetachLocationAsync(locationId, existing?.Name ?? "This location", changedBy, ct);
         if (refused is not null)
         {
             return await SetupProfileFunctions.ProblemAsync(req, new SetupProfileResult(SetupProfileOutcome.Conflict, Detail: refused), ct);
         }
 
-        var existing = await _repo.GetByIdAsync(locationId, ct);
         await _repo.DeleteAsync(locationId, ct);
         var networks = await _wifiNetworks.RemoveLocationAsync(locationId, ct);
-        var changedBy = System.Web.HttpUtility.ParseQueryString(req.Url.Query)["changedBy"];
         await _setupProfiles.RemoveDeletedLocationAsync(locationId, existing?.Name ?? "A location", changedBy, ct);
         LogDeleted(_logger, locationId, networks.Count);
 
@@ -227,7 +227,7 @@ public sealed partial class LocationFunctions
 }
 
 /// <summary>Request body accepted by <see cref="LocationFunctions.CreateLocation"/>: <c>{ "name": "..." }</c>.
-/// <see cref="LocationId"/> is optional and normally omitted — the server assigns a new one.</summary>
+/// <see cref="LocationId"/> is optional and normally omitted: the server assigns a new one.</summary>
 internal sealed class CreateLocationRequest
 {
     public Guid? LocationId { get; init; }

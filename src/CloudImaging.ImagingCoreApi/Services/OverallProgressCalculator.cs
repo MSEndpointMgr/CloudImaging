@@ -61,7 +61,7 @@ public static class OverallProgressCalculator
     }
 
     /// <summary>
-    /// Calculates the overall progress percentage (0–100).
+    /// Calculates the overall progress percentage (0-100).
     /// Returns 0 if <paramref name="steps"/> is null or empty.
     /// </summary>
     public static int Calculate(IReadOnlyList<ImagingStep>? steps)
@@ -92,7 +92,7 @@ public static class OverallProgressCalculator
     }
 
     /// <summary>
-    /// Returns the step the session is currently on, or — once nothing is running any more — the
+    /// Returns the step the session is currently on, or (once nothing is running any more) the
     /// last step it reached. The portal surfaces this as "Step" while a session is being monitored
     /// and as "Last step" once it has failed, so returning null the moment the active step stops
     /// being InProgress would blank the column exactly when a technician needs it most (a failed

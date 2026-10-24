@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff, Play } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -17,6 +17,7 @@ import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { RelativeTime } from '../components/ui/relative-time.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
+import { StartImagingProfileLines } from '../components/setup-profiles/StartImagingProfileLines.tsx';
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
 import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
@@ -89,7 +90,7 @@ type DeviceView = 'pending' | 'monitor' | 'success' | 'failed' | 'blocked' | 'ov
 
 // Available: newly-registered sessions awaiting a technician to enter the device's passcode.
 const AVAILABLE_STATES = new Set(['SessionInit', 'SessionAllowed']);
-// Coupled: passcode has been matched — eligible for OS image selection.
+// Coupled: passcode has been matched: eligible for OS image selection.
 const COUPLED_STATES = new Set(['SessionAssigned']);
 // Monitor: devices with active imaging work. Completed devices move to Success.
 const MONITOR_STATES = new Set(['SessionStarted', 'SessionInProgress']);
@@ -206,7 +207,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
 
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
-  const { isAdministrator } = useAuth();
+  const { isAdministrator, canViewSetupProfiles } = useAuth();
   const { preferredLocationId, preferredLocationName } = useUserPreferences();
   const [sessions, setSessions]         = useState<Session[]>([]);
   // Active pre-flight overrides, and whether pre-flight authorization is on at all. Both come from
@@ -239,7 +240,7 @@ function SessionsPageImpl(): React.ReactElement {
   const consecutiveFailuresRef = useRef(0);
 
   // Imaging (and, by extension, the Start Imaging action) is impossible until at least one
-  // active OS image has been uploaded — surfaced via a persistent banner rather than a toast
+  // active OS image has been uploaded: surfaced via a persistent banner rather than a toast
   // so technicians can't miss it while coupling devices ahead of an image being ready.
   const hasOsImages = images.length > 0;
 
@@ -344,7 +345,7 @@ function SessionsPageImpl(): React.ReactElement {
     const hasHot = data.some(s => s.state === 'SessionStarted' || s.state === 'SessionInProgress');
     const baseInterval = hasHot ? 5_000 : 30_000;
     // Back off exponentially after consecutive failed polls (transient network blips, upstream
-    // 5xx, etc.) so we don't hammer a struggling backend — capped at 5 minutes, and reset to the
+    // 5xx, etc.) so we don't hammer a struggling backend: capped at 5 minutes, and reset to the
     // normal cadence as soon as a poll succeeds again.
     const failures = consecutiveFailuresRef.current;
     const interval = failures > 0 ? Math.min(baseInterval * 2 ** failures, 300_000) : baseInterval;
@@ -692,7 +693,7 @@ function SessionsPageImpl(): React.ReactElement {
       {view === 'pending' ? (
         <div className="space-y-5">
           {/* text-sm, not text-xs: 12px is reserved for badges/metadata, and this is blocking
-              page guidance. It also makes the icon's mt-0.5 correct — that offset centres a 16px
+              page guidance. It also makes the icon's mt-0.5 correct: that offset centres a 16px
               icon in text-sm's 20px line box, so against a 16px text-xs line box it read low. */}
           {imagesLoaded && !hasOsImages && (
             <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600 dark:text-amber-400">
@@ -886,7 +887,7 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All eight widths are percentages that sum to exactly 100% — table-fixed sizes
+                {/* All eight widths are percentages that sum to exactly 100%: table-fixed sizes
                     columns as (percent + fixed px) of the table's own width, so mixing in a
                     fixed px column (State was a flat 140px) made the row wider than its
                     container on anything above ~1750px and forced a horizontal scrollbar. */}
@@ -1081,7 +1082,7 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All eight widths are percentages that sum to exactly 100% — see the Monitor
+                {/* All eight widths are percentages that sum to exactly 100%: see the Monitor
                     table's comment above for why fixed-px columns (State/Actions were
                     140px/150px) can't be mixed in here without pushing the row past the
                     container width. */}
@@ -1354,11 +1355,13 @@ function SessionsPageImpl(): React.ReactElement {
 
       {pendingBulkAssign && (
         <ConfirmImpactDialog
+          icon={Play}
           copy={bulkAssignCopy}
           busy={startingImages}
           onCancel={() => setPendingBulkAssign(false)}
           onConfirm={() => { void handleStartImaging(); }}
           titleId="bulk-assign-confirm-title"
+          details={canViewSetupProfiles ? <StartImagingProfileLines sessions={targetSessions} /> : undefined}
         />
       )}
     </div>

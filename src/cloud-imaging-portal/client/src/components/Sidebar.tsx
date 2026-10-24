@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin, BadgeCheck, Wifi, ListChecks } from 'lucide-react';
+import { LayoutDashboard, Monitor, HardDrive, Disc, LifeBuoy, Palette, Settings, HardDriveDownload, BarChart3, MapPin, BadgeCheck, Wifi, SlidersHorizontal } from 'lucide-react';
 import { useBranding } from '../context/brandingContext.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { cn } from '../lib/utils.ts';
@@ -35,7 +35,7 @@ const navSections: NavSection[] = [
       { label: 'OS Images',       path: '/os-images',        icon: <HardDrive size={18} />, access: 'imaging' },
       { label: 'Boot Images',     path: '/boot-images',      icon: <Disc      size={18} />, access: 'imaging' },
       { label: 'Recovery Images', path: '/recovery-images',  icon: <LifeBuoy  size={18} />, access: 'imaging' },
-      { label: 'Setup Profiles',  path: '/setup-profiles',   icon: <ListChecks size={18} />, access: 'setupProfiles' },
+      { label: 'Setup Profiles',  path: '/setup-profiles',   icon: <SlidersHorizontal size={18} />, access: 'setupProfiles' },
       { label: 'Autopilot',       path: '/autopilot',        icon: <BadgeCheck size={18} />, access: 'autopilot' },
     ],
   },

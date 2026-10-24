@@ -7,7 +7,7 @@ public sealed class PortalConfiguration
 {
     /// <summary>
     /// Enables or disables the device pre-flight authorization check globally (FR-026a).
-    /// Default: false (disabled) — bare-metal imaging works without device pre-enrollment;
+    /// Default: false (disabled): bare-metal imaging works without device pre-enrollment;
     /// administrators opt in explicitly once device authorization records are in place.
     /// </summary>
     public bool DevicePreFlightAuthorizationEnabled { get; init; }
@@ -39,7 +39,7 @@ public sealed class PortalConfiguration
 
     /// <summary>
     /// Boot image SAS token URL expiry in minutes.
-    /// Default: 120 (2 hours) — shorter than OS image SAS.
+    /// Default: 120 (2 hours): shorter than OS image SAS.
     /// </summary>
     public int BootImageSasExpiryMinutes { get; init; } = 120;
 
@@ -58,7 +58,7 @@ public sealed class PortalConfiguration
     /// <summary>
     /// How long completed session outcomes are retained in the SessionHistory audit table
     /// (Reports feature) before being purged. Default: 90 days. Applied once, at the time a
-    /// history record is written — changing this value is not retroactive; already-written
+    /// history record is written: changing this value is not retroactive; already-written
     /// records keep the retention that was in effect when they were created.
     /// </summary>
     public int SessionHistoryRetentionDays { get; init; } = 90;

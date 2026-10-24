@@ -628,9 +628,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             .OrderByDescending(i => i.Version, Comparer<string>.Create(CompareVersions)))
         {
             var stage = image.IsLatestPublished ? " (latest)" : image.IsProduction ? string.Empty : " (pre-production)";
-            var wifi = image.Base == BootImageBase.WindowsRE ? ", Wi-Fi" : string.Empty;
             var label = string.Create(CultureInfo.InvariantCulture,
-                $"v{image.Version}, {DisplayArchitecture(image.Architecture)}{wifi} ({FormatBytes(image.SizeBytes)}){stage}");
+                $"v{image.Version}, {DisplayArchitecture(image.Architecture)}, {DisplaySource(image.Base)} ({FormatBytes(image.SizeBytes)}){stage}");
             BootImages.Add(new BootImageChoice(image.BootImageId, label, image));
         }
 
@@ -1008,6 +1007,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private static string DisplayArchitecture(MachineArchitecture architecture) =>
         architecture == MachineArchitecture.Arm64 ? "ARM64" : "x64";
 
+    /// <summary>Operator-facing source label, matching the Portal's Boot Images Source column.</summary>
+    private static string DisplaySource(BootImageBase imageBase) =>
+        imageBase == BootImageBase.WindowsRE ? "WinRE" : "WinPE";
+
     /// <summary>
     /// Rejects a WIM whose own metadata contradicts the catalog's architecture label. Skipped when
     /// the WIM carries no readable architecture (the catalog label is then all there is).
@@ -1247,8 +1250,8 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     /// <summary>A selectable entry from the admin-managed location catalog (Location Labels feature).</summary>
     public sealed record LocationChoice(Guid Id, string Name, LocationDto Dto);
 
-    /// <summary>A Wi-Fi network as the card lists it: name and security, never the password.</summary>
-    public sealed record WifiNetworkRow(string Ssid, string Detail);
+    /// <summary>A Wi-Fi network as the card lists it: its name only, never the password.</summary>
+    public sealed record WifiNetworkRow(string Ssid);
 
     /// <summary>
     /// Loads the networks for the selected location for display. A later selection supersedes an
@@ -1281,7 +1284,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             var set = await _operatorApi.GetManagedWifiNetworksAsync(SelectedLocation?.Id);
             if (version == _wifiLoadVersion)
             {
-                WifiNetworks = [.. set.Networks.Select(n => new WifiNetworkRow(n.Ssid, DescribeWifi(n)))];
+                WifiNetworks = [.. set.Networks.Select(n => new WifiNetworkRow(n.Ssid))];
             }
         }
         catch (Exception ex)
@@ -1318,16 +1321,5 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             pfx, password: null, System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet);
         using var publicOnly = System.Security.Cryptography.X509Certificates.X509CertificateLoader.LoadCertificate(withKey.RawData);
         return Convert.ToBase64String(ManagedWifiEnvelope.Encrypt(set, publicOnly));
-    }
-
-    private static string DescribeWifi(ManagedWifiNetwork network)
-    {
-        var security = network.Security switch
-        {
-            WifiSecurityType.Wpa3Personal => "WPA3-Personal",
-            WifiSecurityType.Wpa2Wpa3Personal => "WPA2/WPA3-Personal",
-            _ => "WPA2-Personal",
-        };
-        return network.Hidden ? security + ", hidden" : security;
     }
 }

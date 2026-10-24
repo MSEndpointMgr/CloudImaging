@@ -9,7 +9,7 @@ namespace CloudImaging.Contracts.Models;
 /// model requiring non-repudiation: the only actor that ever consumes a boot image is the
 /// Media Builder's own Prepare USB Storage Device workflow, which already performs an
 /// independent SHA256 hash check against the value the Operator API returns for the
-/// selected catalog entry before deploying to USB (FR-056) — that check is the real
+/// selected catalog entry before deploying to USB (FR-056): that check is the real
 /// integrity/tamper boundary. This manifest exists purely to record build-time provenance
 /// (component checksums, driver injection counts, etc.) for diagnostics.
 /// </summary>
@@ -45,7 +45,7 @@ public sealed class BootImageManifest
 
     /// <summary>
     /// Whether this boot image was built with the Media Builder's "Enable command prompt
-    /// access" opt-in checked (FR-051d) — provenance/audit visibility for whoever inspects
+    /// access" opt-in checked (FR-051d): provenance/audit visibility for whoever inspects
     /// this manifest later, independent of the Client's own <c>appsettings.json</c> stamp.
     /// </summary>
     public bool SupportToolsEnabled { get; init; }

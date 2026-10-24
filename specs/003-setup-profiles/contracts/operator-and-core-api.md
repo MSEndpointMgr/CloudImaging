@@ -2,6 +2,22 @@
 
 **Feature**: [../spec.md](../spec.md) | **Model**: [../data-model.md](../data-model.md) | **Callers**: [portal-server-routes.md](portal-server-routes.md), [device-gateway.md](device-gateway.md)
 
+> **Amendment 2026-10-24** (research R18, wins over the text below):
+>
+> | Operator API | Imaging Core | Body and result |
+> |---|---|---|
+> | `POST /api/setup-profiles/content?kind=script\|answerFile` | `POST /api/internal/setup-profiles/content?kind=...` | `application/octet-stream`, at most 25,165,824 bytes (script) or 2,097,152 (answer file), BOM not counted. 200 `{ sha256, sizeBytes }`, plus `passes` and `problems` for `answerFile`. 413 "This script is 25.3 MB. A script can be at most 24 MB." (or "The answer file is larger than 2 MB. Remove settings you do not need."). 400 for an unknown `kind` or an empty body. |
+> | `GET /api/setup-profiles/{id}/content/{sha256}` | `GET /api/internal/setup-profiles/{id}/content/{sha256}` | 200 `text/plain; charset=utf-8` when a retained version of the profile references the hash, else 404. |
+>
+> The Operator API relays the raw body and the content type without parsing. Create, save and
+> restore bodies carry script `{ id, name, runs, order, timeoutMinutes, locations: { all,
+> locationIds }, contentSha256 }` and `answerFile: { contentSha256 } | null`; Core refuses an
+> unknown or oversized hash with 400 "The text of \"<name>\" was not uploaded. Open the script and
+> press Done again.", a location outside the profile's targeting with 400, more than 1000 scripts
+> with 400, and a script with no effective locations with 400 "\"<name>\" has no locations left.
+> Choose a location or delete the script.". The descriptor adds `scripts` per
+> [device-gateway.md](device-gateway.md). Step items are capped at 1500 per report.
+
 The Operator API is a thin proxy (pattern of `OperatorApi/Functions/WifiNetworkFunctions.cs`):
 it validates route parameters, forwards the body unchanged to the Imaging Core API through
 `OperatorApi/Services/ImagingCoreClient.cs`, and relays status and body. All rules live in Core.

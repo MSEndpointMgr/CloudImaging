@@ -79,6 +79,9 @@ public sealed partial class ManagedWifiService
     /// <summary>The networks this device receives, in the order they are tried; empty until loaded.</summary>
     public IReadOnlyList<ManagedWifiNetwork> Networks => _networks?.Networks ?? [];
 
+    /// <summary>The wireless service the networks are joined through.</summary>
+    public WirelessConnectionService Wireless => _wifi;
+
     /// <summary>The managed network with this SSID, or null.</summary>
     public ManagedWifiNetwork? Find(string ssid) => Networks.FirstOrDefault(n => string.Equals(n.Ssid, ssid, StringComparison.Ordinal));
 

@@ -150,10 +150,11 @@ public sealed class StartupReadinessTests
     // Operation Selection gating
 
     [Fact]
-    public void OperationSelection_DisablesEverything_WhenTheServiceCannotBeReached()
+    public async Task OperationSelection_DisablesEverything_WhenTheServiceCannotBeReached()
     {
         var rechecked = false;
-        var vm = Selection(new StartupReadiness(1, GatewayReachability.NoNetwork, AutopilotAvailabilityState.Unreachable), () => rechecked = true);
+        var readiness = new StartupReadiness(1, GatewayReachability.NoNetwork, AutopilotAvailabilityState.Unreachable);
+        var vm = Selection(readiness, _ => { rechecked = true; return Task.FromResult(readiness with { Rechecked = true }); });
 
         vm.IsServiceBlocked.Should().BeTrue();
         vm.IsImagingSelectable.Should().BeFalse();
@@ -165,7 +166,7 @@ public sealed class StartupReadinessTests
         vm.SelectOperationCommand.Execute("Imaging");
         vm.SelectedOperation.Should().BeNull();
 
-        vm.RecheckCommand.Execute(null);
+        await vm.RecheckAsync();
         rechecked.Should().BeTrue();
     }
 
@@ -194,10 +195,125 @@ public sealed class StartupReadinessTests
         vm.IsServiceBlocked.Should().BeFalse();
     }
 
-    private static OperationSelectionViewModel Selection(StartupReadiness readiness, Action? recheck = null) =>
+    // Boot media update
+
+    private static StartupViewModel ChecksWithUpdate(
+        GatewayReachability gateway,
+        Func<CancellationToken, Task<BootImageUpdateCheck>> checkUpdate,
+        string? adapter = "Intel Ethernet (10.0.0.5)",
+        Func<Action<BootImageUpdateProgress>, CancellationToken, Task<bool>>? applyUpdate = null,
+        Action? restart = null) =>
+        new(_ => Task.FromResult(new GatewayProbeResult(gateway, null)), false,
+            findLocalDisks: () => [Disk],
+            findNetworkAdapter: () => adapter,
+            networkWait: TimeSpan.FromMilliseconds(50),
+            checkBootImageUpdate: checkUpdate,
+            applyBootImageUpdate: applyUpdate,
+            restartDevice: restart);
+
+    [Fact]
+    public async Task Update_IsSkipped_WithoutAskingTheService_WhenThereIsNoNetwork()
+    {
+        var asked = false;
+        var vm = ChecksWithUpdate(GatewayReachability.Unreachable, _ => { asked = true; return Task.FromResult(new BootImageUpdateCheck(BootImageUpdateStatus.UpToDate)); }, adapter: null);
+
+        await vm.RunAsync();
+
+        asked.Should().BeFalse("the update check only runs once the network and service are known to work");
+        vm.UpdateCheck.State.Should().Be(StartupCheckState.Skipped);
+        vm.UpdateCheck.Detail.Should().Be("Skipped: no network.");
+        vm.Checks.Should().HaveCount(4);
+    }
+
+    [Theory]
+    [InlineData(BootImageUpdateStatus.UpToDate, StartupCheckState.Passed, "Up to date (2026.10.1).")]
+    [InlineData(BootImageUpdateStatus.Failed, StartupCheckState.Skipped, "Could not check. The current boot image is kept.")]
+    public async Task Update_ReportsTheOutcome_WithoutEverFailingStartup(BootImageUpdateStatus status, StartupCheckState expected, string detail)
+    {
+        var vm = ChecksWithUpdate(GatewayReachability.Reachable, _ => Task.FromResult(new BootImageUpdateCheck(status, "2026.10.1")));
+
+        var readiness = await vm.RunAsync();
+
+        readiness.CanReachService.Should().BeTrue();
+        readiness.RestartRequired.Should().BeFalse();
+        vm.UpdateCheck.State.Should().Be(expected);
+        vm.UpdateCheck.Detail.Should().Be(detail);
+    }
+
+    [Fact]
+    public async Task Update_HoldsStartup_ShowsProgress_ThenAsksForARestart()
+    {
+        var seen = new List<(string Detail, int? Percent)>();
+        var restarted = false;
+        StartupViewModel? vm = null;
+        vm = ChecksWithUpdate(GatewayReachability.Reachable,
+            _ => Task.FromResult(new BootImageUpdateCheck(BootImageUpdateStatus.UpdateAvailable, "2026.10.2")),
+            applyUpdate: (report, ct) =>
+            {
+                ct.CanBeCanceled.Should().BeFalse("the startup time limit must not cut a boot image download short");
+                foreach (var p in new[]
+                {
+                    new BootImageUpdateProgress(BootImageUpdatePhase.Downloading, 50, 320_000_000, 640_000_000),
+                    new BootImageUpdateProgress(BootImageUpdatePhase.Verifying, 40),
+                    new BootImageUpdateProgress(BootImageUpdatePhase.Applying, null),
+                })
+                {
+                    report(p);
+                    vm!.RestartRequired.Should().BeFalse();
+                    seen.Add((vm.UpdateCheck.Detail, vm.UpdateCheck.Percent));
+                }
+                return Task.FromResult(true);
+            },
+            restart: () => restarted = true);
+
+        var readiness = await vm.RunAsync();
+
+        seen.Should().Equal(
+            ("Downloading 2026.10.2: 320 of 640 MB", 50),
+            ("Verifying 2026.10.2…", 40),
+            ("Writing 2026.10.2 to the USB drive…", null));
+        readiness.RestartRequired.Should().BeTrue();
+        vm.RestartRequired.Should().BeTrue();
+        vm.UpdateCheck.State.Should().Be(StartupCheckState.Passed);
+        vm.UpdateCheck.Detail.Should().Be("Updated to 2026.10.2. Restart the device to start from it.");
+        vm.UpdateCheck.Badge.Should().Be("Restart required");
+        vm.UpdateCheck.HasPercent.Should().BeFalse();
+
+        vm.RestartCommand.Execute(null);
+        restarted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Update_ThatCannotBeWritten_KeepsTheCurrentImage_AndCarriesOn()
+    {
+        var vm = ChecksWithUpdate(GatewayReachability.Reachable,
+            _ => Task.FromResult(new BootImageUpdateCheck(BootImageUpdateStatus.UpdateAvailable, "2026.10.2")),
+            applyUpdate: (_, _) => Task.FromResult(false));
+
+        var readiness = await vm.RunAsync();
+
+        readiness.RestartRequired.Should().BeFalse();
+        vm.RestartRequired.Should().BeFalse();
+        vm.UpdateCheck.State.Should().Be(StartupCheckState.Skipped);
+        vm.UpdateCheck.Detail.Should().Be("Could not update. The current boot image is kept.");
+        vm.UpdateCheck.HasBadge.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Update_ThatThrows_IsSkipped()
+    {
+        var vm = ChecksWithUpdate(GatewayReachability.Reachable, _ => throw new HttpRequestException("No such host is known."));
+
+        await vm.RunAsync();
+
+        vm.UpdateCheck.State.Should().Be(StartupCheckState.Skipped);
+    }
+
+    private static OperationSelectionViewModel Selection(StartupReadiness readiness, Func<CancellationToken, Task<StartupReadiness>>? recheck = null) =>
         new(Gateway(_ => new HttpResponseMessage(HttpStatusCode.OK)), (_, _) => { },
             autopilotToolingPresent: true, navigateToAutopilot: () => { },
-            autopilotAvailability: readiness.AutopilotAvailability, readiness: readiness, recheck: recheck);
+            autopilotAvailability: readiness.AutopilotAvailability, readiness: readiness, recheck: recheck,
+            readNetwork: () => NetworkSnapshot.Empty);
 
     private static DeviceGatewayApiClient Gateway(Func<HttpRequestMessage, HttpResponseMessage> respond) =>
         new(new HttpClient(new StubHandler(respond)) { BaseAddress = new Uri("https://gw.example.com") });

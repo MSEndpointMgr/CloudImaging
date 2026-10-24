@@ -2,6 +2,20 @@
 
 **Feature**: [../spec.md](../spec.md) | **Model**: [../data-model.md](../data-model.md) | **Upstream**: [operator-and-core-api.md](operator-and-core-api.md)
 
+> **Amendment 2026-10-24** (research R18, wins over the text below): two routes are added to the
+> setup profiles router.
+>
+> | # | Method and path | Guard | Upstream | Success |
+> |---|---|---|---|---|
+> | 14 | `POST /api/setup-profiles/content?kind=script\|answerFile` | requireOperator | `POST /api/setup-profiles/content?kind=` | 200 `{ sha256, sizeBytes }` (plus `passes`, `problems` for `answerFile`) |
+> | 15 | `GET /api/setup-profiles/:profileId/content/:sha256` | requireTechnician, requireGuidParams | `GET /api/setup-profiles/{id}/content/{sha256}` | 200 text |
+>
+> Route 14 takes `application/octet-stream` through `express.raw({ limit: '25mb' })` mounted on
+> that path only, before the JSON parsers, and streams the bytes upstream; `:sha256` must be 64
+> lowercase hex characters, else 400 without an upstream call. Both routes join the role matrix
+> (14 with the write routes, 15 with the read routes). The 4 MB JSON limit on the router stays;
+> saves now carry references only.
+
 Every route passes Entra authentication, then the role guard, then (where shown)
 `requireGuidParams`. A refused request returns the existing 403 problem response; its `detail`
 names exactly the roles in the guard (spec 004 research R2).
@@ -188,4 +202,5 @@ entries, each `message` at most 300 characters, and nothing else from the upstre
 | 409 | Stale `baseVersion` or concurrent name/targeting change | "This profile was changed by ops2@contoso.com at 2026-10-23 10:41. Reload to see their changes." |
 | 409 | Duplicate name | "A setup profile named "Stockholm" already exists. Choose another name." |
 | 409 | Location delete refused (route 11) | "Stockholm HQ is the only location of setup profile "Stockholm". Add another location to the profile or delete the profile, then try again." |
+| 409 | Location delete while the targeting profile keeps being saved (route 11, after three attempts) | "A setup profile that targets Stockholm HQ is being changed. Try again." |
 | 413 | Body above 4 MB | Existing body-parser response. Not reachable with valid content. |

@@ -135,7 +135,7 @@ describe('Portal frontend: session progress details', () => {
       const { container } = render(<SessionProgressDetails overallPercent={0} currentStep={null} />);
 
       expect(container.querySelectorAll('ol > li')).toHaveLength(5);
-      expect(container.querySelector('ol')?.className).toContain('grid-cols-5');
+      expect(container.querySelector('ol')?.getAttribute('style')).toContain('repeat(5, minmax(0, 1fr))');
       expect(screen.queryByText('Prepare setup')).toBeNull();
     });
 
@@ -144,8 +144,8 @@ describe('Portal frontend: session progress details', () => {
 
       const labels = [...container.querySelectorAll('ol > li > p:first-of-type')].map((p) => p.textContent);
       expect(labels).toEqual(['Prepare disk', 'Download image', 'Apply image', 'Prepare setup', 'Configure boot', 'Configure recovery']);
-      expect(container.querySelector('ol')?.className).toContain('grid-cols-6');
-      expect(screen.getByText('Stockholm and Gothenburg, version 8')).toBeTruthy();
+      expect(container.querySelector('ol')?.getAttribute('style')).toContain('repeat(6, minmax(0, 1fr))');
+      expect(screen.getByText('Setup profile: Stockholm and Gothenburg, version 8')).toBeTruthy();
     });
 
     it('shows Prepare setup when reported, even without a pin', () => {
@@ -154,7 +154,11 @@ describe('Portal frontend: session progress details', () => {
       expect(screen.getByText('No setup profile')).toBeTruthy();
     });
 
-    it('marks a step completed with warnings and summarizes the item counts', () => {
+    it('marks a step completed with warnings, summarizes the item counts and lists failures straight away', async () => {
+      api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
+        { index: 0, kind: 'RegistryValue', name: 'Time zone', outcome: 'Succeeded' },
+        { index: 3, kind: 'WinPEScript', name: 'Enable Wake on LAN', outcome: 'Failed', reason: 'Exited with code 1.', exitCode: 1, lastOutputLine: 'Invalid namespace' },
+      ]), { status: 200 }));
       const steps = ['FormatDisk', 'DownloadImage', 'ApplyImage', 'ConfigureBoot', 'ApplyRecoveryImage'].map((s) => done(s));
       steps.push(done('PrepareSetup', {
         warningCount: 1,
@@ -168,7 +172,17 @@ describe('Portal frontend: session progress details', () => {
       render(<SessionProgressDetails overallPercent={100} currentStep={null} steps={steps} setupProfile={pin} sessionId="s1" terminal />);
 
       expect(screen.getAllByText('Completed with warnings').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('3 registry values written. 1 of 2 WinPE scripts failed.')).toBeTruthy();
+      expect(screen.getByText('1 Offline script failed')).toBeTruthy();
+      expect(screen.getByText('3 registry values written')).toBeTruthy();
+      expect(screen.getByText('1 Offline script succeeded')).toBeTruthy();
+
+      const row = await screen.findByText('Enable Wake on LAN');
+      expect(row.closest('li')?.textContent).toContain('Offline script');
+      expect(row.closest('li')?.textContent).toContain('Failed: exit code 1');
+      expect(screen.queryByText('Time zone')).toBeNull();
+      expect(screen.getByText('Failures are listed first; 4 other items are hidden.')).toBeTruthy();
+      fireEvent.focus(row.closest('li')!.querySelector('[tabindex="0"]')!);
+      expect(screen.getByRole('tooltip').textContent).toBe('Exited with code 1. Last output: Invalid namespace');
     });
 
     it('shows Not run for a finished session whose boot image never reported the step', () => {
@@ -181,22 +195,50 @@ describe('Portal frontend: session progress details', () => {
       expect(screen.getByRole('tooltip').textContent).toBe("This device's boot image is older than Setup Profiles, so the profile was not applied. Update the boot image.");
     });
 
-    it('lists the items with failures first and notes truncation', async () => {
+    it('does not blame the boot image when the session failed before Prepare setup', () => {
+      const steps = [done('FormatDisk'), done('DownloadImage'), done('ApplyImage', { status: 'Failed', errorDetail: 'DISM exited with code 5.' })];
+
+      render(<SessionProgressDetails overallPercent={40} currentStep={null} steps={steps} setupProfile={pin} terminal />);
+
+      expect(screen.queryByText('Not run')).toBeNull();
+      expect(screen.queryByText(/older than Setup Profiles/)).toBeNull();
+    });
+
+    it('lists every item behind Show details and notes truncation and Specialize', async () => {
+      api.apiFetchWithRetry.mockReset();
       api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
-        { index: 1, kind: 'WinPEScript', name: 'Enable Wake on LAN', outcome: 'Failed', reason: 'Exited with code 1.', exitCode: 1, durationMs: 8123 },
         { index: 0, kind: 'RegistryValue', name: 'Time zone', outcome: 'Succeeded' },
+        { index: 1, kind: 'WindowsSetupScript', name: 'Wired 802.1X', outcome: 'Queued' },
       ]), { status: 200 }));
-      const steps = [done('PrepareSetup', { warningCount: 1, itemsTruncated: true, itemCounts: [{ kind: 'WinPEScript', outcome: 'Failed', count: 1 }] })];
+      const steps = [done('PrepareSetup', { itemsTruncated: true, itemCounts: [{ kind: 'RegistryValue', outcome: 'Succeeded', count: 1 }, { kind: 'WindowsSetupScript', outcome: 'Queued', count: 1 }] })];
 
       render(<SessionProgressDetails overallPercent={80} currentStep={null} steps={steps} setupProfile={pin} sessionId="s1" />);
-      fireEvent.click(screen.getByRole('button', { name: 'Show items' }));
+      expect(screen.getByText('1 script queued for Specialize')).toBeTruthy();
+      expect(screen.getByText('Specialize runs during Windows setup, after the restart, and is recorded on the device only.')).toBeTruthy();
+      expect(api.apiFetchWithRetry).not.toHaveBeenCalled();
 
-      const first = await screen.findByText('Enable Wake on LAN');
-      expect(first.closest('li')?.textContent).toContain('Exit code 1');
+      fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+
+      const queued = await screen.findByText('Wired 802.1X');
+      expect(queued.closest('li')?.textContent).toContain('Queued for Specialize');
+      expect(screen.getByText('Time zone').closest('li')?.textContent).toContain('Written');
       expect(api.apiFetchWithRetry).toHaveBeenCalledWith('/api/sessions/s1/steps/PrepareSetup/items', { credentials: 'include' });
-      expect(screen.getByText('Showing the first 500 items.')).toBeTruthy();
-      fireEvent.focus(screen.getByText('Failed'));
-      expect(screen.getByRole('tooltip').textContent).toBe('Exited with code 1.');
+      expect(screen.getByText('Showing the first 1500 items.')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Hide details' })).toBeTruthy();
+    });
+
+    it('explains a failed Prepare setup in its own card', async () => {
+      api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
+        { index: 0, kind: 'RegistryValue', name: 'Wait for Intune', outcome: 'Failed', reason: 'The SYSTEM hive could not be loaded.' },
+      ]), { status: 200 }));
+      const steps = [{ stepName: 'PrepareSetup', status: 'Failed', startedAt: '2026-09-11T08:00:00.000Z', completedAt: '2026-09-11T08:00:04.000Z', errorDetail: 'Wait for Intune: The SYSTEM hive could not be loaded.', itemCounts: [{ kind: 'RegistryValue', outcome: 'Failed', count: 1 }] }];
+
+      render(<SessionProgressDetails overallPercent={72} currentStep="PrepareSetup" steps={steps} setupProfile={pin} sessionId="s1" terminal />);
+
+      expect(await screen.findByText('Wait for Intune')).toBeTruthy();
+      expect(screen.getByText('The device does not start Windows. Retry the deployment after fixing the profile or the OS image.')).toBeTruthy();
+      expect(screen.queryByText('Prepare setup failed')).toBeNull();
+      expect(screen.getByText(/Failed on Prepare setup after 4s/)).toBeTruthy();
     });
   });
 });

@@ -87,6 +87,8 @@ const operatorApi = vi.hoisted(() => {
     getSetupProfileVersions: resolved([]),
     getSetupProfileVersion: resolved(),
     getSetupProfileHistory: resolved([]),
+    uploadSetupProfileContent: resolved(),
+    getSetupProfileContent: resolved({ data: Buffer.from('exit 0'), contentType: 'text/plain; charset=utf-8' }),
     getSessionStepItems: resolved([]),
     // routes/cert.ts posts generate and rotate through the client's raw axios instance.
     http: { post: resolved({ data: {} }) },
@@ -196,6 +198,8 @@ const ROUTES: Row[] = [
   ['get', '/api/setup-profiles/:profileId/versions', TECH, PA_USERS, null],
   ['get', '/api/setup-profiles/:profileId/versions/:version', TECH, PA_USERS, null],
   ['get', '/api/setup-profiles/:profileId/history', TECH, PA_USERS, null],
+  ['post', '/api/setup-profiles/content', OPS, OPS_USERS, null],
+  ['get', '/api/setup-profiles/:profileId/content/:sha256', TECH, PA_USERS, null],
 
   ['get', '/api/images', PA_RDR, PA_RDR_USERS, PA_RDR_BEFORE],
   ['post', '/api/images', OPS, OPS_USERS, ADM_BEFORE],
@@ -343,7 +347,7 @@ describe('Portal backend: route-by-role matrix', () => {
   it('lists every route the 18 routers register exactly once', () => {
     const table = ROUTES.map(([method, path]) => `${method.toUpperCase()} ${path}`);
     expect(MOUNTS).toHaveLength(18);
-    expect(ROUTES).toHaveLength(83);
+    expect(ROUTES).toHaveLength(85);
     expect(new Set(table).size).toBe(table.length);
     expect([...registeredRoutes()].sort()).toEqual([...table].sort());
   });

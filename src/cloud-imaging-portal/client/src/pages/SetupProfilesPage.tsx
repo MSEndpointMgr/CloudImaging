@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Copy, Eye, ListChecks, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Eye, Pencil, Plus, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
@@ -12,7 +12,7 @@ import type { PickerLocation } from '../components/LocationPicker.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
-import { formatDateTime } from '../lib/utils.ts';
+import { formatTimestamp } from '../lib/utils.ts';
 import { deleteImpact, deleteSetupProfile, fetchSetupProfiles, targetedNames, type SetupProfileSummary } from '../lib/setupProfiles.ts';
 
 /**
@@ -70,7 +70,7 @@ export default function SetupProfilesPage(): React.ReactElement {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Registry values, scripts and an answer file applied to devices before Windows starts and during Windows setup. Devices get the profile that targets the location on their USB media.
+          Registry values and scripts applied to devices before Windows starts, based on the location set on the USB media they started from.
         </p>
         {canManageSetupProfiles && <div className="shrink-0">{newButton}</div>}
       </div>
@@ -79,12 +79,12 @@ export default function SetupProfilesPage(): React.ReactElement {
         <Table className="table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead>Name</TableHead>
-              <TableHead className="w-[22%]">Targeting</TableHead>
-              <TableHead className="w-[12%]">Registry values</TableHead>
-              <TableHead className="w-[9%]">Scripts</TableHead>
-              <TableHead className="w-[16%]">Last modified</TableHead>
-              <TableHead className="w-[136px]">Actions</TableHead>
+              <TableHead className="w-[26%]">Name</TableHead>
+              <TableHead>Targeting</TableHead>
+              <TableHead className="w-[140px] text-right">Registry values</TableHead>
+              <TableHead className="w-[90px] text-right">Scripts</TableHead>
+              <TableHead className="w-[160px]">Last modified</TableHead>
+              <TableHead className="w-[96px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -101,7 +101,7 @@ export default function SetupProfilesPage(): React.ReactElement {
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={6} className="p-0">
                   <EmptyState
-                    icon={ListChecks}
+                    icon={SlidersHorizontal}
                     title="No setup profiles yet"
                     description="Set registry values and run scripts that must be in place before Windows Autopilot starts. Target a profile at locations or at all devices."
                     action={canManageSetupProfiles ? newButton : undefined}
@@ -114,11 +114,11 @@ export default function SetupProfilesPage(): React.ReactElement {
                 <TableCell>
                   <TargetingBadges all={p.targeting.allDevices} locationIds={p.targeting.locationIds} locations={locations} allLabel="All devices" editNoun="profile" />
                 </TableCell>
-                <TableCell className="tabular-nums">{p.registryValueCount}</TableCell>
-                <TableCell className="tabular-nums">{p.scriptCount}</TableCell>
+                <TableCell className="text-right tabular-nums">{p.registryValueCount}</TableCell>
+                <TableCell className="text-right tabular-nums">{p.scriptCount}</TableCell>
                 <TableCell>
                   <Tooltip content={p.lastModifiedBy ? `By ${p.lastModifiedBy}` : 'Author unknown'}>
-                    <span tabIndex={0} className="text-xs text-muted-foreground tabular-nums">{formatDateTime(p.lastModifiedAt)}</span>
+                    <span tabIndex={0} className="tabular-nums">{formatTimestamp(p.lastModifiedAt)}</span>
                   </Tooltip>
                 </TableCell>
                 <TableCell>
@@ -129,18 +129,11 @@ export default function SetupProfilesPage(): React.ReactElement {
                       </Button>
                     </Tooltip>
                     {canManageSetupProfiles && (
-                      <>
-                        <Tooltip content="Duplicate">
-                          <Button variant="ghost" size="icon" aria-label={`Duplicate ${p.name}`} onClick={() => navigate('/setup-profiles/new', { state: { duplicateOf: p.profileId } })}>
-                            <Copy />
-                          </Button>
-                        </Tooltip>
-                        <Tooltip content="Delete">
-                          <Button variant="ghost" size="icon" aria-label={`Delete ${p.name}`} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleting(p)}>
-                            <Trash2 />
-                          </Button>
-                        </Tooltip>
-                      </>
+                      <Tooltip content="Delete">
+                        <Button variant="ghost" size="icon" aria-label={`Delete ${p.name}`} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => setDeleting(p)}>
+                          <Trash2 />
+                        </Button>
+                      </Tooltip>
                     )}
                   </div>
                 </TableCell>

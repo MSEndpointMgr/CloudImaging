@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.ImagingCoreApi.Functions;
 
 /// <summary>
-/// POST /api/internal/sessions/{sessionId}/progress — Accepts progress reports from Device Gateway API (T048, FR-007).
+/// POST /api/internal/sessions/{sessionId}/progress: Accepts progress reports from Device Gateway API (T048, FR-007).
 ///
 /// Request body:
 /// {

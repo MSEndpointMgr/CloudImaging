@@ -14,14 +14,16 @@ public sealed class SetupProfileValidatorTests
     private static SetupRegistryValue Value(SetupRegistryHive hive = SetupRegistryHive.Software, string key = "Policies\\Microsoft\\FVE", string valueName = "EncryptionMethodWithXtsOs", SetupRegistryValueType type = SetupRegistryValueType.DWord, string data = "7", string name = "Use XTS-AES 256") =>
         new() { Name = name, Hive = hive, Key = key, ValueName = valueName, Type = type, Data = data };
 
-    private static SetupScript Script(string name = "Enable Wake on LAN", SetupScriptPhase runs = SetupScriptPhase.WinPE, int order = 1, int timeout = 5, string content = "exit 0") =>
-        new() { Name = name, Runs = runs, Order = order, TimeoutMinutes = timeout, Content = content };
+    private static readonly string Hash = new('a', 64);
+
+    private static SetupScript Script(string name = "Enable Wake on LAN", SetupScriptPhase runs = SetupScriptPhase.WinPE, int order = 1, int timeout = 5, string? sha = null, SetupScriptLocations? locations = null) =>
+        new() { Name = name, Runs = runs, Order = order, TimeoutMinutes = timeout, ContentSha256 = sha ?? Hash, Locations = locations ?? new SetupScriptLocations() };
 
     private static List<string> Content(params SetupRegistryValue[] values) =>
-        SetupProfileValidator.ValidateContent(new SetupProfileContent { RegistryValues = values });
+        SetupProfileValidator.ValidateContent(new SetupProfileContent { RegistryValues = values }, Locations);
 
     private static List<string> Scripts(params SetupScript[] scripts) =>
-        SetupProfileValidator.ValidateContent(new SetupProfileContent { Scripts = scripts });
+        SetupProfileValidator.ValidateContent(new SetupProfileContent { Scripts = scripts }, Locations);
 
     [Fact]
     public void ValidateProfile_ValidNameAndLocation_ReturnsNoProblems()
@@ -177,12 +179,59 @@ public sealed class SetupProfileValidatorTests
         Scripts(Script(timeout: timeout)).Should().HaveCount(1);
     }
 
-    [Fact]
-    public void ValidateContent_EmptyOrLargeScript_IsRefused()
+    [Theory]
+    [InlineData("")]
+    [InlineData("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
+    [InlineData("not a hash")]
+    public void ValidateContent_AScriptWithoutAnUploadedText_IsRefused(string sha)
     {
-        Scripts(Script(content: " ")).Should().HaveCount(1);
-        Scripts(Script(content: new string('x', 65_537))).Should().HaveCount(1);
-        Scripts(Script(content: new string('x', 65_536))).Should().BeEmpty();
+        Scripts(Script("Wake", sha: sha)).Should().ContainSingle().Which.Should().Be("The text of \"Wake\" was not uploaded. Open the script and press Done again.");
+    }
+
+    [Fact]
+    public void ValidateContent_AnAnswerFileWithoutAnUploadedText_IsRefused()
+    {
+        SetupProfileValidator.ValidateContent(new SetupProfileContent { AnswerFile = new SetupAnswerFile { ContentSha256 = "x" } }, Locations)
+            .Should().ContainSingle().Which.Should().Be("The text of the answer file was not uploaded. Open the answer file and press Done again.");
+    }
+
+    [Fact]
+    public void ValidateContent_ScriptLocations_MustBeTargetedByTheProfile()
+    {
+        Scripts(Script(locations: new SetupScriptLocations { All = false, LocationIds = [Known] })).Should().BeEmpty();
+        Scripts(Script("Wake", locations: new SetupScriptLocations { All = false, LocationIds = [Known, Guid.NewGuid()] }))
+            .Should().ContainSingle().Which.Should().Be("\"Wake\" runs at a location this profile does not target. Choose its locations again.");
+    }
+
+    [Fact]
+    public void ValidateContent_SelectedLocationsWithNoneChosen_HasNoLocationsLeft()
+    {
+        Scripts(Script("Wake", locations: new SetupScriptLocations { All = false }))
+            .Should().ContainSingle().Which.Should().Be("\"Wake\" has no locations left. Choose a location or delete the script.");
+    }
+
+    [Fact]
+    public void AllowedScriptLocations_AreTheTargetedOnes_OrEveryLocationForAllDevices()
+    {
+        var other = Guid.NewGuid();
+        HashSet<Guid> known = [Known, other];
+
+        SetupProfileValidator.AllowedScriptLocations(new SetupProfileTargeting { LocationIds = [Known] }, known).Should().BeEquivalentTo([Known]);
+        SetupProfileValidator.AllowedScriptLocations(new SetupProfileTargeting { AllDevices = true }, known).Should().BeEquivalentTo([Known, other]);
+    }
+
+    [Fact]
+    public void ScriptsWithoutLocations_NamesTheScriptsWhoseLocationsAreAllGone()
+    {
+        var gone = Guid.NewGuid();
+        var scripts = new[]
+        {
+            Script("Everywhere"),
+            Script("Still here", locations: new SetupScriptLocations { All = false, LocationIds = [Known, gone] }),
+            Script("Gone", locations: new SetupScriptLocations { All = false, LocationIds = [gone] }),
+        };
+
+        SetupProfileValidator.ScriptsWithoutLocations(scripts, Locations).Should().Equal("\"Gone\" has no locations left. Choose a location or delete the script.");
     }
 
     [Fact]
@@ -192,9 +241,9 @@ public sealed class SetupProfileValidatorTests
     }
 
     [Fact]
-    public void ValidateContent_MoreThan20Scripts_IsRefused()
+    public void ValidateContent_1000ScriptsAreAccepted_1001AreRefused()
     {
-        var scripts = Enumerable.Range(1, 21).Select(i => Script($"Script {i}", order: i)).ToArray();
-        Scripts(scripts).Should().Contain("A profile can have at most 20 scripts.");
+        Scripts([.. Enumerable.Range(1, 1000).Select(i => Script($"Script {i}", order: i))]).Should().BeEmpty();
+        Scripts([.. Enumerable.Range(1, 1001).Select(i => Script($"Script {i}", order: i))]).Should().Equal("A profile can have at most 1000 scripts.");
     }
 }

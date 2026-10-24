@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { Save } from 'lucide-react';
 import { apiFetch } from '../lib/apiClient.ts';
 import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import { Button } from './ui/button.tsx';
@@ -95,8 +96,8 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving || !name.trim() || duplicateVersion}>
-            {saving ? 'Saving…' : 'Save Changes'}
+          <Button onClick={handleSave} loading={saving} disabled={saving || !name.trim() || duplicateVersion}>
+            <Save />Save
           </Button>
         </div>
       </div>

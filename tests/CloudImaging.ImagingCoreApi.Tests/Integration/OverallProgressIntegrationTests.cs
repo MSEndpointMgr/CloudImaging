@@ -113,7 +113,7 @@ public sealed class OverallProgressIntegrationTests
         };
 
         OverallProgressCalculator.Calculate(steps).Should().Be(8,
-            "a Failed step contributes 0% — only the completed step counts");
+            "a Failed step contributes 0%: only the completed step counts");
     }
 
     // ── CurrentOrLastStepName ─────────────────────────────────────────────────
@@ -174,7 +174,7 @@ public sealed class OverallProgressIntegrationTests
             .Select(_ => new ImagingStep
             {
                 StepName = ImagingStepName.ApplyImage,
-                Status   = ImagingStepStatus.Completed,
+                Status = ImagingStepStatus.Completed,
             })
             .ToList();
 

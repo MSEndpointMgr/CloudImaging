@@ -10,14 +10,14 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace CloudImaging.Client.Services;
 
 /// <summary>
-/// Typed HTTP client for the Cloud Imaging Client → Device Gateway API calls (FR-001, FR-013).
+/// Typed HTTP client for the Cloud Imaging Client -> Device Gateway API calls (FR-001, FR-013).
 /// All requests are authenticated by the mTLS boot-media certificate on the <see cref="HttpClientHandler"/>.
 /// The device-session token Bearer is set on subsequent calls after session creation.
 ///
 /// Every request/response is logged at Debug level to the local rolling log (FR-066: the log
 /// must capture every request call, step, and payload). Values that could be used to impersonate
-/// the device or session — the passcode, the device-session bearer token, proof-of-possession
-/// signatures, and SAS query strings — are NEVER written to the log; see
+/// the device or session: the passcode, the device-session bearer token, proof-of-possession
+/// signatures, and SAS query strings: are NEVER written to the log; see
 /// <see cref="RedactSasUrl"/> and the redacted literals noted in each Log* message.
 /// </summary>
 public sealed partial class DeviceGatewayApiClient
@@ -38,7 +38,7 @@ public sealed partial class DeviceGatewayApiClient
     /// <param name="signingCertificate">
     /// The boot-media certificate (with private key) used to sign the session-bootstrap
     /// proof-of-possession (FR-069). When null, no proof is attached (the Device Gateway will
-    /// reject the request — this is intended only for tests/tools that provide their own payload).
+    /// reject the request: this is intended only for tests/tools that provide their own payload).
     /// </param>
     /// <param name="logger">
     /// Optional so existing tests/tools can keep constructing this client without a logging
@@ -55,7 +55,7 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
-    /// POST /api/v1/sessions — Register a new imaging session.
+    /// POST /api/v1/sessions: Register a new imaging session.
     /// Returns (sessionId, deviceSessionToken, passcode, state).
     /// </summary>
     /// <param name="payload">Registration payload describing the device.</param>
@@ -111,7 +111,10 @@ public sealed partial class DeviceGatewayApiClient
 
         var result = await response.Content.ReadFromJsonAsync<CreateSessionResponse>(JsonOptions, ct);
         if (result is not null)
+        {
             LogCreateSessionResponse(_logger, result.SessionId, result.State);
+        }
+
         return result;
     }
 
@@ -122,7 +125,9 @@ public sealed partial class DeviceGatewayApiClient
     private DeviceRegistrationPayload SignPayload(DeviceRegistrationPayload payload)
     {
         if (_signingCertificate is null)
+        {
             return payload;
+        }
 
         using var rsa = _signingCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
@@ -136,29 +141,29 @@ public sealed partial class DeviceGatewayApiClient
         {
             SerialNumber = payload.SerialNumber,
             Manufacturer = payload.Manufacturer,
-            Model        = payload.Model,
-            MacAddress   = payload.MacAddress,
-            Hardware     = payload.Hardware,
-            LocationId   = payload.LocationId,
+            Model = payload.Model,
+            MacAddress = payload.MacAddress,
+            Hardware = payload.Hardware,
+            LocationId = payload.LocationId,
             LocationName = payload.LocationName,
             Architecture = payload.Architecture,
             SecurityPosture = payload.SecurityPosture,
             ProofOfPossession = new DeviceProofOfPossession
             {
-                Nonce        = nonce,
+                Nonce = nonce,
                 TimestampUtc = timestampUtc,
-                Signature    = Convert.ToBase64String(signature),
+                Signature = Convert.ToBase64String(signature),
             },
         };
     }
 
     /// <summary>
-    /// GET /api/v1/sessions/{sessionId}/status — Poll the current session state.
+    /// GET /api/v1/sessions/{sessionId}/status: Poll the current session state.
     /// Requires the device-session token Bearer to be set in <see cref="HttpClient.DefaultRequestHeaders"/>.
     /// On a non-success response, throws <see cref="DeviceGatewayApiException"/> (rather than a generic
     /// <see cref="HttpRequestException"/>) carrying the RFC7807 problem "type"/"detail" from the response
     /// body, if present, so callers can distinguish an mTLS certificate rejection from a rejected/expired/
-    /// revoked device-session Bearer token — both surface as HTTP 401 but need different user-facing text.
+    /// revoked device-session Bearer token: both surface as HTTP 401 but need different user-facing text.
     /// </summary>
     public async Task<SessionStatusResponse?> GetSessionStatusAsync(
         Guid sessionId,
@@ -178,7 +183,10 @@ public sealed partial class DeviceGatewayApiClient
 
         var result = await response.Content.ReadFromJsonAsync<SessionStatusResponse>(JsonOptions, ct);
         if (result is not null)
+        {
             LogSessionStatusResponse(_logger, sessionId, result.State, result.CurrentStep, result.OverallProgressPercent);
+        }
+
         return result;
     }
 
@@ -193,7 +201,7 @@ public sealed partial class DeviceGatewayApiClient
         LogSessionTokenSet(_logger);
     }
 
-    /// <summary>POST /api/v1/sessions/{sessionId}/progress — Report imaging step progress.</summary>
+    /// <summary>POST /api/v1/sessions/{sessionId}/progress: Report imaging step progress.</summary>
     public async Task ReportProgressAsync(
         Guid sessionId,
         object payload,
@@ -249,7 +257,7 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
-    /// POST /api/v1/sessions/{sessionId}/sas/refresh — Refresh the SAS token URL.
+    /// POST /api/v1/sessions/{sessionId}/sas/refresh: Refresh the SAS token URL.
     /// Returns both the (possibly unchanged) URL and its actual server-computed expiry, so the caller
     /// never has to guess the new expiry (see <see cref="SasRefreshCoordinator"/>).
     /// </summary>
@@ -282,10 +290,10 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
-    /// GET /api/v1/boot-image/latest — Retrieve the latest published boot image's version,
+    /// GET /api/v1/boot-image/latest: Retrieve the latest published boot image's version,
     /// hash, and SAS download URL, used by <see cref="BootImageSelfUpdateService"/> to detect
-    /// stale boot media (T071b, FR-059a). Requires only the mTLS boot-media certificate — no
-    /// device-session token — so it can run independently of session bootstrap. Returns null on
+    /// stale boot media (T071b, FR-059a). Requires only the mTLS boot-media certificate: no
+    /// device-session token: so it can run independently of session bootstrap. Returns null on
     /// any non-success response (no active session/token is required, but network/service
     /// errors are treated as "nothing to update" rather than thrown, since this check must never
     /// block Client startup). Also null on 204, which means this stick runs a pre-production
@@ -331,7 +339,9 @@ public sealed partial class DeviceGatewayApiClient
     {
         const string path = "/api/v1/wifi-networks";
         if (_signingCertificate is null)
+        {
             return null;
+        }
 
         using var rsa = _signingCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
@@ -363,7 +373,7 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
-    /// GET /api/v1/recovery-image/latest — Retrieve the latest published recovery (WinRE)
+    /// GET /api/v1/recovery-image/latest: Retrieve the latest published recovery (WinRE)
     /// image's version, hash, and SAS download URL, used by <see cref="Services.RecoveryImageService"/>
     /// to apply the recovery image to the Recovery partition. Requires the device-session token
     /// Bearer (set via <see cref="SetSessionToken"/>). Returns null on any non-success response.
@@ -391,10 +401,10 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
-    /// POST /api/v1/sessions/{sessionId}/logs/upload-url — Requests a short-lived write SAS URL
+    /// POST /api/v1/sessions/{sessionId}/logs/upload-url: Requests a short-lived write SAS URL
     /// the Client can PUT its current local diagnostic log to, used by
     /// <see cref="Services.LogUploadService"/> on any terminal imaging failure. Requires the
-    /// device-session token Bearer. Returns null on any non-success response — this must never
+    /// device-session token Bearer. Returns null on any non-success response: this must never
     /// block or mask the real failure being reported.
     /// </summary>
     public async Task<LogUploadUrlResponse?> RequestLogUploadUrlAsync(Guid sessionId, CancellationToken ct = default)
@@ -412,7 +422,10 @@ public sealed partial class DeviceGatewayApiClient
 
         var result = await response.Content.ReadFromJsonAsync<LogUploadUrlResponse>(JsonOptions, ct);
         if (result is not null)
+        {
             LogLogUploadUrlIssued(_logger, sessionId, result.FileName);
+        }
+
         return result;
     }
 
@@ -427,7 +440,9 @@ public sealed partial class DeviceGatewayApiClient
     {
         const string path = "/api/v1/autopilot/availability";
         if (_http.BaseAddress is null)
+        {
             return new GatewayProbeResult(GatewayReachability.NotConfigured, null);
+        }
 
         try
         {
@@ -534,7 +549,9 @@ public sealed partial class DeviceGatewayApiClient
     private AutopilotHashSubmission SignAutopilotSubmission(AutopilotHashSubmission submission)
     {
         if (_signingCertificate is null)
+        {
             return submission;
+        }
 
         using var rsa = _signingCertificate.GetRSAPrivateKey()
             ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
@@ -563,7 +580,7 @@ public sealed partial class DeviceGatewayApiClient
         };
     }
 
-    // ── Logging (FR-066: every request/step/payload — secrets are always redacted) ──────────────────
+    // ── Logging (FR-066: every request/step/payload: secrets are always redacted) ──────────────────
 
     /// <summary>
     /// Strips the query string (which carries the SAS signature) from a SAS URL before it is
@@ -572,7 +589,11 @@ public sealed partial class DeviceGatewayApiClient
     /// </summary>
     private static string RedactSasUrl(string? url)
     {
-        if (string.IsNullOrEmpty(url)) return "(none)";
+        if (string.IsNullOrEmpty(url))
+        {
+            return "(none)";
+        }
+
         var queryIndex = url.IndexOf('?');
         return queryIndex >= 0 ? url[..queryIndex] + "?<redacted>" : url;
     }
@@ -686,7 +707,7 @@ public sealed class SessionStatusResponse
 
     /// <summary>
     /// The partitioning scheme snapshotted onto this session at creation time. Null only if the
-    /// backend has not been upgraded yet (defensive — the server always populates this today).
+    /// backend has not been upgraded yet (defensive: the server always populates this today).
     /// </summary>
     public PartitioningScheme? PartitioningScheme { get; init; }
 
@@ -694,7 +715,7 @@ public sealed class SessionStatusResponse
     public IReadOnlyList<PreFlightCheckResult>? PreFlightChecks { get; init; }
 }
 
-/// <summary>Result of a SAS token refresh call — see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>
+/// <summary>Result of a SAS token refresh call: see <see cref="DeviceGatewayApiClient.RefreshSasTokenAsync"/>.</summary>
 public sealed record SasRefreshResult(string? SasTokenUrl, DateTimeOffset? ExpiresAt);
 
 /// <summary>How the setup profile descriptor request ended.</summary>
@@ -721,7 +742,7 @@ public sealed record SetupProfileFetch(SetupProfileFetchStatus Status, CloudImag
 
 /// <summary>
 /// Response from the Device Gateway API POST /api/v1/sessions/{sessionId}/logs/upload-url
-/// endpoint — see <see cref="DeviceGatewayApiClient.RequestLogUploadUrlAsync"/>.
+/// endpoint: see <see cref="DeviceGatewayApiClient.RequestLogUploadUrlAsync"/>.
 /// </summary>
 public sealed class LogUploadUrlResponse
 {
@@ -739,7 +760,7 @@ public sealed class LogUploadUrlResponse
 /// Thrown when the Device Gateway API returns a non-success response. Carries the RFC7807
 /// "type"/"detail" fields from the response body (when present) so callers can distinguish, e.g.,
 /// an mTLS certificate rejection (<see cref="CloudImaging.Client.Services"/> boot-media cert) from a
-/// rejected/expired/revoked device-session Bearer token — both surface as HTTP 401.
+/// rejected/expired/revoked device-session Bearer token: both surface as HTTP 401.
 /// </summary>
 public sealed class DeviceGatewayApiException : Exception
 {
@@ -774,7 +795,7 @@ public sealed class DeviceGatewayApiException : Exception
         }
         catch
         {
-            // Body unreadable (e.g. connection dropped mid-response) — leave it empty.
+            // Body unreadable (e.g. connection dropped mid-response): leave it empty.
         }
 
         if (!string.IsNullOrWhiteSpace(body))
@@ -788,7 +809,7 @@ public sealed class DeviceGatewayApiException : Exception
             catch (System.Text.Json.JsonException)
             {
                 // Several Device Gateway endpoints (e.g. CreateSession's mTLS/proof-of-possession
-                // rejections) return a short plain-text reason instead of RFC7807 JSON — fall back
+                // rejections) return a short plain-text reason instead of RFC7807 JSON: fall back
                 // to the raw body so that reason still reaches the log/UI instead of being silently
                 // dropped.
             }
@@ -797,7 +818,9 @@ public sealed class DeviceGatewayApiException : Exception
             var trimmed = body.Trim();
             var isHtml = string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html", StringComparison.OrdinalIgnoreCase) || trimmed.StartsWith('<');
             if (detail is null && !isHtml && trimmed.Length <= MaxPlainTextDetailLength && !trimmed.Contains('\n'))
+            {
                 detail = trimmed;
+            }
         }
 
         return new DeviceGatewayApiException(response.StatusCode, problemType, detail);

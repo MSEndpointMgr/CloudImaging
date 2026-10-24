@@ -108,6 +108,7 @@ export default function App(): React.ReactElement {
                         <Route path="setup-profiles"   element={<RequireSetupProfilesAccess><SetupProfilesPage /></RequireSetupProfilesAccess>} />
                         <Route path="setup-profiles/new" element={<RequireSetupProfilesAccess manage><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
                         <Route path="setup-profiles/:profileId" element={<RequireSetupProfilesAccess><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
+                        <Route path="setup-profiles/:profileId/versions/:version" element={<RequireSetupProfilesAccess><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
                         <Route path="autopilot"        element={<RequireAutopilotAccess><AutopilotRegistrationsPage /></RequireAutopilotAccess>} />
                         <Route path="branding"         element={<RequireAdmin><BrandingPage /></RequireAdmin>} />
                         <Route path="configuration"    element={<RequireAdmin><DeploymentConfigPage /></RequireAdmin>} />

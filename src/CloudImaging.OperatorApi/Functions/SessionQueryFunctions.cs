@@ -11,12 +11,12 @@ namespace CloudImaging.OperatorApi.Functions;
 /// (enforced by <see cref="Middleware.AppRoleAuthorizationMiddleware"/>). Both proxy to the
 /// Imaging Core API over Private Link and return the Core session summary projection verbatim.
 ///
-/// GET /api/sessions        — list device sessions for the portal devices view
-/// GET /api/sessions/{id}   — get a single device session summary
-/// GET /api/sessions/{id}/logs                    — list uploaded diagnostic logs for a session
-/// GET /api/sessions/{id}/logs/{fileName}/download-url — issue a short-lived download URL
+/// GET /api/sessions       : list device sessions for the portal devices view
+/// GET /api/sessions/{id}  : get a single device session summary
+/// GET /api/sessions/{id}/logs                   : list uploaded diagnostic logs for a session
+/// GET /api/sessions/{id}/logs/{fileName}/download-url: issue a short-lived download URL
 /// GET /api/sessions/{id}/steps/{stepName}/items: per-item results a device reported for one step
-/// GET /api/session-history — list durable terminal-outcome records for the Reports section
+/// GET /api/session-history: list durable terminal-outcome records for the Reports section
 /// </summary>
 public sealed partial class SessionQueryFunctions
 {

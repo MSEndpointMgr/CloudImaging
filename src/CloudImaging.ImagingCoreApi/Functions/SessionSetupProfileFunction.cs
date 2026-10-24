@@ -26,6 +26,7 @@ public sealed partial class SessionSetupProfileFunction
     private readonly DeviceSessionRepository _sessions;
     private readonly SetupProfileRepository _profiles;
     private readonly SetupProfileVersionRepository _versions;
+    private readonly SetupProfileService _setupProfiles;
     private readonly BlobServiceClient _blobService;
     private readonly TimeProvider _time;
     private readonly ILogger<SessionSetupProfileFunction> _logger;
@@ -33,6 +34,7 @@ public sealed partial class SessionSetupProfileFunction
     /// <param name="sessions">Device sessions.</param>
     /// <param name="profiles">Profile rows, including tombstones.</param>
     /// <param name="versions">Version rows and documents.</param>
+    /// <param name="setupProfiles">Setup profile service, for the locations in effect.</param>
     /// <param name="blobService">Blob service used to sign the read URL.</param>
     /// <param name="time">Clock.</param>
     /// <param name="logger">Logger.</param>
@@ -40,6 +42,7 @@ public sealed partial class SessionSetupProfileFunction
         DeviceSessionRepository sessions,
         SetupProfileRepository profiles,
         SetupProfileVersionRepository versions,
+        SetupProfileService setupProfiles,
         BlobServiceClient blobService,
         TimeProvider time,
         ILogger<SessionSetupProfileFunction> logger)
@@ -47,6 +50,7 @@ public sealed partial class SessionSetupProfileFunction
         _sessions = sessions;
         _profiles = profiles;
         _versions = versions;
+        _setupProfiles = setupProfiles;
         _blobService = blobService;
         _time = time;
         _logger = logger;
@@ -88,7 +92,23 @@ public sealed partial class SessionSetupProfileFunction
 
         var profile = await _profiles.GetAsync(profileId, ct);
         var content = await _versions.DownloadAsync(row.BlobName, ct);
+        row = await _versions.GetAsync(profileId, version, ct) ?? row;
         var url = await BlobSasUrlGenerator.GenerateAsync(_blobService, SetupProfileVersionRepository.ContainerName, row.BlobName, BlobSasPermissions.Read, ContentUrlLifetime, ct);
+        var expiresAt = _time.GetUtcNow() + ContentUrlLifetime;
+
+        // Only the scripts this device runs: those for all locations, and those for its own location
+        // while that location is still in effect (targeted, or existing for an All devices profile).
+        var allScripts = content?.Scripts ?? [];
+        var location = session.LocationId;
+        var forLocation = location is { } locationId && allScripts.Any(s => !s.Locations.All && s.Locations.LocationIds.Contains(locationId))
+            && (await _setupProfiles.ScriptLocationsInEffectAsync(profileId, ct)).Contains(locationId);
+        var scripts = new List<SetupProfileDescriptorText>();
+        foreach (var script in allScripts.Where(s => s.Locations.All || (forLocation && s.Locations.LocationIds.Contains(location!.Value))))
+        {
+            scripts.Add(await TextAsync(script.Id, script.ContentSha256, script.SizeBytes));
+        }
+        var answerFile = content?.AnswerFile is { } file ? await TextAsync(null, file.ContentSha256, file.SizeBytes) : null;
+
         var descriptor = new SetupProfileDescriptor
         {
             ProfileId = profileId,
@@ -96,15 +116,26 @@ public sealed partial class SessionSetupProfileFunction
             Version = version,
             FailureHandling = content?.FailureHandling ?? SetupFailureHandling.CompleteWithWarnings,
             ContentUrl = url,
-            ContentUrlExpiresAt = _time.GetUtcNow() + ContentUrlLifetime,
+            ContentUrlExpiresAt = expiresAt,
             ContentSha256 = row.ContentSha256,
             ContentSizeBytes = row.ContentSizeBytes,
+            Scripts = scripts,
+            AnswerFile = answerFile,
         };
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(descriptor, JsonOptions), ct);
         return response;
+
+        async Task<SetupProfileDescriptorText> TextAsync(Guid? itemId, string sha256, long sizeBytes) => new()
+        {
+            Id = itemId,
+            ContentSha256 = sha256,
+            SizeBytes = sizeBytes,
+            ContentUrl = await BlobSasUrlGenerator.GenerateAsync(_blobService, SetupProfileVersionRepository.ContainerName, SetupProfileContentRepository.BlobNameFor(sha256), BlobSasPermissions.Read, ContentUrlLifetime, ct),
+            ContentUrlExpiresAt = expiresAt,
+        };
     }
 
     [LoggerMessage(Level = LogLevel.Error, Message = "Session {SessionId} pins setup profile {ProfileId} version {Version}, but the version is missing.")]

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
 import { Label } from '../ui/label.tsx';
@@ -43,11 +43,11 @@ export function RegistryValueDialog({ value, others, onClose, onApply }: {
 
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="registry-value-title">
-      <div className="flex max-h-full w-full max-w-xl flex-col rounded-lg border border-border bg-background shadow-xl">
+      <div className="flex max-h-full w-full max-w-2xl flex-col rounded-lg border border-border bg-background shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-border p-5">
           <div className="space-y-1">
             <h2 id="registry-value-title" className="text-base font-semibold break-words">{value ? `Edit ${value.name}` : 'Add registry value'}</h2>
-            <p className="text-sm text-muted-foreground">Written to the applied image before Windows starts for the first time.</p>
+            <p className="text-sm text-muted-foreground">Written to the installed Windows before it starts for the first time.</p>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close"><X /></Button>
         </div>
@@ -55,45 +55,51 @@ export function RegistryValueDialog({ value, others, onClose, onApply }: {
         <div className="space-y-5 overflow-y-auto p-5">
           <div className="space-y-2">
             <Label htmlFor="rv-name">Name</Label>
-            <Input id="rv-name" value={draft.name} maxLength={100} placeholder="Why this value is set" onChange={(e) => set({ name: e.target.value })} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="rv-hive">Hive</Label>
-              <Select id="rv-hive" value={draft.hive} onValueChange={(v) => set({ hive: v as SetupRegistryHive })} options={HIVE_OPTIONS} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="rv-type">Type</Label>
-              <Select id="rv-type" value={draft.type} onValueChange={(v) => set({ type: v as SetupRegistryValueType })} options={VALUE_TYPE_OPTIONS} />
-            </div>
+            <Input id="rv-name" value={draft.name} maxLength={100} onChange={(e) => set({ name: e.target.value })} aria-describedby="rv-name-help" />
+            <p id="rv-name-help" className="text-sm text-muted-foreground">Why the value is set. Shown in the list and on the deployment timeline.</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="rv-key">Key</Label>
-            <Input id="rv-key" value={draft.key} maxLength={512} onChange={(e) => set({ key: e.target.value })} aria-describedby="rv-key-help" />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="rv-hive">Hive</Label>
+                <Select id="rv-hive" value={draft.hive} onValueChange={(v) => set({ hive: v as SetupRegistryHive })} options={HIVE_OPTIONS} />
+              </div>
+              <div className="col-span-2 space-y-2">
+                <Label htmlFor="rv-key">Key</Label>
+                <Input id="rv-key" value={draft.key} maxLength={512} onChange={(e) => set({ key: e.target.value })} aria-describedby="rv-key-help" />
+              </div>
+            </div>
             <p id="rv-key-help" className="text-sm text-muted-foreground">
               Relative to the hive, for example Policies\Microsoft\FVE. Under HKLM SYSTEM, CurrentControlSet is mapped to the image&apos;s current control set. 32-bit software reads WOW6432Node keys; name them explicitly.
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="rv-value-name">Value name</Label>
-            <Input id="rv-value-name" value={draft.valueName} maxLength={255} placeholder="(Default)" onChange={(e) => set({ valueName: e.target.value })} />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="rv-data">Data</Label>
-            {draft.type === 'MultiString' ? (
-              <>
-                <textarea id="rv-data" className={TEXTAREA_CLASS} value={draft.data} onChange={(e) => set({ data: e.target.value.replace(/\r\n/g, '\n') })} aria-describedby="rv-data-help" />
-                <p id="rv-data-help" className="text-sm text-muted-foreground">One string per line.</p>
-              </>
-            ) : (
-              <Input id="rv-data" value={draft.data} onChange={(e) => set({ data: e.target.value })}
-                placeholder={draft.type === 'DWord' || draft.type === 'QWord' ? 'Decimal, or hex starting with 0x' : undefined} />
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="rv-value-name">Value name</Label>
+              <Input id="rv-value-name" value={draft.valueName} maxLength={255} placeholder="(Default)" onChange={(e) => set({ valueName: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rv-type">Type</Label>
+              <Select id="rv-type" value={draft.type} onValueChange={(v) => set({ type: v as SetupRegistryValueType })} options={VALUE_TYPE_OPTIONS} />
+            </div>
+            {draft.type !== 'MultiString' && (
+              <div className="space-y-2">
+                <Label htmlFor="rv-data">Data</Label>
+                <Input id="rv-data" value={draft.data} onChange={(e) => set({ data: e.target.value })}
+                  placeholder={draft.type === 'DWord' || draft.type === 'QWord' ? 'Decimal, or 0x hex' : undefined} />
+              </div>
             )}
           </div>
+
+          {draft.type === 'MultiString' && (
+            <div className="space-y-2">
+              <Label htmlFor="rv-data">Data</Label>
+              <textarea id="rv-data" className={TEXTAREA_CLASS} value={draft.data} onChange={(e) => set({ data: e.target.value.replace(/\r\n/g, '\n') })} aria-describedby="rv-data-help" />
+              <p id="rv-data-help" className="text-sm text-muted-foreground">One string per line.</p>
+            </div>
+          )}
 
           {attempted && problems.length > 0 && (
             <ul role="alert" className="space-y-1">
@@ -104,7 +110,7 @@ export function RegistryValueDialog({ value, others, onClose, onApply }: {
 
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={apply}><Check />{value ? 'Apply' : 'Add'}</Button>
+          <Button onClick={apply}>{value ? 'Done' : 'Add'}</Button>
         </div>
       </div>
     </div>,

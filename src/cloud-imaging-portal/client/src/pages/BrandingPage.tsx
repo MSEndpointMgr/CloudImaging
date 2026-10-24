@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Upload, ImageIcon, RotateCcw } from 'lucide-react';
+import { Upload, ImageIcon, RotateCcw, Save } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -29,7 +29,7 @@ interface BrandingConfig {
   headerBackgroundDark: string;
 }
 
-/** The subset of branding fields the "Save branding" button actually persists. */
+/** The subset of branding fields the Save button actually persists. */
 interface AppearanceFields {
   primaryColor: string;
   accentColor: string;
@@ -584,7 +584,8 @@ export default function BrandingPage(): React.ReactElement {
           variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
           disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle') || hasValidationError}
         >
-          Save branding
+          <Save />
+          Save
         </Button>
         {isDirty && saveStatus === 'idle' && (
           <p className="text-sm text-muted-foreground">You have unsaved changes.</p>

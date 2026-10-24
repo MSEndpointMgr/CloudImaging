@@ -40,6 +40,7 @@ export default defineConfig({
       '@azure/msal-react': path.resolve(__dirname, './node_modules/@azure/msal-react'),
       '@azure/msal-browser': path.resolve(__dirname, './node_modules/@azure/msal-browser'),
       '@testing-library/react': path.resolve(__dirname, './node_modules/@testing-library/react'),
+      'react-router-dom': path.resolve(__dirname, './node_modules/react-router-dom'),
     },
     coverage: {
       provider: 'v8',

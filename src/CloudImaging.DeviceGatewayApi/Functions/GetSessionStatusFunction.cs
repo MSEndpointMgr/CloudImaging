@@ -8,11 +8,11 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.DeviceGatewayApi.Functions;
 
 /// <summary>
-/// GET /api/v1/sessions/{sessionId}/status — Polls session state for the Cloud Imaging Client (T043, FR-031).
+/// GET /api/v1/sessions/{sessionId}/status: Polls session state for the Cloud Imaging Client (T043, FR-031).
 ///
 /// Response contract (plan.md constraint):
 ///   - <c>currentStep</c> (string | null): active <see cref="CloudImaging.Contracts.Enums.ImagingStepName"/> name, null until imaging begins.
-///   - <c>overallProgressPercent</c> (int): overall imaging completion 0–100.
+///   - <c>overallProgressPercent</c> (int): overall imaging completion 0-100.
 ///   - <c>state</c>: current <see cref="CloudImaging.Contracts.Enums.SessionState"/> as a string.
 ///   - <c>sasTokenUrl</c>: SAS URL for the OS image blob (populated after assignment).
 ///
@@ -74,7 +74,7 @@ public sealed partial class GetSessionStatusFunction
         using var doc = await JsonDocument.ParseAsync(coreJson, cancellationToken: context.CancellationToken);
         var root = doc.RootElement;
 
-        // Map to contract response — always include currentStep and overallProgressPercent (plan.md)
+        // Map to contract response: always include currentStep and overallProgressPercent (plan.md)
         var responseBody = new
         {
             sessionId = root.TryGetProperty("sessionId", out var sid) ? sid.GetGuid() : sessionGuid,

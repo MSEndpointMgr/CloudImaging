@@ -32,7 +32,7 @@ public sealed record DeviceSession
     public required string DeviceModel { get; init; }
 
     /// <summary>
-    /// MAC address of the first non-loopback adapter that was up at registration — informational,
+    /// MAC address of the first non-loopback adapter that was up at registration: informational,
     /// used by operators to correlate a device with network/DHCP records. Carried from
     /// <see cref="DeviceRegistrationPayload.MacAddress"/>; the full per-adapter list lives in
     /// <see cref="HardwareMetadata"/>.
@@ -49,7 +49,7 @@ public sealed record DeviceSession
     public Guid? LocationId { get; init; }
 
     /// <summary>
-    /// Denormalized location name captured at session-creation time — stored (not just the id)
+    /// Denormalized location name captured at session-creation time: stored (not just the id)
     /// so historical sessions still display a location after the catalog entry is deleted.
     /// </summary>
     public string? LocationName { get; init; }
@@ -67,7 +67,7 @@ public sealed record DeviceSession
     /// <summary>Every pre-flight check as evaluated at creation. Never re-evaluated afterwards.</summary>
     public IReadOnlyList<PreFlightCheckResult> PreFlightChecks { get; init; } = [];
 
-    // Passcode — stored as hash at rest; returned only at SessionInit
+    // Passcode: stored as hash at rest; returned only at SessionInit
     /// <summary>The coupling passcode, returned to the device only at <see cref="SessionState.SessionInit"/>.</summary>
     public string? Passcode { get; init; }
 

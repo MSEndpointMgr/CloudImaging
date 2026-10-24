@@ -6,7 +6,7 @@
     <!--
         FR-053/054/055/056/057: Prepare USB Storage Device workflow.
         Select a published boot image + an eligible USB disk, confirm the destructive
-        action, then download → partition → deploy. Only USB/removable/non-system disks
+        action, then download to partition to deploy. Only USB/removable/non-system disks
         are eligible; ineligible disks are shown with the blocking reason.
 
         Layout mirrors GenerateBootImageView's configuration screen: header and the pinned
@@ -196,15 +196,19 @@
                                   Visibility="{Binding HasWifiNetworks, Converter={StaticResource BoolToVisibility}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,4">
-                                    <ui:SymbolIcon Symbol="Wifi124" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <TextBlock Text="{Binding Ssid}" VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding Detail}"
-                                               Style="{StaticResource CaptionTextBlockStyle}"
-                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                <Grid Margin="0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="24" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:SymbolIcon Grid.Column="0" Symbol="Wifi124" FontSize="16"
+                                                   HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Ssid}"
+                                               Style="{StaticResource BodyTextBlockStyle}"
                                                VerticalAlignment="Center"
-                                               Margin="8,0,0,0" />
-                                </StackPanel>
+                                               TextTrimming="CharacterEllipsis" />
+                                </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -268,11 +272,11 @@
         </ScrollViewer>
 
         <!--
-            Pinned footer — same pattern as GenerateBootImageView's action panel: its own
+            Pinned footer: same pattern as GenerateBootImageView's action panel: its own
             background/border so it reads as a fixed action panel rather than more scrollable
             content, a short caption in the Auto-remaining column explaining what the button
             does, and the button right-aligned in its own column. Holds Cancel while a
-            preparation is in progress, Prepare USB Device otherwise — fields stay editable
+            preparation is in progress, Prepare USB Device otherwise: fields stay editable
             after a failure/cancellation, so the same button simply retries when clicked again,
             with no separate "Back"/"Retry" pair needed (matching the Generate view's
             configuration screen, which likewise relies on the sidebar nav rather than an

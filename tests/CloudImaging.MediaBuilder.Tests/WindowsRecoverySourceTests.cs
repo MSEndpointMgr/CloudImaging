@@ -22,12 +22,30 @@ public sealed class WindowsRecoverySourceTests
     }
 
     [Fact]
-    public void ABuildMismatch_NamesBothBuildsAndTheFix()
+    public void AnOlderBuild_NamesBothBuildsAndTheFix()
     {
         var problem = WindowsRecoverySource.Evaluate(new WimImageInfo(9, 22631, 1, "en-US"), Adk, English, MachineArchitecture.X64).Should().ContainSingle().Subject;
 
-        problem.Problem.Should().Be("Windows image build 22631 doesn't match Windows ADK build 26100.");
-        problem.Fix.Should().Be("Use a build 26100 source.");
+        problem.Problem.Should().Be("Windows image build 22631 is older than Windows ADK build 26100.");
+        problem.Fix.Should().Be("Use a build 26100 or newer source.");
+    }
+
+    [Fact]
+    public void ANewerReleaseOnTheSameBase_PassesTheSourceCheck()
+    {
+        // 26H2 install.wim reports 26300 while its Windows RE stays on 26100.
+        WindowsRecoverySource.Evaluate(new WimImageInfo(9, 26300, 9457, "en-US"), Adk, English, MachineArchitecture.X64)
+            .Should().BeEmpty();
+        WindowsRecoverySource.EvaluateRecovery(new WimImageInfo(9, 26100, 9444, "en-US"), Adk).Should().BeNull();
+    }
+
+    [Fact]
+    public void ANewBase_IsRejectedOnceWindowsReIsKnown()
+    {
+        var problem = WindowsRecoverySource.EvaluateRecovery(new WimImageInfo(12, 28000, 1, "en-US"), Adk)!;
+
+        problem.Problem.Should().Be("Windows RE build 28000 in this source doesn't match Windows ADK build 26100.");
+        problem.Fix.Should().Be("Install the Windows ADK for build 28000, or use an older source.");
     }
 
     [Fact]

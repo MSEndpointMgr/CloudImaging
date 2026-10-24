@@ -66,17 +66,17 @@ public sealed class ReportProgressItemsTests
     }
 
     [Fact]
-    public async Task FinalReport_TruncatesTextAndKeepsTheFirst500Items()
+    public async Task FinalReport_TruncatesTextAndKeepsTheFirst1500Items()
     {
         var session = await _bed.AddSessionAsync(SessionState.SessionInProgress);
-        var items = Enumerable.Range(0, 501).Select(i => Item(StepItemKind.RegistryValue, StepItemOutcome.Failed, i, new string('n', 150), new string('r', 600))).ToArray();
+        var items = Enumerable.Range(0, 1501).Select(i => Item(StepItemKind.RegistryValue, StepItemOutcome.Failed, i, new string('n', 150), new string('r', 600))).ToArray();
 
-        (await ReportAsync(session.SessionId, new { stepName = "PrepareSetup", status = "Completed", warningCount = 501, items })).Should().Be(HttpStatusCode.NoContent);
+        (await ReportAsync(session.SessionId, new { stepName = "PrepareSetup", status = "Completed", warningCount = 1501, items })).Should().Be(HttpStatusCode.NoContent);
 
         var step = (await _bed.Steps.GetBySessionAsync(session.SessionId)).Single();
         step.ItemsTruncated.Should().BeTrue();
         var stored = await _bed.Items.ListAsync(session.SessionId, ImagingStepName.PrepareSetup);
-        stored.Should().HaveCount(500);
+        stored.Should().HaveCount(1500);
         stored[0].Name.Should().HaveLength(100);
         stored[0].Reason.Should().HaveLength(500);
     }

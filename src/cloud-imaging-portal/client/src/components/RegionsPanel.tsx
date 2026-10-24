@@ -353,7 +353,7 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
           disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
         >
           <Save />
-          Save regions
+          Save
         </Button>
         {isDirty && saveStatus === 'idle' && <p className="text-sm text-muted-foreground">You have unsaved changes.</p>}
       </div>
@@ -363,7 +363,7 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
           copy={{
             confirmTitle: `${String(pendingChanges.length)} ${pendingChanges.length === 1 ? 'location changes' : 'locations change'} region`,
             impact: changeImpact(pendingChanges),
-            confirmLabel: 'Save regions',
+            confirmLabel: 'Save',
             destructive: false,
           }}
           busy={saveStatus === 'loading'}

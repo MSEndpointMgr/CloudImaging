@@ -1,7 +1,7 @@
 using System.Globalization;
-using System.Text;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models.SetupProfiles;
+using CloudImaging.ImagingCoreApi.Repositories;
 
 namespace CloudImaging.ImagingCoreApi.Services;
 
@@ -35,7 +35,29 @@ public static class SetupProfileValidator
     /// <summary>Message when a profile targets nothing.</summary>
     public const string EmptyTargetingMessage = "Choose at least one location or All devices.";
 
+    /// <summary>Message when the answer file text is not stored.</summary>
+    public const string AnswerFileNotUploadedMessage = "The text of the answer file was not uploaded. Open the answer file and press Done again.";
+
     private const string CurrentControlSet = "CurrentControlSet";
+
+    /// <summary>Message when a script's text is not stored.</summary>
+    public static string NotUploadedMessage(string? scriptName) => $"The text of {Label(scriptName, "a script without a name")} was not uploaded. Open the script and press Done again.";
+
+    /// <summary>Message when none of a script's locations is still targeted by the profile.</summary>
+    public static string NoLocationsLeftMessage(string? scriptName) => $"{Label(scriptName, "A script without a name")} has no locations left. Choose a location or delete the script.";
+
+    /// <summary>
+    /// Locations a script may run at: the profile's targeted locations, or every existing location
+    /// for an All devices profile.
+    /// </summary>
+    public static IReadOnlySet<Guid> AllowedScriptLocations(SetupProfileTargeting? targeting, IReadOnlySet<Guid> knownLocationIds) =>
+        targeting is null ? new HashSet<Guid>()
+        : targeting.AllDevices ? knownLocationIds
+        : targeting.LocationIds.Where(knownLocationIds.Contains).ToHashSet();
+
+    /// <summary>Names of the scripts that run at selected locations none of which is still allowed.</summary>
+    public static List<string> ScriptsWithoutLocations(IEnumerable<SetupScript> scripts, IReadOnlySet<Guid> allowed) =>
+        [.. scripts.Where(s => !s.Locations.All && !s.Locations.LocationIds.Any(allowed.Contains)).Select(s => NoLocationsLeftMessage(s.Name))];
 
     /// <summary>Validates a profile's name and targeting.</summary>
     public static List<string> ValidateProfile(string? name, SetupProfileTargeting? targeting, IReadOnlySet<Guid> knownLocationIds)
@@ -62,12 +84,19 @@ public static class SetupProfileValidator
         return problems;
     }
 
-    /// <summary>Validates the registry values and scripts of a version's content.</summary>
-    public static List<string> ValidateContent(SetupProfileContent content)
+    /// <summary>
+    /// Validates the registry values, scripts and answer file reference of a version's content.
+    /// Script locations must lie within <paramref name="allowedLocations"/>.
+    /// </summary>
+    public static List<string> ValidateContent(SetupProfileContent content, IReadOnlySet<Guid> allowedLocations)
     {
         var problems = new List<string>();
         ValidateRegistryValues(content.RegistryValues, problems);
-        ValidateScripts(content.Scripts, problems);
+        ValidateScripts(content.Scripts, allowedLocations, problems);
+        if (content.AnswerFile is { } answerFile && !SetupProfileContentRepository.IsSha256(answerFile.ContentSha256))
+        {
+            problems.Add(AnswerFileNotUploadedMessage);
+        }
         return problems;
     }
 
@@ -114,11 +143,11 @@ public static class SetupProfileValidator
         }
     }
 
-    private static void ValidateScripts(IReadOnlyList<SetupScript> scripts, List<string> problems)
+    private static void ValidateScripts(IReadOnlyList<SetupScript> scripts, IReadOnlySet<Guid> allowedLocations, List<string> problems)
     {
         if (scripts.Count > SetupProfileContent.MaxScripts)
         {
-            problems.Add("A profile can have at most 20 scripts.");
+            problems.Add("A profile can have at most 1000 scripts.");
         }
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -144,13 +173,22 @@ public static class SetupProfileValidator
                 problems.Add($"The timeout of {label} must be 1 to 30 minutes.");
             }
 
-            if (string.IsNullOrWhiteSpace(script.Content))
+            if (!SetupProfileContentRepository.IsSha256(script.ContentSha256))
             {
-                problems.Add($"{label} is empty. Add the script text.");
+                problems.Add(NotUploadedMessage(script.Name));
             }
-            else if (Encoding.UTF8.GetByteCount(script.Content) > SetupProfileContent.MaxScriptBytes)
+
+            var locations = script.Locations ?? new SetupScriptLocations();
+            if (!locations.All)
             {
-                problems.Add($"{label} is larger than 64 KB. Shorten it.");
+                if (locations.LocationIds.Count == 0)
+                {
+                    problems.Add(NoLocationsLeftMessage(script.Name));
+                }
+                else if (locations.LocationIds.Any(id => !allowedLocations.Contains(id)))
+                {
+                    problems.Add($"{label} runs at a location this profile does not target. Choose its locations again.");
+                }
             }
         }
 

@@ -5,7 +5,7 @@ using CloudImaging.Contracts.Models;
 namespace CloudImaging.OperatorApi.Services;
 
 /// <summary>
-/// Typed HTTP client for Operator API → Imaging Core API calls over Private Link (FR-064).
+/// Typed HTTP client for Operator API -> Imaging Core API calls over Private Link (FR-064).
 /// All operations forward requests using the Operator API managed identity credential.
 /// </summary>
 public sealed class ImagingCoreClient
@@ -312,6 +312,20 @@ public sealed class ImagingCoreClient
     /// <summary>Returns a setup profile's targeting and profile history.</summary>
     public Task<HttpResponseMessage> GetSetupProfileHistoryAsync(Guid profileId, CancellationToken ct = default) =>
         _http.GetAsync($"/api/internal/setup-profiles/{profileId}/history", ct);
+
+    /// <summary>Streams a script or answer file text to Imaging Core as it arrives.</summary>
+    public Task<HttpResponseMessage> UploadSetupProfileContentAsync(string? kind, Stream body, string? contentType, long? contentLength, string? uploadedBy = null, CancellationToken ct = default)
+    {
+        var content = new StreamContent(body);
+        content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.TryParse(contentType, out var type) ? type : new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        content.Headers.ContentLength = contentLength;
+        var by = string.IsNullOrEmpty(uploadedBy) ? string.Empty : $"&uploadedBy={Uri.EscapeDataString(uploadedBy)}";
+        return _http.PostAsync($"/api/internal/setup-profiles/content?kind={Uri.EscapeDataString(kind ?? string.Empty)}{by}", content, ct);
+    }
+
+    /// <summary>Returns a script or answer file text a retained version of the profile uses.</summary>
+    public Task<HttpResponseMessage> GetSetupProfileContentAsync(Guid profileId, string sha256, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/setup-profiles/{profileId}/content/{Uri.EscapeDataString(sha256)}", HttpCompletionOption.ResponseHeadersRead, ct);
 
     /// <summary>Returns the per-item results a device reported for one step of a session.</summary>
     public Task<HttpResponseMessage> GetSessionStepItemsAsync(Guid sessionId, string stepName, CancellationToken ct = default) =>

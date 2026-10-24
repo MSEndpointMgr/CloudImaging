@@ -28,6 +28,27 @@ shared case file. Media Builder adds WinPE-Scripting and WinPE-PowerShell to eve
 Operator and Administrator edit, Technician reads, and only Administrator changes version
 retention, reusing spec 004's guards and capability flags.
 
+**Amendment 2026-10-24** ([research.md](research.md) R18, design source
+`docs/design/setup-profile-scripts-options.html`): scripts up to 24 MiB each and up to 1000 per
+profile, the answer file up to 2 MiB, no total. Script and answer file texts are uploaded one per
+request to a content-addressed `content/{sha256}` blob store and referenced from the version
+document, so saves and profile reads stay small. Each script runs at all of the profile's
+locations or at selected ones, and the device's descriptor lists only the scripts for its
+location. The phases are called Offline and Specialize in the portal (wire values unchanged),
+order is changed in the scripts table, and a Script environment dialog replaces the variable help
+text. Touch-points added by the amendment:
+
+| Area | Files |
+|---|---|
+| Contracts | `SetupScript` (locations, contentSha256, sizeBytes), `SetupAnswerFile` (contentSha256, sizeBytes), content upload result, descriptor `scripts` |
+| Imaging Core | `SetupProfileContentRepository` (new), `SetupProfileContentFunctions` (new: upload, read), `SetupProfileValidator` (limits, locations), `SetupProfileService` (reference checks, answer file from blob, effective locations), `SetupProfileDescriptorFunction` (per-location scripts and SAS), `ChangeSummaryBuilder` (references, locations), `SetupProfileService.SweepAsync` (content cleanup), `ImagingStepItemRepository` cap |
+| Operator API | `SetupProfileFunctions` (content relay, raw body) |
+| Device Gateway | descriptor pass-through test only |
+| Portal server | `routes/setup-profiles.ts` (content routes, 25 MiB raw parser on the upload route) |
+| Portal client | `lib/setupProfiles.ts` (labels, limits, order moves, location filter, effective locations), `components/setup-profiles/ScriptDialog.tsx`, new `ScriptEnvironmentDialog.tsx`, `AnswerFileDialog.tsx` (upload on Done, 2 MiB), `pages/SetupProfileEditorPage.tsx` (scripts card), `components/SessionProgressDetails.tsx` (kind labels) |
+| Client | `SetupProfileContentLoader` (per-script downloads), `PrepareSetupService` / `WinPeScriptRunner` (Offline scripts on the applied volume), `SetupRunnerManifestBuilder` (four-digit names) |
+| Docs | `docs/setup-profiles.md`, `docs/troubleshooting-index.md`, `docs/session-lifecycle.md`, release notes |
+
 ---
 
 ## Technical Context
@@ -63,6 +84,8 @@ Static Web Apps (Portal frontend), WinPE and Windows RE boot images (x64, ARM64)
 24H2 and 25H2 deployed images, Windows technician workstation (Media Builder).
 
 **Project Type**: Polyglot web application plus WinPE client and desktop tool; a new feature across all six components.
+
+**Design source**: [docs/design/os-customisation.html](../../docs/design/os-customisation.html) for every portal surface; [contracts/portal-client-surfaces.md](contracts/portal-client-surfaces.md) follows it.
 
 **Performance Goals**:
 - Prepare setup adds at most 30 seconds to a deployment, excluding the profile's own scripts (SC-005)

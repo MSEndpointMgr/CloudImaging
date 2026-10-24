@@ -22,8 +22,10 @@ public sealed record SourceCheckResult(string Summary, IReadOnlyList<SourceProbl
 /// <summary>
 /// A Windows RE boot image is built from the <c>Winre.wim</c> inside a Windows installation source
 /// (an ISO or its <c>sources\install.wim</c>), plus the two DLLs Windows RE needs for Wi-Fi, which
-/// only the full OS carries. The source must match the Windows ADK, because the ADK's optional
-/// components are added to it.
+/// only the full OS carries. The ADK's optional components are added to that Windows RE, so its
+/// build must equal the ADK build. Newer Windows releases on the same base (e.g. 25H2 and 26H2 on
+/// 26100) report a higher install.wim build but keep a base-build Windows RE, so the source check
+/// only rejects older builds and the exact match is enforced after extraction.
 /// </summary>
 public static class WindowsRecoverySource
 {
@@ -37,11 +39,11 @@ public static class WindowsRecoverySource
     public static IReadOnlyList<SourceProblem> Evaluate(WimImageInfo source, WimImageInfo? adk, IReadOnlyCollection<string> adkLanguages, MachineArchitecture target)
     {
         var problems = new List<SourceProblem>();
-        if (source.Build is { } build && adk?.Build is { } adkBuild && build != adkBuild)
+        if (source.Build is { } build && adk?.Build is { } adkBuild && build < adkBuild)
         {
             problems.Add(new SourceProblem(
-                string.Create(CultureInfo.InvariantCulture, $"Windows image build {build} doesn't match Windows ADK build {adkBuild}."),
-                string.Create(CultureInfo.InvariantCulture, $"Use a build {adkBuild} source.")));
+                string.Create(CultureInfo.InvariantCulture, $"Windows image build {build} is older than Windows ADK build {adkBuild}."),
+                string.Create(CultureInfo.InvariantCulture, $"Use a build {adkBuild} or newer source.")));
         }
 
         var sourceArchitecture = source.ProcessorArchitecture is { } raw ? WimMetadataReader.ToMachineArchitecture(raw) : null;
@@ -64,17 +66,51 @@ public static class WindowsRecoverySource
     }
 
     /// <summary>
+    /// The extracted Windows RE must be the ADK's build exactly; a newer base (e.g. 28000) needs its
+    /// own ADK. Pure, so it can be tested without an ISO. Null when it matches or a build is unknown.
+    /// </summary>
+    public static SourceProblem? EvaluateRecovery(WimImageInfo recovery, WimImageInfo? adk)
+    {
+        if (recovery.Build is not { } build || adk?.Build is not { } adkBuild || build == adkBuild)
+        {
+            return null;
+        }
+
+        return new SourceProblem(
+            string.Create(CultureInfo.InvariantCulture, $"Windows RE build {build} in this source doesn't match Windows ADK build {adkBuild}."),
+            build > adkBuild
+                ? string.Create(CultureInfo.InvariantCulture, $"Install the Windows ADK for build {build}, or use an older source.")
+                : string.Create(CultureInfo.InvariantCulture, $"Use a build {adkBuild} or newer source."));
+    }
+
+    /// <summary>Fails generation before any other work when the extracted Windows RE doesn't match the ADK.</summary>
+    public static async Task EnsureRecoveryMatchesAdkAsync(string winrePath, string adkPath, MachineArchitecture architecture, CancellationToken ct)
+    {
+        var recovery = await WimMetadataReader.ReadImageInfoAsync(winrePath, ct);
+        var adkWim = AdkWinPeWimPath(adkPath, architecture);
+        var adk = adkWim is not null ? await WimMetadataReader.ReadImageInfoAsync(adkWim, ct) : null;
+        if (recovery is not null && EvaluateRecovery(recovery, adk) is { } problem)
+        {
+            throw new InvalidOperationException($"{problem.Problem} {problem.Fix}");
+        }
+    }
+
+    /// <summary>
     /// Checks an ISO or install.wim. Mounts an ISO read-only for the duration of the check and
     /// detaches it again unless it was already attached.
     /// </summary>
     public static async Task<SourceCheckResult> CheckAsync(string sourcePath, MachineArchitecture target, CancellationToken ct = default)
     {
         if (!File.Exists(sourcePath))
+        {
             return Fail("The file does not exist.", "Choose a Windows ISO or install.wim.");
+        }
 
         var adkPath = BootImageGenerationService.FindAdkPath();
         if (adkPath is null)
+        {
             return Fail("The Windows ADK with the Windows PE add-on is not installed.", "Install both, then check again.");
+        }
 
         try
         {
@@ -82,13 +118,15 @@ public static class WindowsRecoverySource
             if (source.InstallWimPath is null)
             {
                 return Fail(
-                    source.HasInstallEsd ? "This ISO has only sources\\install.esd, which cannot be mounted." : "This ISO has no sources\\install.wim.",
+                    "This ISO has no sources\\install.wim.",
                     "Use an ISO that includes install.wim, such as a volume licensing or Visual Studio download.");
             }
 
             var info = await WimMetadataReader.ReadImageInfoAsync(source.InstallWimPath, ct);
             if (info is null)
+            {
                 return Fail("The install.wim could not be read.", "Choose another Windows installation source.");
+            }
 
             var adkWim = AdkWinPeWimPath(adkPath, target);
             var adkInfo = adkWim is not null ? await WimMetadataReader.ReadImageInfoAsync(adkWim, ct) : null;
@@ -115,7 +153,9 @@ public static class WindowsRecoverySource
     public static async Task<string> ExtractAsync(string sourcePath, string workDir, string destinationDir, Func<string, CancellationToken, Task> runDism, CancellationToken ct)
     {
         if (sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
+        {
             MountCleanup.RecordDiskImage(workDir, sourcePath);
+        }
 
         await using var source = await OpenAsync(sourcePath, ct);
         var installWim = source.InstallWimPath
@@ -132,7 +172,9 @@ public static class WindowsRecoverySource
 
             var winre = Path.Combine(mountDir, "Windows", "System32", "Recovery", "Winre.wim");
             if (!File.Exists(winre))
+            {
                 throw new InvalidOperationException("The Windows image has no Windows\\System32\\Recovery\\Winre.wim. Choose another Windows installation source.");
+            }
 
             var winreCopy = Path.Combine(destinationDir, "winre.wim");
             File.Copy(winre, winreCopy, overwrite: true);
@@ -142,7 +184,10 @@ public static class WindowsRecoverySource
             {
                 var path = Path.Combine(mountDir, "Windows", "System32", dll);
                 if (!File.Exists(path))
+                {
                     throw new InvalidOperationException($"The Windows image has no {dll}, which Wi-Fi in Windows RE needs. Choose another Windows installation source.");
+                }
+
                 var copy = Path.Combine(destinationDir, dll);
                 File.Copy(path, copy, overwrite: true);
                 File.SetAttributes(copy, FileAttributes.Normal);
@@ -161,7 +206,9 @@ public static class WindowsRecoverySource
                 catch { /* the sweep at the start of the next run undoes it */ }
             }
             if (sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
+            {
                 MountCleanup.Forget(workDir, sourcePath);
+            }
         }
     }
 
@@ -177,7 +224,10 @@ public static class WindowsRecoverySource
     {
         var ocs = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
         if (!Directory.Exists(ocs))
+        {
             return [];
+        }
+
         return [.. Directory.GetDirectories(ocs)
             .Select(Path.GetFileName)
             .OfType<string>()
@@ -191,12 +241,13 @@ public static class WindowsRecoverySource
     private static async Task<OpenedSource> OpenAsync(string sourcePath, CancellationToken ct)
     {
         if (!sourcePath.EndsWith(".iso", StringComparison.OrdinalIgnoreCase))
-            return new OpenedSource(sourcePath, null, false, false);
+        {
+            return new OpenedSource(sourcePath, null, false);
+        }
 
         var (root, wasAttached) = await AttachIsoAsync(sourcePath, ct);
         var wim = Path.Combine(root, "sources", "install.wim");
-        var esd = Path.Combine(root, "sources", "install.esd");
-        return new OpenedSource(File.Exists(wim) ? wim : null, wasAttached ? null : sourcePath, wasAttached, File.Exists(esd));
+        return new OpenedSource(File.Exists(wim) ? wim : null, wasAttached ? null : sourcePath, wasAttached);
     }
 
     private static async Task<(string Root, bool WasAttached)> AttachIsoAsync(string isoPath, CancellationToken ct)
@@ -206,7 +257,10 @@ public static class WindowsRecoverySource
         var output = await RunPowerShellAsync(script, ct);
         var parts = output.Trim().Split('|');
         if (parts.Length != 2 || parts[1].Length != 1)
+        {
             throw new InvalidOperationException("Windows could not mount the ISO.");
+        }
+
         return ($"{parts[1]}:\\", string.Equals(parts[0], "True", StringComparison.OrdinalIgnoreCase));
     }
 
@@ -227,27 +281,33 @@ public static class WindowsRecoverySource
         var stderr = process.StandardError.ReadToEndAsync(ct);
         await process.WaitForExitAsync(ct);
         if (process.ExitCode != 0)
+        {
             throw new InvalidOperationException((await stderr).Trim() is { Length: > 0 } error ? error : "PowerShell failed.");
+        }
+
         return await stdout;
     }
 
-    private sealed class OpenedSource(string? installWimPath, string? isoToDetach, bool wasAlreadyAttached, bool hasInstallEsd) : IAsyncDisposable
+    private sealed class OpenedSource(string? installWimPath, string? isoToDetach, bool wasAlreadyAttached) : IAsyncDisposable
     {
         public string? InstallWimPath { get; } = installWimPath;
 
         public bool WasAlreadyAttached { get; } = wasAlreadyAttached;
 
-        public bool HasInstallEsd { get; } = hasInstallEsd;
-
         public async ValueTask DisposeAsync()
         {
             if (isoToDetach is null)
+            {
                 return;
+            }
+
             try
             {
                 using var process = Process.Start(new ProcessStartInfo("powershell.exe", MountCleanup.DismountDiskImageArguments(isoToDetach)) { UseShellExecute = false, CreateNoWindow = true });
                 if (process is not null)
+                {
                     await process.WaitForExitAsync();
+                }
             }
             catch { /* the sweep at the start of the next elevated run detaches it */ }
         }

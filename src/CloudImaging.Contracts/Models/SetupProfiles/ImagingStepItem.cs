@@ -6,7 +6,7 @@ namespace CloudImaging.Contracts.Models.SetupProfiles;
 public sealed record ImagingStepItem
 {
     /// <summary>Most items kept per step report.</summary>
-    public const int MaxItemsPerReport = 500;
+    public const int MaxItemsPerReport = 1500;
 
     /// <summary>Longest kept <see cref="Name"/>.</summary>
     public const int MaxNameLength = 100;

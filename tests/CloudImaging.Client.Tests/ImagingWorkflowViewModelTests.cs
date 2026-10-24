@@ -1,3 +1,4 @@
+using System.IO;
 using CloudImaging.Client.Services;
 using CloudImaging.Client.ViewModels;
 using CloudImaging.Contracts.Enums;
@@ -12,6 +13,47 @@ namespace CloudImaging.Client.Tests;
 /// </summary>
 public sealed class ImagingWorkflowViewModelTests
 {
+    // ── Prepare setup run decision ───────────────────────────────────────────
+
+    private static readonly CloudImaging.Client.Services.Setup.SpecializeInstaller HandedOver = new(
+        "HP Hotkey Support",
+        [new CloudImaging.Client.Services.Setup.SpecializeInstallerFile(@"CloudImaging\Drivers\sp1\setup.exe", "ab")],
+        new CloudImaging.Client.Services.Setup.SpecializeInstallerCommand(@"CloudImaging\Drivers\sp1\setup.exe", "/s", @"CloudImaging\Drivers\sp1"),
+        600,
+        [0, 3010],
+        []);
+
+    [Fact]
+    public void PrepareSetup_RunsWithoutAProfile_WhenSpecializeWorkIsHandedOver()
+    {
+        ImagingWorkflowViewModel.ShouldRunPrepareSetup(CloudImaging.Client.Services.Setup.SetupProfileLoadStatus.None, [HandedOver]).Should().BeTrue();
+        ImagingWorkflowViewModel.ShouldRunPrepareSetup(CloudImaging.Client.Services.Setup.SetupProfileLoadStatus.None, []).Should().BeFalse();
+        ImagingWorkflowViewModel.ShouldRunPrepareSetup(CloudImaging.Client.Services.Setup.SetupProfileLoadStatus.Loaded, []).Should().BeTrue();
+    }
+
+    [Fact]
+    public void PrepareSetupInput_PassesTheHandedOverInstallersThroughUnchanged()
+    {
+        IReadOnlyList<CloudImaging.Client.Services.Setup.SpecializeInstaller> installers = [HandedOver];
+        var none = new CloudImaging.Client.Services.Setup.SetupProfileLoadResult(CloudImaging.Client.Services.Setup.SetupProfileLoadStatus.None, null, null, null);
+        var sessionId = Guid.NewGuid();
+
+        var input = ImagingWorkflowViewModel.BuildPrepareSetupInput(none, installers, @"W:\", CloudImaging.Contracts.Models.MachineArchitecture.X64, sessionId);
+
+        input.SpecializeInstallers.Should().BeSameAs(installers);
+        input.ProfileName.Should().BeNull();
+        input.ProfileVersion.Should().BeNull();
+        input.SessionId.Should().Be(sessionId);
+    }
+
+    [Fact]
+    public void BootImage_SupportsPowerShell_OnlyWhenPowerShellIsInSystem32()
+    {
+        BootImageCapabilities.SupportsPowerShell(p => p == @"X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", @"X:\Windows\System32").Should().BeTrue();
+        BootImageCapabilities.SupportsPowerShell(_ => false, @"X:\Windows\System32").Should().BeFalse();
+        BootImageCapabilities.SupportsPowerShell(_ => throw new IOException(), @"X:\Windows\System32").Should().BeFalse();
+    }
+
     // ── ProgressViewModel state machine ──────────────────────────────────────
 
     [Fact]
@@ -40,9 +82,9 @@ public sealed class ImagingWorkflowViewModelTests
     {
         var vm = new ProgressViewModel();
 
-        vm.UpdateStep(ImagingStepName.FormatDisk,    ImagingStepStatus.Completed);
+        vm.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.Completed);
         vm.UpdateStep(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress);
-        vm.UpdateStep(ImagingStepName.ApplyImage,    ImagingStepStatus.Pending);
+        vm.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.Pending);
 
         vm.Steps.Single(s => s.Step == ImagingStepName.FormatDisk).State.Should().Be(ProgressStepState.Done, "FormatDisk is Completed");
         vm.Steps.Single(s => s.Step == ImagingStepName.DownloadImage).State.Should().Be(ProgressStepState.Active, "DownloadImage is InProgress");
@@ -77,7 +119,7 @@ public sealed class ImagingWorkflowViewModelTests
     {
         // SAS is refreshed when < 15 minutes remain (FR-025)
         var threshold = SasRefreshCoordinator.RefreshThreshold;
-        threshold.TotalMinutes.Should().Be(15, "SAS token refresh threshold is 15 minutes (FR-025)");
+        threshold.TotalMinutes.Should().Be(15, "SAS token refresh threshold is 15 minutes");
     }
 
     // ── Overall progress increases as steps complete ─────────────────────────

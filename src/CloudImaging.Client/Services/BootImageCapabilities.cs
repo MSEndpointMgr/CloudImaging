@@ -27,4 +27,24 @@ public static class BootImageCapabilities
             return false;
         }
     }
+
+    /// <summary>Relative to System32; Media Builder adds it through WinPE-PowerShell.</summary>
+    public const string PowerShellRelativePath = @"WindowsPowerShell\v1.0\powershell.exe";
+
+    /// <summary>True when Windows PowerShell is in the boot image, so In WinPE scripts can run.</summary>
+    /// <param name="fileExists">Test seam; defaults to <see cref="File.Exists(string)"/>.</param>
+    /// <param name="system32">Test seam; defaults to the running Windows' System32.</param>
+    public static bool SupportsPowerShell(Func<string, bool>? fileExists = null, string? system32 = null)
+    {
+        fileExists ??= File.Exists;
+        system32 ??= Environment.GetFolderPath(Environment.SpecialFolder.System);
+        try
+        {
+            return fileExists(Path.Combine(system32, PowerShellRelativePath));
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

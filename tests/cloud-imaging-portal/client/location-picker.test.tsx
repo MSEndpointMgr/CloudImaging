@@ -61,4 +61,13 @@ describe('Portal frontend: location picker and targeting badges', () => {
     fireEvent.focus(more);
     expect(screen.getByRole('tooltip').textContent).toBe('Site 1, Site 2, Site 3 and 2 other locations and 2 more. Edit the profile to see and search all 8.');
   });
+
+  it('keeps the badges on one line, truncating a long first name', () => {
+    const long: PickerLocation[] = [{ locationId: 'a', name: 'Amsterdam headquarters, building 4, floor 12' }, { locationId: 'b', name: 'Oslo' }];
+    const { container } = render(<TargetingBadges all={false} locationIds={['a', 'b']} locations={long} allLabel="All devices" editNoun="profile" />);
+
+    expect((container.firstElementChild as HTMLElement).className).toContain('flex-nowrap');
+    expect(screen.getByText('Amsterdam headquarters, building 4, floor 12').className).toContain('truncate');
+    expect(screen.getByText('+1 more').className).toContain('whitespace-nowrap');
+  });
 });

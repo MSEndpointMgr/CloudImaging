@@ -82,6 +82,10 @@ public sealed partial class SessionSetupProfileFunction
                 contentUrlExpiresAt = root.GetProperty("contentUrlExpiresAt").GetDateTimeOffset(),
                 contentSha256 = root.GetProperty("contentSha256").GetString(),
                 contentSizeBytes = root.GetProperty("contentSizeBytes").GetInt64(),
+                scripts = root.TryGetProperty("scripts", out var scripts) && scripts.ValueKind == JsonValueKind.Array
+                    ? [.. scripts.EnumerateArray().Select(Text)]
+                    : new List<object>(),
+                answerFile = root.TryGetProperty("answerFile", out var answerFile) && answerFile.ValueKind == JsonValueKind.Object ? Text(answerFile) : null,
             };
 
             // The SAS URL is a credential: log the host only.
@@ -92,6 +96,15 @@ public sealed partial class SessionSetupProfileFunction
             return response;
         }
     }
+
+    private static object Text(JsonElement text) => new
+    {
+        id = text.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String ? id.GetGuid() : (Guid?)null,
+        contentSha256 = text.GetProperty("contentSha256").GetString(),
+        sizeBytes = text.GetProperty("sizeBytes").GetInt64(),
+        contentUrl = text.GetProperty("contentUrl").GetString(),
+        contentUrlExpiresAt = text.GetProperty("contentUrlExpiresAt").GetDateTimeOffset(),
+    };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Setup profile version {Version} issued to session {SessionId} from {Host}.")]
     private static partial void LogDescriptorIssued(ILogger logger, Guid sessionId, int version, string host);

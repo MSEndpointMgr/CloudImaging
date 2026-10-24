@@ -1,5 +1,5 @@
-using System.IO;
 using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -26,9 +26,9 @@ public sealed partial class BootImageGenerationService
     /// <summary>
     /// Prefix for the per-run working directory created under <c>%TEMP%</c> by
     /// <see cref="GenerateAsync"/> (e.g. <c>ci-bootimage-3f9a...\Mount</c>). Shared between the
-    /// directory's creation and <see cref="CleanupOrphanedWorkDirsAsync"/> — which sweeps up any
+    /// directory's creation and <see cref="CleanupOrphanedWorkDirsAsync"/>: which sweeps up any
     /// directories matching this prefix left behind by a previous run that was killed (crashed,
-    /// Task Manager, power loss) before it could clean up after itself — so both stay in sync.
+    /// Task Manager, power loss) before it could clean up after itself: so both stay in sync.
     /// </summary>
     private const string WorkDirPrefix = "ci-bootimage-";
 
@@ -40,31 +40,21 @@ public sealed partial class BootImageGenerationService
     private const string ElevatedIpcDirPrefix = "ci-elevated-";
 
     /// <summary>
-    /// How often to tick the generic "still running" heartbeat for a silent external command
-    /// (see <see cref="ReportHeartbeatAsync"/>) — only fires while the command has produced no
-    /// output of its own for at least this long, so it never fights with real output (including
-    /// DISM's own collated progress-bar heartbeat, see <see cref="DismProgressBarLineRegex"/>).
+    /// How often the elevated worker writes a silent keep-alive line, so a long command with no
+    /// output (e.g. a DISM mount) is never mistaken for a dead worker.
     /// </summary>
-    private const int HeartbeatIntervalSeconds = 5;
+    private static readonly TimeSpan WorkerKeepAliveInterval = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Silence after the worker's first IPC line that means it died without writing a result.
-    /// Several heartbeat intervals; not applied before the first line, which also covers the UAC prompt.
+    /// Several keep-alive intervals; not applied before the first line, which also covers the UAC prompt.
     /// </summary>
     private static readonly TimeSpan StalledElevatedWorkerTimeout = TimeSpan.FromSeconds(45);
 
     /// <summary>
-    /// How long a single external command (dism.exe, copype.cmd) must run before the live log
-    /// gets an actionable hint about the likely cause, instead of just a ticking heartbeat.
-    /// DISM mount/unmount legitimately takes tens of seconds — this is set well above that so
-    /// the hint only fires when a step is running unusually long.
-    /// </summary>
-    private const int LongRunningHintThresholdSeconds = 90;
-
-    /// <summary>
     /// Conservative allowance for the WinPE media copype.cmd produces plus DISM mount
-    /// scratch space, used by the free-space pre-flight check. Not exact — copype's actual
-    /// output size varies by ADK version — but large enough to catch "clearly not enough
+    /// scratch space, used by the free-space pre-flight check. Not exact: copype's actual
+    /// output size varies by ADK version: but large enough to catch "clearly not enough
     /// room" before any copying starts.
     /// </summary>
     private const long EstimatedWinPeWorkspaceBytes = 2L * 1024 * 1024 * 1024; // 2 GB
@@ -76,7 +66,7 @@ public sealed partial class BootImageGenerationService
     /// Matches dism.exe's own console progress-bar redraw (e.g.
     /// "[==============86.0%======================                ]"). On a real console DISM
     /// repaints this single line in place using a bare carriage return, but .NET's redirected
-    /// StreamReader splits on any of \r, \n, or \r\n — so each redraw otherwise arrives as its
+    /// StreamReader splits on any of \r, \n, or \r\n: so each redraw otherwise arrives as its
     /// own "line" and floods the live log with dozens of near-duplicate entries for one DISM
     /// call. Lines matching this are routed through <see cref="RaiseHeartbeat"/> instead of
     /// <see cref="RaiseLog"/> so the UI collates them into one steadily-updating line, matching
@@ -102,7 +92,7 @@ public sealed partial class BootImageGenerationService
 
     /// <summary>
     /// Raised in place of <see cref="LogMessage"/> for a line that should replace the
-    /// previously-displayed heartbeat text rather than append a new log line — currently only
+    /// previously-displayed heartbeat text rather than append a new log line: currently only
     /// dism.exe's own collated progress-bar redraw (see <see cref="DismProgressBarLineRegex"/>).
     /// This keeps that single line ticking over in place instead of flooding the log with a new
     /// line per percentage tick.
@@ -113,14 +103,14 @@ public sealed partial class BootImageGenerationService
     /// <param name="operatorApiClient">
     /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the active
     /// boot media certificate PFX from the Operator API before generation starts, and
-    /// generation FAILS if none can be retrieved (T173, FR-070) — the produced boot media
+    /// generation FAILS if none can be retrieved (T173, FR-070): the produced boot media
     /// would otherwise be unable to authenticate to the Device Gateway API. When null,
     /// pfxBytes must be supplied by the caller or no certificate is embedded (test/dev seam).
     /// </param>
     /// <param name="brandingLogoEmbedService">
     /// Optional. When provided, <see cref="GenerateElevatedAsync"/> will retrieve the
     /// portal-configured branding logo before generation starts and embed it alongside the
-    /// Client (FR-002a, FR-051). Unlike the certificate, a missing/failed logo is never fatal —
+    /// Client (FR-002a, FR-051). Unlike the certificate, a missing/failed logo is never fatal:
     /// the Client falls back to its default logo when none is embedded.
     /// </param>
     /// <param name="isElevatedOverride">Test seam. Defaults to a real check of the current process token.</param>
@@ -132,11 +122,11 @@ public sealed partial class BootImageGenerationService
         Func<bool>? isElevatedOverride = null,
         Func<string, string, System.Diagnostics.Process>? startElevatedProcessOverride = null)
     {
-        _logger                    = logger;
-        _operatorApiClient         = operatorApiClient;
-        _brandingLogoEmbedService  = brandingLogoEmbedService;
-        _isElevated                = isElevatedOverride ?? ElevationHelper.IsElevated;
-        _startElevatedProcess      = startElevatedProcessOverride ?? ElevationHelper.StartElevatedProcess;
+        _logger = logger;
+        _operatorApiClient = operatorApiClient;
+        _brandingLogoEmbedService = brandingLogoEmbedService;
+        _isElevated = isElevatedOverride ?? ElevationHelper.IsElevated;
+        _startElevatedProcess = startElevatedProcessOverride ?? ElevationHelper.StartElevatedProcess;
     }
 
     /// <summary>
@@ -194,7 +184,9 @@ public sealed partial class BootImageGenerationService
         // the elevated worker via the same file-based IPC used for everything else (see
         // RunElevatedChildProcessAsync).
         if (pfxBytes is null && _operatorApiClient is not null)
+        {
             pfxBytes = await ResolveBootMediaCertificateAsync(ct);
+        }
 
         byte[]? logoBytes = _brandingLogoEmbedService is not null
             ? await _brandingLogoEmbedService.TryDownloadLogoAsync(ct)
@@ -205,14 +197,16 @@ public sealed partial class BootImageGenerationService
             : null;
 
         if (_isElevated())
+        {
             return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
+        }
 
         return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
     }
 
     /// <summary>
     /// Retrieves the active boot media certificate PFX from the Operator API (T173, FR-070).
-    /// Called from <see cref="GenerateElevatedAsync"/> — before any elevation relaunch — so the
+    /// Called from <see cref="GenerateElevatedAsync"/> (before any elevation relaunch) so the
     /// bytes can be threaded through IPC to the elevated worker. Boot image generation MUST NOT
     /// proceed without an active certificate: the produced media would be unable to complete the
     /// mTLS handshake with the Device Gateway API and would be non-functional, so a retrieval
@@ -226,7 +220,9 @@ public sealed partial class BootImageGenerationService
         {
             var pfx = await _operatorApiClient!.GetBootMediaCertPfxAsync(ct);
             if (pfx is not { Length: > 0 })
+            {
                 throw new InvalidOperationException("The Operator API returned an empty boot media certificate.");
+            }
 
             LogCertRetrieved(_logger);
             return pfx;
@@ -256,7 +252,9 @@ public sealed partial class BootImageGenerationService
         {
             var endpoints = await _operatorApiClient!.GetEndpointConfigurationAsync(ct);
             if (string.IsNullOrWhiteSpace(endpoints.DeviceGatewayApiBaseUrl))
+            {
                 throw new InvalidOperationException("The Operator API returned an empty Device Gateway base URL.");
+            }
 
             LogDeviceGatewayUrlResolved(_logger, endpoints.DeviceGatewayApiBaseUrl);
             return endpoints.DeviceGatewayApiBaseUrl;
@@ -277,7 +275,7 @@ public sealed partial class BootImageGenerationService
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
-        // worker has its own, separate work-dir/mount cleanup — see CleanupOrphanedWorkDirsAsync).
+        // worker has its own, separate work-dir/mount cleanup: see CleanupOrphanedWorkDirsAsync).
         // These folders hold nothing but small IPC files (no DISM mount to worry about), so
         // sweeping them up needs no elevation and is always safe to do up front.
         CleanupOrphanedIpcDirs();
@@ -285,10 +283,10 @@ public sealed partial class BootImageGenerationService
         var ipcDir = Path.Combine(Path.GetTempPath(), $"{ElevatedIpcDirPrefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(ipcDir);
         ElevationHelper.WriteOwnerMarker(ipcDir);
-        var paramsFile   = Path.Combine(ipcDir, "params.json");
+        var paramsFile = Path.Combine(ipcDir, "params.json");
         var progressFile = Path.Combine(ipcDir, "progress.txt");
-        var resultFile   = Path.Combine(ipcDir, "result.json");
-        var cancelFile   = Path.Combine(ipcDir, "cancel.flag");
+        var resultFile = Path.Combine(ipcDir, "result.json");
+        var cancelFile = Path.Combine(ipcDir, "cancel.flag");
 
         try
         {
@@ -315,7 +313,7 @@ public sealed partial class BootImageGenerationService
             var args = $"{ElevatedWorkerArg} \"{paramsFile}\" \"{progressFile}\" \"{resultFile}\" \"{cancelFile}\"";
 
             // Kept short enough to always fit the fixed-width progress header on one line
-            // (see GenerateBootImageView.xaml's ProgressMessage TextBlock) — the full detail
+            // (see GenerateBootImageView.xaml's ProgressMessage TextBlock): the full detail
             // about why elevation is needed still reaches the user via the elevation-request
             // UAC prompt itself, so it doesn't need to be repeated here.
             ReportProgress("Requesting Administrator privileges", 3);
@@ -327,7 +325,7 @@ public sealed partial class BootImageGenerationService
             }
             catch (System.ComponentModel.Win32Exception wex) when (wex.NativeErrorCode == 1223)
             {
-                // ERROR_CANCELLED — the user declined the UAC prompt.
+                // ERROR_CANCELLED: the user declined the UAC prompt.
                 throw new InvalidOperationException(
                     "Administrator elevation was cancelled. Boot image generation requires " +
                     "Administrator privileges to mount the WinPE image via DISM.");
@@ -352,12 +350,12 @@ public sealed partial class BootImageGenerationService
             {
                 // With privilege brokers (UAC's consent.exe, CyberArk EPM, etc.) the process
                 // handle returned by "runas" is frequently a short-lived launcher, NOT the
-                // real elevated worker — so HasExited is unreliable and can never fire (or
+                // real elevated worker: so HasExited is unreliable and can never fire (or
                 // fires immediately) while the actual worker keeps running. Treat the worker's
                 // result file (always written on success AND failure) as the authoritative
                 // completion signal instead, tailing progress/log lines while we wait. This
                 // wait is intentionally NOT cancelled by "ct" itself (that would abort the wait
-                // before the worker has a chance to clean up) — cancellation is instead handled
+                // before the worker has a chance to clean up): cancellation is instead handled
                 // above via the cancel-flag file, with a grace period below before a hard kill.
                 while (!File.Exists(resultFile))
                 {
@@ -365,7 +363,9 @@ public sealed partial class BootImageGenerationService
                     var linesBefore = linesRead;
                     linesRead = TailProgress(progressFile, linesRead);
                     if (linesRead > linesBefore)
+                    {
                         lastActivityUtc = DateTime.UtcNow;
+                    }
 
                     if (ct.IsCancellationRequested)
                     {
@@ -396,7 +396,10 @@ public sealed partial class BootImageGenerationService
             if (!File.Exists(resultFile))
             {
                 if (ct.IsCancellationRequested)
+                {
                     throw new OperationCanceledException("Boot image generation was cancelled.", ct);
+                }
+
                 throw new InvalidOperationException(
                     "The elevated boot image generation process exited without reporting a result.");
             }
@@ -408,7 +411,10 @@ public sealed partial class BootImageGenerationService
             if (!result.Success)
             {
                 if (ct.IsCancellationRequested)
+                {
                     throw new OperationCanceledException(result.Error ?? "Boot image generation was cancelled.", ct);
+                }
+
                 throw new InvalidOperationException(result.Error ?? "Boot image generation failed in the elevated process.");
             }
 
@@ -424,20 +430,22 @@ public sealed partial class BootImageGenerationService
     {
         string[] lines;
         try { lines = File.ReadAllLines(progressFile); }
-        catch (IOException) { return fromLine; } // file briefly locked by the writer — try again next tick
+        catch (IOException) { return fromLine; } // file briefly locked by the writer: try again next tick
 
         for (var i = fromLine; i < lines.Length; i++)
         {
             var line = lines[i];
             // Typed IPC lines written by the elevated worker:
-            //   "P\t{percent}\t{message}"  → progress/step update
-            //   "L\t{text}"                → command/output log line (always append)
-            //   "H\t{text}"                → heartbeat tick (replace previous heartbeat line)
+            //   "P\t{percent}\t{message}"  -> progress/step update
+            //   "L\t{text}"                -> command/output log line (always append)
+            //   "H\t{text}"                -> heartbeat tick (replace previous heartbeat line)
             if (line.StartsWith("P\t", StringComparison.Ordinal))
             {
                 var parts = line.Split('\t', 3);
                 if (parts.Length == 3 && int.TryParse(parts[1], out var percent))
+                {
                     ReportProgress(parts[2], percent);
+                }
             }
             else if (line.StartsWith("L\t", StringComparison.Ordinal))
             {
@@ -462,7 +470,7 @@ public sealed partial class BootImageGenerationService
     /// (non-elevated) process signals cancellation by creating that file (see
     /// <see cref="RunElevatedChildProcessAsync"/>), a local <see cref="CancellationTokenSource"/>
     /// is cancelled so <see cref="GenerateAsync"/> unwinds through its normal mount-rollback and
-    /// temp-directory cleanup — exactly as it would for any other failure — instead of the
+    /// temp-directory cleanup (exactly as it would for any other failure) instead of the
     /// process being killed outright.
     /// </summary>
     public static async Task RunElevatedWorkerAsync(
@@ -490,12 +498,15 @@ public sealed partial class BootImageGenerationService
                 lock (ipcLock)
                 {
                     try { File.AppendAllText(progressFile, typedLine + Environment.NewLine); }
-                    catch { /* best effort — parent will just miss this tick */ }
+                    catch { /* best effort: parent will just miss this tick */ }
                 }
             }
             svc.ProgressChanged += (_, e) => Append($"P\t{e.Percent}\t{e.Message}");
-            svc.LogMessage      += (_, line) => Append($"L\t{line}");
-            svc.LogHeartbeat    += (_, line) => Append($"H\t{line}");
+            svc.LogMessage += (_, line) => Append($"L\t{line}");
+            svc.LogHeartbeat += (_, line) => Append($"H\t{line}");
+
+            // "K" lines are never displayed; they only prove to the parent that this worker is alive.
+            _ = KeepAliveAsync(() => Append("K"), cts.Token);
 
             var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, p.ToolsRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, p.Architecture, p.IncludeAutopilotTooling, p.WindowsSourcePath, cts.Token);
 
@@ -516,6 +527,22 @@ public sealed partial class BootImageGenerationService
         }
     }
 
+    private static async Task KeepAliveAsync(Action write, CancellationToken ct)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(WorkerKeepAliveInterval, ct);
+                write();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Generation finished or was cancelled.
+        }
+    }
+
     /// <summary>
     /// Writes the worker's outcome for the parent; never throws. Recreates the IPC folder in case it
     /// was swept away; if that still fails, the parent's stalled-worker detection reports it.
@@ -526,7 +553,9 @@ public sealed partial class BootImageGenerationService
         {
             var dir = Path.GetDirectoryName(resultFile);
             if (!string.IsNullOrEmpty(dir))
+            {
                 Directory.CreateDirectory(dir);
+            }
 
             await File.WriteAllTextAsync(resultFile, JsonSerializer.Serialize(result));
         }
@@ -556,12 +585,12 @@ public sealed partial class BootImageGenerationService
     /// provided, every file beneath it is copied to <c>X:\Tools</c> in the WIM for manual use
     /// from the command prompt (FR-051d). When null/empty, nothing is copied.
     /// </param>
-    /// <param name="logoBytes">Branding logo bytes to embed at <c>branding\logo.png</c> (FR-002a). Optional — a missing logo is never fatal.</param>
+    /// <param name="logoBytes">Branding logo bytes to embed at <c>branding\logo.png</c> (FR-002a). Optional: a missing logo is never fatal.</param>
     /// <param name="deviceGatewayBaseUrl">Live Device Gateway URL stamped into the Client's appsettings.json (FR-062). Only null in the test/dev seam where no <see cref="OperatorApiClient"/> was provided.</param>
     /// <param name="enableCommandPromptAccess">
     /// Opt-in (default off). When true, stamps <c>SupportTools:CommandPromptEnabled=true</c> into
     /// the Client's appsettings.json, which shows a "Command Prompt" button on the Operation
-    /// Selection screen granting full unrestricted WinPE shell access — a deliberate technician
+    /// Selection screen granting full unrestricted WinPE shell access: a deliberate technician
     /// support/diagnostics capability, not enabled by default.
     /// </param>
     /// <param name="architecture">
@@ -594,7 +623,7 @@ public sealed partial class BootImageGenerationService
     {
         // Sweep up whatever a previous run left behind if the process was killed/crashed
         // mid-generation (Task Manager, power loss, etc.) rather than exiting normally through
-        // this method's own "finally" below — including discarding any DISM mount still left
+        // this method's own "finally" below: including discarding any DISM mount still left
         // mounted from that run. This method always executes elevated (either because the
         // whole process is already elevated, or because it IS the elevated worker relaunched by
         // GenerateElevatedAsync), so it's always safe to run the DISM unmount this needs. Must
@@ -607,14 +636,14 @@ public sealed partial class BootImageGenerationService
 
         // Computed up front (rather than after the WIM is finalized) so the same value can be
         // embedded in the manifest as BootImageManifest.ImageVersion and reused for the output
-        // file name below — the two are intentionally the same identifier.
+        // file name below: the two are intentionally the same identifier.
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
 
         try
         {
             // Checked first, ahead of the ADK check: it depends only on the supplied client
             // binaries folder (not on any locally installed tooling), so it fails fast and
-            // deterministically before any WinPE staging/DISM mount work — rather than letting
+            // deterministically before any WinPE staging/DISM mount work: rather than letting
             // a technician boot a VM/USB later and discover the client is missing its .NET
             // runtime (see EnsureClientBinariesAreSelfContained doc comment).
             EnsureClientBinariesAreSelfContained(clientBinariesPath, architecture);
@@ -622,9 +651,11 @@ public sealed partial class BootImageGenerationService
             ReportProgress("Verifying ADK installation", 5);
             var adkPath = FindAdkPath();
             if (adkPath is null)
+            {
                 throw new InvalidOperationException(
                     "Windows ADK with WinPE add-on is not installed. " +
                     "Download both from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
+            }
 
             // Checked before any copying so an unusable option fails in seconds, not after copype and the DISM mount.
             if (includeAutopilotTooling
@@ -634,7 +665,7 @@ public sealed partial class BootImageGenerationService
             }
 
             // The boot media certificate is resolved by GenerateElevatedAsync before this method
-            // runs (possibly in a separate elevated process) — see ResolveBootMediaCertificateAsync.
+            // runs (possibly in a separate elevated process): see ResolveBootMediaCertificateAsync.
 
             ReportProgress("Copying WinPE base files", 15);
             EnsureOscdimgBootFilesPresent(adkPath, architecture);
@@ -649,7 +680,7 @@ public sealed partial class BootImageGenerationService
 
             var winPeRoot = Path.Combine(workDir, "WinPE");
             await CopyWinPeFilesAsync(adkPath, winPeRoot, architecture, ct);
-            var wimPath  = Path.Combine(winPeRoot, "media", "sources", "boot.wim");
+            var wimPath = Path.Combine(winPeRoot, "media", "sources", "boot.wim");
 
             // copype still lays out the media folder and boot files; only the image itself is swapped.
             var bootImageBase = windowsSourcePath is null ? BootImageBase.WindowsPE : BootImageBase.WindowsRE;
@@ -659,6 +690,7 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Extracting Windows RE", 22);
                 recoveryFilesDir = Path.Combine(workDir, "WinRE");
                 var winre = await WindowsRecoverySource.ExtractAsync(windowsSourcePath, workDir, recoveryFilesDir, RunDismAsync, ct);
+                await WindowsRecoverySource.EnsureRecoveryMatchesAdkAsync(winre, adkPath, architecture, ct);
                 File.Copy(winre, wimPath, overwrite: true);
                 LogWindowsRecoveryExtracted(_logger, windowsSourcePath);
             }
@@ -674,7 +706,7 @@ public sealed partial class BootImageGenerationService
             try
             {
                 await RunDismAsync($"/Mount-Image /ImageFile:\"{wimPath}\" /Index:1 /MountDir:\"{mountDir}\"", ct);
-                // Base WinPE (from copype.cmd) does not include WMI — it's an optional
+                // Base WinPE (from copype.cmd) does not include WMI: it's an optional
                 // component. Without it, System.Management queries the Client relies on for
                 // disk enumeration/formatting (DiskFormatService), hardware metadata collection
                 // (OperationSelectionViewModel) and the boot image self-update check
@@ -685,7 +717,7 @@ public sealed partial class BootImageGenerationService
 
                 // WinPE-WMI only provides the native WMI/COM infrastructure. The managed
                 // System.Management wrapper the Client actually calls additionally requires a
-                // .NET Framework installation on disk for its internal marshaling shim — WinPE
+                // .NET Framework installation on disk for its internal marshaling shim: WinPE
                 // never has one otherwise, so every ManagementObjectSearcher call instead fails
                 // with "System.PlatformNotSupportedException: Could not find an installation of
                 // .NET Framework v4.0.30319. System.Management requires...", silently collapsing
@@ -696,6 +728,13 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Adding WinPE .NET Framework support", 37);
                 await InjectNetFxOptionalComponentAsync(adkPath, mountDir, architecture, ct);
 
+                // Setup profiles run In WinPE scripts in Windows PowerShell, which needs Scripting first.
+                ReportProgress(WinPeOptionalComponents.PowerShellProgressText, 38);
+                foreach (var component in WinPeOptionalComponents.PowerShell)
+                {
+                    await InjectOptionalComponentAsync(adkPath, mountDir, architecture, component, ct);
+                }
+
                 // Windows RE ships the WLAN service but not these two DLLs from the full OS; without them wlansvc cannot start.
                 if (recoveryFilesDir is not null)
                 {
@@ -704,7 +743,22 @@ public sealed partial class BootImageGenerationService
                     {
                         var target = Path.Combine(mountDir, "Windows", "System32", dll);
                         if (!File.Exists(target))
+                        {
                             File.Copy(Path.Combine(recoveryFilesDir, dll), target);
+                        }
+                    }
+
+                    // Found here, a missing service or DLL costs a rebuild instead of a test boot on hardware.
+                    ReportProgress("Checking Wi-Fi support", 41);
+                    await using (var image = await MountedRecoveryImage.LoadAsync(mountDir, (exe, args, token) => RunExternalAsync(exe, args, token), ct))
+                    {
+                        var problems = WindowsRecoveryWifiCheck.FindProblems(image);
+                        if (problems.Count > 0)
+                        {
+                            throw new InvalidOperationException(
+                                "This Windows RE image cannot run Wi-Fi. Use a Windows ISO whose Windows RE includes Wi-Fi support:"
+                                + Environment.NewLine + string.Join(Environment.NewLine, problems.Select(p => "- " + p)));
+                        }
                     }
                 }
 
@@ -719,7 +773,7 @@ public sealed partial class BootImageGenerationService
                     await InjectAutopilotToolingAsync(adkPath, mountDir, clientDestDir, architecture, ct);
                 }
 
-                // Embed the portal-configured branding logo, if one was resolved — otherwise the
+                // Embed the portal-configured branding logo, if one was resolved: otherwise the
                 // Client falls back to its default logo at runtime (FR-002a).
                 if (logoBytes is { Length: > 0 })
                 {
@@ -767,7 +821,7 @@ public sealed partial class BootImageGenerationService
                 ReportProgress("Configuring WinPE auto-start", 65);
                 await ConfigureWinPeAutoStartAsync(mountDir, ct);
 
-                // Embed the integrity/provenance manifest (T065, FR-051) — a descoped, honest
+                // Embed the integrity/provenance manifest (T065, FR-051): a descoped, honest
                 // replacement for the old "signed manifest" claim; see BootImageManifest's remarks.
                 ReportProgress("Embedding boot image manifest", 67);
                 var manifest = BootImageManifestService.Build(
@@ -777,7 +831,8 @@ public sealed partial class BootImageGenerationService
                     toolsRootPath: toolsRootPath,
                     architecture: architecture,
                     autopilotToolingIncluded: includeAutopilotTooling,
-                    bootImageBase: bootImageBase);
+                    bootImageBase: bootImageBase,
+                    powerShellIncluded: true);
                 await BootImageManifestService.EmbedAsync(mountDir, manifest, ct);
                 LogManifestEmbedded(_logger, timestamp, driversInjected);
 
@@ -790,10 +845,12 @@ public sealed partial class BootImageGenerationService
             {
                 // Whatever went wrong between /Mount-Image succeeding and /Unmount-Image
                 // /Commit succeeding above (a thrown exception, driver injection failure,
-                // even cancellation) — never leave the WIM mounted. Discard rather than
+                // even cancellation): never leave the WIM mounted. Discard rather than
                 // commit, since a partially-customized mount shouldn't be treated as good.
                 if (mounted)
+                {
                     await TryDiscardMountAsync(mountDir, ct);
+                }
             }
 
             ReportProgress("Copying output WIM", 88);
@@ -806,7 +863,7 @@ public sealed partial class BootImageGenerationService
             // x64 and ARM64 builds in the same output folder never collide or get confused for
             // one another outside the product (todo/arm64-support.md, Milestone 1 §1).
             var baseSlug = bootImageBase == BootImageBase.WindowsRE ? "-winre" : string.Empty;
-            var outputWim  = Path.Combine(outputDirectory, $"cloud-imaging-boot-{MachineArchitecturePlatform.Slug(architecture)}{baseSlug}-{timestamp}.wim");
+            var outputWim = Path.Combine(outputDirectory, $"cloud-imaging-boot-{MachineArchitecturePlatform.Slug(architecture)}{baseSlug}-{timestamp}.wim");
             DiskSpaceGuard.EnsureFreeSpace(outputDirectory, new FileInfo(wimPath).Length, "copy the finished boot image to the output folder");
             File.Copy(wimPath, outputWim, overwrite: false);
 
@@ -820,19 +877,21 @@ public sealed partial class BootImageGenerationService
         }
         finally
         {
-            // Best-effort cleanup — a failure here is exactly what CleanupOrphanedWorkDirsAsync
+            // Best-effort cleanup: a failure here is exactly what CleanupOrphanedWorkDirsAsync
             // finds (and re-reports) on the next run, so surface it now instead of leaving the
             // technician to wonder why that count keeps growing.
             if (!TryDeleteDirectoryRecursive(workDir, out var failureReason))
+            {
                 RaiseLog($"Could not fully clean up working folder \"{workDir}\". It will be swept up on the next run. ({failureReason})");
+            }
         }
     }
 
     /// <summary>
     /// Best-effort rollback for a WIM left mounted by a failure between <c>/Mount-Image</c>
     /// and a successful <c>/Unmount-Image /Commit</c> (an exception, a driver-injection
-    /// failure, or cancellation). Always attempts <c>/Unmount-Image /Discard</c> — even when
-    /// <paramref name="ct"/> is already cancelled — so a cancelled run doesn't leave an
+    /// failure, or cancellation). Always attempts <c>/Unmount-Image /Discard</c>: even when
+    /// <paramref name="ct"/> is already cancelled: so a cancelled run doesn't leave an
     /// orphaned DISM mount point behind (which otherwise requires a manual
     /// <c>dism /Cleanup-Mountpoints</c> to clear). Never throws: a rollback failure is logged
     /// and surfaced in the live log, but must not mask the original failure.
@@ -848,7 +907,7 @@ public sealed partial class BootImageGenerationService
         {
             LogUnmountRollbackFailed(_logger, mountDir, ex);
             RaiseLog(
-                $"FAILED: could not unmount \"{mountDir}\" during rollback — the WIM may still be mounted. " +
+                $"FAILED: could not unmount \"{mountDir}\" during rollback: the WIM may still be mounted. " +
                 $"Run 'dism /Cleanup-Mountpoints' to clear orphaned mounts. {ex.Message}");
         }
     }
@@ -862,7 +921,9 @@ public sealed partial class BootImageGenerationService
     {
         ct.ThrowIfCancellationRequested();
         if (MountCleanup.FindOrphanedWorkDirs().Count == 0)
+        {
             return;
+        }
 
         ReportProgress("Cleaning up after an interrupted run", 2);
         await MountCleanup.SweepAsync(RaiseLog);
@@ -872,7 +933,7 @@ public sealed partial class BootImageGenerationService
     /// Sweeps up leftover <c>%TEMP%\ci-elevated-*</c> IPC folders from a previous (non-elevated)
     /// parent process that was itself killed/crashed before <see cref="RunElevatedChildProcessAsync"/>'s
     /// own "finally" ran. These folders hold nothing but small IPC files (params/progress/result/
-    /// cancel-flag, optionally a cert.pfx) — no DISM mount is ever created directly under one, so
+    /// cancel-flag, optionally a cert.pfx): no DISM mount is ever created directly under one, so
     /// unlike <see cref="CleanupOrphanedWorkDirsAsync"/> this needs no elevation and is always
     /// safe to run up front. Best-effort: must never block starting a new elevated run.
     /// </summary>
@@ -884,7 +945,9 @@ public sealed partial class BootImageGenerationService
             {
                 // Its elevated worker may still be writing here even if the parent GUI exited.
                 if (ElevationHelper.IsOwnedByLiveProcess(dir))
+                {
                     continue;
+                }
 
                 TryDeleteDirectoryRecursive(dir);
             }
@@ -909,7 +972,7 @@ public sealed partial class BootImageGenerationService
     ///
     /// The base ADK ("Deployment Tools" + "Common") and the WinPE add-on are SEPARATE
     /// installers (adksetup.exe vs. adkwinpesetup.exe) that both extract into the SAME
-    /// root folder. It is entirely possible — and was reproduced on a real workstation —
+    /// root folder. It is entirely possible (and was reproduced on a real workstation)
     /// for only the base ADK to be installed, in which case the ADK root directory exists
     /// but "Windows Preinstallation Environment" (containing copype.cmd / MakeWinPEMedia.cmd)
     /// does not. Checking only the root directory is a false positive: it lets the user
@@ -942,7 +1005,7 @@ public sealed partial class BootImageGenerationService
     /// <summary>
     /// Boot sector files that copype.cmd unconditionally copies from
     /// <c>Deployment Tools\{arch}\Oscdimg</c> while staging (etfsboot.com is copied only if
-    /// present, so it is intentionally excluded here — see the copype.cmd source).
+    /// present, so it is intentionally excluded here: see the copype.cmd source).
     /// </summary>
     private static readonly string[] RequiredOscdimgBootFiles =
     [
@@ -970,36 +1033,38 @@ public sealed partial class BootImageGenerationService
             .ToArray();
 
         if (missing.Length == 0)
+        {
             return;
+        }
 
         RaiseLog($"FAILED: Deployment Tools \"{oscdimgDir}\" is missing: {string.Join(", ", missing)}");
         throw new InvalidOperationException(
             $"The installed Windows ADK Deployment Tools are missing boot files ({string.Join(", ", missing)}) " +
             $"required by the installed WinPE add-on. This happens when the base ADK (Deployment Tools) is an " +
-            "older version than the WinPE add-on — they must be the SAME version. Re-run the ADK installer " +
+            "older version than the WinPE add-on: they must be the SAME version. Re-run the ADK installer " +
             "(adksetup.exe) and update Deployment Tools to match the WinPE add-on version, then try again. " +
             "Download both (matching versions) from https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install");
     }
 
     /// <summary>
     /// Services the WinPE-WMI optional component into the mounted WIM (base package + its
-    /// en-us language pack, both required for DISM to accept it — FR-051/self-update, WMI
+    /// en-us language pack, both required for DISM to accept it: FR-051/self-update, WMI
     /// dependency).
     ///
     /// copype.cmd's base WinPE image does NOT include WMI; it's an optional add-on component
     /// that ships alongside copype.cmd/MakeWinPEMedia.cmd under
     /// <c>Windows Preinstallation Environment\{arch}\WinPE_OCs</c>. Without it, every
     /// <c>System.Management</c> (<c>ManagementObjectSearcher</c>) call the Client makes at
-    /// runtime — disk enumeration/formatting (<c>DiskFormatService</c>), hardware metadata
+    /// runtime: disk enumeration/formatting (<c>DiskFormatService</c>), hardware metadata
     /// collection (<c>OperationSelectionViewModel</c>), boot volume lookup
-    /// (<c>BootImageSelfUpdateService</c>) — fails with
+    /// (<c>BootImageSelfUpdateService</c>): fails with
     /// <c>COMException (0x80040154): Retrieving the COM class factory for component ... failed</c>
     /// the moment it's first touched, because the WMI COM infrastructure was never registered
     /// into the image.
     /// </summary>
     private async Task InjectWmiOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, CancellationToken ct)
     {
-        var ocsDir  = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
+        var ocsDir = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
         var baseCab = Path.Combine(ocsDir, "WinPE-WMI.cab");
         var langCab = Path.Combine(ocsDir, "en-us", "WinPE-WMI_en-us.cab");
 
@@ -1009,7 +1074,7 @@ public sealed partial class BootImageGenerationService
             throw new InvalidOperationException(
                 $"Could not find the WinPE-WMI optional component under \"{ocsDir}\" (expected " +
                 "\"WinPE-WMI.cab\" and \"en-us\\WinPE-WMI_en-us.cab\"). This ships alongside copype.cmd as " +
-                "part of the Windows ADK WinPE add-on — reinstall/repair the WinPE add-on " +
+                "part of the Windows ADK WinPE add-on: reinstall/repair the WinPE add-on " +
                 "(adkwinpesetup.exe) and try again.");
         }
 
@@ -1026,16 +1091,16 @@ public sealed partial class BootImageGenerationService
     /// managed <c>System.Management</c> assembly the Client actually calls
     /// (<c>ManagementObjectSearcher</c>) additionally needs a .NET Framework installation on
     /// disk for its own marshaling shim. Base WinPE never has one, so without this component
-    /// every WMI-based lookup — hardware metadata (<c>OperationSelectionViewModel</c>), disk
+    /// every WMI-based lookup: hardware metadata (<c>OperationSelectionViewModel</c>), disk
     /// enumeration/formatting (<c>DiskFormatService</c>), boot volume lookup
-    /// (<c>BootImageSelfUpdateService</c>) — fails at runtime with
+    /// (<c>BootImageSelfUpdateService</c>): fails at runtime with
     /// <c>System.PlatformNotSupportedException: Could not find an installation of .NET
     /// Framework v4.0.30319. System.Management requires...</c>, which silently degrades to
     /// "UNKNOWN" hardware identity instead of throwing somewhere visible.
     /// </summary>
     private async Task InjectNetFxOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, CancellationToken ct)
     {
-        var ocsDir  = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
+        var ocsDir = Path.Combine(adkPath, "Windows Preinstallation Environment", MachineArchitecturePlatform.AdkArchitectureName(architecture), "WinPE_OCs");
         var baseCab = Path.Combine(ocsDir, "WinPE-NetFx.cab");
         var langCab = Path.Combine(ocsDir, "en-us", "WinPE-NetFx_en-us.cab");
 
@@ -1045,8 +1110,26 @@ public sealed partial class BootImageGenerationService
             throw new InvalidOperationException(
                 $"Could not find the WinPE-NetFx optional component under \"{ocsDir}\" (expected " +
                 "\"WinPE-NetFx.cab\" and \"en-us\\WinPE-NetFx_en-us.cab\"). This ships alongside copype.cmd as " +
-                "part of the Windows ADK WinPE add-on — reinstall/repair the WinPE add-on " +
+                "part of the Windows ADK WinPE add-on: reinstall/repair the WinPE add-on " +
                 "(adkwinpesetup.exe) and try again.");
+        }
+
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
+        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+    }
+
+    /// <summary>
+    /// Services one optional component (base cab plus its en-us language cab) into the mounted
+    /// WIM, the same way as WinPE-WMI and WinPE-NetFx.
+    /// </summary>
+    private async Task InjectOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, string component, CancellationToken ct)
+    {
+        var (baseCab, langCab) = WinPeOptionalComponents.PackagePaths(adkPath, architecture, component);
+        if (!File.Exists(baseCab) || !File.Exists(langCab))
+        {
+            var directory = WinPeOptionalComponents.Directory(adkPath, architecture);
+            RaiseLog($"FAILED: WinPE optional component package(s) not found under \"{directory}\".");
+            throw new InvalidOperationException(WinPeOptionalComponents.MissingMessage(directory, component));
         }
 
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
@@ -1077,7 +1160,7 @@ public sealed partial class BootImageGenerationService
     /// output folder, or a <c>dotnet publish</c> without <c>--self-contained</c>) rather than a
     /// genuine <c>dotnet publish -r win-x64 --self-contained</c> deployment.
     ///
-    /// WinPE has no .NET runtime of its own — a framework-dependent Cloud Imaging Client copied
+    /// WinPE has no .NET runtime of its own: a framework-dependent Cloud Imaging Client copied
     /// into the image boots into "You must install .NET Desktop Runtime to run this
     /// application." instead of the client UI, which is otherwise only discovered later, on
     /// real hardware or in a Hyper-V VM. Self-contained publishes always copy hostfxr.dll next
@@ -1098,12 +1181,15 @@ public sealed partial class BootImageGenerationService
     {
         var clientExePath = Path.Combine(clientBinariesPath, "CloudImaging.Client.exe");
         if (!File.Exists(clientExePath))
+        {
             throw new InvalidOperationException(
                 $"\"{clientBinariesPath}\" does not contain CloudImaging.Client.exe. Point the local client " +
                 "binaries source at a folder produced by \"dotnet publish -r win-x64 --self-contained\" (or a " +
                 "downloaded cloud-imaging-client release), not a plain build output folder.");
+        }
 
         if (!File.Exists(Path.Combine(clientBinariesPath, "hostfxr.dll")))
+        {
             throw new InvalidOperationException(
                 $"\"{clientBinariesPath}\" looks like a framework-dependent build (no hostfxr.dll present) " +
                 "rather than a self-contained publish. WinPE has no .NET runtime installed, so a " +
@@ -1111,14 +1197,17 @@ public sealed partial class BootImageGenerationService
                 "Desktop Runtime to run this application.\" Publish it with \"dotnet publish " +
                 "src\\CloudImaging.Client\\CloudImaging.Client.csproj -c Release -r win-x64 --self-contained\" " +
                 "(matching the release pipeline), or use \"Auto-download latest from GitHub Releases\" instead.");
+        }
 
         var actualArchitecture = PeArchitectureInspector.ReadArchitecture(clientExePath);
         if (actualArchitecture is not null && actualArchitecture != architecture)
+        {
             throw new InvalidOperationException(
                 $"\"{clientExePath}\" is a {MachineArchitecturePlatform.Slug(actualArchitecture.Value)} build, but " +
                 $"{MachineArchitecturePlatform.Slug(architecture)} is selected as the target architecture. Point " +
                 $"the local client binaries source at a {MachineArchitecturePlatform.Slug(architecture)} publish, " +
                 "or change the selected target architecture to match.");
+        }
     }
 
     private async Task CopyWinPeFilesAsync(string adkPath, string winPeRoot, MachineArchitecture architecture, CancellationToken ct)
@@ -1131,7 +1220,7 @@ public sealed partial class BootImageGenerationService
         // files via %OSCDImgRoot%\..\..\%arch%\Oscdimg, and mounts the WIM via
         // "%DISMRoot%\Dism.exe". All three variables are normally set by the ADK's
         // "Deployment and Imaging Tools Environment" prompt (Deployment Tools\DandISetEnv.bat)
-        // — which this app never launches from. Without them, copype.cmd fails first with
+        // which this app never launches from. Without them, copype.cmd fails first with
         // "ERROR: The following processor architecture was not found: amd64." and, once
         // WinPERoot/OSCDImgRoot are set, with "'"\Dism.exe"' is not recognized..." even though
         // the ADK/WinPE add-on are correctly installed. Set them explicitly so the invocation
@@ -1148,9 +1237,9 @@ public sealed partial class BootImageGenerationService
         // architecture is passed to copype.
         var env = new Dictionary<string, string>
         {
-            ["WinPERoot"]   = Path.Combine(adkPath, "Windows Preinstallation Environment"),
+            ["WinPERoot"] = Path.Combine(adkPath, "Windows Preinstallation Environment"),
             ["OSCDImgRoot"] = Path.Combine(adkPath, "Deployment Tools", hostArch, "Oscdimg"),
-            ["DISMRoot"]    = Path.Combine(adkPath, "Deployment Tools", hostArch, "DISM"),
+            ["DISMRoot"] = Path.Combine(adkPath, "Deployment Tools", hostArch, "DISM"),
         };
 
         // cmd.exe's /C switch only preserves quotes verbatim when the command tail contains
@@ -1181,11 +1270,15 @@ public sealed partial class BootImageGenerationService
     private async Task<int> InjectDriversAsync(string mountDir, string? driverRootPath, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(driverRootPath))
+        {
             return 0;
+        }
 
         if (!Directory.Exists(driverRootPath))
+        {
             throw new DirectoryNotFoundException(
                 $"Driver root folder not found: {driverRootPath}");
+        }
 
         var infCount = Directory
             .EnumerateFiles(driverRootPath, "*.inf", SearchOption.AllDirectories)
@@ -1194,7 +1287,7 @@ public sealed partial class BootImageGenerationService
         if (infCount == 0)
         {
             LogNoDriversFound(_logger, driverRootPath);
-            ReportProgress("No driver packages found — skipping injection", 61);
+            ReportProgress("No driver packages found: skipping injection", 61);
             return 0;
         }
 
@@ -1218,17 +1311,21 @@ public sealed partial class BootImageGenerationService
     private int InjectSupportTools(string mountDir, string? toolsRootPath, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(toolsRootPath))
+        {
             return 0;
+        }
 
         if (!Directory.Exists(toolsRootPath))
+        {
             throw new DirectoryNotFoundException(
                 $"Support tools folder not found: {toolsRootPath}");
+        }
 
         var fileCount = Directory.EnumerateFiles(toolsRootPath, "*", SearchOption.AllDirectories).Count();
         if (fileCount == 0)
         {
             LogNoSupportToolsFound(_logger, toolsRootPath);
-            ReportProgress("No support tools found — skipping copy", 63);
+            ReportProgress("No support tools found: skipping copy", 63);
             return 0;
         }
 
@@ -1246,16 +1343,16 @@ public sealed partial class BootImageGenerationService
     ///
     /// WinPE's shell launcher (winpeshl.exe) looks for <c>Windows\System32\winpeshl.ini</c> at
     /// boot; when present, it launches exactly the apps listed there instead of its built-in
-    /// fallback of <c>cmd.exe /c startnet.cmd</c> — which is what shows the default black
+    /// fallback of <c>cmd.exe /c startnet.cmd</c>: which is what shows the default black
     /// console window the user sees today. Listing the Client directly (after
     /// <c>wpeinit.exe</c>, which performs the PnP/network initialization the Client depends
-    /// on) means the console never appears at all — more reliable than trying to minimize it
+    /// on) means the console never appears at all: more reliable than trying to minimize it
     /// after the fact, since WinPE has no taskbar to restore a minimized window from, and
     /// self-minimizing a running console from within a batch script would require PowerShell
     /// or a scripting host that isn't guaranteed to be present in a minimal WinPE image.
     ///
     /// <c>startnet.cmd</c> is also updated as a fallback for anyone who deletes
-    /// winpeshl.ini — winpeshl.exe ignores it whenever winpeshl.ini exists.
+    /// winpeshl.ini: winpeshl.exe ignores it whenever winpeshl.ini exists.
     /// </summary>
     private static async Task ConfigureWinPeAutoStartAsync(string mountDir, CancellationToken ct)
     {
@@ -1279,18 +1376,20 @@ public sealed partial class BootImageGenerationService
     {
         var startInfo = new System.Diagnostics.ProcessStartInfo
         {
-            FileName               = exe,
-            Arguments              = args,
-            UseShellExecute        = false,
-            CreateNoWindow         = true,
+            FileName = exe,
+            Arguments = args,
+            UseShellExecute = false,
+            CreateNoWindow = true,
             RedirectStandardOutput = true,
-            RedirectStandardError  = true,
+            RedirectStandardError = true,
         };
 
         if (environment is not null)
         {
             foreach (var (key, value) in environment)
+            {
                 startInfo.EnvironmentVariables[key] = value;
+            }
         }
 
         // Surface the exact command being executed in the live UI log (FR-051d).
@@ -1298,23 +1397,21 @@ public sealed partial class BootImageGenerationService
 
         using var process = new System.Diagnostics.Process
         {
-            StartInfo           = startInfo,
+            StartInfo = startInfo,
             EnableRaisingEvents = true,
         };
 
         // Capture stdout/stderr so a failure can surface the tool's actual diagnostic
         // message instead of just an exit code (e.g. copype.cmd / dism.exe error text),
-        // and stream every line to the live UI log as it arrives, untagged — the command line
+        // and stream every line to the live UI log as it arrives, untagged: the command line
         // just logged above already identifies which tool this output belongs to, and the whole
         // point is for the log to read as one continuous activity stream rather than a set of
         // labelled sub-logs. dism.exe's own progress-bar redraws are collated into a single
         // in-place heartbeat line rather than appended as separate log lines (see
         // DismProgressBarLineRegex), so the log isn't flooded with a new line per percentage tick.
         var output = new System.Text.StringBuilder();
-        var lastOutputUtc = DateTime.UtcNow;
         void HandleOutputLine(string data)
         {
-            lastOutputUtc = DateTime.UtcNow;
             output.AppendLine(data);
 
             // Trim rather than pass the raw line through as-is: external tools (notably
@@ -1323,12 +1420,16 @@ public sealed partial class BootImageGenerationService
             // inconsistent once every line shares one flush-left log column.
             var trimmed = data.Trim();
             if (DismProgressBarLineRegex.IsMatch(trimmed))
+            {
                 RaiseHeartbeat(trimmed);
+            }
             else
+            {
                 RaiseLog(trimmed);
+            }
         }
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) HandleOutputLine(e.Data); };
-        process.ErrorDataReceived  += (_, e) => { if (e.Data is not null) HandleOutputLine(e.Data); };
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) { HandleOutputLine(e.Data); } };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) { HandleOutputLine(e.Data); } };
 
         var tcs = new TaskCompletionSource<int>();
         process.Exited += (_, _) => tcs.TrySetResult(process.ExitCode);
@@ -1337,27 +1438,10 @@ public sealed partial class BootImageGenerationService
         process.BeginErrorReadLine();
         ct.Register(() => { try { process.Kill(); } catch { } });
 
-        // DISM /Mount-Image and /Unmount-Image in particular can run for 30+ seconds with no
-        // output at all, and copype.cmd has its own quiet stretches too — without this, the
-        // log/step UI looks stalled with no way to tell a slow step from a hung one. Only ticks
-        // once the command has been silent for a while, so it never fights with real output
-        // (including DISM's own collated progress-bar heartbeat above).
-        using var heartbeatCts = new CancellationTokenSource();
-        var heartbeatTask = ReportHeartbeatAsync(exe, () => lastOutputUtc, heartbeatCts.Token);
-
-        int code;
-        try
-        {
-            code = await tcs.Task;
-        }
-        finally
-        {
-            heartbeatCts.Cancel();
-            try { await heartbeatTask; } catch (OperationCanceledException) { /* expected */ }
-        }
+        var code = await tcs.Task;
 
         // The ct.Register above kills the process on cancellation, which makes it exit with a
-        // non-zero code — surface that as a clean cancellation rather than a confusing generic
+        // non-zero code: surface that as a clean cancellation rather than a confusing generic
         // "exited with code -1" failure (callers, e.g. GenerateAsync's mount-rollback finally,
         // still run their normal cleanup either way, since OperationCanceledException propagates
         // like any other exception).
@@ -1370,7 +1454,7 @@ public sealed partial class BootImageGenerationService
         if (code != 0)
         {
             var captured = output.ToString().Trim();
-            var detail   = captured.Length > 0 ? $" Output: {captured}" : string.Empty;
+            var detail = captured.Length > 0 ? $" Output: {captured}" : string.Empty;
             RaiseLog($"FAILED: {System.IO.Path.GetFileName(exe)} exited with code {code}.");
             throw new InvalidOperationException($"{exe} exited with code {code}.{detail}");
         }
@@ -1379,11 +1463,11 @@ public sealed partial class BootImageGenerationService
     }
 
     /// <summary>
-    /// Deletes a directory tree even when it contains read-only files — which copype.cmd
+    /// Deletes a directory tree even when it contains read-only files: which copype.cmd
     /// leaves behind when it copies the ADK's own read-only WinPE media source files.
     /// <see cref="Directory.Delete(string, bool)"/> throws <see cref="UnauthorizedAccessException"/>
     /// on a read-only file regardless of process privilege (elevation does not bypass the
-    /// attribute; it must be cleared first) — left unhandled, this silently aborts cleanup and
+    /// attribute; it must be cleared first): left unhandled, this silently aborts cleanup and
     /// leaves the entire WinPE working directory (several hundred MB) behind in %TEMP% on every
     /// run. Best-effort throughout: a cleanup failure must never mask the real generation
     /// result/error.
@@ -1403,11 +1487,13 @@ public sealed partial class BootImageGenerationService
     private static void CopyDirectory(string source, string dest, CancellationToken ct, bool applyClientExclusions = true)
     {
         foreach (var dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+        {
             Directory.CreateDirectory(dir.Replace(source, dest));
+        }
 
         foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
         {
-            // Respond to cancellation between files rather than only at the next await point —
+            // Respond to cancellation between files rather than only at the next await point:
             // this copy has no other await inside its loop and can otherwise run for a while
             // uninterrupted when the Client binaries folder is large.
             ct.ThrowIfCancellationRequested();
@@ -1415,17 +1501,21 @@ public sealed partial class BootImageGenerationService
             if (applyClientExclusions)
             {
                 // Debug symbols are never needed to run the Client and can be a large fraction
-                // of a build's total size — skipping them reduces how much data DISM has to
+                // of a build's total size: skipping them reduces how much data DISM has to
                 // recompress into the WIM on /Unmount-Image /Commit. This is also why unmounting
                 // legitimately takes noticeably longer than mounting: mounting just exposes the
                 // existing compressed data, while committing has to compress every added/changed
                 // file (the more/bigger the injected Client binaries and drivers, the longer it
-                // takes) — it isn't a sign that anything has stalled.
+                // takes): it isn't a sign that anything has stalled.
                 if (string.Equals(Path.GetExtension(file), ".pdb", StringComparison.OrdinalIgnoreCase))
+                {
                     continue;
+                }
 
                 if (ExcludedFromBootImage.Contains(Path.GetFileName(file), StringComparer.OrdinalIgnoreCase))
+                {
                     continue;
+                }
             }
 
             File.Copy(file, file.Replace(source, dest), overwrite: true);
@@ -1444,11 +1534,15 @@ public sealed partial class BootImageGenerationService
     public static async Task StampDeviceGatewayBaseUrlAsync(string clientDestDir, string? baseUrl, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
+        {
             return;
+        }
 
         var appSettingsPath = Path.Combine(clientDestDir, "appsettings.json");
         if (!File.Exists(appSettingsPath))
+        {
             return;
+        }
 
         var json = await File.ReadAllTextAsync(appSettingsPath, ct);
         var root = JsonNode.Parse(json)?.AsObject() ?? [];
@@ -1474,7 +1568,9 @@ public sealed partial class BootImageGenerationService
     {
         var appSettingsPath = Path.Combine(clientDestDir, "appsettings.json");
         if (!File.Exists(appSettingsPath))
+        {
             return;
+        }
 
         var json = await File.ReadAllTextAsync(appSettingsPath, ct);
         var root = JsonNode.Parse(json)?.AsObject() ?? [];
@@ -1508,47 +1604,6 @@ public sealed partial class BootImageGenerationService
         LogCommandLine(_logger, line);
     }
 
-    /// <summary>
-    /// Ticks a generic "still running (Ns elapsed)" heartbeat for <paramref name="exe"/> every
-    /// <see cref="HeartbeatIntervalSeconds"/> while it has produced no output of its own for at
-    /// least that long (see <paramref name="getLastOutputUtc"/>), so a silent stretch (e.g. a
-    /// DISM mount/unmount, or one of copype.cmd's own quiet steps) never looks stalled. Once the
-    /// command has run past <see cref="LongRunningHintThresholdSeconds"/>, also logs a one-time
-    /// hint about the likely cause. Runs until <paramref name="ct"/> is cancelled by the caller
-    /// once the command exits.
-    /// </summary>
-    private async Task ReportHeartbeatAsync(string exe, Func<DateTime> getLastOutputUtc, CancellationToken ct)
-    {
-        var exeName        = System.IO.Path.GetFileName(exe);
-        var elapsedSeconds = 0;
-        var hintShown      = false;
-        try
-        {
-            while (true)
-            {
-                await Task.Delay(TimeSpan.FromSeconds(HeartbeatIntervalSeconds), ct);
-                elapsedSeconds += HeartbeatIntervalSeconds;
-
-                if (DateTime.UtcNow - getLastOutputUtc() < TimeSpan.FromSeconds(HeartbeatIntervalSeconds))
-                    continue;
-
-                RaiseHeartbeat($"{exeName} still running ({elapsedSeconds}s elapsed)");
-
-                if (!hintShown && elapsedSeconds >= LongRunningHintThresholdSeconds)
-                {
-                    hintShown = true;
-                    RaiseLog($"{exeName} is taking longer than usual ({elapsedSeconds}s elapsed). This can happen " +
-                        "with a slow disk, antivirus scanning of the mounted image, or a large boot image — " +
-                        "it will keep running.");
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected once the command exits and RunExternalAsync cancels this task.
-        }
-    }
-
     [LoggerMessage(Level = LogLevel.Information,
         Message = "Boot image generated: {OutputWim} (sha256={Hash}).")]
     private static partial void LogGenerated(ILogger logger, string outputWim, string hash);
@@ -1562,7 +1617,7 @@ public sealed partial class BootImageGenerationService
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot media certificate PFX retrieved for embedding.")]
     private static partial void LogCertRetrieved(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media certificate retrieval failed — generation cannot continue.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Boot media certificate retrieval failed: generation cannot continue.")]
     private static partial void LogCertRetrieveFailed(ILogger logger, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Branding logo embedded ({Bytes} bytes).")]
@@ -1589,16 +1644,16 @@ public sealed partial class BootImageGenerationService
     [LoggerMessage(Level = LogLevel.Information, Message = "Boot image manifest embedded (imageVersion={ImageVersion}, driversInjected={DriversInjected}).")]
     private static partial void LogManifestEmbedded(ILogger logger, string imageVersion, int driversInjected);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "No driver packages (.inf) found under driver root {DriverRoot} — skipping driver injection.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "No driver packages (.inf) found under driver root {DriverRoot}: skipping driver injection.")]
     private static partial void LogNoDriversFound(ILogger logger, string driverRoot);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Copied {Count} support tool file(s) from {ToolsRoot} into the boot image.")]
     private static partial void LogSupportToolsInjected(ILogger logger, int count, string toolsRoot);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Support tools folder {ToolsRoot} exists but contains no files — skipping copy.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Support tools folder {ToolsRoot} exists but contains no files: skipping copy.")]
     private static partial void LogNoSupportToolsFound(ILogger logger, string toolsRoot);
 
-    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to unmount/discard \"{MountDir}\" during failure rollback — it may still be mounted.")]
+    [LoggerMessage(Level = LogLevel.Error, Message = "Failed to unmount/discard \"{MountDir}\" during failure rollback: it may still be mounted.")]
     private static partial void LogUnmountRollbackFailed(ILogger logger, string mountDir, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not enumerate %TEMP% for leftover elevated-generation IPC folders from a previous run.")]

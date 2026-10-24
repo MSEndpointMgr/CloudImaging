@@ -126,7 +126,7 @@ public sealed partial class PortalConfigurationRepository
             AutopilotRetentionDays = 365,
         };
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "No PortalConfiguration row found — returning defaults.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "No PortalConfiguration row found: returning defaults.")]
     private static partial void LogNoConfigFound(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "PortalConfiguration upserted.")]

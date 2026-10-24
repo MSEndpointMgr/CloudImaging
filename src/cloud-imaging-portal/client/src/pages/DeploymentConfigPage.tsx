@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Lock, Link as LinkIcon, RotateCcw } from 'lucide-react';
+import { Lock, Link as LinkIcon, RotateCcw, Save, SlidersHorizontal } from 'lucide-react';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
 import { UpdateCheckPanel } from '../components/UpdateCheckPanel.tsx';
 import { AutopilotConfigPanel } from '../components/AutopilotConfigPanel.tsx';
+import { SectionCard, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
@@ -36,6 +37,7 @@ interface PortalConfig {
   autopilotGroupTagRequired: boolean;
   autopilotPendingExpiryDays: number;
   autopilotRetentionDays: number;
+  setupProfileVersionRetention: number;
 }
 
 interface CertMeta {
@@ -72,7 +74,8 @@ function portalConfigEquals(a: PortalConfig, b: PortalConfig): boolean {
     && a.autopilotRegistrationEnabled === b.autopilotRegistrationEnabled
     && a.autopilotGroupTagRequired === b.autopilotGroupTagRequired
     && a.autopilotPendingExpiryDays === b.autopilotPendingExpiryDays
-    && a.autopilotRetentionDays === b.autopilotRetentionDays;
+    && a.autopilotRetentionDays === b.autopilotRetentionDays
+    && a.setupProfileVersionRetention === b.setupProfileVersionRetention;
 }
 
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
@@ -132,6 +135,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
     autopilotGroupTagRequired: false,
     autopilotPendingExpiryDays: 7,
     autopilotRetentionDays: 365,
+    setupProfileVersionRetention: 25,
   };
   const [config, setConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
   /** Snapshot of the config as last loaded/saved. Used to detect unsaved changes. */
@@ -185,6 +189,11 @@ export default function DeploymentConfigPage(): React.ReactElement {
     if (!Number.isInteger(config.autopilotRetentionDays) || config.autopilotRetentionDays < 30 || config.autopilotRetentionDays > 3650) {
       setActiveTab('autopilot');
       notify({ status: 'error', title: 'Could not save configuration', description: 'Handled Autopilot requests must be kept for 30 to 3650 days.' });
+      return;
+    }
+    if (!Number.isInteger(config.setupProfileVersionRetention) || config.setupProfileVersionRetention < 5 || config.setupProfileVersionRetention > 100) {
+      setActiveTab('misc');
+      notify({ status: 'error', title: 'Could not save configuration', description: 'Keep between 5 and 100 versions per profile.' });
       return;
     }
     setSaveStatus('loading');
@@ -378,6 +387,19 @@ export default function DeploymentConfigPage(): React.ReactElement {
               'How long completed device outcomes are kept for reporting before being purged.', DEFAULT_CONFIG.sessionHistoryRetentionDays)}
           </CardContent>
         </Card>
+        <SectionCard icon={SlidersHorizontal} title="Setup profiles" description="History kept for each setup profile.">
+          <SettingRow label="Versions kept per profile" help="Older versions are deleted at the next save. A version a running deployment still uses is always kept." htmlFor="setupProfileVersionRetention">
+            <Input
+              id="setupProfileVersionRetention"
+              type="number"
+              min={5}
+              max={100}
+              value={config.setupProfileVersionRetention}
+              onChange={e => setConfig(c => ({ ...c, setupProfileVersionRetention: Number(e.target.value) }))}
+              className="w-[120px]"
+            />
+          </SettingRow>
+        </SectionCard>
         </div>
       )}
 
@@ -392,7 +414,8 @@ export default function DeploymentConfigPage(): React.ReactElement {
             variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
             disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
           >
-            Save Configuration
+            <Save />
+            Save
           </Button>
           {isDirty && saveStatus === 'idle' && (
             <p className="text-sm text-muted-foreground">You have unsaved changes.</p>

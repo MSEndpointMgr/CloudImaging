@@ -9,7 +9,7 @@ namespace CloudImaging.MediaBuilder.Services;
 /// Builds and embeds the <see cref="BootImageManifest"/> integrity/provenance manifest into a
 /// generated boot image WIM (T065, FR-051). Replaces the earlier <c>BootImageSigningService</c>,
 /// which claimed to produce a "signed manifest" but never actually used its certificate
-/// parameter — see <see cref="BootImageManifest"/>'s remarks for why real cryptographic
+/// parameter: see <see cref="BootImageManifest"/>'s remarks for why real cryptographic
 /// signing was intentionally descoped rather than implemented.
 ///
 /// Fully static and side-effect-free apart from the final <see cref="EmbedAsync"/> file write,
@@ -42,7 +42,8 @@ public static class BootImageManifestService
         string? toolsRootPath = null,
         MachineArchitecture architecture = MachineArchitecture.X64,
         bool autopilotToolingIncluded = false,
-        BootImageBase bootImageBase = BootImageBase.WindowsPE)
+        BootImageBase bootImageBase = BootImageBase.WindowsPE,
+        bool powerShellIncluded = false)
     {
         var componentChecksums = new Dictionary<string, string>();
         string? clientVersion = null;
@@ -56,10 +57,14 @@ public static class BootImageManifestService
         }
 
         if (logoBytes is { Length: > 0 })
+        {
             componentChecksums["brandingLogo"] = Sha256Hex(logoBytes);
+        }
 
         if (pfxBytes is { Length: > 0 })
+        {
             componentChecksums["bootMediaCertificate"] = Sha256Hex(pfxBytes);
+        }
 
         return new BootImageManifest
         {
@@ -79,6 +84,7 @@ public static class BootImageManifestService
             SupportToolsEnabled = commandPromptEnabled,
             AutopilotToolingIncluded = autopilotToolingIncluded,
             Base = bootImageBase,
+            PowerShellIncluded = powerShellIncluded,
         };
     }
 

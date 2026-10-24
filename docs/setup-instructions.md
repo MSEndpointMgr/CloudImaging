@@ -558,7 +558,8 @@ without them; the rest are optional and can be revisited any time from **Configu
      Microsoft Graph and proceeds.
 6. **Review Security and Miscellaneous settings** *(optional)*.
    - **Configuration** > **Security**: certificate/token validity periods and clock skew tolerance.
-   - **Configuration** > **Miscellaneous**: session history retention.
+   - **Configuration** > **Miscellaneous**: session history retention, and the setup profile
+     versions kept per profile.
    - Both have working defaults and only need attention for organization-specific requirements.
 7. **Turn on version checking** *(optional)*.
    - **Configuration** > **Miscellaneous** > **Version** shows the release this deployment is
@@ -571,6 +572,11 @@ without them; the rest are optional and can be revisited any time from **Configu
      internet access.
    - Nothing is ever installed automatically; see
      [upgrade-instructions.md](upgrade-instructions.md).
+8. **Create setup profiles** *(optional)*.
+   - Under **Imaging** > **Setup Profiles**, an Operator or Administrator adds the registry values,
+     scripts and answer file devices need before Autopilot runs, and targets them by the location
+     on the USB media. See [Setup profiles](setup-profiles.md).
+   - Without a profile, devices image exactly as before.
 
 ---
 
@@ -722,6 +728,12 @@ older cached installer for one with a newer download for the other).
 Media Builder verifies the ADK + WinPE add-on are present (and blocks **Generate Boot Image**
 with a link to the page above if not) before you can start a build.
 
+> **PowerShell in boot images.** Generate Boot Image adds the `WinPE-Scripting` and
+> `WinPE-PowerShell` optional components (each with its `en-us` language pack) to every boot
+> image, so [setup profile](setup-profiles.md) scripts can run in WinPE. Media Builder takes them
+> from the WinPE add-on's `WinPE_OCs` folder for the architecture being built, and stops with a
+> message naming the missing file if the add-on does not provide them.
+
 #### Deploying the Media Builder with Intune
 
 Every [GitHub Release](https://github.com/MSEndpointMgr/CloudImaging/releases) in the
@@ -781,7 +793,9 @@ the above.
      ISO, whose build, architecture and language match the installed ADK. Media Builder checks the
      source as soon as you pick it and shows why it does not fit. It takes Winre.wim plus the two
      DLLs the WLAN service needs from `install.wim`. Add the Wi-Fi adapter drivers for your
-     hardware as usual. The file name gets a `-winre` suffix.
+     hardware as usual. The file name gets a `-winre` suffix. Before finishing, Media Builder
+     checks that the image has every service, driver and DLL the WLAN service needs, and stops
+     with a list of what is missing rather than producing an image whose Wi-Fi cannot start.
 6. Optionally check **Enable command prompt access** under **Support Tools** (see
    [Client support tools](#client-support-tools) below); off by default
 7. Click **Generate**; the wizard produces a `.wim` file
@@ -799,9 +813,13 @@ the above.
 
 #### Client support tools
 
-The Operation Selection screen offers two troubleshooting tools, both accessible without leaving
+The Operation Selection screen offers these troubleshooting tools, all accessible without leaving
 the always-on-top Cloud Imaging Client window:
 
+- **Network button**: in the footer, names the connection in use (Ethernet, the Wi-Fi network, or
+  No network with a red dot) and opens a panel listing every adapter, its address, the one in use
+  and any adapter Windows found without a driver, with **Check again** and, on Windows RE,
+  **Connect to Wi-Fi**.
 - **Connect to Wi-Fi**: shown only on Windows RE boot images; Windows PE has no Wi-Fi, so the
   button is not there at all. Lists the location's managed networks first (marked **Managed**,
   joined without a password, hidden ones included), then every other visible network. Open and
@@ -811,9 +829,10 @@ the always-on-top Cloud Imaging Client window:
   schema) is deleted immediately after each connect attempt.
 - **Managed Wi-Fi at startup**: on a Windows RE boot image, when Ethernet has no address after
   the usual wait, the Client tries the managed networks in portal order and shows the network it
-  joined on the startup screen and on the Wi-Fi button. Once online it fetches the current list
-  from the Device Gateway and rewrites the USB copy, so a password changed in the portal reaches
-  the stick the next time it is online.
+  joined on the startup screen and on the network button. Ethernet plugged in during the attempt
+  stops it, and Ethernet always wins: the Client leaves Wi-Fi once Ethernet has an address. Once
+  online it fetches the current list from the Device Gateway and rewrites the USB copy, so a
+  password changed in the portal reaches the stick the next time it is online.
 - **Command Prompt**: hidden unless the boot image was built with **Enable command prompt
   access** checked (off by default, per boot image). Launches an interactive `cmd.exe` for
   advanced troubleshooting, temporarily dropping the Client window's always-on-top behavior so

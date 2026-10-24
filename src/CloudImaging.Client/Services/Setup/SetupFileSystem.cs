@@ -18,6 +18,15 @@ public interface ISetupFileSystem
     /// <summary>Reads the file back.</summary>
     byte[] ReadAllBytes(string relativePath);
 
+    /// <summary>Creates or replaces the file, creating its directory, and returns it open for writing.</summary>
+    Stream Create(string relativePath);
+
+    /// <summary>Opens the file for reading.</summary>
+    Stream OpenRead(string relativePath);
+
+    /// <summary>Copies the file, replacing the destination and creating its directory.</summary>
+    void CopyFile(string sourceRelativePath, string destinationRelativePath);
+
     /// <summary>Deletes the file when it exists.</summary>
     void DeleteFile(string relativePath);
 
@@ -26,6 +35,9 @@ public interface ISetupFileSystem
 
     /// <summary>True when the file exists.</summary>
     bool FileExists(string relativePath);
+
+    /// <summary>Absolute path, for handing to a process.</summary>
+    string FullPath(string relativePath);
 }
 
 /// <summary><see cref="ISetupFileSystem"/> over a mounted volume such as <c>W:\</c>.</summary>
@@ -63,6 +75,25 @@ public sealed class SetupFileSystem(string volumeRoot) : ISetupFileSystem
     public byte[] ReadAllBytes(string relativePath) => File.ReadAllBytes(Resolve(relativePath));
 
     /// <inheritdoc/>
+    public Stream Create(string relativePath)
+    {
+        var path = Resolve(relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        return new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 81_920, useAsync: true);
+    }
+
+    /// <inheritdoc/>
+    public Stream OpenRead(string relativePath) => new FileStream(Resolve(relativePath), FileMode.Open, FileAccess.Read, FileShare.Read, 81_920);
+
+    /// <inheritdoc/>
+    public void CopyFile(string sourceRelativePath, string destinationRelativePath)
+    {
+        var destination = Resolve(destinationRelativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+        File.Copy(Resolve(sourceRelativePath), destination, overwrite: true);
+    }
+
+    /// <inheritdoc/>
     public void DeleteFile(string relativePath)
     {
         var path = Resolve(relativePath);
@@ -85,4 +116,7 @@ public sealed class SetupFileSystem(string volumeRoot) : ISetupFileSystem
 
     /// <inheritdoc/>
     public bool FileExists(string relativePath) => File.Exists(Resolve(relativePath));
+
+    /// <inheritdoc/>
+    public string FullPath(string relativePath) => Resolve(relativePath);
 }

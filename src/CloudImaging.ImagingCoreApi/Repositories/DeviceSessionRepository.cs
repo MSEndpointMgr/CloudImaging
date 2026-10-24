@@ -98,7 +98,7 @@ public sealed class DeviceSessionRepository
     /// Stamps <see cref="DeviceSession.LastHeartbeatAt"/> without touching any other field.
     /// Uses a Merge (not the Replace <see cref="UpdateAsync"/> performs) so a liveness check-in can
     /// never clobber a progress report racing with it. No-ops for sessions that are not in the
-    /// active partition — terminal sessions have no liveness to record.
+    /// active partition: terminal sessions have no liveness to record.
     /// </summary>
     public async Task TouchHeartbeatAsync(Guid sessionId, DateTimeOffset heartbeatAt, CancellationToken ct = default)
     {
@@ -113,7 +113,7 @@ public sealed class DeviceSessionRepository
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            // Already terminal or purged — nothing to keep alive.
+            // Already terminal or purged: nothing to keep alive.
         }
     }
 
@@ -169,7 +169,7 @@ public sealed class DeviceSessionRepository
 
     /// <summary>
     /// List terminal-partition sessions whose <see cref="DeviceSession.PurgeAt"/> has already
-    /// elapsed as of <paramref name="asOf"/> — i.e. sessions due for deletion (FR-021).
+    /// elapsed as of <paramref name="asOf"/>: i.e. sessions due for deletion (FR-021).
     /// </summary>
     public IAsyncEnumerable<DeviceSession> QueryTerminalDueForPurgeAsync(
         DateTimeOffset asOf, CancellationToken ct = default)
@@ -188,14 +188,14 @@ public sealed class DeviceSessionRepository
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            // Already deleted (e.g. a concurrent purge run) — nothing left to do.
+            // Already deleted (e.g. a concurrent purge run): nothing left to do.
         }
     }
 
     /// <summary>
     /// Immediately and permanently deletes a session record regardless of lifecycle state,
     /// checking both partitions. Used for operator-initiated removal of a coupled session that
-    /// was aborted before imaging started (see CancelSessionFunction) — distinct from
+    /// was aborted before imaging started (see CancelSessionFunction): distinct from
     /// <see cref="DeletePurgedAsync"/>, which only ever targets the terminal partition as part
     /// of the scheduled purge sweep.
     /// </summary>
@@ -209,7 +209,7 @@ public sealed class DeviceSessionRepository
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            // Not in the active partition — fall through and check terminal.
+            // Not in the active partition: fall through and check terminal.
         }
 
         try
@@ -218,7 +218,7 @@ public sealed class DeviceSessionRepository
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
-            // Already gone from both partitions — nothing left to do.
+            // Already gone from both partitions: nothing left to do.
         }
     }
 

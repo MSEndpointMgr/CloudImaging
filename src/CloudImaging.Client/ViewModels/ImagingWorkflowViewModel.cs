@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace CloudImaging.Client.ViewModels;
 
 /// <summary>
-/// Orchestrates the Format → Download → Apply → Configure Boot → Apply Recovery imaging
+/// Orchestrates the Format -> Download -> Apply -> Configure Boot -> Apply Recovery imaging
 /// pipeline once a session has (or reaches) an OS image assignment. Drives
 /// <see cref="ProgressViewModel"/>, reports step progress back to the Device Gateway API via
 /// <see cref="Services.ImagingProgressReporter"/>, and navigates to <see cref="Views.ResultsView"/> on
@@ -19,11 +19,11 @@ namespace CloudImaging.Client.ViewModels;
 /// Previously, none of <see cref="Services.ImageDownloadService"/>, <see cref="Services.ImageApplyService"/>,
 /// <see cref="Services.ImagingProgressReporter"/>, <see cref="Services.SasRefreshCoordinator"/>,
 /// <see cref="Services.ImageCacheService"/>, or <see cref="Services.ImageCacheMaintenanceService"/> were
-/// ever instantiated by the running application — this type is what wires them together.
+/// ever instantiated by the running application: this type is what wires them together.
 ///
 /// The disk is now partitioned per the admin-configured <see cref="PartitioningScheme"/>
 /// snapshotted onto the session (ESP/MSR/Windows/Recovery), boot files are configured with
-/// <c>bcdboot</c>, and the WinRE recovery image is downloaded and applied — turning what was
+/// <c>bcdboot</c>, and the WinRE recovery image is downloaded and applied: turning what was
 /// previously a single non-bootable partition into a real UEFI-bootable device.
 /// </summary>
 public sealed partial class ImagingWorkflowViewModel : IDisposable
@@ -41,14 +41,14 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
     // Null until resolved. An explicit constructor override or a discovered CACHE-labelled USB
     // volume resolves this immediately; otherwise it stays null until the Format step completes
-    // and falls back to the freshly-formatted target Windows volume (see RunAsync) — never to
+    // and falls back to the freshly-formatted target Windows volume (see RunAsync): never to
     // Path.GetTempPath(), which is the WinPE boot RAM disk (X:) and has nowhere near enough space
     // for a multi-GB OS image.
     private string? _cacheRoot;
 
     // True when _cacheRoot resolved to the target Windows volume rather than to durable boot
     // media. That location is only ever scratch space: it is wiped by the next session's Format
-    // step, so persisting a cross-session cache there is worthless — and it would ship a
+    // step, so persisting a cross-session cache there is worthless: and it would ship a
     // multi-GB duplicate of the WIM inside the OS that is about to be handed to the end user.
     // Drives both "don't persist to the cache" and "delete the staged WIMs afterwards" below.
     private bool _cacheRootIsTargetVolume;
@@ -68,19 +68,19 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         ILoggerFactory loggerFactory,
         string? cacheRoot = null)
     {
-        _gatewayClient      = gatewayClient;
-        _sessionId          = sessionId;
+        _gatewayClient = gatewayClient;
+        _sessionId = sessionId;
         _deviceSerialNumber = deviceSerialNumber;
-        _status             = initialStatus;
-        _progress           = progress;
-        _navigateToResults  = navigateToResults;
-        _loggerFactory      = loggerFactory;
+        _status = initialStatus;
+        _progress = progress;
+        _navigateToResults = navigateToResults;
+        _loggerFactory = loggerFactory;
 
         // Resolve immediately if possible: an explicit override (tests) always wins, otherwise try
         // the USB boot media's dedicated CACHE-labelled NTFS partition (created by
         // UsbPartitionProvisioningService during USB preparation, sized at a 24 GB minimum
-        // specifically to hold one OS image — FR-055). If neither is available — e.g. WinPE
-        // running in a Hyper-V VM with no physical USB attached, an ISO/PXE boot, or dev/test —
+        // specifically to hold one OS image, FR-055). If neither is available (e.g. WinPE
+        // running in a Hyper-V VM with no physical USB attached, an ISO/PXE boot, or dev/test),
         // this stays null and is resolved later in RunAsync once the target Windows volume is
         // known (see the fallback there for why Path.GetTempPath() must never be the default).
         var cacheVolume = FindCacheVolumeDriveLetter();
@@ -88,7 +88,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     }
 
     /// <summary>
-    /// Locates the CACHE-labelled NTFS volume this Client's USB boot media was prepared with —
+    /// Locates the CACHE-labelled NTFS volume this Client's USB boot media was prepared with:
     /// mirrors <see cref="Services.BootImageSelfUpdateService"/>'s analogous BOOT-volume lookup,
     /// and <c>UsbPartitionProvisioningService.FindCacheVolumeDriveLetter</c> in the Media Builder,
     /// which creates and labels this same volume during USB preparation.
@@ -104,12 +104,14 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             {
                 var letter = volume["DriveLetter"]?.ToString();
                 if (!string.IsNullOrWhiteSpace(letter))
+                {
                     return letter;
+                }
             }
         }
         catch (ManagementException)
         {
-            // Treated the same as "not found" by the caller — which defers cache-root resolution
+            // Treated the same as "not found" by the caller: which defers cache-root resolution
             // to the post-Format fallback in RunAsync.
         }
         return null;
@@ -156,7 +158,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
             // Install drivers (a later feature) hands Windows setup work over here; nothing yet.
             IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers = [];
-            var runPrepareSetup = setupProfile.Status == Services.Setup.SetupProfileLoadStatus.Loaded || specializeInstallers.Count > 0;
+            var runPrepareSetup = ShouldRunPrepareSetup(setupProfile.Status, specializeInstallers);
             _progress.ConfigureSteps(runPrepareSetup);
             var setupWarnings = 0;
 
@@ -169,7 +171,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _sasCoordinator.Start();
 
             // Steps that go quiet (DISM commit, reagentc, a stalled download) produce no progress
-            // reports, so liveness needs its own cadence — see SessionHeartbeatCoordinator.
+            // reports, so liveness needs its own cadence: see SessionHeartbeatCoordinator.
             _heartbeatCoordinator = new Services.SessionHeartbeatCoordinator(
                 _gatewayClient,
                 _sessionId,
@@ -179,7 +181,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             // Every Information-level log message the step services below emit (disk selection,
             // "Starting DISM: ...", "Starting bcdboot ...", "Starting reagentc.exe ...", hash
             // verification, etc.) is also surfaced in ProgressView's activity ticker, in addition
-            // to the rolling file log — FR-007's "light details around what's currently going on".
+            // to the rolling file log: FR-007's "light details around what's currently going on".
             var pipelineLoggerFactory = new Services.ProgressActivityLoggerFactory(_loggerFactory, _progress.AppendActivity);
 
             var hash = _status.Sha256Hash ?? string.Empty;
@@ -224,7 +226,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.OverallPercent = 8;
 
             // No dedicated CACHE-labelled USB partition was found when this view model was
-            // constructed — e.g. WinPE running in a Hyper-V VM with no physical USB attached, an
+            // constructed: e.g. WinPE running in a Hyper-V VM with no physical USB attached, an
             // ISO/PXE boot, or dev/test. Fall back to the freshly-formatted target Windows volume,
             // which is guaranteed to exist with ample free space, unlike the WinPE boot RAM disk
             // (X:). This mirrors ConfigMgr OSD's SMSTSLocalDataDrive behavior: when the boot
@@ -242,7 +244,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
             // The persistent cache only pays off on durable boot media, so it is skipped entirely
             // when the cache root is the target Windows volume (see _cacheRootIsTargetVolume). The
-            // WIM is still downloaded to that volume and still hash-verified — ImageApplyService /
+            // WIM is still downloaded to that volume and still hash-verified: ImageApplyService /
             // RecoveryImageService verify SHA-256 before DISM runs, independently of the cache.
             Services.ImageCacheService? cache = null;
             if (!_cacheRootIsTargetVolume)
@@ -250,7 +252,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 var cacheService = new Services.ImageCacheService(_cacheRoot, _loggerFactory.CreateLogger<Services.ImageCacheService>());
                 var cacheMaintenance = new Services.ImageCacheMaintenanceService(cacheService, _loggerFactory.CreateLogger<Services.ImageCacheMaintenanceService>());
                 await cacheMaintenance.RunAsync(ct);
-                if (cacheMaintenance.CacheWriteEnabled) cache = cacheService;
+                if (cacheMaintenance.CacheWriteEnabled)
+                {
+                    cache = cacheService;
+                }
             }
 
             var downloadService = new Services.ImageDownloadService(
@@ -285,7 +290,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     $"ci-image-{_sessionId:N}.wim",
                     pct =>
                     {
-                        _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8–55%
+                        _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8-55%
                         _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     });
@@ -319,7 +324,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     onProgress: pct =>
                     {
                         _progress.StatusMessage = "Applying operating system image…";
-                        _progress.OverallPercent = 55 + (int)(pct * 0.25); // 55–80%
+                        _progress.OverallPercent = 55 + (int)(pct * 0.25); // 55-80%
                         _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     },
@@ -366,7 +371,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 // The Windows partition is mounted under whichever letter WinPE had spare (often
                 // something like H:), and a custom-captured image can carry the letter mappings of
                 // the machine it came from. Re-point the applied image's own mount-manager state at
-                // C: before writing boot files, so the device boots as C: — see
+                // C: before writing boot files, so the device boots as C:: see
                 // OfflineDriveLetterService for why this is not automatic.
                 await driveLetterService.EnsureWindowsVolumeBootsAsCAsync(diskFormat.WindowsVolume, ct);
 
@@ -390,12 +395,15 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(deviceArchitecture, ct);
             // A mismatched WinRE would leave the OS unrecoverable; the OS image's own embedded WinRE always matches.
             if (recoveryInfo is not null && !Services.ArchitecturePreflight.IsRecoveryImageCompatible(deviceArchitecture, recoveryInfo.Architecture))
+            {
                 recoveryInfo = null;
+            }
+
             var recoveryService = new Services.RecoveryImageService(pipelineLoggerFactory.CreateLogger<Services.RecoveryImageService>());
 
             if (recoveryInfo is null)
             {
-                // No custom Recovery Image has been published to the Portal catalog — fall back
+                // No custom Recovery Image has been published to the Portal catalog: fall back
                 // to the WinRE that the OS image already carries at
                 // Windows\System32\Recovery\Winre.wim rather than failing the whole session.
                 _progress.StatusMessage = "No published recovery image. Reusing the OS image's embedded recovery environment…";
@@ -435,7 +443,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     $"ci-recovery-{_sessionId:N}.wim",
                     pct =>
                     {
-                        _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85–95%
+                        _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85-95%
                         _progress.StepPercent = pct;
                         _ = reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, pct, ct: ct);
                     });
@@ -486,6 +494,26 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
     private static string? SuccessNote(int setupWarnings) =>
         setupWarnings > 0 ? ResultsViewModel.WarningsMessage(setupWarnings) : null;
+
+    /// <summary>Prepare setup runs for a pinned profile, or for Windows setup work Install drivers handed over.</summary>
+    internal static bool ShouldRunPrepareSetup(Services.Setup.SetupProfileLoadStatus profileStatus, IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers) =>
+        profileStatus == Services.Setup.SetupProfileLoadStatus.Loaded || specializeInstallers.Count > 0;
+
+    /// <summary>What Prepare setup works from; the handed-over installers pass through as they are.</summary>
+    internal static Services.Setup.PrepareSetupInput BuildPrepareSetupInput(
+        Services.Setup.SetupProfileLoadResult setupProfile,
+        IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers,
+        string volumeRoot,
+        MachineArchitecture deviceArchitecture,
+        Guid sessionId,
+        IReadOnlyDictionary<string, string>? scriptFiles = null) =>
+        new(setupProfile.Descriptor?.ProfileName, setupProfile.Content, specializeInstallers, volumeRoot, deviceArchitecture)
+        {
+            SessionId = sessionId,
+            ProfileVersion = setupProfile.Descriptor?.Version,
+            ScriptFiles = scriptFiles ?? new Dictionary<string, string>(),
+            AnswerFileText = setupProfile.AnswerFileText,
+        };
 
     /// <summary>
     /// Loads the session's setup profile before Format disk. Returns null when the pipeline must
@@ -545,17 +573,39 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         await reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, ct: ct);
 
         var volumeRoot = $"{windowsVolume.TrimEnd('\\')}\\";
-        var input = new Services.Setup.PrepareSetupInput(setupProfile.Descriptor?.ProfileName, setupProfile.Content, specializeInstallers, volumeRoot, deviceArchitecture);
+        IReadOnlyDictionary<string, string>? scriptFiles = null;
+        if (setupProfile.Content is { Scripts.Count: > 0 })
+        {
+            // Verified before Format disk; fetched again here straight to the volume, so the texts are never held in memory.
+            _progress.StatusMessage = "Downloading scripts…";
+            using var download = new HttpClient();
+            var loader = new Services.Setup.SetupProfileContentLoader(_gatewayClient, download, pipelineLoggerFactory.CreateLogger<Services.Setup.SetupProfileContentLoader>());
+            scriptFiles = await loader.DownloadScriptsAsync(_sessionId, setupProfile, new Services.Setup.SetupFileSystem(volumeRoot), (number, total) =>
+                _progress.StatusMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Downloading scripts ({number} of {total})"), ct);
+        }
+        var input = BuildPrepareSetupInput(setupProfile, specializeInstallers, volumeRoot, deviceArchitecture, _sessionId, scriptFiles);
         var lastLine = string.Empty;
         Services.Setup.PrepareSetupResult result;
         try
         {
-            // Hive loads and file writes are synchronous I/O on the disk just written to; keep them
-            // off the UI thread, which only receives status lines and percent.
+            // Hive loads, scripts and file writes are synchronous work on the disk just written to;
+            // keep them off the UI thread, which only receives status lines and percent.
             result = await Task.Run(() =>
             {
                 using var hive = new Services.Setup.OfflineRegistryHive();
-                var service = new Services.Setup.PrepareSetupService(hive, new Services.Setup.SetupFileSystem(volumeRoot), pipelineLoggerFactory.CreateLogger<Services.Setup.PrepareSetupService>());
+                // Script output goes to the file log only; the activity ticker shows one line at a time.
+                var scripts = new Services.Setup.WinPeScriptRunner(
+                    new Services.Setup.RestrictedProcessRunner(),
+                    new Services.Setup.SetupFileSystem(volumeRoot),
+                    () => Services.BootImageCapabilities.SupportsPowerShell(),
+                    _loggerFactory.CreateLogger<Services.Setup.WinPeScriptRunner>());
+                var service = new Services.Setup.PrepareSetupService(
+                    hive,
+                    new Services.Setup.SetupFileSystem(volumeRoot),
+                    scripts,
+                    () => File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "SetupRunner", Services.Setup.UnattendComposer.RunnerScriptName)),
+                    TimeProvider.System,
+                    pipelineLoggerFactory.CreateLogger<Services.Setup.PrepareSetupService>());
                 return service.Run(input, (line, percent) =>
                 {
                     if (line != lastLine)
@@ -565,11 +615,23 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     }
                     _progress.StepPercent = percent;
                     _ = reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, percent, ct: ct);
-                });
+                }, ct);
             }, ct);
         }
         catch (Exception ex)
         {
+            // The service removes the downloaded texts itself, unless it failed before it started.
+            if (scriptFiles is { Count: > 0 })
+            {
+                try
+                {
+                    new Services.Setup.SetupFileSystem(volumeRoot).DeleteTree(Services.Setup.WinPeScriptRunner.WorkFolder);
+                }
+                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+                {
+                    // The failed session is retried from Format disk, which erases the volume.
+                }
+            }
             await FailAsync(reporter, ImagingStepName.PrepareSetup, "PSU", ex.Message, ct);
             return null;
         }
@@ -594,11 +656,17 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     /// </summary>
     private void CleanUpTargetVolumeCacheRoot()
     {
-        if (!_cacheRootIsTargetVolume || _cacheRoot is null) return;
+        if (!_cacheRootIsTargetVolume || _cacheRoot is null)
+        {
+            return;
+        }
 
         try
         {
-            if (Directory.Exists(_cacheRoot)) Directory.Delete(_cacheRoot, recursive: true);
+            if (Directory.Exists(_cacheRoot))
+            {
+                Directory.Delete(_cacheRoot, recursive: true);
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -636,7 +704,10 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             catch (OperationCanceledException) { return false; }
 
             var next = await _gatewayClient.GetSessionStatusAsync(_sessionId, ct);
-            if (next is not null) _status = next;
+            if (next is not null)
+            {
+                _status = next;
+            }
         }
 
         FireAndForgetLogUpload();
@@ -697,7 +768,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             if (!alreadyReported)
             {
                 try { await reporter.ReportAsync(s, ImagingStepStatus.Failed, errorDetail: errorDetail, ct: ct); }
-                catch { /* best-effort — progress reporting must never mask the real failure */ }
+                catch { /* best-effort: progress reporting must never mask the real failure */ }
             }
         }
 
@@ -740,7 +811,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
     /// <summary>
     /// Kicks off a best-effort upload of the current local diagnostic log for this session,
-    /// without awaiting it — the failure Results view must appear immediately regardless of
+    /// without awaiting it: the failure Results view must appear immediately regardless of
     /// network conditions. <see cref="Services.LogUploadService"/> internally bounds the whole
     /// attempt with its own timeout and never throws, so this is safe to fire-and-forget.
     /// </summary>

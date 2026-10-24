@@ -370,7 +370,7 @@ public sealed class ManagedWifiTests : IDisposable
     }
 
     private static OperationSelectionViewModel Selection(StartupReadiness readiness) =>
-        new(new DeviceGatewayApiClient(new HttpClient { BaseAddress = new Uri("https://gw.example.com") }), (_, _) => { }, readiness: readiness, recheck: () => { });
+        new(new DeviceGatewayApiClient(new HttpClient { BaseAddress = new Uri("https://gw.example.com") }), (_, _) => { }, readiness: readiness, recheck: _ => Task.FromResult(readiness));
 
     [Fact]
     public void Selection_HidesWifi_OnWindowsPe()
@@ -390,17 +390,19 @@ public sealed class ManagedWifiTests : IDisposable
         vm.ConnectivityTitle.Should().Be("Wi-Fi password rejected");
         vm.ConnectivityMessage.Should().StartWith("Office rejected the saved password.");
         vm.ShowBannerWifiAction.Should().BeTrue();
-        vm.ShowBannerRecheck.Should().BeFalse();
-        vm.WifiButtonLabel.Should().Be("Connect to Wi-Fi");
+        vm.ShowBannerRecheck.Should().BeTrue("Check again is offered next to Connect to Wi-Fi, for a cable plugged in later");
+        vm.NetworkLabel.Should().Be("No network");
+        vm.IsNetworkMissing.Should().BeTrue();
     }
 
     [Fact]
-    public void Selection_NamesTheJoinedNetwork_OnTheWifiButton()
+    public void Selection_NamesTheJoinedNetwork_OnTheNetworkButton()
     {
         var vm = Selection(new StartupReadiness(1, GatewayReachability.Reachable, null, WifiSupported: true, new ManagedWifiJoinResult(ManagedWifiOutcome.Connected, "Office")));
 
         vm.IsWifiAvailable.Should().BeTrue();
-        vm.WifiButtonLabel.Should().Be("Office");
+        vm.NetworkLabel.Should().Be("Office");
+        vm.NetworkSymbol.Should().Be(Wpf.Ui.Controls.SymbolRegular.Wifi124);
         vm.IsServiceBlocked.Should().BeFalse();
     }
 

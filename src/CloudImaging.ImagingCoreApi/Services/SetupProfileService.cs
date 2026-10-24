@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using CloudImaging.Contracts.Enums;
@@ -30,6 +29,9 @@ public enum SetupProfileOutcome
 
     /// <summary>409.</summary>
     Conflict,
+
+    /// <summary>413.</summary>
+    PayloadTooLarge,
 }
 
 /// <summary>Result of a setup profile operation.</summary>
@@ -63,19 +65,28 @@ public sealed partial class SetupProfileService
 
     private const string MissingActorMessage = "The acting user is missing.";
 
+    /// <summary>How long an uploaded text no version references is kept, so a save can still use it.</summary>
+    public static readonly TimeSpan ContentGracePeriod = TimeSpan.FromHours(24);
+
+    /// <summary>Shortest time between two content cleanups.</summary>
+    public static readonly TimeSpan ContentSweepInterval = TimeSpan.FromDays(1);
+
     private readonly SetupProfileRepository _profiles;
     private readonly SetupProfileTargetRepository _targets;
     private readonly SetupProfileVersionRepository _versions;
+    private readonly SetupProfileContentRepository _content;
     private readonly SetupProfileHistoryRepository _history;
     private readonly LocationRepository _locations;
     private readonly DeviceSessionRepository _sessions;
     private readonly PortalConfigurationRepository _config;
     private readonly TimeProvider _time;
     private readonly ILogger<SetupProfileService> _logger;
+    private DateTimeOffset? _lastContentSweep;
 
     /// <param name="profiles">Profile rows.</param>
     /// <param name="targets">Targeting index.</param>
     /// <param name="versions">Version rows and documents.</param>
+    /// <param name="content">Uploaded script and answer file texts.</param>
     /// <param name="history">Profile history.</param>
     /// <param name="locations">Location catalog.</param>
     /// <param name="sessions">Device sessions, for pinned versions.</param>
@@ -86,6 +97,7 @@ public sealed partial class SetupProfileService
         SetupProfileRepository profiles,
         SetupProfileTargetRepository targets,
         SetupProfileVersionRepository versions,
+        SetupProfileContentRepository content,
         SetupProfileHistoryRepository history,
         LocationRepository locations,
         DeviceSessionRepository sessions,
@@ -96,6 +108,7 @@ public sealed partial class SetupProfileService
         _profiles = profiles;
         _targets = targets;
         _versions = versions;
+        _content = content;
         _history = history;
         _locations = locations;
         _sessions = sessions;
@@ -196,7 +209,7 @@ public sealed partial class SetupProfileService
         var name = request.Name?.Trim() ?? string.Empty;
 
         var locations = await LoadLocationsAsync(ct);
-        var invalid = await ValidateAsync(name, request.Targeting, request.Content, locations, profileId, ct);
+        var (invalid, facts) = await ValidateAsync(name, request.Targeting, request.Content, null, locations, profileId, ct);
         if (invalid is not null)
         {
             return invalid;
@@ -214,15 +227,18 @@ public sealed partial class SetupProfileService
         }
 
         var (adds, deletes) = TargetChanges([], request.Targeting);
-        var targetResult = await _targets.ApplyChangesAsync(profileId, adds, deletes, ct);
+        if (!await _profiles.TryReserveNameAsync(name, profileId, now, ct))
+        {
+            return DuplicateName(name);
+        }
+        var targetResult = await ClaimTargetsAsync(profileId, adds, deletes, ct);
         if (!targetResult.Succeeded)
         {
+            await _profiles.ReleaseNameAsync(name, profileId, CancellationToken.None);
             return await TargetConflictAsync(targetResult, locations, ct);
         }
 
-        var content = Normalize(request.Content, null, profileId, 1, now, actor.Upn);
-        var row = await WriteVersionAsync(content, null, now, actor.Upn, restoredFrom: null, duplicatedFrom, ct);
-
+        var content = Normalize(request.Content, null, profileId, 1, now, actor.Upn, facts);
         var record = new SetupProfileRecord
         {
             ProfileId = profileId,
@@ -237,14 +253,21 @@ public sealed partial class SetupProfileService
             LastModifiedAt = now,
             LastModifiedBy = actor.Upn,
         };
+        SetupProfileVersionRecord? row = null;
         try
         {
+            row = await WriteVersionAsync(content, null, now, actor.Upn, restoredFrom: null, duplicatedFrom, ct);
             await _profiles.AddAsync(record, ct);
         }
         catch
         {
-            await _targets.RevertChangesAsync(profileId, adds, deletes, ct);
-            await _versions.DeleteAsync(row, CancellationToken.None);
+            // Otherwise the locations stay claimed by a profile that was never stored.
+            await _targets.RevertChangesAsync(profileId, adds, deletes, CancellationToken.None);
+            await _profiles.ReleaseNameAsync(name, profileId, CancellationToken.None);
+            if (row is not null)
+            {
+                await _versions.DeleteAsync(row, CancellationToken.None);
+            }
             throw;
         }
 
@@ -272,6 +295,14 @@ public sealed partial class SetupProfileService
         return await SaveCoreAsync(profileId, request.BaseVersion, request.Name, request.Targeting, request.Content, restoredFrom: null, request.Actor!, ct);
     }
 
+    /// <summary>
+    /// The locations a profile's location scripts can run at now: its targeted locations, or every
+    /// existing location for an All devices profile. A location removed from the targeting or
+    /// deleted stays in older version documents but is no longer in effect.
+    /// </summary>
+    public async Task<IReadOnlySet<Guid>> ScriptLocationsInEffectAsync(Guid profileId, CancellationToken ct = default) =>
+        SetupProfileValidator.AllowedScriptLocations(TargetingFrom(await _targets.ListAllAsync(ct), profileId), (await LoadLocationsAsync(ct)).Keys.ToHashSet());
+
     /// <summary>Creates a new current version with the content of an earlier version. Name and targeting do not change.</summary>
     public async Task<SetupProfileResult> RestoreAsync(Guid profileId, RestoreSetupProfileVersionRequest request, CancellationToken ct = default)
     {
@@ -290,6 +321,13 @@ public sealed partial class SetupProfileService
             return SetupProfileResult.NotFound();
         }
         var targeting = TargetingFrom(await _targets.ListAllAsync(ct), profileId);
+
+        // Scripts keep only the locations the profile still targets, as they would have in the editor.
+        var allowed = SetupProfileValidator.AllowedScriptLocations(targeting, (await LoadLocationsAsync(ct)).Keys.ToHashSet());
+        content = content with
+        {
+            Scripts = [.. content.Scripts.Select(s => s.Locations.All ? s : s with { Locations = s.Locations with { LocationIds = [.. s.Locations.LocationIds.Where(allowed.Contains)] } })],
+        };
         return await SaveCoreAsync(profileId, request.BaseVersion, profile.Name, targeting, content, restoredFrom: request.Version, request.Actor!, ct);
     }
 
@@ -311,7 +349,9 @@ public sealed partial class SetupProfileService
         // 2. Validate everything at once.
         var name = requestedName?.Trim() ?? string.Empty;
         var locations = await LoadLocationsAsync(ct);
-        var invalid = await ValidateAsync(name, targeting, requestedContent, locations, profileId, ct);
+        var currentRow = await _versions.GetAsync(profileId, profile.CurrentVersion, ct);
+        var current = currentRow is null ? null : await _versions.DownloadAsync(currentRow.BlobName, ct);
+        var (invalid, facts) = await ValidateAsync(name, targeting, requestedContent, current, locations, profileId, ct);
         if (invalid is not null)
         {
             return invalid;
@@ -319,32 +359,53 @@ public sealed partial class SetupProfileService
 
         // 3. Decide whether the content needs a new version.
         var now = _time.GetUtcNow();
-        var currentRow = await _versions.GetAsync(profileId, profile.CurrentVersion, ct);
-        var current = currentRow is null ? null : await _versions.DownloadAsync(currentRow.BlobName, ct);
         SetupProfileContent? next = null;
         if (requestedContent is not null)
         {
-            var candidate = Normalize(requestedContent, current, profileId, profile.CurrentVersion + 1, now, actor.Upn);
+            var candidate = Normalize(requestedContent, current, profileId, profile.CurrentVersion + 1, now, actor.Upn, facts);
             if (restoredFrom is not null || current is null || !SameContent(current, candidate))
             {
                 next = candidate;
             }
         }
 
-        // 4. Targeting, as one transaction.
+        // 4. Name claim, then targeting as one transaction.
+        var renamed = !string.Equals(name, profile.Name.Trim(), StringComparison.OrdinalIgnoreCase);
+        if (renamed && !await _profiles.TryReserveNameAsync(name, profileId, now, ct))
+        {
+            return DuplicateName(name);
+        }
+        async Task UndoAsync()
+        {
+            if (renamed)
+            {
+                await _profiles.ReleaseNameAsync(name, profileId, CancellationToken.None);
+            }
+        }
         var owners = await _targets.ListAllAsync(ct);
         var before = TargetingFrom(owners, profileId);
         var (adds, deletes) = TargetChanges(Keys(before), targeting!);
-        var targetResult = await _targets.ApplyChangesAsync(profileId, adds, deletes, ct);
+        var targetResult = await ClaimTargetsAsync(profileId, adds, deletes, ct);
         if (!targetResult.Succeeded)
         {
+            await UndoAsync();
             return await TargetConflictAsync(targetResult, locations, ct);
         }
 
         // 5. Version document and row.
-        if (next is not null)
+        SetupProfileVersionRecord? written = null;
+        try
         {
-            await WriteVersionAsync(next, current, now, actor.Upn, restoredFrom, duplicatedFrom: null, ct);
+            if (next is not null)
+            {
+                written = await WriteVersionAsync(next, current, now, actor.Upn, restoredFrom, duplicatedFrom: null, ct);
+            }
+        }
+        catch
+        {
+            await _targets.RevertChangesAsync(profileId, adds, deletes, CancellationToken.None);
+            await UndoAsync();
+            throw;
         }
 
         // 6. Profile row, guarded by the ETag from step 1.
@@ -365,12 +426,32 @@ public sealed partial class SetupProfileService
             LastModifiedAt = now,
             LastModifiedBy = actor.Upn,
         };
-        if (!await _profiles.ReplaceAsync(updated, ct))
+        bool replaced;
+        try
+        {
+            replaced = await _profiles.ReplaceAsync(updated, ct);
+        }
+        catch
+        {
+            await _targets.RevertChangesAsync(profileId, adds, deletes, CancellationToken.None);
+            await UndoAsync();
+            if (written is not null)
+            {
+                await _versions.DeleteAsync(written, CancellationToken.None);
+            }
+            throw;
+        }
+        if (!replaced)
         {
             // The orphaned version, if any, is removed by the next prune.
             await _targets.RevertChangesAsync(profileId, adds, deletes, ct);
+            await UndoAsync();
             var latest = await _profiles.GetAsync(profileId, ct);
             return latest is null || latest.IsDeleted ? SetupProfileResult.NotFound() : SetupProfileResult.Conflict(StaleMessage(latest));
+        }
+        if (renamed)
+        {
+            await _profiles.ReleaseNameAsync(profile.Name, profileId, CancellationToken.None);
         }
 
         // 7. History and audit.
@@ -423,6 +504,7 @@ public sealed partial class SetupProfileService
 
         var keys = await _targets.ListByProfileAsync(profileId, ct);
         await _targets.ApplyChangesAsync(profileId, [], keys, ct);
+        await _profiles.ReleaseNameAsync(profile.Name, profileId, ct);
         var actor = new SetupProfileActor { Upn = changedBy };
         await AddHistoryAsync(profileId, SetupProfileHistoryKind.Deleted, actor, now, "Deleted", ct: ct);
         LogAudit(_logger, "deleted", profileId, changedBy, null, profile.CurrentVersion);
@@ -432,31 +514,58 @@ public sealed partial class SetupProfileService
     // ── Location deletion ───────────────────────────────────────────────────
 
     /// <summary>
-    /// Checks a location before it is deleted. Refuses when it is a profile's only target, so a
-    /// profile never targets nothing; nothing is changed in that case.
+    /// Removes a location that is about to be deleted from the profile that targets it and records
+    /// the change, or returns why the deletion is refused (it is the profile's only location). The
+    /// profile row's ETag orders this against a concurrent save, so a profile never targets nothing.
     /// </summary>
-    public async Task<string?> CheckLocationDeletionAsync(Guid locationId, CancellationToken ct = default)
+    public async Task<string?> DetachLocationAsync(Guid locationId, string locationName, string? changedBy, CancellationToken ct = default)
     {
         var key = SetupProfileTargetRepository.LocationKey(locationId);
-        if (await _targets.GetOwnerAsync(key, ct) is not { } owner)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            return null;
+            if (await _targets.GetOwnerAsync(key, ct) is not { } owner)
+            {
+                return null;
+            }
+            var profile = await _profiles.GetAsync(owner, ct);
+            if (profile is null || profile.IsDeleted)
+            {
+                await _targets.DeleteAsync(key, ct);
+                return null;
+            }
+            var keys = await _targets.ListByProfileAsync(owner, ct);
+            if (keys.Count <= 1)
+            {
+                return $"{locationName} is the only location of setup profile \"{profile.Name}\". Add another location to the profile or delete the profile, then try again.";
+            }
+
+            await _targets.ApplyChangesAsync(owner, [], [key], ct);
+            var now = _time.GetUtcNow();
+            var actor = new SetupProfileActor { Upn = string.IsNullOrWhiteSpace(changedBy) ? "unknown" : changedBy };
+            if (await _profiles.ReplaceAsync(profile with { LastModifiedAt = now, LastModifiedBy = actor.Upn }, ct))
+            {
+                await AddHistoryAsync(owner, SetupProfileHistoryKind.LocationDeleted, actor, now, $"Removed {locationName} because the location was deleted", removed: [locationId], ct: ct);
+                return null;
+            }
+
+            // A save changed the profile meanwhile: put the location back and look again.
+            await _targets.RevertChangesAsync(owner, [], [key], ct);
         }
-        var keys = await _targets.ListByProfileAsync(owner, ct);
-        if (keys.Count > 1)
-        {
-            return null;
-        }
-        var profile = await _profiles.GetAsync(owner, ct);
-        var location = await _locations.GetByIdAsync(locationId, ct);
-        return $"{location?.Name ?? "This location"} is the only location of setup profile \"{profile?.Name}\". Add another location to the profile or delete the profile, then try again.";
+        return $"A setup profile that targets {locationName} is being changed. Try again.";
     }
 
-    /// <summary>Removes a deleted location from the profile that targeted it and records the change.</summary>
+    /// <summary>
+    /// Removes a location deleted after <see cref="DetachLocationAsync"/> from a profile that targeted
+    /// it again meanwhile, unless that would leave the profile with no location.
+    /// </summary>
     public async Task<Guid?> RemoveDeletedLocationAsync(Guid locationId, string locationName, string? changedBy, CancellationToken ct = default)
     {
         var key = SetupProfileTargetRepository.LocationKey(locationId);
         if (await _targets.GetOwnerAsync(key, ct) is not { } owner)
+        {
+            return null;
+        }
+        if ((await _targets.ListByProfileAsync(owner, ct)).Count <= 1)
         {
             return null;
         }
@@ -481,9 +590,20 @@ public sealed partial class SetupProfileService
             var pinned = await _sessions.CountActiveBySetupProfileVersionAsync(profileId, ct);
             var rows = await _versions.ListAsync(profileId, ct);
             var kept = rows.Where(r => r.Version <= currentVersion).Take(retention).Select(r => r.Version).ToHashSet();
-            foreach (var row in rows.Where(r => !kept.Contains(r.Version) && !pinned.ContainsKey(r.Version) && r.Version != currentVersion))
+            foreach (var row in rows.Where(r => !kept.Contains(r.Version) && r.Version != currentVersion))
             {
-                await _versions.DeleteAsync(row, ct);
+                if (!pinned.ContainsKey(row.Version))
+                {
+                    await _versions.DeleteAsync(row, ct);
+                }
+                else if (!row.PrunePending)
+                {
+                    await _versions.SetPrunePendingAsync(row, true, ct);
+                }
+            }
+            foreach (var row in rows.Where(r => r.PrunePending && (kept.Contains(r.Version) || r.Version == currentVersion)))
+            {
+                await _versions.SetPrunePendingAsync(row, false, ct);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -514,43 +634,136 @@ public sealed partial class SetupProfileService
         }
         foreach (var profile in await _profiles.ListActiveAsync(ct))
         {
-            await PruneAsync(profile.ProfileId, profile.CurrentVersion, ct);
+            // Only versions the last prune already let go; a changed retention waits for the next save.
+            var pending = (await _versions.ListAsync(profile.ProfileId, ct)).Where(r => r.PrunePending && r.Version != profile.CurrentVersion).ToList();
+            if (pending.Count == 0)
+            {
+                continue;
+            }
+            var pinned = await _sessions.CountActiveBySetupProfileVersionAsync(profile.ProfileId, ct);
+            foreach (var row in pending.Where(r => !pinned.ContainsKey(r.Version)))
+            {
+                await _versions.DeleteAsync(row, ct);
+                deleted++;
+            }
+        }
+
+        // After the versions, so texts only the swept versions referenced go in the same pass.
+        var contentDeleted = await SweepContentAsync(ct);
+        if (contentDeleted > 0)
+        {
+            LogContentSwept(_logger, contentDeleted);
         }
         return deleted;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
 
-    private async Task<SetupProfileResult?> ValidateAsync(
-        string name, SetupProfileTargeting? targeting, SetupProfileContent? content, Dictionary<Guid, string> locations, Guid profileId, CancellationToken ct)
+    /// <summary>Sizes of the referenced texts and the passes of the answer file, found while validating.</summary>
+    internal sealed record ContentFacts(IReadOnlyDictionary<string, long> Sizes, IReadOnlyList<string> Passes)
     {
-        var problems = SetupProfileValidator.ValidateProfile(name, targeting, locations.Keys.ToHashSet());
+        public static ContentFacts Empty { get; } = new(new Dictionary<string, long>(), []);
+    }
+
+    private async Task<(SetupProfileResult? Invalid, ContentFacts Facts)> ValidateAsync(
+        string name, SetupProfileTargeting? targeting, SetupProfileContent? content, SetupProfileContent? current,
+        Dictionary<Guid, string> locations, Guid profileId, CancellationToken ct)
+    {
+        var known = locations.Keys.ToHashSet();
+        var problems = SetupProfileValidator.ValidateProfile(name, targeting, known);
+        var allowed = SetupProfileValidator.AllowedScriptLocations(targeting, known);
+        var facts = ContentFacts.Empty;
         AnswerFileValidationResult? answerFile = null;
         if (content is not null)
         {
-            problems.AddRange(SetupProfileValidator.ValidateContent(content));
-            if (content.AnswerFile is { } file)
+            problems.AddRange(SetupProfileValidator.ValidateContent(content, allowed));
+            if (problems.Count == 0)
             {
-                answerFile = AnswerFileValidator.Validate(file.Content ?? string.Empty);
+                var sizes = await ResolveSizesAsync(content, current, problems, ct);
+                facts = new ContentFacts(sizes, []);
+                if (problems.Count == 0 && content.AnswerFile is { } file)
+                {
+                    // Re-validated from what is stored, whatever the portal checked before the save.
+                    var text = await _content.DownloadAsync(file.ContentSha256, ct);
+                    answerFile = text is null ? null : AnswerFileValidator.Validate(text.ToString());
+                    if (answerFile is null)
+                    {
+                        problems.Add(SetupProfileValidator.AnswerFileNotUploadedMessage);
+                    }
+                    facts = facts with { Passes = answerFile?.Passes ?? [] };
+                }
             }
+        }
+        else if (current is not null && targeting is not null)
+        {
+            problems.AddRange(SetupProfileValidator.ScriptsWithoutLocations(current.Scripts, allowed));
         }
 
         if (problems.Count > 0)
         {
-            return SetupProfileResult.BadRequest(string.Join(' ', problems));
+            return (SetupProfileResult.BadRequest(string.Join(' ', problems)), facts);
         }
         if (answerFile is { IsValid: false })
         {
             var count = answerFile.Problems.Count;
             var detail = count == 1 ? "The answer file has 1 problem." : $"The answer file has {count} problems.";
-            return SetupProfileResult.BadRequest(detail, answerFile.Problems);
+            return (SetupProfileResult.BadRequest(detail, answerFile.Problems), facts);
         }
 
         if (await _profiles.FindActiveByNameAsync(name, ct) is { } existing && existing.ProfileId != profileId)
         {
-            return SetupProfileResult.Conflict($"A setup profile named \"{name}\" already exists. Choose another name.");
+            return (DuplicateName(name), facts);
         }
-        return null;
+        return (null, facts);
+    }
+
+    /// <summary>
+    /// Size of every referenced text. Texts the current version already references are known to be
+    /// stored; the rest are looked up, and a missing or oversized one is a problem naming its script.
+    /// </summary>
+    private async Task<Dictionary<string, long>> ResolveSizesAsync(SetupProfileContent content, SetupProfileContent? current, List<string> problems, CancellationToken ct)
+    {
+        var sizes = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var script in current?.Scripts ?? [])
+        {
+            sizes.TryAdd(script.ContentSha256, script.SizeBytes);
+        }
+        if (current?.AnswerFile is { } currentFile)
+        {
+            sizes.TryAdd(currentFile.ContentSha256, currentFile.SizeBytes);
+        }
+
+        var unknown = content.Scripts.Select(s => s.ContentSha256)
+            .Append(content.AnswerFile?.ContentSha256)
+            .OfType<string>()
+            .Where(sha => !sizes.ContainsKey(sha))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var found = new System.Collections.Concurrent.ConcurrentDictionary<string, long>(StringComparer.Ordinal);
+        await Parallel.ForEachAsync(unknown, new ParallelOptions { MaxDegreeOfParallelism = 16, CancellationToken = ct }, async (sha, token) =>
+        {
+            if (await _content.GetInfoAsync(sha, token) is { } info)
+            {
+                found[sha] = info.SizeBytes;
+            }
+        });
+        foreach (var (sha, size) in found)
+        {
+            sizes[sha] = size;
+        }
+
+        foreach (var script in content.Scripts)
+        {
+            if (!sizes.TryGetValue(script.ContentSha256, out var size) || size > SetupProfileContent.MaxScriptBytes)
+            {
+                problems.Add(SetupProfileValidator.NotUploadedMessage(script.Name));
+            }
+        }
+        if (content.AnswerFile is { } file && (!sizes.TryGetValue(file.ContentSha256, out var fileSize) || fileSize > SetupProfileContent.MaxAnswerFileBytes))
+        {
+            problems.Add(SetupProfileValidator.AnswerFileNotUploadedMessage);
+        }
+        return sizes;
     }
 
     private async Task<SetupProfileResult> TargetConflictAsync(SetupProfileTargetChangeResult result, Dictionary<Guid, string> locations, CancellationToken ct)
@@ -559,10 +772,45 @@ public sealed partial class SetupProfileService
         var ownerName = owner?.Name ?? "another profile";
         if (result.ConflictTarget == SetupProfileTargetRepository.AllDevicesKey)
         {
-            return SetupProfileResult.Conflict($"All devices is already used by \"{ownerName}\". Change that profile first.");
+            return SetupProfileResult.Conflict($"All devices is already used by the setup profile \"{ownerName}\". Change that profile first.");
         }
         var locationName = Guid.TryParse(result.ConflictTarget, out var locationId) && locations.TryGetValue(locationId, out var found) ? found : "A location";
-        return SetupProfileResult.Conflict($"{locationName} is already targeted by \"{ownerName}\". Remove it there first.");
+        return SetupProfileResult.Conflict($"{locationName} is already targeted by the setup profile \"{ownerName}\". Remove it from that profile first.");
+    }
+
+    /// <summary>
+    /// Claims targets, releasing first any row still held by a profile that was deleted or never
+    /// stored, so a partial failure cannot reserve a location for ever.
+    /// </summary>
+    private async Task<SetupProfileTargetChangeResult> ClaimTargetsAsync(Guid profileId, List<string> adds, List<string> deletes, CancellationToken ct)
+    {
+        // Each pass can only release one row, so allow one attempt per requested target.
+        for (var attempt = 0; attempt <= adds.Count; attempt++)
+        {
+            var result = await _targets.ApplyChangesAsync(profileId, adds, deletes, ct);
+            if (result.Succeeded || !await ReleaseStaleTargetAsync(result, ct))
+            {
+                return result;
+            }
+        }
+        return await _targets.ApplyChangesAsync(profileId, adds, deletes, ct);
+    }
+
+    /// <summary>True when the conflicting target was held by a profile that no longer exists, and was released.</summary>
+    private async Task<bool> ReleaseStaleTargetAsync(SetupProfileTargetChangeResult conflict, CancellationToken ct)
+    {
+        if (conflict.ConflictTarget is not { } key || conflict.ConflictOwner is not { } ownerId)
+        {
+            return false;
+        }
+        var owner = await _profiles.GetAsync(ownerId, ct);
+        if (owner is not null && !owner.IsDeleted)
+        {
+            return false;
+        }
+        LogStaleTargetReleased(_logger, key, ownerId);
+        await _targets.DeleteAsync(key, ct);
+        return true;
     }
 
     private async Task<SetupProfileVersionRecord> WriteVersionAsync(
@@ -588,10 +836,10 @@ public sealed partial class SetupProfileService
     }
 
     /// <summary>
-    /// Assigns ids to new items, computes hashes, sizes and passes, and carries per-item modified
-    /// fields over from <paramref name="previous"/> for items that did not change.
+    /// Assigns ids to new items, fills in sizes and passes, and carries per-item modified fields
+    /// over from <paramref name="previous"/> for items that did not change.
     /// </summary>
-    internal static SetupProfileContent Normalize(SetupProfileContent requested, SetupProfileContent? previous, Guid profileId, int version, DateTimeOffset now, string author)
+    internal static SetupProfileContent Normalize(SetupProfileContent requested, SetupProfileContent? previous, Guid profileId, int version, DateTimeOffset now, string author, ContentFacts facts)
     {
         var usedIds = new HashSet<Guid>();
         Guid Assign(Guid? id) => id is { } value && value != Guid.Empty && usedIds.Add(value) ? value : NewId(usedIds);
@@ -606,13 +854,17 @@ public sealed partial class SetupProfileService
             .Select(s =>
             {
                 var id = Assign(s.Id);
-                var unchanged = previousScripts.TryGetValue(id, out var old) && old.Content == s.Content && old.Name == s.Name.Trim()
-                    && old.Runs == s.Runs && old.TimeoutMinutes == s.TimeoutMinutes;
+                var locations = s.Locations is null || s.Locations.All
+                    ? new SetupScriptLocations()
+                    : new SetupScriptLocations { All = false, LocationIds = [.. s.Locations.LocationIds.Distinct().Order()] };
+                var unchanged = previousScripts.TryGetValue(id, out var old) && old.ContentSha256 == s.ContentSha256 && old.Name == s.Name.Trim()
+                    && old.Runs == s.Runs && old.TimeoutMinutes == s.TimeoutMinutes && ChangeSummaryBuilder.SameLocations(old.Locations, locations);
                 return s with
                 {
                     Id = id,
                     Name = s.Name.Trim(),
-                    Sha256 = Sha256(Encoding.UTF8.GetBytes(s.Content)),
+                    Locations = locations,
+                    SizeBytes = facts.Sizes.GetValueOrDefault(s.ContentSha256),
                     LastModifiedAt = unchanged ? old!.LastModifiedAt : now,
                     LastModifiedBy = unchanged ? old!.LastModifiedBy : author,
                 };
@@ -622,13 +874,12 @@ public sealed partial class SetupProfileService
         SetupAnswerFile? answerFile = null;
         if (requested.AnswerFile is { } file)
         {
-            var unchanged = previous?.AnswerFile is { } old && old.Content == file.Content;
+            var unchanged = previous?.AnswerFile is { } old && old.ContentSha256 == file.ContentSha256;
             answerFile = new SetupAnswerFile
             {
-                Content = file.Content,
-                Passes = AnswerFileValidator.Validate(file.Content).Passes,
-                SizeBytes = Encoding.UTF8.GetByteCount(file.Content),
-                Sha256 = Sha256(Encoding.UTF8.GetBytes(file.Content)),
+                ContentSha256 = file.ContentSha256,
+                Passes = facts.Passes,
+                SizeBytes = facts.Sizes.GetValueOrDefault(file.ContentSha256),
                 LastModifiedAt = unchanged ? previous!.AnswerFile!.LastModifiedAt : now,
                 LastModifiedBy = unchanged ? previous!.AnswerFile!.LastModifiedBy : author,
             };
@@ -660,11 +911,173 @@ public sealed partial class SetupProfileService
     {
         c.FailureHandling,
         RegistryValues = c.RegistryValues.Select(v => new { v.Id, v.Name, v.Hive, v.Key, v.ValueName, v.Type, v.Data }),
-        Scripts = c.Scripts.Select(s => new { s.Id, s.Name, s.Runs, s.Order, s.TimeoutMinutes, s.Content }),
-        AnswerFile = c.AnswerFile?.Content,
+        Scripts = c.Scripts.Select(s => new { s.Id, s.Name, s.Runs, s.Order, s.TimeoutMinutes, s.ContentSha256, s.Locations.All, LocationIds = s.Locations.All ? new List<Guid>() : [.. s.Locations.LocationIds.Order()] }),
+        AnswerFile = c.AnswerFile?.ContentSha256,
     });
 
-    private static string Sha256(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
+    // ── Content ─────────────────────────────────────────────────────────────
+
+    /// <summary>Message when an uploaded answer file is over its limit.</summary>
+    public static string AnswerFileTooLargeMessage => AnswerFileValidator.Messages["tooLarge"];
+
+    /// <summary>"This script is 25.3 MB. A script can be at most 24 MB.", the size rounded up to a tenth.</summary>
+    public static string ScriptTooLargeMessage(long bytes) =>
+        string.Create(CultureInfo.InvariantCulture, $"This script is {Math.Ceiling(bytes / 1_048_576d * 10) / 10:0.0} MB. A script can be at most 24 MB.");
+
+    /// <summary>
+    /// Stores an uploaded script or answer file text. Reads at most the limit plus one byte (a
+    /// leading BOM is dropped and not counted); an answer file is also checked against the answer
+    /// file rules, whose problems block the save but not the upload.
+    /// </summary>
+    /// <param name="body">Request body.</param>
+    /// <param name="kind"><c>script</c> or <c>answerFile</c>.</param>
+    /// <param name="declaredLength">Content-Length, used for the size in the too-large message.</param>
+    /// <param name="uploadedBy">UPN of the uploading user, for the audit log.</param>
+    /// <param name="ct">Cancellation.</param>
+    public async Task<SetupProfileResult> UploadContentAsync(Stream body, string? kind, long? declaredLength, string? uploadedBy = null, CancellationToken ct = default)
+    {
+        var isScript = string.Equals(kind, SetupProfileContentRepository.ScriptKind, StringComparison.Ordinal);
+        if (!isScript && !string.Equals(kind, SetupProfileContentRepository.AnswerFileKind, StringComparison.Ordinal))
+        {
+            return SetupProfileResult.BadRequest("Upload a script or an answer file.");
+        }
+        var limit = isScript ? SetupProfileContent.MaxScriptBytes : SetupProfileContent.MaxAnswerFileBytes;
+
+        // Room for a BOM plus one byte over the limit, which is enough to tell a text is too large.
+        // Sized from Content-Length and grown while reading, so a small upload never takes 24 MiB.
+        var capacity = limit + 4;
+        var buffer = new byte[declaredLength is > 0 ? (int)Math.Min(declaredLength.Value + 1, capacity) : Math.Min(81_920, capacity)];
+        var read = 0;
+        int n;
+        while (read < capacity)
+        {
+            if (read == buffer.Length)
+            {
+                Array.Resize(ref buffer, (int)Math.Min((long)buffer.Length * 2, capacity));
+            }
+            if ((n = await body.ReadAsync(buffer.AsMemory(read), ct)) == 0)
+            {
+                break;
+            }
+            read += n;
+        }
+        var bom = read >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF ? 3 : 0;
+        var size = read - bom;
+        if (size > limit)
+        {
+            if (!isScript)
+            {
+                return new SetupProfileResult(SetupProfileOutcome.PayloadTooLarge, Detail: AnswerFileTooLargeMessage);
+            }
+            var total = declaredLength is > 0 ? declaredLength.Value - bom : read + await CountRemainingAsync(body, ct) - bom;
+            return new SetupProfileResult(SetupProfileOutcome.PayloadTooLarge, Detail: ScriptTooLargeMessage(total));
+        }
+
+        var bytes = buffer.AsMemory(bom, size);
+        if (bytes.Span.TrimStart(" \t\r\n"u8).IsEmpty)
+        {
+            return SetupProfileResult.BadRequest(isScript ? "The script is empty. Add the script text." : "The answer file is empty. Add the answer file text.");
+        }
+
+        var stored = await _content.StoreAsync(bytes, isScript ? SetupProfileContentRepository.ScriptKind : SetupProfileContentRepository.AnswerFileKind, _time.GetUtcNow(), ct);
+        LogContentUploaded(_logger, kind!, stored.Sha256, stored.SizeBytes, string.IsNullOrWhiteSpace(uploadedBy) ? "unknown" : uploadedBy);
+        if (isScript)
+        {
+            return new SetupProfileResult(SetupProfileOutcome.Ok, new SetupProfileContentUploadResult { Sha256 = stored.Sha256, SizeBytes = stored.SizeBytes });
+        }
+        var validation = AnswerFileValidator.Validate(Encoding.UTF8.GetString(bytes.Span));
+        return new SetupProfileResult(SetupProfileOutcome.Ok, new SetupProfileContentUploadResult
+        {
+            Sha256 = stored.Sha256,
+            SizeBytes = stored.SizeBytes,
+            Passes = validation.Passes,
+            Problems = [.. validation.Problems.Select(p => new SetupProfileContentProblem { Code = p.Code, Line = p.Line, Message = p.Message })],
+        });
+    }
+
+    private static async Task<long> CountRemainingAsync(Stream body, CancellationToken ct)
+    {
+        var scratch = new byte[81_920];
+        long count = 0;
+        int n;
+        while ((n = await body.ReadAsync(scratch, ct)) > 0)
+        {
+            count += n;
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Returns a stored text when a retained version of the profile references it, so a profile's
+    /// readers cannot read texts that belong only to other profiles.
+    /// </summary>
+    public async Task<BinaryData?> GetContentAsync(Guid profileId, string sha256, CancellationToken ct = default)
+    {
+        if (!SetupProfileContentRepository.IsSha256(sha256))
+        {
+            return null;
+        }
+        var profile = await _profiles.GetAsync(profileId, ct);
+        if (profile is null || profile.IsDeleted)
+        {
+            return null;
+        }
+        foreach (var row in await _versions.ListAsync(profileId, ct))
+        {
+            if (await _versions.DownloadAsync(row.BlobName, ct) is { } content && References(content).Contains(sha256))
+            {
+                return await _content.DownloadAsync(sha256, ct);
+            }
+        }
+        return null;
+    }
+
+    private static HashSet<string> References(SetupProfileContent content)
+    {
+        var hashes = content.Scripts.Select(s => s.ContentSha256).ToHashSet(StringComparer.Ordinal);
+        if (content.AnswerFile is { } file)
+        {
+            hashes.Add(file.ContentSha256);
+        }
+        return hashes;
+    }
+
+    /// <summary>
+    /// At most once a day: deletes texts uploaded more than a day ago that no retained version of any
+    /// profile, deleted ones included, references.
+    /// </summary>
+    public async Task<int> SweepContentAsync(CancellationToken ct = default)
+    {
+        var now = _time.GetUtcNow();
+        if (_lastContentSweep is { } last && now - last < ContentSweepInterval)
+        {
+            return 0;
+        }
+
+        var referenced = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var profile in (await _profiles.ListActiveAsync(ct)).Concat(await _profiles.ListDeletedAsync(ct)))
+        {
+            foreach (var row in await _versions.ListAsync(profile.ProfileId, ct))
+            {
+                if (await _versions.DownloadAsync(row.BlobName, ct) is { } content)
+                {
+                    referenced.UnionWith(References(content));
+                }
+            }
+        }
+
+        var deleted = 0;
+        await foreach (var item in _content.ListAsync(ct))
+        {
+            if (!referenced.Contains(item.Sha256) && (item.UploadedAt is not { } uploaded || now - uploaded >= ContentGracePeriod))
+            {
+                await _content.DeleteAsync(item.Sha256, ct);
+                deleted++;
+            }
+        }
+        _lastContentSweep = now;
+        return deleted;
+    }
 
     private async Task<SetupProfileDetail> BuildDetailAsync(SetupProfileRecord profile, CancellationToken ct)
     {
@@ -790,6 +1203,9 @@ public sealed partial class SetupProfileService
     private static string StaleMessage(SetupProfileRecord latest) =>
         string.Create(CultureInfo.InvariantCulture, $"This profile was changed by {latest.LastModifiedBy ?? "another user"} at {latest.LastModifiedAt.UtcDateTime:yyyy-MM-dd HH:mm}. Reload to see their changes.");
 
+    private static SetupProfileResult DuplicateName(string name) =>
+        SetupProfileResult.Conflict($"A setup profile named \"{name}\" already exists. Choose another name.");
+
     private Task AddHistoryAsync(
         Guid profileId, SetupProfileHistoryKind kind, SetupProfileActor actor, DateTimeOffset at, string change,
         IReadOnlyList<Guid>? added = null, IReadOnlyList<Guid>? removed = null, int? version = null, CancellationToken ct = default) =>
@@ -814,4 +1230,13 @@ public sealed partial class SetupProfileService
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Pruning old versions of setup profile {ProfileId} failed; it is retried at the next save.")]
     private static partial void LogPruneFailed(ILogger logger, Exception ex, Guid profileId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Removed {Count} uploaded setup profile texts that no version uses.")]
+    private static partial void LogContentSwept(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Setup profile {Kind} text {Sha256} ({SizeBytes} bytes) uploaded by {Upn}.")]
+    private static partial void LogContentUploaded(ILogger logger, string kind, string sha256, long sizeBytes, string upn);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Released setup profile target {TargetKey} still held by profile {ProfileId}, which no longer exists.")]
+    private static partial void LogStaleTargetReleased(ILogger logger, string targetKey, Guid profileId);
 }

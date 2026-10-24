@@ -93,6 +93,9 @@ Portal backend's managed identity.
 | **Locations**: select a location (Header account menu picker, Devices filter) | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **Locations** catalog page: add / remove locations, edit country-to-region mapping | ❌ | ❌ | ❌ | ✅ | ✅ |
 | **Wi-Fi Networks**: view, add, edit, reorder, delete, assign to locations | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **Setup Profiles**: view profiles, versions and history | ❌ | ❌ | ✅ (read-only) | ✅ | ✅ |
+| **Setup Profiles**: create, edit, duplicate, delete and restore, scripts and answer files included | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **Configuration** > **Miscellaneous**: setup profile versions kept per profile | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Branding**: view / edit logo | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view, update check and notice) | ❌ | ❌ | ❌ | ❌ | ✅ |
 
@@ -132,6 +135,13 @@ the Header account menu's "My location" picker, the Devices filter, and the Medi
 prep screen) is available to any Technician, Operator or Administrator user, while managing the
 catalog itself (the `/locations` page: adding or removing entries) requires Operator or
 Administrator.
+
+Setup Profiles follows the catalog pattern: Technicians see the page, every profile, its versions
+and its history without edit controls, and the Start imaging overlay names the profile each device
+will get. Operators and Administrators make every change, including scripts and answer files, which
+run as SYSTEM on every targeted device. Assign Operator only to people you trust with that. Reader,
+Autopilot Approver and users without a role get no access, and the API refuses their tokens. See
+[Setup profiles](setup-profiles.md).
 
 Wi-Fi passwords are never returned to the Portal, for any role. Only two callers can read them:
 Media Builder (`MediaBuilderAccess`; the Operator API refuses a Portal token on that route) while it

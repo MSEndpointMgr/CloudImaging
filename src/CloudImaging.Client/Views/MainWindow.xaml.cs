@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using CloudImaging.Client.Services;
@@ -15,12 +14,17 @@ namespace CloudImaging.Client.Views;
 /// </summary>
 public partial class MainWindow : FluentWindow
 {
+    // Read at launch, before a boot media update can rewrite the media manifest.
+    private readonly Task<BootImageDetails> _bootImageDetails = Task.Run(BootImageDetails.Read);
+    private long _infoClosedAt;
+
     /// <summary>Builds the window, applies the Dark theme, and strips WinPE's unsupported native chrome.</summary>
     public MainWindow()
     {
         InitializeComponent();
         LoadTitleBrandingLogo();
         ShowVersionInTitle();
+        InfoPopup.Closed += (_, _) => _infoClosedAt = Environment.TickCount64;
 
         // FluentWindow's own OnSourceInitialized unconditionally forces WindowStyle back to
         // SingleBorderWindow and only hides the resulting native chrome via a WindowChrome hack
@@ -54,13 +58,22 @@ public partial class MainWindow : FluentWindow
 
     private void ShowVersionInTitle()
     {
-        // Drop the "+commit" build metadata the SDK appends; technicians only need the release number.
-        var version = typeof(MainWindow).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0];
+        var version = BootImageDetails.ClientReleaseVersion();
         if (string.IsNullOrWhiteSpace(version))
             return;
 
         TitleText.Text = $"Cloud Imaging {version}";
         Title = TitleText.Text;
+    }
+
+    private async void InfoButton_Click(object sender, RoutedEventArgs e)
+    {
+        // The press that closed the panel also clicks the button; it must not reopen it.
+        if (Environment.TickCount64 - _infoClosedAt < 300)
+            return;
+
+        InfoRows.ItemsSource = (await _bootImageDetails).Rows;
+        InfoPopup.IsOpen = true;
     }
 
     private static void SafeApply(ApplicationTheme theme)

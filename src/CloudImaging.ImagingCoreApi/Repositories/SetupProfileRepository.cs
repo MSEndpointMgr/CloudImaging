@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Azure;
 using Azure.Data.Tables;
 using CloudImaging.Contracts.Enums;
@@ -56,11 +58,15 @@ public sealed record SetupProfileRecord
 /// <summary>
 /// Table Storage repository for setup profiles. PartitionKey: "profile" | RowKey: profileId.
 /// Deleted profiles stay as tombstones so pinned sessions and history can still name them.
+/// Partition "name" holds one reservation row per name (RowKey: hash of the upper-cased name), so
+/// two profiles can never claim the same name at once.
 /// </summary>
 public sealed class SetupProfileRepository
 {
     private const string TableName = "SetupProfiles";
     private const string Partition = "profile";
+    private const string NamePartition = "name";
+    private static readonly TimeSpan AbandonedReservationAge = TimeSpan.FromMinutes(5);
     private readonly TableClient _table;
 
     /// <param name="tableServiceClient">Table service client used to resolve the setup profiles table.</param>
@@ -134,6 +140,68 @@ public sealed class SetupProfileRepository
     /// <summary>Adds a new profile row.</summary>
     public async Task AddAsync(SetupProfileRecord record, CancellationToken ct = default) =>
         await _table.AddEntityAsync(ToEntity(record), ct);
+
+    /// <summary>
+    /// Claims <paramref name="name"/> (ignoring case) for a profile. Returns false when another
+    /// profile holds it. A claim whose holder was deleted, renamed or never stored is taken over.
+    /// </summary>
+    public async Task<bool> TryReserveNameAsync(string name, Guid profileId, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var entity = new TableEntity(NamePartition, NameRowKey(name)) { ["ProfileId"] = profileId.ToString(), ["ReservedAt"] = now };
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                await _table.AddEntityAsync(entity, ct);
+                return true;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 409) { }
+
+            TableEntity existing;
+            try
+            {
+                existing = (await _table.GetEntityAsync<TableEntity>(NamePartition, entity.RowKey, cancellationToken: ct)).Value;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404) { continue; }
+
+            var holderId = Guid.TryParse(existing.GetString("ProfileId"), out var id) ? id : Guid.Empty;
+            if (holderId == profileId)
+            {
+                return true;
+            }
+            var holder = holderId == Guid.Empty ? null : await GetAsync(holderId, ct);
+            var abandoned = holder is null && now - (existing.GetDateTimeOffset("ReservedAt") ?? DateTimeOffset.MinValue) > AbandonedReservationAge;
+            var stale = holder is not null && (holder.IsDeleted || !string.Equals(holder.Name.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (!abandoned && !stale)
+            {
+                return false;
+            }
+            try
+            {
+                await _table.UpdateEntityAsync(entity, existing.ETag, TableUpdateMode.Replace, ct);
+                return true;
+            }
+            catch (RequestFailedException ex) when (ex.Status is 404 or 412) { }
+        }
+        return false;
+    }
+
+    /// <summary>Releases a name claim if <paramref name="profileId"/> holds it. Best effort.</summary>
+    public async Task ReleaseNameAsync(string name, Guid profileId, CancellationToken ct = default)
+    {
+        try
+        {
+            var existing = (await _table.GetEntityAsync<TableEntity>(NamePartition, NameRowKey(name), cancellationToken: ct)).Value;
+            if (existing.GetString("ProfileId") == profileId.ToString())
+            {
+                await _table.DeleteEntityAsync(NamePartition, existing.RowKey, existing.ETag, ct);
+            }
+        }
+        catch (RequestFailedException ex) when (ex.Status is 404 or 412) { }
+    }
+
+    private static string NameRowKey(string name) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(name.Trim().ToUpperInvariant())));
 
     /// <summary>Replaces a profile row if its ETag still matches. Returns false on a concurrent change or when it is gone.</summary>
     public async Task<bool> ReplaceAsync(SetupProfileRecord record, CancellationToken ct = default)

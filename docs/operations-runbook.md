@@ -121,21 +121,35 @@ the interruption as a diagnosable outcome. See [Session lifecycle](session-lifec
 ### Symptom: Operation Selection is disabled with "No network connection" or a similar banner
 
 **Cause**: When the Client starts, the **Getting ready** screen checks for a local disk, a network
-connection and the Device Gateway API. Every operation needs the Device Gateway, so if it cannot be
+connection and the Device Gateway API. Once the Device Gateway answers, it also checks for a newer
+boot image for the USB media. A newer one is downloaded onto the USB drive with a progress bar,
+verified and swapped in, and the screen then stops with **Restart now** so the device boots the new
+image. If the update cannot be downloaded or verified, the media keeps its current boot image and
+startup carries on. The check is skipped without a network. Every operation needs
+the Device Gateway, so if it cannot be
 used, Operation Selection opens with every option disabled and a banner naming the reason:
 
 | Banner | Meaning |
 |---|---|
 | No network connection | No adapter got a routable address and the gateway could not be reached. Either Ethernet is not connected, or the boot image has no driver for this device's network adapter. On a Windows RE image the text says whether no saved Wi-Fi network was in range, or no Wi-Fi adapter was found. |
+| Network adapter without a driver | Windows found a network adapter, typically a USB Ethernet adapter, but the boot image has no driver for it. The banner names the adapter. |
 | Wi-Fi password rejected | Windows RE only: a saved network was in range but refused its password, usually because it changed after the USB drive was prepared. |
 | Cloud Imaging service unreachable | The device is online, but DNS, routing, a proxy or a firewall stops it reaching the Device Gateway. |
 | Cloud Imaging service error | The Device Gateway host answered with a server error. |
 | Boot media certificate rejected | The Device Gateway rejected the boot-media certificate. |
 | Service URL missing | The boot image has no Device Gateway URL. |
 
-**Resolution**: Fix the cause, then select **Check again** to repeat the checks without restarting.
-On a Windows RE image with no network, the banner offers **Connect to Wi-Fi** instead, which rechecks
-by itself after a successful connect.
+**Resolution**: Fix the cause, then select **Check again**. It repeats the network and service checks
+on the same screen, without restarting, and unlocks the operations once the service answers. On a
+Windows RE image with no network, the banner also offers **Connect to Wi-Fi**, which rechecks by
+itself after a successful connect. When the saved Wi-Fi networks fail, plug in an Ethernet cable or
+USB adapter and select **Check again**; while Getting ready is still trying Wi-Fi, a cable plugged in
+is picked up without a click. Ethernet always wins: when it gets an address while Wi-Fi is connected,
+the Client leaves the Wi-Fi network and says so under the operation cards.
+
+The network button in the footer names the connection in use (Ethernet, the Wi-Fi network, or No
+network) and opens a panel listing every adapter, its address, the one in use and any adapter
+without a driver.
 For a missing network driver, add the driver package under **Drivers** in Media Builder → Generate
 Boot Image, regenerate the boot image and prepare the USB drive again. The Client log (**View Log**)
 records each check's outcome on a `Startup checks:` line.

@@ -4,12 +4,12 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       Title="Results">
     <!--
-        FR-021, FR-025, FR-026: Four terminal outcomes — Success, Failure, NotAuthorized, Expired.
+        FR-021, FR-025, FR-026: Four terminal outcomes: Success, Failure, NotAuthorized, Expired.
 
         Accent-strip design (matches the Media Builder result dialog): a thin colour strip
         along the card's top edge signals the outcome instead of a big Unicode glyph, and any
         error/enrollment detail is shown as plain, borderless, selectable text (TextBox styled
-        via SelectableMessageTextBoxStyle) instead of inside a boxed ui:InfoBar — so technicians
+        via SelectableMessageTextBoxStyle) instead of inside a boxed ui:InfoBar: so technicians
         can still select/copy failure details and support reference codes straight off screen.
     -->
     <Grid>
@@ -40,7 +40,7 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <!-- Status accent strip — states are mutually exclusive, so only one is ever visible -->
+                <!-- Status accent strip: states are mutually exclusive, so only one is ever visible -->
                 <Border Grid.Row="0" CornerRadius="8,8,0,0"
                         Background="{DynamicResource SystemFillColorSuccessBrush}"
                         Visibility="{Binding IsSuccess, Converter={StaticResource BoolToVisibility}}" />
@@ -128,7 +128,7 @@
                                  Margin="0,8,0,0" />
                     </StackPanel>
 
-                    <!-- EXPIRED — session never coupled before the passcode/inactivity window
+                    <!-- EXPIRED: session never coupled before the passcode/inactivity window
                          elapsed (FR-021). Warning-toned like NotAuthorized (not red/error, since
                          this is a benign timeout), but still offers Retry like Failure. -->
                     <StackPanel Visibility="{Binding IsExpired, Converter={StaticResource BoolToVisibility}}"

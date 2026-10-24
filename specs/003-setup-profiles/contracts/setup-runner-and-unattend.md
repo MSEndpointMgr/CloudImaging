@@ -2,6 +2,15 @@
 
 **Feature**: [../spec.md](../spec.md) | **Model**: [../data-model.md](../data-model.md) | **Research**: [../research.md](../research.md) R5 to R8, R10
 
+> **Amendment 2026-10-24** (research R18, wins over the text below): "WinPE scripts" are called
+> Offline scripts and "Windows setup scripts" Specialize scripts in every user-facing text; wire
+> values and item kinds are unchanged. Offline scripts are written to
+> `<W>:\Windows\Temp\CloudImaging\Scripts\NNNN.ps1` on the applied volume instead of the WinPE
+> RAM disk and deleted after each run, the folder removed at the end of phase 2. Staged Specialize
+> scripts are named `NNNN.ps1` (four digits). Only the scripts listed in the descriptor's `scripts`
+> run and are reported. On-device status lines read "Running Offline scripts (2 of 3)" and
+> "Staging Specialize work".
+
 This contract is shared with spec 005 (OS driver management): its Install drivers step hands
 Specialize work to Prepare setup through section 2, and its installers run through the runner of
 section 4.

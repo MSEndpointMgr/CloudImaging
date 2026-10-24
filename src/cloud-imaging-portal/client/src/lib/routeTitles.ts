@@ -1,5 +1,5 @@
 /**
- * Route → section title. Shared by the app bar and the browser tab title so the two can never
+ * Route -> section title. Shared by the app bar and the browser tab title so the two can never
  * disagree, and so adding a route to one without the other stops being possible - `/reports`
  * had already drifted, leaving its header falling through to the application name.
  */
@@ -23,7 +23,7 @@ const SECTION_TITLES: Record<string, string> = {
 
 /**
  * Longest-prefix match, so nested routes (`/reports/session-outcomes`) inherit their section's
- * title. Matching is on segment boundaries — a bare `startsWith` would also claim `/reports-archive`
+ * title. Matching is on segment boundaries: a bare `startsWith` would also claim `/reports-archive`
  * for the Reports section. `/` is excluded because every path starts with it.
  */
 export function resolveSectionTitle(pathname: string): string | null {
