@@ -56,7 +56,7 @@ export function LocationPicker({ locations, selected, onChange, disabledReason, 
           <Button variant="outline" onClick={clearShown} disabled={shown.length === 0}><X />Clear</Button>
         </Tooltip>
       </div>
-      <ul className="h-56 overflow-y-auto py-1" aria-label="Locations">
+      <ul className="max-h-56 overflow-y-auto py-1" aria-label="Locations">
         {shown.length === 0 && <li className="px-3 py-2 text-sm text-muted-foreground">{locations.length === 0 ? 'No locations exist yet.' : 'No locations match.'}</li>}
         {shown.map((l) => {
           const labelId = `${idPrefix}-${l.locationId}`;

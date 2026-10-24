@@ -5,25 +5,26 @@ namespace CloudImaging.Contracts.Models.SetupProfiles;
 /// <summary>
 /// The immutable content of one setup profile version: registry values, scripts, an optional
 /// answer file and the failure handling setting. Stored as one JSON blob per version, and sent by
-/// the portal as the <c>content</c> of a create or save request (ids, hashes and modified fields
-/// are then assigned by Imaging Core).
+/// the portal as the <c>content</c> of a create or save request (ids, sizes and modified fields
+/// are then assigned by Imaging Core). Script and answer file texts are stored separately, once
+/// per SHA-256, and referenced by hash.
 /// </summary>
 public sealed record SetupProfileContent
 {
     /// <summary>Version of this document's format.</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     /// <summary>Maximum number of registry values per profile.</summary>
     public const int MaxRegistryValues = 200;
 
     /// <summary>Maximum number of scripts per profile.</summary>
-    public const int MaxScripts = 20;
+    public const int MaxScripts = 1000;
 
-    /// <summary>Maximum script size in bytes of UTF-8.</summary>
-    public const int MaxScriptBytes = 65_536;
+    /// <summary>Maximum script size in bytes of UTF-8, not counting a BOM (24 MiB).</summary>
+    public const int MaxScriptBytes = 25_165_824;
 
-    /// <summary>Maximum answer file size in bytes of UTF-8.</summary>
-    public const int MaxAnswerFileBytes = 262_144;
+    /// <summary>Maximum answer file size in bytes of UTF-8, not counting a BOM (2 MiB).</summary>
+    public const int MaxAnswerFileBytes = 2_097_152;
 
     /// <summary>Format version of this document.</summary>
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
@@ -34,7 +35,7 @@ public sealed record SetupProfileContent
     /// <summary>Version number, starting at 1.</summary>
     public int Version { get; init; }
 
-    /// <summary>What failed registry values, In WinPE scripts or answer file writes do to the deployment.</summary>
+    /// <summary>What failed registry values, Offline scripts or answer file writes do to the deployment.</summary>
     public SetupFailureHandling FailureHandling { get; init; } = SetupFailureHandling.CompleteWithWarnings;
 
     /// <summary>Registry values written to the applied image.</summary>
@@ -72,7 +73,7 @@ public sealed record SetupRegistryValue
     public string Data { get; init; } = string.Empty;
 }
 
-/// <summary>A PowerShell script that runs in WinPE or during Windows setup.</summary>
+/// <summary>A PowerShell script that runs Offline (in WinPE) or during Specialize.</summary>
 public sealed record SetupScript
 {
     /// <summary>Default timeout in minutes.</summary>
@@ -93,11 +94,14 @@ public sealed record SetupScript
     /// <summary>Timeout from 1 to 30 minutes.</summary>
     public int TimeoutMinutes { get; init; } = DefaultTimeoutMinutes;
 
-    /// <summary>The PowerShell script text.</summary>
-    public required string Content { get; init; }
+    /// <summary>Which of the profile's locations run the script.</summary>
+    public SetupScriptLocations Locations { get; init; } = new();
 
-    /// <summary>Lowercase hex SHA-256 of the UTF-8 content without BOM, computed by Imaging Core.</summary>
-    public string? Sha256 { get; init; }
+    /// <summary>Lowercase hex SHA-256 of the uploaded UTF-8 text without BOM.</summary>
+    public required string ContentSha256 { get; init; }
+
+    /// <summary>Size of the text in bytes, set by Imaging Core from the uploaded content.</summary>
+    public long SizeBytes { get; init; }
 
     /// <summary>When the script last changed.</summary>
     public DateTimeOffset? LastModifiedAt { get; init; }
@@ -106,20 +110,27 @@ public sealed record SetupScript
     public string? LastModifiedBy { get; init; }
 }
 
+/// <summary>Which locations run a script.</summary>
+public sealed record SetupScriptLocations
+{
+    /// <summary>True for every location of the profile, and media without a location.</summary>
+    public bool All { get; init; } = true;
+
+    /// <summary>The chosen locations when <see cref="All"/> is false.</summary>
+    public IReadOnlyList<Guid> LocationIds { get; init; } = [];
+}
+
 /// <summary>The profile's own answer file (unattend.xml).</summary>
 public sealed record SetupAnswerFile
 {
-    /// <summary>The XML text.</summary>
-    public required string Content { get; init; }
+    /// <summary>Lowercase hex SHA-256 of the uploaded UTF-8 text without BOM.</summary>
+    public required string ContentSha256 { get; init; }
 
     /// <summary>Distinct configuration passes in document order, computed by Imaging Core.</summary>
     public IReadOnlyList<string> Passes { get; init; } = [];
 
-    /// <summary>Size in bytes of UTF-8.</summary>
+    /// <summary>Size of the text in bytes, set by Imaging Core from the uploaded content.</summary>
     public long SizeBytes { get; init; }
-
-    /// <summary>Lowercase hex SHA-256 of the UTF-8 content, computed by Imaging Core.</summary>
-    public string? Sha256 { get; init; }
 
     /// <summary>When the answer file last changed.</summary>
     public DateTimeOffset? LastModifiedAt { get; init; }

@@ -1,6 +1,6 @@
 {
   "messages": {
-    "tooLarge": "The answer file is larger than 256 KB. Remove settings you do not need.",
+    "tooLarge": "The answer file is larger than 2 MB. Remove settings you do not need.",
     "notWellFormed": "This is not well-formed XML. Check for a missing closing tag or an unescaped & or < on or before this line.",
     "dtdNotAllowed": "Document type declarations are not allowed. Remove the DOCTYPE line.",
     "notAnswerFile": "This is not an answer file. The root element must be unattend in the urn:schemas-microsoft-com:unattend namespace.",
@@ -27,16 +27,16 @@
       "passes": ["generalize", "specialize", "auditSystem", "auditUser", "oobeSystem"]
     },
     {
-      "name": "exactly 256 KB is accepted",
+      "name": "exactly 2 MB is accepted",
       "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\"/>\n</unattend>",
-      "padToBytes": 262144,
+      "padToBytes": 2097152,
       "expected": [],
       "passes": ["oobeSystem"]
     },
     {
-      "name": "one byte over 256 KB is too large",
+      "name": "one byte over 2 MB is too large",
       "xml": "<?xml version=\"1.0\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\"/>\n</unattend>",
-      "padToBytes": 262145,
+      "padToBytes": 2097153,
       "expected": [{ "code": "tooLarge", "line": 0 }]
     },
     {

@@ -335,6 +335,14 @@ export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {})
   return response;
 }
 
+/**
+ * The bearer token `apiFetch` would attach, for requests that need XMLHttpRequest (upload
+ * progress). Null when nobody is signed in.
+ */
+export async function getApiAccessToken(): Promise<string | null> {
+  return acquireApiToken();
+}
+
 const TRANSIENT_RETRY_DELAYS_MS = [300, 900, 2000];
 
 function isTransientStatus(status: number): boolean {

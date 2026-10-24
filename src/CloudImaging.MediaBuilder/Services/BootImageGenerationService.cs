@@ -747,6 +747,19 @@ public sealed partial class BootImageGenerationService
                             File.Copy(Path.Combine(recoveryFilesDir, dll), target);
                         }
                     }
+
+                    // Found here, a missing service or DLL costs a rebuild instead of a test boot on hardware.
+                    ReportProgress("Checking Wi-Fi support", 41);
+                    await using (var image = await MountedRecoveryImage.LoadAsync(mountDir, (exe, args, token) => RunExternalAsync(exe, args, token), ct))
+                    {
+                        var problems = WindowsRecoveryWifiCheck.FindProblems(image);
+                        if (problems.Count > 0)
+                        {
+                            throw new InvalidOperationException(
+                                "This Windows RE image cannot run Wi-Fi. Use a Windows ISO whose Windows RE includes Wi-Fi support:"
+                                + Environment.NewLine + string.Join(Environment.NewLine, problems.Select(p => "- " + p)));
+                        }
+                    }
                 }
 
                 ReportProgress("Injecting Cloud Imaging Client", 50);

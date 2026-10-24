@@ -65,6 +65,48 @@
                     <TextBlock x:Name="TitleText" Text="Cloud Imaging" VerticalAlignment="Center" />
                 </StackPanel>
             </ui:TitleBar.Header>
+            <ui:TitleBar.TrailingContent>
+                <Grid>
+                    <ui:Button x:Name="InfoButton"
+                               Appearance="Transparent" BorderThickness="0" Padding="0"
+                               Width="46" Height="32" CornerRadius="0"
+                               Icon="{ui:SymbolIcon Info24}"
+                               ToolTip="About this boot image"
+                               AutomationProperties.Name="About this boot image"
+                               WindowChrome.IsHitTestVisibleInChrome="True"
+                               Click="InfoButton_Click" />
+                    <!-- Right-aligned under the button: HorizontalOffset = button width - panel width. -->
+                    <Popup x:Name="InfoPopup"
+                           PlacementTarget="{Binding ElementName=InfoButton}"
+                           Placement="Bottom" HorizontalOffset="-254" VerticalOffset="4"
+                           StaysOpen="False" AllowsTransparency="True">
+                        <Border Width="300" Padding="16,12,16,14" CornerRadius="8"
+                                Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}"
+                                BorderBrush="{DynamicResource SurfaceStrokeColorFlyoutBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="About this boot image" Style="{StaticResource BodyStrongTextBlockStyle}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <ItemsControl x:Name="InfoRows" Margin="0,8,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="96" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Label}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Value}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextWrapping="Wrap" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+                </Grid>
+            </ui:TitleBar.TrailingContent>
         </ui:TitleBar>
 
         <Grid Grid.Row="1">

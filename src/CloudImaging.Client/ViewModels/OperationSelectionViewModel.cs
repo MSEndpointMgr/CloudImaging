@@ -11,8 +11,40 @@ using CloudImaging.Contracts.Models;
 using CloudImaging.Client.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Wpf.Ui.Controls;
 
 namespace CloudImaging.Client.ViewModels;
+
+/// <summary>What the message card under the operation cards is showing.</summary>
+public enum ConnectivityMessageKind
+{
+    /// <summary>Nothing; the card's space stays reserved.</summary>
+    None,
+
+    /// <summary>The service cannot be used.</summary>
+    Error,
+
+    /// <summary>The service cannot be used, for a reason the technician can fix on the device.</summary>
+    Warning,
+
+    /// <summary>A check is running.</summary>
+    Progress,
+
+    /// <summary>Something just worked; fades after a few seconds.</summary>
+    Success,
+}
+
+/// <summary>One line of the Network panel.</summary>
+/// <param name="Symbol">Adapter icon.</param>
+/// <param name="Title">"Ethernet", "Wi-Fi", or the name of a device without a driver.</param>
+/// <param name="Detail">Adapter, address and state.</param>
+/// <param name="Badge">"In use" on the connection traffic goes through.</param>
+/// <param name="IsWarning">True for a device without a driver.</param>
+public sealed record NetworkPanelRow(SymbolRegular Symbol, string Title, string Detail, string? Badge = null, bool IsWarning = false)
+{
+    /// <summary>True when <see cref="Badge"/> is shown.</summary>
+    public bool HasBadge => Badge is not null;
+}
 
 /// <summary>
 /// View model for the OperationSelectionView (T032).
@@ -23,6 +55,10 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     /// <summary>Maximum time to wait for a routable network adapter before giving up and proceeding anyway.</summary>
     private static readonly TimeSpan NetworkWaitTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan NetworkWaitPollInterval = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan DefaultMessageFade = TimeSpan.FromSeconds(3);
+
+    // Address changes arrive in bursts while an adapter comes up.
+    private static readonly TimeSpan DefaultNetworkSettle = TimeSpan.FromSeconds(1);
 
     private readonly DeviceGatewayApiClient _gatewayClient;
     private readonly SystemClockSynchronizationService _clockSync;
@@ -31,9 +67,20 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     private readonly CommandPromptLauncherService _commandPromptLauncher;
     private readonly DevicePostureDetector _postureDetector;
     private readonly Action? _navigateToAutopilot;
-    private readonly StartupReadiness? _readiness;
-    private readonly Action? _recheck;
+    private readonly Func<CancellationToken, Task<StartupReadiness>>? _recheck;
+    private readonly Func<NetworkSnapshot> _readNetwork;
+    private readonly TimeSpan _messageFade;
+    private readonly TimeSpan _networkSettle;
     private readonly ILogger _logger;
+    private StartupReadiness? _readiness;
+    private NetworkSnapshot? _network;
+    private string? _wifiSsid;
+    private (ConnectivityMessageKind Kind, string Title, string Text)? _message;
+    private int _messageVersion;
+    private int _networkChangeVersion;
+    private bool _isRechecking;
+    private bool _isWatchingNetwork;
+    private SynchronizationContext? _uiContext;
     private AutopilotAvailabilityState _autopilotAvailability = AutopilotAvailabilityState.Checking;
     // Decommissioning card is hidden (not implemented for the first release), so Imaging is
     // pre-selected rather than requiring an operator click before Continue is enabled.
@@ -62,9 +109,12 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     /// <param name="startImagingImmediately">Starts a new imaging session at once, as if Continue was pressed (blocked screen's Try again).</param>
     /// <param name="autopilotAvailability">Current Autopilot registration availability state, refining the Autopilot tile's enabled/disabled reason.</param>
     /// <param name="readiness">What the startup checks found. Null skips the gating (screens opened without startup checks).</param>
-    /// <param name="recheck">Runs the startup checks again. Null hides Check again.</param>
+    /// <param name="recheck">Runs the network and service checks again and returns what they found. Null hides Check again.</param>
     /// <param name="managedWifi">The portal's Wi-Fi networks, listed first in the Wi-Fi window; null on Windows PE.</param>
     /// <param name="logger">Defaults to a no-op logger.</param>
+    /// <param name="readNetwork">Test seam; defaults to reading the device's adapters.</param>
+    /// <param name="messageFade">Test seam; how long a success message stays.</param>
+    /// <param name="networkSettle">Test seam; how long to wait for a burst of address changes to end.</param>
     public OperationSelectionViewModel(
         DeviceGatewayApiClient gatewayClient,
         Action<CreateSessionResponse, string> navigate,
@@ -78,9 +128,12 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         bool startImagingImmediately = false,
         AutopilotAvailabilityState? autopilotAvailability = null,
         StartupReadiness? readiness = null,
-        Action? recheck = null,
+        Func<CancellationToken, Task<StartupReadiness>>? recheck = null,
         ManagedWifiService? managedWifi = null,
-        ILogger<OperationSelectionViewModel>? logger = null)
+        ILogger<OperationSelectionViewModel>? logger = null,
+        Func<NetworkSnapshot>? readNetwork = null,
+        TimeSpan? messageFade = null,
+        TimeSpan? networkSettle = null)
     {
         _gatewayClient          = gatewayClient;
         _navigate               = navigate;
@@ -92,6 +145,9 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         _navigateToAutopilot = navigateToAutopilot;
         _readiness = readiness;
         _recheck = recheck;
+        _readNetwork = readNetwork ?? NetworkStatus.Read;
+        _messageFade = messageFade ?? DefaultMessageFade;
+        _networkSettle = networkSettle ?? DefaultNetworkSettle;
         ManagedWifi = managedWifi;
         IsWifiAvailable = readiness?.WifiSupported ?? BootImageCapabilities.SupportsWifi();
         _logger = logger ?? NullLogger<OperationSelectionViewModel>.Instance;
@@ -100,7 +156,7 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         SelectOperationCommand   = new RelayCommand(op => SelectOperation(op?.ToString()));
         ContinueCommand          = new RelayCommand(async _ => await ContinueAsync(), _ => CanContinue);
         LaunchCommandPromptCommand = new RelayCommand(_ => LaunchCommandPrompt(), _ => IsCommandPromptAvailable);
-        RecheckCommand           = new RelayCommand(_ => _recheck?.Invoke(), _ => CanRecheck);
+        RecheckCommand           = new RelayCommand(async _ => await RecheckAsync(), _ => CanRecheck && !_isRechecking);
 
         if (!IsImagingSelectable)
             _selectedOperation = null;
@@ -121,6 +177,9 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>What the last startup or network check found; null for screens opened without startup checks.</summary>
+    public StartupReadiness? Readiness => _readiness;
+
     /// <summary>False when startup could not use the Device Gateway API, which every operation needs.</summary>
     public bool IsServiceAvailable => _readiness?.CanReachService ?? true;
 
@@ -138,10 +197,14 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         _ => "Apply a fresh OS image to this device.",
     };
 
+    /// <summary>True when the only adapter Windows found has no driver in the boot image.</summary>
+    private bool IsBlockedByMissingDriver => _readiness is { Gateway: GatewayReachability.NoNetwork, AdaptersWithoutDriver.Count: > 0 };
+
     /// <summary>Heading of the connectivity banner.</summary>
     public string ConnectivityTitle => _readiness?.Gateway switch
     {
-        GatewayReachability.NoNetwork when _readiness.WifiJoin?.Outcome == ManagedWifiOutcome.PasswordRejected => "Wi-Fi password rejected",
+        GatewayReachability.NoNetwork when IsBlockedByMissingDriver => "Network adapter without a driver",
+        GatewayReachability.NoNetwork when !_readiness.Rechecked && _readiness.WifiJoin?.Outcome == ManagedWifiOutcome.PasswordRejected => "Wi-Fi password rejected",
         GatewayReachability.NoNetwork => "No network connection",
         GatewayReachability.ServiceUnavailable => "Cloud Imaging service error",
         GatewayReachability.CertificateRejected => "Boot media certificate rejected",
@@ -152,22 +215,56 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     /// <summary>What went wrong and what to do about it.</summary>
     public string ConnectivityMessage => _readiness?.Gateway switch
     {
+        GatewayReachability.NoNetwork when IsBlockedByMissingDriver => $"{_readiness.AdaptersWithoutDriver![0]} was found, but the boot image has no driver for it. Add the driver in Media Builder, or use another adapter.",
+        GatewayReachability.NoNetwork when _readiness.Rechecked => "No adapter got an IP address. Check the cable, or add the adapter's driver to the boot image. Then select Check again.",
         GatewayReachability.NoNetwork when IsWifiAvailable => _readiness.WifiJoin?.Outcome switch
         {
-            ManagedWifiOutcome.PasswordRejected => $"{_readiness.WifiJoin.Ssid} rejected the saved password. It may have changed since this USB media was prepared. Connect to Ethernet once to refresh it, or enter the password.",
-            ManagedWifiOutcome.NoAdapter => "No Ethernet and no Wi-Fi adapter was found. Connect to Ethernet, or add the Wi-Fi driver to the boot image.",
-            ManagedWifiOutcome.NoIpAddress => $"{_readiness.WifiJoin.Ssid} accepted the device but gave it no IP address. Connect to Ethernet, or choose another Wi-Fi network.",
-            _ => "No Ethernet, and none of the saved Wi-Fi networks are in range. Connect to Ethernet, or choose a Wi-Fi network.",
+            ManagedWifiOutcome.PasswordRejected => $"{_readiness.WifiJoin.Ssid} rejected the saved password. It may have changed since this USB media was prepared. Plug in Ethernet and select Check again, or enter the password.",
+            ManagedWifiOutcome.NoAdapter => "No Ethernet and no Wi-Fi adapter was found. Plug in Ethernet and select Check again, or add the Wi-Fi driver to the boot image.",
+            ManagedWifiOutcome.NoIpAddress => $"{_readiness.WifiJoin.Ssid} accepted the device but gave it no IP address. Plug in Ethernet and select Check again, or choose another Wi-Fi network.",
+            _ => "No saved Wi-Fi network is in range. Plug in Ethernet and select Check again, or connect to Wi-Fi.",
         },
-        GatewayReachability.NoNetwork => "No adapter has an IP address. Connect to Ethernet. If Ethernet is already connected, add the network adapter driver to the boot image.",
+        GatewayReachability.NoNetwork => "No adapter has an IP address. Plug in Ethernet and select Check again. If Ethernet is already connected, add the network adapter driver to the boot image.",
         GatewayReachability.ServiceUnavailable => "The service returned a server error. Retry in a few minutes; if it persists, contact your Cloud Imaging administrator.",
         GatewayReachability.CertificateRejected => "The service rejected the boot media certificate. Rebuild the boot image in Media Builder and re-prepare the USB drive.",
         GatewayReachability.NotConfigured => "The boot image has no Cloud Imaging service URL. Rebuild it in Media Builder.",
         _ => "The network is up but the service did not respond. Check DNS, proxy and outbound HTTPS (TCP 443).",
     };
 
+    /// <summary>What the message card under the operation cards shows: a check in progress or its result, else the blocking problem.</summary>
+    public ConnectivityMessageKind ConnectivityKind => _message?.Kind
+        ?? (IsServiceAvailable ? ConnectivityMessageKind.None : IsBlockedByMissingDriver ? ConnectivityMessageKind.Warning : ConnectivityMessageKind.Error);
+
+    /// <summary>Message card heading.</summary>
+    public string? ConnectivityHeading => _message?.Title ?? (IsServiceAvailable ? null : ConnectivityTitle);
+
+    /// <summary>Message card text.</summary>
+    public string? ConnectivityDetail => _message?.Text ?? (IsServiceAvailable ? null : ConnectivityMessage);
+
+    /// <summary>True while the message card shows anything.</summary>
+    public bool HasConnectivityMessage => ConnectivityKind != ConnectivityMessageKind.None;
+
+    /// <summary>True for the error style.</summary>
+    public bool IsConnectivityError => ConnectivityKind == ConnectivityMessageKind.Error;
+
+    /// <summary>True for the warning style.</summary>
+    public bool IsConnectivityWarning => ConnectivityKind == ConnectivityMessageKind.Warning;
+
+    /// <summary>True while a check runs.</summary>
+    public bool IsConnectivityProgress => ConnectivityKind == ConnectivityMessageKind.Progress;
+
+    /// <summary>True for a success message.</summary>
+    public bool IsConnectivitySuccess => ConnectivityKind == ConnectivityMessageKind.Success;
+
     /// <summary>True when Check again is offered.</summary>
     public bool CanRecheck => _recheck is not null;
+
+    /// <summary>True while Check again runs.</summary>
+    public bool IsRechecking
+    {
+        get => _isRechecking;
+        private set { _isRechecking = value; OnPropertyChanged(); CommandManager.InvalidateRequerySuggested(); }
+    }
 
     /// <summary>True on a Windows RE boot image. Windows PE has no Wi-Fi, so the button is not shown at all.</summary>
     public bool IsWifiAvailable { get; }
@@ -178,19 +275,62 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     /// <summary>The managed network startup joined, or null.</summary>
     public string? ConnectedWifiSsid => _readiness?.ConnectedWifiSsid;
 
-    /// <summary>True while on a managed Wi-Fi network; the footer button then shows its name.</summary>
-    public bool IsOnWifi => ConnectedWifiSsid is not null;
+    /// <summary>The banner's actions belong to the blocking problem, not to a check in progress or its result.</summary>
+    private bool ShowsBlockingProblem => _message is null && IsServiceBlocked;
 
-    /// <summary>Footer Wi-Fi button label: the network in use, or the action.</summary>
-    public string WifiButtonLabel => ConnectedWifiSsid ?? "Connect to Wi-Fi";
+    /// <summary>On a Wi-Fi image without a network, the banner also offers Connect to Wi-Fi.</summary>
+    public bool ShowBannerWifiAction => ShowsBlockingProblem && IsWifiAvailable && _readiness?.Gateway == GatewayReachability.NoNetwork;
 
-    /// <summary>On a Wi-Fi image without a network, the banner offers Connect to Wi-Fi instead of only Check again.</summary>
-    public bool ShowBannerWifiAction => IsWifiAvailable && _readiness?.Gateway == GatewayReachability.NoNetwork;
+    /// <summary>Check again is always offered with the blocking problem.</summary>
+    public bool ShowBannerRecheck => ShowsBlockingProblem && CanRecheck;
 
-    /// <summary>Check again is shown when Connect to Wi-Fi is not the better way out.</summary>
-    public bool ShowBannerRecheck => CanRecheck && !ShowBannerWifiAction;
+    /// <summary>Footer network button: "Ethernet", the Wi-Fi network's name, or "No network".</summary>
+    public string NetworkLabel => _network switch
+    {
+        null => ConnectedWifiSsid ?? (_readiness?.Gateway == GatewayReachability.NoNetwork ? "No network" : "Network"),
+        { Ethernet: not null } => "Ethernet",
+        { WiFi: not null } => _wifiSsid ?? ConnectedWifiSsid ?? "Wi-Fi",
+        _ => "No network",
+    };
 
-    /// <summary>Runs the startup checks again.</summary>
+    /// <summary>Icon of the footer network button.</summary>
+    public SymbolRegular NetworkSymbol => IsNetworkMissing ? SymbolRegular.PlugDisconnected24
+        : _network is { Ethernet: null, WiFi: not null } || (_network is null && ConnectedWifiSsid is not null) ? SymbolRegular.Wifi124
+        : SymbolRegular.PlugConnected24;
+
+    /// <summary>True when no adapter has an address; the button then shows a red dot.</summary>
+    public bool IsNetworkMissing => _network is null
+        ? _readiness?.Gateway == GatewayReachability.NoNetwork
+        : _network.Ethernet is null && _network.WiFi is null;
+
+    /// <summary>The Network panel's lines, one per adapter.</summary>
+    public IReadOnlyList<NetworkPanelRow> NetworkRows => BuildNetworkRows(_network ?? NetworkSnapshot.Empty, _wifiSsid);
+
+    internal static IReadOnlyList<NetworkPanelRow> BuildNetworkRows(NetworkSnapshot network, string? wifiSsid)
+    {
+        var rows = new List<NetworkPanelRow>();
+        var inUse = network.Ethernet ?? network.WiFi;
+        foreach (var adapter in network.Adapters)
+        {
+            var badge = ReferenceEquals(adapter, inUse) ? "In use" : null;
+            rows.Add((adapter.Kind, adapter.State) switch
+            {
+                (_, NetworkAdapterState.NoDriver) => new NetworkPanelRow(SymbolRegular.Warning24, adapter.Name, "No driver in the boot image", IsWarning: true),
+                (NetworkAdapterKind.Ethernet, NetworkAdapterState.Connected) => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", adapter.Display, badge),
+                (NetworkAdapterKind.Ethernet, NetworkAdapterState.NoAddress) => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", $"{adapter.Name}, no IP address"),
+                (NetworkAdapterKind.Ethernet, _) => new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "Ethernet", $"{adapter.Name}, cable unplugged"),
+                (_, NetworkAdapterState.Connected) => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", wifiSsid is null ? adapter.Display : $"{wifiSsid}, {adapter.Display}", badge),
+                (_, NetworkAdapterState.NoAddress) => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", $"{wifiSsid ?? adapter.Name}, no IP address"),
+                _ => new NetworkPanelRow(SymbolRegular.WifiOff24, "Wi-Fi", "Not connected"),
+            });
+        }
+
+        if (rows.Count == 0)
+            rows.Add(new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "No network adapter", "Windows found none. Add the adapter's driver to the boot image."));
+        return rows;
+    }
+
+    /// <summary>Runs the network and service checks again, on this screen.</summary>
     public ICommand RecheckCommand { get; }
 
     /// <summary>The Autopilot card is shown only on boot media built with the hash tooling.</summary>
@@ -237,6 +377,189 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
 
         if (SelectedOperation == "Autopilot" && !IsAutopilotSelectable)
             SelectedOperation = IsImagingSelectable ? "Imaging" : null;
+    }
+
+    // ── Network: Check again, the message card and the footer network button ─────────────
+
+    /// <summary>
+    /// Check again: shows progress in the message card while the network and service checks run,
+    /// then either unlocks the operations with a short success message or shows what is still wrong.
+    /// </summary>
+    internal async Task RecheckAsync()
+    {
+        if (_recheck is null || _readiness is null || IsRechecking)
+            return;
+
+        IsRechecking = true;
+        try
+        {
+            ShowMessage(ConnectivityMessageKind.Progress, "Checking the network", "Looking for a network connection\u2026");
+            await RefreshNetworkAsync();
+            if ((_network?.Ethernet ?? _network?.WiFi) is { } via)
+            {
+                ShowMessage(ConnectivityMessageKind.Progress, via.Kind == NetworkAdapterKind.Ethernet ? "Ethernet connected" : "Wi-Fi connected", $"{via.Display}. Checking the Cloud Imaging service\u2026");
+            }
+
+            StartupReadiness result;
+            try
+            {
+                result = await _recheck(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                LogRecheckFailed(_logger, LoggedFailure.Reason(ex), LoggedFailure.StackTrace(ex));
+                result = _readiness with { Gateway = GatewayReachability.Unreachable, Rechecked = true };
+            }
+
+            ApplyReadiness(result);
+            await RefreshNetworkAsync();
+            if (result.CanReachService)
+            {
+                var connected = _network?.Ethernet ?? _network?.WiFi;
+                ShowMessage(ConnectivityMessageKind.Success,
+                    connected?.Kind == NetworkAdapterKind.WiFi ? "Connected through Wi-Fi" : connected is null ? "Connected" : "Connected through Ethernet",
+                    connected is null ? "The Cloud Imaging service answered." : connected.Kind == NetworkAdapterKind.WiFi && _wifiSsid is not null ? $"{_wifiSsid}, {connected.Display}" : connected.Display,
+                    fade: true);
+            }
+            else
+            {
+                ClearMessage();
+            }
+        }
+        finally
+        {
+            IsRechecking = false;
+        }
+    }
+
+    private void ApplyReadiness(StartupReadiness readiness)
+    {
+        _readiness = readiness;
+        if (readiness.AutopilotAvailability is { } autopilot)
+            _autopilotAvailability = autopilot;
+        if (_selectedOperation is null && IsImagingSelectable)
+            _selectedOperation = "Imaging";
+        else if (_selectedOperation == "Imaging" && !IsImagingSelectable)
+            _selectedOperation = null;
+
+        // Nearly every binding on this screen depends on the readiness.
+        OnPropertyChanged(string.Empty);
+    }
+
+    private void ShowMessage(ConnectivityMessageKind kind, string title, string text, bool fade = false)
+    {
+        var version = ++_messageVersion;
+        _message = (kind, title, text);
+        RaiseMessageChanged();
+        if (fade)
+            _ = FadeMessageAsync(version);
+    }
+
+    private void ClearMessage()
+    {
+        ++_messageVersion;
+        _message = null;
+        RaiseMessageChanged();
+    }
+
+    private async Task FadeMessageAsync(int version)
+    {
+        await Task.Delay(_messageFade);
+        if (version == _messageVersion)
+            ClearMessage();
+    }
+
+    private void RaiseMessageChanged()
+    {
+        OnPropertyChanged(nameof(ConnectivityKind));
+        OnPropertyChanged(nameof(ConnectivityHeading));
+        OnPropertyChanged(nameof(ConnectivityDetail));
+        OnPropertyChanged(nameof(HasConnectivityMessage));
+        OnPropertyChanged(nameof(IsConnectivityError));
+        OnPropertyChanged(nameof(IsConnectivityWarning));
+        OnPropertyChanged(nameof(IsConnectivityProgress));
+        OnPropertyChanged(nameof(IsConnectivitySuccess));
+        OnPropertyChanged(nameof(ShowBannerWifiAction));
+        OnPropertyChanged(nameof(ShowBannerRecheck));
+    }
+
+    /// <summary>Re-reads the adapters (and the Wi-Fi network's name) for the footer button and the Network panel. Never throws.</summary>
+    public async Task RefreshNetworkAsync()
+    {
+        NetworkSnapshot network;
+        try
+        {
+            network = await Task.Run(_readNetwork);
+        }
+        catch (Exception ex)
+        {
+            LogNetworkReadFailed(_logger, ex.Message);
+            network = NetworkSnapshot.Empty;
+        }
+
+        string? ssid = null;
+        if (network.WiFi is not null && ManagedWifi is not null)
+            ssid = await ManagedWifi.Wireless.GetConnectedSsidAsync();
+
+        _network = network;
+        _wifiSsid = ssid;
+        OnPropertyChanged(nameof(NetworkLabel));
+        OnPropertyChanged(nameof(NetworkSymbol));
+        OnPropertyChanged(nameof(IsNetworkMissing));
+        OnPropertyChanged(nameof(NetworkRows));
+    }
+
+    /// <summary>Follows adapter changes while this screen is shown, so the network button stays current and Ethernet replaces Wi-Fi.</summary>
+    public void StartWatchingNetwork()
+    {
+        if (_isWatchingNetwork)
+            return;
+
+        _isWatchingNetwork = true;
+        _uiContext = SynchronizationContext.Current;
+        NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+        _ = OnNetworkChangedAsync();
+    }
+
+    /// <summary>Stops following adapter changes; the event is static, so a screen left behind must unsubscribe.</summary>
+    public void StopWatchingNetwork()
+    {
+        _isWatchingNetwork = false;
+        NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+    }
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+    {
+        if (_uiContext is { } context)
+            context.Post(_ => _ = OnNetworkChangedAsync(), null);
+        else
+            _ = OnNetworkChangedAsync();
+    }
+
+    /// <summary>
+    /// Ethernet always wins: once a wired adapter has an address while Wi-Fi is connected, Wi-Fi is
+    /// left and the message card says so. Only while the service is usable; a blocked screen waits
+    /// for Check again, which applies the same rule.
+    /// </summary>
+    internal async Task OnNetworkChangedAsync()
+    {
+        var version = ++_networkChangeVersion;
+        await Task.Delay(_networkSettle);
+        if (version != _networkChangeVersion)
+            return;
+
+        await RefreshNetworkAsync();
+        if (IsServiceBlocked || IsRechecking || ManagedWifi is null || _network is not { Ethernet: { } ethernet, WiFi: not null })
+            return;
+
+        var left = await ManagedWifi.Wireless.DisconnectAsync();
+        if (left is null)
+            return;
+
+        if (_readiness is not null)
+            _readiness = _readiness with { WifiJoin = null };
+        ShowMessage(ConnectivityMessageKind.Success, "Switched to Ethernet", $"{ethernet.Name} is in use. Wi-Fi {left} was disconnected.", fade: true);
+        await RefreshNetworkAsync();
     }
 
     /// <summary>
@@ -467,7 +790,7 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     {
         try
         {
-            var manifestPath = FindManifestPath();
+            var manifestPath = BootImageDetails.FindMediaManifestPath(out _);
             if (manifestPath is null) return (null, null);
 
             var manifest = JsonSerializer.Deserialize<UsbPreparationManifest>(File.ReadAllText(manifestPath));
@@ -477,52 +800,6 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         {
             return (null, null);
         }
-    }
-
-    /// <summary>The manifest on the USB BOOT volume, or else on the root of a CD/DVD drive for media booted from an ISO.</summary>
-    private static string? FindManifestPath()
-    {
-        var bootDrive = FindBootVolumeDriveLetter();
-        if (bootDrive is not null)
-        {
-            var usbManifest = Path.Combine(bootDrive.TrimEnd('\\') + "\\", UsbPreparationManifest.FileName);
-            if (File.Exists(usbManifest)) return usbManifest;
-        }
-
-        foreach (var drive in DriveInfo.GetDrives())
-        {
-            if (drive.DriveType != DriveType.CDRom || !drive.IsReady) continue;
-            var isoManifest = Path.Combine(drive.RootDirectory.FullName, UsbPreparationManifest.FileName);
-            if (File.Exists(isoManifest)) return isoManifest;
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// Locates the BOOT-labelled FAT32 volume this Client is running from — mirrors
-    /// <c>BootImageSelfUpdateService.FindBootVolumeDriveLetter</c>/
-    /// <c>UsbPartitionProvisioningService.FindBootVolumeDriveLetter</c> in the Media Builder,
-    /// which creates and labels this same volume during USB preparation.
-    /// </summary>
-    private static string? FindBootVolumeDriveLetter()
-    {
-        try
-        {
-            using var searcher = new ManagementObjectSearcher(
-                "SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='BOOT'");
-            using var results = searcher.Get();
-            foreach (ManagementObject volume in results)
-            {
-                var letter = volume["DriveLetter"]?.ToString();
-                if (!string.IsNullOrWhiteSpace(letter))
-                    return letter;
-            }
-        }
-        catch (ManagementException)
-        {
-            // Treated the same as "not found" by the caller.
-        }
-        return null;
     }
 
     // ── Hardware metadata collection (runs on background thread) ─────────────
@@ -620,6 +897,12 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Session registration failed: {Reason}")]
     private static partial void LogRegistrationFailed(ILogger logger, string reason, Exception? ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Check again could not finish the network checks: {Reason}")]
+    private static partial void LogRecheckFailed(ILogger logger, string reason, Exception? ex);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read the network adapters: {Reason}")]
+    private static partial void LogNetworkReadFailed(ILogger logger, string reason);
 
     // ── INotifyPropertyChanged ────────────────────────────────────────────────
 

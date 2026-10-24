@@ -397,7 +397,7 @@ export default function LocationsPage(): React.ReactElement {
                 <TableCell className="text-xs text-muted-foreground">{formatDateTime(loc.createdAt)}</TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    <Tooltip content="Save changes">
+                    <Tooltip content="Save">
                       <Button variant="ghost" size="icon" aria-label={`Save location ${loc.name}`}
                         disabled={saving || !editDraft.name.trim()} onClick={() => void handleSaveEdit()}>
                           <Check />

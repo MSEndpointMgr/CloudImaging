@@ -195,62 +195,163 @@
         </UniformGrid>
 
         <!-- Status / error -->
-        <!-- Shown when startup could not use the Device Gateway API: every operation needs it. -->
-        <Border Grid.Row="4" Width="696" Padding="16,12" CornerRadius="6"
-                Background="{DynamicResource SystemFillColorCriticalBackgroundBrush}"
-                Visibility="{Binding IsServiceBlocked, Converter={StaticResource BoolToVisibility}}">
+        <!--
+            One message card for every network message: the blocking problem, Check again in progress,
+            and short-lived successes. Hidden rather than collapsed, so the cards above never move.
+        -->
+        <Grid Grid.Row="4">
+        <Border Width="696" MinHeight="68" Padding="16,12" CornerRadius="6" BorderThickness="1">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Hidden" />
+                    <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                    <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasConnectivityMessage}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsConnectivityError}" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsConnectivityWarning}" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="20" VerticalAlignment="Top" Margin="0,1,12,0"
-                               Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-                <StackPanel Grid.Column="1">
-                    <TextBlock Text="{Binding ConnectivityTitle}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                    <TextBlock Text="{Binding ConnectivityMessage}" Style="{StaticResource CaptionTextBlockStyle}"
+                <Grid Width="20" VerticalAlignment="Center" Margin="0,0,12,0">
+                    <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="20"
+                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                                   Visibility="{Binding IsConnectivityError, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:SymbolIcon Symbol="Warning24" FontSize="20"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                   Visibility="{Binding IsConnectivityWarning, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:ProgressRing IsIndeterminate="True" Width="18" Height="18"
+                                     Visibility="{Binding IsConnectivityProgress, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="20"
+                                   Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                                   Visibility="{Binding IsConnectivitySuccess, Converter={StaticResource BoolToVisibility}}" />
+                </Grid>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding ConnectivityHeading}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock Text="{Binding ConnectivityDetail}" Style="{StaticResource CaptionTextBlockStyle}"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
                 </StackPanel>
-                <ui:Button Grid.Column="2" Content="Check again" Appearance="Secondary"
-                           Icon="{ui:SymbolIcon ArrowClockwise24}"
-                           VerticalAlignment="Center" Margin="16,0,0,0"
-                           Command="{Binding RecheckCommand}"
-                           Visibility="{Binding ShowBannerRecheck, Converter={StaticResource BoolToVisibility}}" />
-                <ui:Button Grid.Column="2" Content="Connect to Wi-Fi" Appearance="Secondary"
-                           Icon="{ui:SymbolIcon Wifi124}"
-                           VerticalAlignment="Center" Margin="16,0,0,0"
-                           Click="ConnectWifiButton_Click"
-                           Visibility="{Binding ShowBannerWifiAction, Converter={StaticResource BoolToVisibility}}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                    <ui:Button Content="Connect to Wi-Fi" Appearance="Secondary"
+                               Icon="{ui:SymbolIcon Wifi124}"
+                               Click="ConnectWifiButton_Click"
+                               Visibility="{Binding ShowBannerWifiAction, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button Content="Check again" Appearance="Secondary" Margin="8,0,0,0"
+                               Icon="{ui:SymbolIcon ArrowClockwise24}"
+                               Command="{Binding RecheckCommand}"
+                               Visibility="{Binding ShowBannerRecheck, Converter={StaticResource BoolToVisibility}}" />
+                </StackPanel>
             </Grid>
         </Border>
 
-        <ui:InfoBar Grid.Row="4"
-                    Title="Waiting for an IP address"
+        <ui:InfoBar Title="Waiting for an IP address"
                     Message="Registration starts once a network adapter is up."
                     Severity="Informational"
                     IsOpen="{Binding IsWaitingForNetwork}"
                     IsClosable="False" />
 
-        <ui:InfoBar Grid.Row="4"
-                    Title="Error"
+        <ui:InfoBar Title="Error"
                     Message="{Binding StatusMessage}"
                     Severity="Error"
                     IsOpen="{Binding HasError}"
                     IsClosable="False" />
+        </Grid>
         </Grid>
 
         <!-- Support tools are deliberately low-key so they never compete with Continue. -->
         <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}">
             <HeaderedContentControl.Header>
                 <StackPanel Orientation="Horizontal">
-                    <ui:Button x:Name="ConnectWifiButton"
-                               Content="{Binding WifiButtonLabel}"
+                    <!-- The connection in use; opens the Network panel. Replaces the old Connect to Wi-Fi button. -->
+                    <ui:Button x:Name="NetworkButton"
                                Style="{StaticResource FooterToolButtonStyle}"
-                               Icon="{ui:SymbolIcon Wifi124}"
-                               Visibility="{Binding IsWifiAvailable, Converter={StaticResource BoolToVisibility}}"
-                               Click="ConnectWifiButton_Click" />
+                               AutomationProperties.Name="Network"
+                               Click="NetworkButton_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="{Binding NetworkSymbol}" FontSize="16" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding NetworkLabel}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                            <Ellipse Width="8" Height="8" Margin="6,0,0,0" VerticalAlignment="Center"
+                                     Fill="{DynamicResource SystemFillColorCriticalBrush}"
+                                     Visibility="{Binding IsNetworkMissing, Converter={StaticResource BoolToVisibility}}" />
+                        </StackPanel>
+                    </ui:Button>
+                    <Popup x:Name="NetworkPopup"
+                           PlacementTarget="{Binding ElementName=NetworkButton}"
+                           Placement="Top" VerticalOffset="-8"
+                           StaysOpen="False" AllowsTransparency="True">
+                        <Border Width="380" Padding="16,12,16,14" CornerRadius="8"
+                                Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}"
+                                BorderBrush="{DynamicResource SurfaceStrokeColorFlyoutBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="Network" Style="{StaticResource BodyStrongTextBlockStyle}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <ItemsControl ItemsSource="{Binding NetworkRows}" Margin="0,6,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="22" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <ui:SymbolIcon Symbol="{Binding Symbol}" FontSize="18" VerticalAlignment="Center">
+                                                    <ui:SymbolIcon.Style>
+                                                        <Style TargetType="ui:SymbolIcon">
+                                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsWarning}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ui:SymbolIcon.Style>
+                                                </ui:SymbolIcon>
+                                                <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongTextBlockStyle}" FontSize="13"
+                                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                        <!-- Tint under the label: an Opacity on the pill itself would fade the text too. -->
+                                                        <Grid Margin="8,0,0,0" VerticalAlignment="Center"
+                                                              Visibility="{Binding HasBadge, Converter={StaticResource BoolToVisibility}}">
+                                                            <Border CornerRadius="10" Background="{DynamicResource AccentFillColorDefaultBrush}" Opacity="0.16" />
+                                                            <TextBlock Text="{Binding Badge}" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="7,0" />
+                                                        </Grid>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Detail}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <ui:Button Content="Connect to Wi-Fi" Appearance="Secondary" Margin="0,0,8,0"
+                                               Icon="{ui:SymbolIcon Wifi124}"
+                                               Click="ConnectWifiButton_Click"
+                                               Visibility="{Binding IsWifiAvailable, Converter={StaticResource BoolToVisibility}}" />
+                                    <ui:Button Content="Check again" Appearance="Secondary"
+                                               Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                               Click="PanelCheckAgainButton_Click"
+                                               Visibility="{Binding CanRecheck, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
                     <ui:Button x:Name="CommandPromptButton"
                                Content="Command Prompt"
                                Style="{StaticResource FooterToolButtonStyle}"

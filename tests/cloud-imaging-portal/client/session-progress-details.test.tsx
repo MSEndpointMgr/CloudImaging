@@ -172,12 +172,12 @@ describe('Portal frontend: session progress details', () => {
       render(<SessionProgressDetails overallPercent={100} currentStep={null} steps={steps} setupProfile={pin} sessionId="s1" terminal />);
 
       expect(screen.getAllByText('Completed with warnings').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('1 WinPE script failed')).toBeTruthy();
+      expect(screen.getByText('1 Offline script failed')).toBeTruthy();
       expect(screen.getByText('3 registry values written')).toBeTruthy();
-      expect(screen.getByText('1 WinPE script succeeded')).toBeTruthy();
+      expect(screen.getByText('1 Offline script succeeded')).toBeTruthy();
 
       const row = await screen.findByText('Enable Wake on LAN');
-      expect(row.closest('li')?.textContent).toContain('WinPE script');
+      expect(row.closest('li')?.textContent).toContain('Offline script');
       expect(row.closest('li')?.textContent).toContain('Failed: exit code 1');
       expect(screen.queryByText('Time zone')).toBeNull();
       expect(screen.getByText('Failures are listed first; 4 other items are hidden.')).toBeTruthy();
@@ -195,7 +195,16 @@ describe('Portal frontend: session progress details', () => {
       expect(screen.getByRole('tooltip').textContent).toBe("This device's boot image is older than Setup Profiles, so the profile was not applied. Update the boot image.");
     });
 
-    it('lists every item behind Show details and notes truncation and Windows setup', async () => {
+    it('does not blame the boot image when the session failed before Prepare setup', () => {
+      const steps = [done('FormatDisk'), done('DownloadImage'), done('ApplyImage', { status: 'Failed', errorDetail: 'DISM exited with code 5.' })];
+
+      render(<SessionProgressDetails overallPercent={40} currentStep={null} steps={steps} setupProfile={pin} terminal />);
+
+      expect(screen.queryByText('Not run')).toBeNull();
+      expect(screen.queryByText(/older than Setup Profiles/)).toBeNull();
+    });
+
+    it('lists every item behind Show details and notes truncation and Specialize', async () => {
       api.apiFetchWithRetry.mockReset();
       api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
         { index: 0, kind: 'RegistryValue', name: 'Time zone', outcome: 'Succeeded' },
@@ -204,17 +213,17 @@ describe('Portal frontend: session progress details', () => {
       const steps = [done('PrepareSetup', { itemsTruncated: true, itemCounts: [{ kind: 'RegistryValue', outcome: 'Succeeded', count: 1 }, { kind: 'WindowsSetupScript', outcome: 'Queued', count: 1 }] })];
 
       render(<SessionProgressDetails overallPercent={80} currentStep={null} steps={steps} setupProfile={pin} sessionId="s1" />);
-      expect(screen.getByText('1 script queued for Windows setup')).toBeTruthy();
-      expect(screen.getByText('Windows setup runs after the restart and is recorded on the device only.')).toBeTruthy();
+      expect(screen.getByText('1 script queued for Specialize')).toBeTruthy();
+      expect(screen.getByText('Specialize runs during Windows setup, after the restart, and is recorded on the device only.')).toBeTruthy();
       expect(api.apiFetchWithRetry).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
 
       const queued = await screen.findByText('Wired 802.1X');
-      expect(queued.closest('li')?.textContent).toContain('Queued for Windows setup');
+      expect(queued.closest('li')?.textContent).toContain('Queued for Specialize');
       expect(screen.getByText('Time zone').closest('li')?.textContent).toContain('Written');
       expect(api.apiFetchWithRetry).toHaveBeenCalledWith('/api/sessions/s1/steps/PrepareSetup/items', { credentials: 'include' });
-      expect(screen.getByText('Showing the first 500 items.')).toBeTruthy();
+      expect(screen.getByText('Showing the first 1500 items.')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Hide details' })).toBeTruthy();
     });
 

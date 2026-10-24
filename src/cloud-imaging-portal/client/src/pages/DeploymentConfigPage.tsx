@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Lock, Link as LinkIcon, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { Lock, Link as LinkIcon, RotateCcw, Save, SlidersHorizontal } from 'lucide-react';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
 import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
@@ -414,7 +414,8 @@ export default function DeploymentConfigPage(): React.ReactElement {
             variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
             disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
           >
-            Save Configuration
+            <Save />
+            Save
           </Button>
           {isDirty && saveStatus === 'idle' && (
             <p className="text-sm text-muted-foreground">You have unsaved changes.</p>

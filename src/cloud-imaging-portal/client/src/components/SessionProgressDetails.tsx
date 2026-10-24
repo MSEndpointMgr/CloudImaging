@@ -215,9 +215,9 @@ function PrepareSetupCard({ setupProfile, step, sessionId }: {
       {!showAll && failedCount > 0 && items !== null && hidden > 0 && (
         <p className="mt-2 text-xs text-muted-foreground">Failures are listed first; {plural(hidden, 'other item is', 'other items are')} hidden.</p>
       )}
-      {showAll && step?.itemsTruncated && <p className="mt-2 text-xs text-muted-foreground">Showing the first 500 items.</p>}
+      {showAll && step?.itemsTruncated && <p className="mt-2 text-xs text-muted-foreground">Showing the first 1500 items.</p>}
       {queuedCount > 0 && step?.status !== 'Failed' && (
-        <p className="mt-2 text-xs text-muted-foreground">Windows setup runs after the restart and is recorded on the device only.</p>
+        <p className="mt-2 text-xs text-muted-foreground">Specialize runs during Windows setup, after the restart, and is recorded on the device only.</p>
       )}
       {step?.status === 'Failed' && (
         <p className="mt-2 text-xs text-muted-foreground">The device does not start Windows. Retry the deployment after fixing the profile or the OS image.</p>
@@ -249,10 +249,13 @@ export function SessionProgressDetails({
   const resolved: ResolvedStep[] = shownSteps.map(definition => {
     const reported = reportedSteps.get(definition.name);
     const raw = (reported?.status ?? 'Pending') as StepStatus;
+    // Only an older boot image skips the step while running the ones after it; a session that
+    // ended earlier simply never got there.
+    const position = PIPELINE_STEPS.findIndex(step => step.name === definition.name);
+    const laterStepReported = PIPELINE_STEPS.slice(position + 1).some(step => reportedSteps.has(step.name));
     const status: StepStatus =
       raw === 'Completed' && (reported?.warningCount ?? 0) > 0 ? 'Warning'
-      // An older boot image never reports the step; once the session ends that is final.
-      : !reported && definition.optional && terminal ? 'NotRun'
+      : !reported && definition.optional && terminal && laterStepReported ? 'NotRun'
       : raw;
 
     return {

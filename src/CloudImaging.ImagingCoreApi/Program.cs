@@ -55,6 +55,8 @@ var host = new HostBuilder()
         services.AddSingleton(sp => new SetupProfileVersionRepository(
             sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>(),
             sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(SetupProfileVersionRepository.ContainerName)));
+        services.AddSingleton(sp => new SetupProfileContentRepository(
+            sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(SetupProfileVersionRepository.ContainerName)));
         services.AddSingleton<SetupProfileHistoryRepository>();
         services.AddSingleton<ImagingStepItemRepository>();
         services.AddSingleton(TimeProvider.System);

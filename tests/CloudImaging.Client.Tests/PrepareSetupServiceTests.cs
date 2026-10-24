@@ -34,11 +34,14 @@ public sealed class PrepareSetupServiceTests
     {
         public List<(string Name, int Position, string Drive)> Runs { get; } = [];
 
+        public List<string> TextPaths { get; } = [];
+
         public Func<SetupScript, WinPeScriptOutcome> Respond { get; set; } = _ => new WinPeScriptOutcome(StepItemOutcome.Succeeded, null, 0, 1200, "done");
 
-        public WinPeScriptOutcome Run(SetupScript script, int position, string windowsDrive, CancellationToken cancellationToken)
+        public WinPeScriptOutcome Run(SetupScript script, string textPath, int position, string windowsDrive, CancellationToken cancellationToken)
         {
             Runs.Add((script.Name, position, windowsDrive));
+            TextPaths.Add(textPath);
             return Respond(script);
         }
     }
@@ -48,8 +51,20 @@ public sealed class PrepareSetupServiceTests
         public override DateTimeOffset GetUtcNow() => now;
     }
 
-    private static SetupScript Script(string name, SetupScriptPhase runs, int order, string content = "exit 0", int timeout = 5) =>
-        new() { Name = name, Runs = runs, Order = order, TimeoutMinutes = timeout, Content = content };
+    /// <summary>Every script text a test used, by hash.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> Texts = new(StringComparer.Ordinal);
+
+    private static readonly byte[] Bom = Encoding.UTF8.GetPreamble();
+
+    private FakeSetupFileSystem _files = new();
+
+    private static SetupScript Script(string name, SetupScriptPhase runs, int order, string content = "exit 0", int timeout = 5)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var sha = SetupRunnerManifestBuilder.Sha256(bytes);
+        Texts[sha] = bytes;
+        return new() { Name = name, Runs = runs, Order = order, TimeoutMinutes = timeout, ContentSha256 = sha, SizeBytes = bytes.Length };
+    }
 
     private static SpecializeInstaller Installer(string name, string file) =>
         new(name, [new SpecializeInstallerFile(file, "ab")], new SpecializeInstallerCommand(file, "/s /norestart", @"CloudImaging\Drivers"), 1200, [0, 3010], [@"CloudImaging\Drivers"]);
@@ -190,23 +205,38 @@ public sealed class PrepareSetupServiceTests
         progress[^1].Percent.Should().Be(100);
     }
 
-    private static (PrepareSetupService Service, StubScriptRunner Scripts, FakeOfflineRegistryHive Hive, FakeSetupFileSystem Files) CreateWithScripts(bool generalized = true)
+    private (PrepareSetupService Service, StubScriptRunner Scripts, FakeOfflineRegistryHive Hive, FakeSetupFileSystem Files) CreateWithScripts(bool generalized = true)
     {
         var hive = new FakeOfflineRegistryHive();
         if (generalized)
         {
             hive.Values[(SetupRegistryHive.System, @"Setup\Status\SysprepStatus", "GeneralizationState")] = 7;
         }
-        var files = new FakeSetupFileSystem();
+        var files = _files = new FakeSetupFileSystem();
         var scripts = new StubScriptRunner();
         var time = new FixedTime(new DateTimeOffset(2026, 10, 23, 10, 2, 11, TimeSpan.Zero));
         return (new PrepareSetupService(hive, files, scripts, () => RunnerBytes, time, NullLogger.Instance), scripts, hive, files);
     }
 
-    private static PrepareSetupResult RunWith(PrepareSetupService service, SetupProfileContent? content, IReadOnlyList<SpecializeInstaller>? installers = null, List<(string, int)>? progress = null) =>
-        service.Run(
-            new PrepareSetupInput(content is null ? null : "Stockholm", content, installers ?? [], @"W:\", MachineArchitecture.X64) { SessionId = Guid.Parse("5b7e0f0e-6a0c-4b8e-9a0d-1c2b3d4e5f60"), ProfileVersion = content is null ? null : 8 },
+    /// <summary>Runs the step with every known script text already downloaded to the volume, as the loader leaves them.</summary>
+    private PrepareSetupResult RunWith(PrepareSetupService service, SetupProfileContent? content, IReadOnlyList<SpecializeInstaller>? installers = null, List<(string, int)>? progress = null, string? answerFile = null)
+    {
+        var scriptFiles = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var sha in (content?.Scripts ?? []).Select(s => s.ContentSha256).Where(Texts.ContainsKey))
+        {
+            scriptFiles[sha] = SetupProfileContentLoader.TextPath(sha);
+            _files.Files[scriptFiles[sha]] = [.. Bom, .. Texts[sha]];
+        }
+        return service.Run(
+            new PrepareSetupInput(content is null ? null : "Stockholm", content, installers ?? [], @"W:\", MachineArchitecture.X64)
+            {
+                SessionId = Guid.Parse("5b7e0f0e-6a0c-4b8e-9a0d-1c2b3d4e5f60"),
+                ProfileVersion = content is null ? null : 8,
+                ScriptFiles = scriptFiles,
+                AnswerFileText = answerFile,
+            },
             (line, percent) => progress?.Add((line, percent)));
+    }
 
     [Fact]
     public void WinPeScripts_RunInProfileOrder_AfterTheHivesAreUnloaded_WithTheAppliedDrive()
@@ -287,7 +317,8 @@ public sealed class PrepareSetupServiceTests
             (StepItemKind.WindowsSetupScript, "Second", StepItemOutcome.Queued),
             (StepItemKind.AnswerFile, "Answer file", StepItemOutcome.Succeeded));
         files.Files[@"Windows\Setup\CloudImaging\Invoke-CloudImagingSetup.ps1"].Should().Equal(RunnerBytes);
-        files.Files[@"Windows\Setup\CloudImaging\Scripts\01.ps1"].Should().StartWith(Encoding.UTF8.GetPreamble());
+        files.Files[@"Windows\Setup\CloudImaging\Scripts\0001.ps1"].Should().Equal([.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes("Write-Output 'x'")]);
+        files.Files.Keys.Should().Contain(@"Windows\Setup\CloudImaging\Scripts\0002.ps1");
         var manifest = Encoding.UTF8.GetString(files.Files[@"Windows\Setup\CloudImaging\manifest.json"]);
         manifest.Should().Contain("\"name\": \"Stockholm\"").And.Contain("\"version\": 8").And.Contain("5b7e0f0e-6a0c-4b8e-9a0d-1c2b3d4e5f60").And.Contain("2026-10-23T10:02:11Z");
         manifest.IndexOf("HP Hotkey Support", StringComparison.Ordinal).Should().BeLessThan(manifest.IndexOf("Wired 802.1X", StringComparison.Ordinal));
@@ -385,9 +416,9 @@ public sealed class PrepareSetupServiceTests
               </settings>
             </unattend>
             """;
-        var content = new SetupProfileContent { AnswerFile = new SetupAnswerFile { Content = profileFile }, Scripts = [Script("Setup", SetupScriptPhase.WindowsSetup, 1)] };
+        var content = new SetupProfileContent { AnswerFile = new SetupAnswerFile { ContentSha256 = "a1" }, Scripts = [Script("Setup", SetupScriptPhase.WindowsSetup, 1)] };
 
-        RunWith(service, content);
+        RunWith(service, content, answerFile: profileFile);
 
         var written = UnattendComposer.Parse(Encoding.UTF8.GetString(files.Files[PrepareSetupService.AnswerFilePath]));
         var u = UnattendComposer.Unattend;
@@ -402,7 +433,7 @@ public sealed class PrepareSetupServiceTests
         var (service, _, _, files) = CreateWithScripts();
         const string profileFile = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"><settings pass=\"oobeSystem\"><component name=\"Microsoft-Windows-International-Core\"><InputLocale>sv-SE</InputLocale></component></settings></unattend>";
 
-        RunWith(service, new SetupProfileContent { AnswerFile = new SetupAnswerFile { Content = profileFile } });
+        RunWith(service, new SetupProfileContent { AnswerFile = new SetupAnswerFile { ContentSha256 = "a1" } }, answerFile: profileFile);
 
         var written = UnattendComposer.Parse(Encoding.UTF8.GetString(files.Files[PrepareSetupService.AnswerFilePath]));
         var u = UnattendComposer.Unattend;
@@ -424,7 +455,76 @@ public sealed class PrepareSetupServiceTests
 
         RunWith(service, content, progress: progress);
 
-        progress.Select(p => p.Item1).Distinct().Should().Equal("Writing registry values", "Running scripts (1 of 3)", "Running scripts (2 of 3)", "Running scripts (3 of 3)", "Staging Windows setup work", "Writing the answer file");
+        progress.Select(p => p.Item1).Distinct().Should().Equal("Writing registry values", "Running Offline scripts (1 of 3)", "Running Offline scripts (2 of 3)", "Running Offline scripts (3 of 3)", "Staging Specialize work", "Writing the answer file");
         progress.Select(p => p.Item2).Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public void EachScript_RunsFromItsOwnDownloadedFile()
+    {
+        var (service, scripts, _, files) = CreateWithScripts();
+        var content = new SetupProfileContent { Scripts = [Script("One", SetupScriptPhase.WinPE, 1, "Write-Output 1"), Script("Two", SetupScriptPhase.WinPE, 2, "Write-Output 2")] };
+        var texts = content.Scripts.Select(s => SetupProfileContentLoader.TextPath(s.ContentSha256)).ToList();
+
+        RunWith(service, content);
+
+        scripts.TextPaths.Should().Equal(texts);
+        files.Events.Should().Contain($@"rmdir {WinPeScriptRunner.WorkFolder}");
+        files.Files.Keys.Should().NotContain(k => k.StartsWith(WinPeScriptRunner.WorkFolder, StringComparison.OrdinalIgnoreCase), "the downloaded texts are removed once the scripts are done");
+    }
+
+    [Fact]
+    public void AScriptWhoseTextWasNotDownloaded_Fails_AndIsNotStarted()
+    {
+        var (service, scripts, _, _) = CreateWithScripts();
+        var content = new SetupProfileContent
+        {
+            Scripts =
+            [
+                new SetupScript { Name = "Missing", Runs = SetupScriptPhase.WinPE, Order = 1, ContentSha256 = "0" },
+                new SetupScript { Name = "Missing setup", Runs = SetupScriptPhase.WindowsSetup, Order = 1, ContentSha256 = "0" },
+            ],
+        };
+
+        var result = RunWith(service, content);
+
+        scripts.Runs.Should().BeEmpty();
+        result.Items.Where(i => i.Name.StartsWith("Missing", StringComparison.Ordinal)).Should().OnlyContain(i => i.Outcome == StepItemOutcome.Failed && i.Reason == "The script could not be downloaded. Check the device's network connection.");
+    }
+
+    [Fact]
+    public void SpecializeScripts_AreCopiedFromTheirDownloadedFiles_AndTheWorkFolderIsRemoved()
+    {
+        var (service, scripts, _, files) = CreateWithScripts();
+
+        RunWith(service, new SetupProfileContent { Scripts = [Script("Setup", SetupScriptPhase.WindowsSetup, 1, "Write-Output 'setup'")] });
+
+        scripts.Runs.Should().BeEmpty();
+        files.Files[@"Windows\Setup\CloudImaging\Scripts\0001.ps1"].Should().Equal([.. Bom, .. Encoding.UTF8.GetBytes("Write-Output 'setup'")]);
+        files.Events.Should().Contain($@"rmdir {WinPeScriptRunner.WorkFolder}");
+        files.Files.Keys.Should().NotContain(k => k.StartsWith(WinPeScriptRunner.WorkFolder, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void AnUnexpectedError_StillRemovesTheDownloadedTexts()
+    {
+        var (service, scripts, _, files) = CreateWithScripts();
+        scripts.Respond = _ => throw new InvalidOperationException("The process could not be started.");
+        var content = new SetupProfileContent { Scripts = [Script("Boom", SetupScriptPhase.WinPE, 1, "Write-Output boom"), Script("Setup", SetupScriptPhase.WindowsSetup, 1)] };
+
+        var run = () => RunWith(service, content);
+
+        run.Should().Throw<InvalidOperationException>();
+        files.Files.Keys.Should().NotContain(k => k.StartsWith(WinPeScriptRunner.WorkFolder, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void WithoutScripts_TheWorkFolderIsLeftAlone()
+    {
+        var (service, _, _, files) = CreateWithScripts();
+
+        RunWith(service, new SetupProfileContent { RegistryValues = [Value("A", SetupRegistryHive.Software)] });
+
+        files.Events.Should().NotContain($@"rmdir {WinPeScriptRunner.WorkFolder}");
     }
 }

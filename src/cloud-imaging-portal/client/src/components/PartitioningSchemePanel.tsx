@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowUp, ArrowDown, HardDrive } from 'lucide-react';
+import { ArrowUp, ArrowDown, HardDrive, Save } from 'lucide-react';
 import { apiFetch } from '../lib/apiClient.ts';
 import { Button, type ButtonStatus } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
@@ -251,7 +251,8 @@ export function PartitioningSchemePanel(): React.ReactElement {
           variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
           disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
         >
-          Save Partitioning Scheme
+          <Save />
+          Save
         </Button>
         {isDirty && saveStatus === 'idle' && (
           <p className="text-sm text-muted-foreground">You have unsaved changes.</p>

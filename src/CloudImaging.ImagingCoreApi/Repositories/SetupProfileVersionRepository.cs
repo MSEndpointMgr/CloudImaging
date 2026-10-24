@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Azure;
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
@@ -64,13 +66,18 @@ public sealed class SetupProfileVersionRepository
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly TableClient _table;
     private readonly BlobContainerClient _container;
+    private readonly SetupProfileContentRepository _content;
+    private readonly TimeProvider _time;
 
     /// <param name="tableServiceClient">Table service client used to resolve the versions table.</param>
     /// <param name="container">Blob container for the version documents.</param>
-    public SetupProfileVersionRepository(TableServiceClient tableServiceClient, BlobContainerClient container)
+    /// <param name="time">Clock for texts moved out of schema version 1 documents; the system clock when null.</param>
+    public SetupProfileVersionRepository(TableServiceClient tableServiceClient, BlobContainerClient container, TimeProvider? time = null)
     {
         _table = tableServiceClient.GetTableClient(TableName);
         _container = container;
+        _content = new SetupProfileContentRepository(container);
+        _time = time ?? TimeProvider.System;
     }
 
     /// <summary>Blob name of a version document.</summary>
@@ -98,15 +105,67 @@ public sealed class SetupProfileVersionRepository
         await _container.GetBlobClient(blobName).UploadAsync(new BinaryData(blob.Bytes), options, ct);
     }
 
-    /// <summary>Downloads and parses a version document, or returns null when the blob is missing.</summary>
+    /// <summary>
+    /// Downloads and parses a version document, or returns null when the blob is missing. A
+    /// schema version 1 document is converted first: its inline texts move to content blobs and the
+    /// document and its row are rewritten as schema version 2 with the same version number.
+    /// </summary>
     public async Task<SetupProfileContent?> DownloadAsync(string blobName, CancellationToken ct = default)
     {
+        BinaryData data;
         try
         {
-            var result = await _container.GetBlobClient(blobName).DownloadContentAsync(ct);
-            return result.Value.Content.ToObjectFromJson<SetupProfileContent>(JsonOptions);
+            data = (await _container.GetBlobClient(blobName).DownloadContentAsync(ct)).Value.Content;
         }
         catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
+
+        var node = JsonNode.Parse(data.ToMemory().Span) as JsonObject;
+        if (node?["schemaVersion"]?.GetValue<int>() == 1)
+        {
+            return await ConvertSchemaVersion1Async(blobName, node, ct);
+        }
+        return data.ToObjectFromJson<SetupProfileContent>(JsonOptions);
+    }
+
+    private async Task<SetupProfileContent?> ConvertSchemaVersion1Async(string blobName, JsonObject document, CancellationToken ct)
+    {
+        var now = _time.GetUtcNow();
+        foreach (var script in (document["scripts"] as JsonArray ?? []).OfType<JsonObject>())
+        {
+            var stored = await _content.StoreAsync(TextBytes(script), SetupProfileContentRepository.ScriptKind, now, ct);
+            script["contentSha256"] = stored.Sha256;
+            script["sizeBytes"] = stored.SizeBytes;
+            script["locations"] = new JsonObject { ["all"] = true, ["locationIds"] = new JsonArray() };
+        }
+        if (document["answerFile"] is JsonObject answerFile)
+        {
+            var stored = await _content.StoreAsync(TextBytes(answerFile), SetupProfileContentRepository.AnswerFileKind, now, ct);
+            answerFile["contentSha256"] = stored.Sha256;
+            answerFile["sizeBytes"] = stored.SizeBytes;
+        }
+        document["schemaVersion"] = SetupProfileContent.CurrentSchemaVersion;
+
+        var content = document.Deserialize<SetupProfileContent>(JsonOptions);
+        if (content is null)
+        {
+            return null;
+        }
+        var blob = Serialize(content);
+        var options = new BlobUploadOptions { HttpHeaders = new BlobHttpHeaders { ContentType = "application/json" } };
+        await _container.GetBlobClient(blobName).UploadAsync(new BinaryData(blob.Bytes), options, ct);
+        if (await GetAsync(content.ProfileId, content.Version, ct) is { } row && row.BlobName == blobName)
+        {
+            await _table.UpdateEntityAsync(ToEntity(row with { ContentSha256 = blob.Sha256, ContentSizeBytes = blob.Bytes.LongLength }), ETag.All, TableUpdateMode.Replace, ct);
+        }
+        return content;
+
+        static byte[] TextBytes(JsonObject item)
+        {
+            var text = item["content"]?.GetValue<string>() ?? string.Empty;
+            item.Remove("content");
+            item.Remove("sha256");
+            return Encoding.UTF8.GetBytes(text.StartsWith('\uFEFF') ? text[1..] : text);
+        }
     }
 
     /// <summary>True when the version document exists.</summary>

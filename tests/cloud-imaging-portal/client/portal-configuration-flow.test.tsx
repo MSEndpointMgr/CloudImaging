@@ -46,7 +46,7 @@ describe('Portal frontend: setup profile version retention', () => {
 
     fireEvent.change(input, { target: { value: '10' } });
     expect(screen.getByText('You have unsaved changes.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await vi.waitFor(() => expect(saves()).toHaveLength(1));
     expect(JSON.parse(saves()[0].body as string)).toMatchObject({ setupProfileVersionRetention: 10 });
@@ -56,7 +56,7 @@ describe('Portal frontend: setup profile version retention', () => {
     const input = await openMiscellaneous();
     fireEvent.change(input, { target: { value: '4' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save Configuration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ description: 'Keep between 5 and 100 versions per profile.' }));
     expect(saves()).toHaveLength(0);

@@ -99,6 +99,41 @@ internal sealed class FakeSetupFileSystem(string root = @"W:\") : ISetupFileSyst
 
     public byte[] ReadAllBytes(string relativePath) => Files[relativePath];
 
+    public Stream Create(string relativePath)
+    {
+        if (FailWrites || (FailWritesUnder is not null && relativePath.StartsWith(FailWritesUnder, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new IOException("The disk is full.");
+        }
+        Events.Add($"create {relativePath}");
+        return new CommittingStream(bytes => Files[relativePath] = bytes);
+    }
+
+    public Stream OpenRead(string relativePath) => new MemoryStream(Files[relativePath], writable: false);
+
+    public void CopyFile(string sourceRelativePath, string destinationRelativePath)
+    {
+        if (FailWrites || (FailWritesUnder is not null && destinationRelativePath.StartsWith(FailWritesUnder, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new IOException("The disk is full.");
+        }
+        Events.Add($"copy {sourceRelativePath} {destinationRelativePath}");
+        Files[destinationRelativePath] = Files[sourceRelativePath];
+    }
+
+    /// <summary>Stores what was written when it is closed, like a file.</summary>
+    private sealed class CommittingStream(Action<byte[]> commit) : MemoryStream
+    {
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                commit(ToArray());
+            }
+            base.Dispose(disposing);
+        }
+    }
+
     public void DeleteFile(string relativePath)
     {
         Events.Add($"delete {relativePath}");

@@ -33,7 +33,7 @@ public static class AnswerFileValidator
     /// <summary>Message for each rule code.</summary>
     public static IReadOnlyDictionary<string, string> Messages { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
-        ["tooLarge"] = "The answer file is larger than 256 KB. Remove settings you do not need.",
+        ["tooLarge"] = "The answer file is larger than 2 MB. Remove settings you do not need.",
         ["notWellFormed"] = "This is not well-formed XML. Check for a missing closing tag or an unescaped & or < on or before this line.",
         ["dtdNotAllowed"] = "Document type declarations are not allowed. Remove the DOCTYPE line.",
         ["notAnswerFile"] = "This is not an answer file. The root element must be unattend in the urn:schemas-microsoft-com:unattend namespace.",

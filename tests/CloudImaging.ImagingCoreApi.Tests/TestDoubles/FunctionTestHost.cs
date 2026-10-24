@@ -23,8 +23,10 @@ internal static class FunctionTestHost
             string text => text,
             _ => JsonSerializer.Serialize(body, JsonOptions),
         };
-        return new TestRequest(Context, method, new Uri(url), json);
+        return new TestRequest(Context, method, new Uri(url), Encoding.UTF8.GetBytes(json));
     }
+
+    public static TestRequest RawRequest(string method, string url, byte[] body) => new(Context, method, new Uri(url), body);
 
     public static async Task<string> ReadBodyAsync(this HttpResponseData response)
     {
@@ -40,9 +42,9 @@ internal static class FunctionTestHost
     }
 }
 
-internal sealed class TestRequest(FunctionContext context, string method, Uri url, string body) : HttpRequestData(context)
+internal sealed class TestRequest(FunctionContext context, string method, Uri url, byte[] body) : HttpRequestData(context)
 {
-    public override Stream Body { get; } = new MemoryStream(Encoding.UTF8.GetBytes(body));
+    public override Stream Body { get; } = new MemoryStream(body);
 
     public override HttpHeadersCollection Headers { get; } = [];
 

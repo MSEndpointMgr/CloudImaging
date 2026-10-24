@@ -505,11 +505,14 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers,
         string volumeRoot,
         MachineArchitecture deviceArchitecture,
-        Guid sessionId) =>
+        Guid sessionId,
+        IReadOnlyDictionary<string, string>? scriptFiles = null) =>
         new(setupProfile.Descriptor?.ProfileName, setupProfile.Content, specializeInstallers, volumeRoot, deviceArchitecture)
         {
             SessionId = sessionId,
             ProfileVersion = setupProfile.Descriptor?.Version,
+            ScriptFiles = scriptFiles ?? new Dictionary<string, string>(),
+            AnswerFileText = setupProfile.AnswerFileText,
         };
 
     /// <summary>
@@ -570,7 +573,17 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         await reporter.ReportAsync(ImagingStepName.PrepareSetup, ImagingStepStatus.InProgress, ct: ct);
 
         var volumeRoot = $"{windowsVolume.TrimEnd('\\')}\\";
-        var input = BuildPrepareSetupInput(setupProfile, specializeInstallers, volumeRoot, deviceArchitecture, _sessionId);
+        IReadOnlyDictionary<string, string>? scriptFiles = null;
+        if (setupProfile.Content is { Scripts.Count: > 0 })
+        {
+            // Verified before Format disk; fetched again here straight to the volume, so the texts are never held in memory.
+            _progress.StatusMessage = "Downloading scripts…";
+            using var download = new HttpClient();
+            var loader = new Services.Setup.SetupProfileContentLoader(_gatewayClient, download, pipelineLoggerFactory.CreateLogger<Services.Setup.SetupProfileContentLoader>());
+            scriptFiles = await loader.DownloadScriptsAsync(_sessionId, setupProfile, new Services.Setup.SetupFileSystem(volumeRoot), (number, total) =>
+                _progress.StatusMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Downloading scripts ({number} of {total})"), ct);
+        }
+        var input = BuildPrepareSetupInput(setupProfile, specializeInstallers, volumeRoot, deviceArchitecture, _sessionId, scriptFiles);
         var lastLine = string.Empty;
         Services.Setup.PrepareSetupResult result;
         try
@@ -583,7 +596,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 // Script output goes to the file log only; the activity ticker shows one line at a time.
                 var scripts = new Services.Setup.WinPeScriptRunner(
                     new Services.Setup.RestrictedProcessRunner(),
-                    new Services.Setup.SetupFileSystem(Services.Setup.WinPeScriptRunner.ScratchRoot),
+                    new Services.Setup.SetupFileSystem(volumeRoot),
                     () => Services.BootImageCapabilities.SupportsPowerShell(),
                     _loggerFactory.CreateLogger<Services.Setup.WinPeScriptRunner>());
                 var service = new Services.Setup.PrepareSetupService(
@@ -607,6 +620,18 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         }
         catch (Exception ex)
         {
+            // The service removes the downloaded texts itself, unless it failed before it started.
+            if (scriptFiles is { Count: > 0 })
+            {
+                try
+                {
+                    new Services.Setup.SetupFileSystem(volumeRoot).DeleteTree(Services.Setup.WinPeScriptRunner.WorkFolder);
+                }
+                catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+                {
+                    // The failed session is retried from Format disk, which erases the volume.
+                }
+            }
             await FailAsync(reporter, ImagingStepName.PrepareSetup, "PSU", ex.Message, ct);
             return null;
         }

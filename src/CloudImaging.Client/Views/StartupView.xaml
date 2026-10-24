@@ -46,23 +46,67 @@
                                     <ui:SymbolIcon Symbol="DismissCircle24" FontSize="18"
                                                    Foreground="{DynamicResource SystemFillColorCriticalBrush}"
                                                    Visibility="{Binding IsFailed, Converter={StaticResource BoolToVisibility}}" />
+                                    <ui:SymbolIcon Symbol="SubtractCircle24" FontSize="18"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                   Visibility="{Binding IsSkipped, Converter={StaticResource BoolToVisibility}}" />
                                 </Grid>
 
                                 <StackPanel Grid.Column="1" Margin="12,0,0,0">
-                                    <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <DockPanel>
+                                        <!-- Tint under the label: an Opacity on the pill itself would fade the text too. -->
+                                        <Grid DockPanel.Dock="Right" VerticalAlignment="Center" Margin="8,0,0,0"
+                                              Visibility="{Binding HasBadge, Converter={StaticResource BoolToVisibility}}">
+                                            <Border CornerRadius="10" Background="{DynamicResource AccentFillColorDefaultBrush}" Opacity="0.16" />
+                                            <TextBlock Text="{Binding Badge}" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="8,1" />
+                                        </Grid>
+                                        <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    </DockPanel>
                                     <TextBlock Text="{Binding Detail}" Style="{StaticResource CaptionTextBlockStyle}"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                                TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis"
                                                Margin="0,2,0,0" />
+                                    <!-- Mode=OneWay: ProgressBar.Value binds TwoWay by default, and Percent is read-only. -->
+                                    <ProgressBar Value="{Binding Percent, Mode=OneWay}" Minimum="0" Maximum="100" Height="4"
+                                                 Margin="0,6,0,0"
+                                                 Visibility="{Binding HasPercent, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
                             </Grid>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </Border>
+
+            <!-- Hidden rather than collapsed, so the checks never move when it appears. -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Hidden" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsTryingWifi}" Value="True">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <ui:SymbolIcon Symbol="PlugConnected24" FontSize="16" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                <TextBlock Text="Plug in Ethernet at any time. It is used as soon as it has an address."
+                           Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" Margin="8,0,0,0"
+                           Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+            </StackPanel>
         </StackPanel>
 
-        <!-- No actions while checking; View Log is there for a check that hangs. -->
-        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}" />
+        <!-- No actions while checking; View Log is there for a check that hangs. Restart now ends a boot image update. -->
+        <HeaderedContentControl Grid.Row="1" Style="{StaticResource ClientFooterStyle}">
+            <HeaderedContentControl.Content>
+                <ui:Button Content="Restart now"
+                           Appearance="Primary"
+                           Style="{StaticResource FooterActionButtonStyle}"
+                           Icon="{ui:SymbolIcon ArrowClockwise24}"
+                           Command="{Binding RestartCommand}"
+                           Visibility="{Binding RestartRequired, Converter={StaticResource BoolToVisibility}}" />
+            </HeaderedContentControl.Content>
+        </HeaderedContentControl>
     </Grid>
 </Page>

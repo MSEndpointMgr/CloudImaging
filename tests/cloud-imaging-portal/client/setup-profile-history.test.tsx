@@ -78,9 +78,11 @@ describe('Portal frontend: setup profile history', () => {
     const entries = [
       { kind: 'VersionSaved' as const, at: 'a', change: 'Saved version 2' },
       { kind: 'TargetingChanged' as const, at: 'b', change: 'Added Gothenburg Office' },
-      { kind: 'Created' as const, at: 'c', change: 'Created' },
+      { kind: 'Duplicated' as const, at: 'c', change: 'Duplicated from Oslo, version 3' },
+      { kind: 'Renamed' as const, at: 'd', change: 'Renamed from Oslo' },
+      { kind: 'Created' as const, at: 'e', change: 'Created' },
     ];
-    expect(targetingHistory(entries).map((e) => e.change)).toEqual(['Added Gothenburg Office', 'Created']);
+    expect(targetingHistory(entries).map((e) => e.change)).toEqual(['Added Gothenburg Office', 'Renamed from Oslo', 'Created']);
   });
 
   it('lists versions with status, shows details behind the chevron and restores for managers', async () => {

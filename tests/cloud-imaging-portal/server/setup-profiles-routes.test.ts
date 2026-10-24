@@ -14,6 +14,8 @@ const operatorApi = vi.hoisted(() => ({
   getSetupProfileVersions: vi.fn(),
   getSetupProfileVersion: vi.fn(),
   getSetupProfileHistory: vi.fn(),
+  uploadSetupProfileContent: vi.fn(),
+  getSetupProfileContent: vi.fn(),
   getWifiNetworks: vi.fn(),
   createWifiNetwork: vi.fn(),
 }));
@@ -31,6 +33,7 @@ const operator = { roles: ['CloudImaging.Operator'], preferred_username: 'olle@c
 /** Mounts the body parsers the way app.ts does, so the size limits are tested as deployed. */
 function appFor(claims: Record<string, unknown>) {
   const app = express();
+  app.use('/api/setup-profiles/content', express.raw({ limit: '25mb' }));
   app.use('/api/setup-profiles', express.json({ limit: '4mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use((req: AuthenticatedRequest, _res: Response, next: NextFunction) => { req.user = claims as AuthenticatedRequest['user']; next(); });
@@ -132,7 +135,7 @@ describe('Portal backend: setup profile routes', () => {
 
   it('accepts a 3 MB body on setup profiles and still refuses 2 MB on another router', async () => {
     const big = 'x'.repeat(3 * 1024 * 1024);
-    const accepted = await request(appFor(operator)).put(`/api/setup-profiles/${profileId}`).send({ baseVersion: 1, name: 'Big', targeting, content: { ...content, answerFile: { content: big } } });
+    const accepted = await request(appFor(operator)).put(`/api/setup-profiles/${profileId}`).send({ baseVersion: 1, name: 'Big', targeting, content: { ...content, padding: big } });
     const refused = await request(appFor(operator)).post('/api/wifi-networks').send({ ssid: 'x'.repeat(2 * 1024 * 1024) });
 
     expect(accepted.status).toBe(200);
@@ -183,5 +186,101 @@ describe('Portal backend: setup profile routes', () => {
     expect(Object.keys(res.body.errors[0] as object).sort()).toEqual(['code', 'line', 'message']);
     expect(res.body.errors[0].message).toHaveLength(300);
     expect(res.body).not.toHaveProperty('internal');
+  });
+
+  describe('script and answer file texts', () => {
+    const sha = 'a'.repeat(64);
+    const technician = { roles: ['CloudImaging.Technician'], preferred_username: 'tina@contoso.com', oid: 'oid-tina' };
+
+    it('relays the raw bytes, the kind and the uploading user from the token, and nothing else the browser sent', async () => {
+      operatorApi.uploadSetupProfileContent.mockResolvedValue({ sha256: sha, sizeBytes: 9 });
+      const bytes = Buffer.from('\uFEFFexit 0 \u00e4', 'utf8');
+
+      const res = await request(appFor(operator))
+        .post('/api/setup-profiles/content?kind=answerFile&actor=mallory&uploadedBy=mallory@contoso.com')
+        .set('Content-Type', 'application/octet-stream')
+        .send(bytes);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ sha256: sha, sizeBytes: 9 });
+      const [kind, body, uploadedBy] = operatorApi.uploadSetupProfileContent.mock.calls[0] as [string, Buffer, string];
+      expect(kind).toBe('answerFile');
+      expect(Buffer.compare(body, bytes)).toBe(0);
+      expect(uploadedBy).toBe('olle@contoso.com');
+    });
+
+    it('passes an unknown kind through for Imaging Core to refuse', async () => {
+      operatorApi.uploadSetupProfileContent.mockRejectedValue(upstreamError(400, { detail: 'Upload a script or an answer file.' }));
+
+      const res = await request(appFor(operator)).post('/api/setup-profiles/content?kind=driver').set('Content-Type', 'application/octet-stream').send(Buffer.from('x'));
+
+      expect(res.status).toBe(400);
+      expect(operatorApi.uploadSetupProfileContent).toHaveBeenCalledWith('driver', expect.any(Buffer), 'olle@contoso.com');
+    });
+
+    it('accepts 24 MB plus a BOM and refuses more than 25 MB without an upstream call', async () => {
+      operatorApi.uploadSetupProfileContent.mockResolvedValue({ sha256: sha, sizeBytes: 25_165_824 });
+      const app = appFor(operator);
+
+      const accepted = await request(app).post('/api/setup-profiles/content?kind=script').set('Content-Type', 'application/octet-stream').send(Buffer.alloc(25_165_824 + 3, 0x78));
+      const refused = await request(app).post('/api/setup-profiles/content?kind=script').set('Content-Type', 'application/octet-stream').send(Buffer.alloc(25 * 1024 * 1024 + 1, 0x78));
+
+      expect(accepted.status).toBe(200);
+      expect(refused.status).toBe(413);
+      expect(operatorApi.uploadSetupProfileContent).toHaveBeenCalledOnce();
+    });
+
+    it('relays the 413 Imaging Core gives a script over 24 MB', async () => {
+      operatorApi.uploadSetupProfileContent.mockRejectedValue(upstreamError(413, { detail: 'This script is 24.5 MB. A script can be at most 24 MB.' }));
+
+      const res = await request(appFor(operator)).post('/api/setup-profiles/content?kind=script').set('Content-Type', 'application/octet-stream').send(Buffer.from('x'));
+
+      expect(res.status).toBe(413);
+      expect(res.body.detail).toBe('This script is 24.5 MB. A script can be at most 24 MB.');
+    });
+
+    it('refuses a JSON body on the upload route', async () => {
+      const res = await request(appFor(operator)).post('/api/setup-profiles/content?kind=script').send({ text: 'exit 0' });
+
+      expect(res.status).toBe(400);
+      expect(operatorApi.uploadSetupProfileContent).not.toHaveBeenCalled();
+    });
+
+    it('keeps the 4 MB JSON limit on the rest of the router', async () => {
+      const res = await request(appFor(operator)).put(`/api/setup-profiles/${profileId}`).send({ baseVersion: 1, name: 'x'.repeat(5 * 1024 * 1024), targeting });
+
+      expect(res.status).toBe(413);
+    });
+
+    it('reads a text with its media type for a technician', async () => {
+      operatorApi.getSetupProfileContent.mockResolvedValue({ data: Buffer.from('Write-Output h\u00e4j', 'utf8'), contentType: 'text/plain; charset=utf-8' });
+
+      const res = await request(appFor(technician)).get(`/api/setup-profiles/${profileId}/content/${sha}`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
+      expect(res.text).toBe('Write-Output h\u00e4j');
+      expect(operatorApi.getSetupProfileContent).toHaveBeenCalledWith(profileId, sha);
+    });
+
+    it.each(['A'.repeat(64), 'a'.repeat(63), `${'a'.repeat(63)}g`, '..%2F000001.json'])('refuses the hash %s with 400 without an upstream call', async (bad) => {
+      const res = await request(appFor(operator)).get(`/api/setup-profiles/${profileId}/content/${bad}`);
+
+      expect(res.status).toBe(400);
+      expect(operatorApi.getSetupProfileContent).not.toHaveBeenCalled();
+    });
+
+    it('relays a 404 for a text the profile does not use', async () => {
+      operatorApi.getSetupProfileContent.mockRejectedValue(upstreamError(404, ''));
+
+      expect((await request(appFor(operator)).get(`/api/setup-profiles/${profileId}/content/${sha}`)).status).toBe(404);
+    });
+
+    it('lets a technician read but not upload', async () => {
+      const res = await request(appFor(technician)).post('/api/setup-profiles/content?kind=script').set('Content-Type', 'application/octet-stream').send(Buffer.from('x'));
+
+      expect(res.status).toBe(403);
+      expect(operatorApi.uploadSetupProfileContent).not.toHaveBeenCalled();
+    });
   });
 });

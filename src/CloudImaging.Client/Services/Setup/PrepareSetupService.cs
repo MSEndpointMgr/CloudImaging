@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using CloudImaging.Contracts.Enums;
@@ -22,14 +23,20 @@ public sealed record PrepareSetupInput(
 
     /// <summary>Pinned profile version, recorded in the setup runner manifest.</summary>
     public int? ProfileVersion { get; init; }
+
+    /// <summary>Downloaded script files (UTF-8 with BOM) by SHA-256, relative to the applied volume.</summary>
+    public IReadOnlyDictionary<string, string> ScriptFiles { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>The profile's verified answer file text, or null.</summary>
+    public string? AnswerFileText { get; init; }
 }
 
 /// <summary>The step's result as it is reported to the portal.</summary>
 public sealed record PrepareSetupResult(ImagingStepStatus Status, int WarningCount, IReadOnlyList<ImagingStepItem> Items, string? ErrorDetail);
 
 /// <summary>
-/// The Prepare setup step: writes the profile's registry values to the applied image, runs the In
-/// WinPE scripts, stages Windows setup work for the setup runner, then writes the answer file
+/// The Prepare setup step: writes the profile's registry values to the applied image, runs the
+/// Offline scripts, stages Specialize work for the setup runner, then writes the answer file
 /// Windows setup reads. Every item gets an outcome. Under Complete with warnings a failed item only
 /// adds a warning; under Fail the deployment the step stops at the first failure and reports every
 /// later item as not run.
@@ -53,6 +60,9 @@ public sealed partial class PrepareSetupService(
 
     private const int MaxErrorDetailLength = 500;
 
+    /// <summary>Reason when a script's text could not be downloaded to the applied volume.</summary>
+    public const string TextMissingReason = "The script could not be downloaded. Check the device's network connection.";
+
     /// <summary>Runs the step and reports status lines and step percent through <paramref name="progress"/>.</summary>
     public PrepareSetupResult Run(PrepareSetupInput input, Action<string, int> progress, CancellationToken cancellationToken = default)
     {
@@ -63,69 +73,21 @@ public sealed partial class PrepareSetupService(
         var setupScripts = ScriptsFor(content, SetupScriptPhase.WindowsSetup);
         var installers = input.SpecializeInstallers;
         var total = registryValues.Count + winPeScripts.Count + installers.Count + setupScripts.Count + 1;
-        var processed = 0;
         var items = new List<ImagingStepItem>(total);
         bool Stopped() => failDeployment && items.Any(i => i.Outcome == StepItemOutcome.Failed);
-
-        // Phase 1: registry values. Runs even without values, because the SYSTEM hive load is also
-        // what clears Setup\UnattendFile and reads the generalization state.
-        if (registryValues.Count > 0)
+        int? generalizationState;
+        int processed;
+        int queued;
+        try
         {
-            progress("Writing registry values", 0);
+            (generalizationState, processed, queued) = RunPhases(input, progress, items, registryValues, winPeScripts, installers, setupScripts, total, failDeployment, cancellationToken);
         }
-        var written = new OfflineRegistryWriter(hive, logger).Write(registryValues, input.VolumeRoot, failDeployment, () => progress("Writing registry values", Percent(++processed, total)));
-        var generalizationState = written.GeneralizationState;
-        foreach (var outcome in written.Values)
+        finally
         {
-            items.Add(Item(items.Count, StepItemKind.RegistryValue, outcome.Value.Name, OfflineRegistryPath.DisplayTarget(outcome.Value), outcome.Outcome, outcome.Reason));
-        }
-
-        // Phase 2: In WinPE scripts, in profile order, after every hive is unloaded.
-        var windowsDrive = input.VolumeRoot.TrimEnd('\\');
-        for (var i = 0; i < winPeScripts.Count; i++)
-        {
-            var script = winPeScripts[i];
-            if (Stopped())
+            // The downloaded texts and Offline script files are not part of the installed Windows, also when a phase throws.
+            if (winPeScripts.Count > 0 || input.ScriptFiles.Count > 0)
             {
-                items.Add(Item(items.Count, StepItemKind.WinPEScript, script.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
-            }
-            else
-            {
-                progress(string.Create(CultureInfo.InvariantCulture, $"Running scripts ({i + 1} of {winPeScripts.Count})"), Percent(processed, total));
-                var result = scripts.Run(script, i + 1, windowsDrive, cancellationToken);
-                items.Add(Item(items.Count, StepItemKind.WinPEScript, script.Name, null, result.Outcome, result.Reason) with
-                {
-                    ExitCode = result.ExitCode,
-                    DurationMs = result.DurationMs,
-                    LastOutputLine = Truncate(result.LastOutputLine, ImagingStepItem.MaxLastOutputLineLength),
-                });
-            }
-            progress(string.Create(CultureInfo.InvariantCulture, $"Running scripts ({i + 1} of {winPeScripts.Count})"), Percent(++processed, total));
-        }
-
-        // Phase 3: Windows setup work for the setup runner. Driver installers come first, because
-        // network drivers and companion apps must be in place before the profile's own scripts.
-        var queued = 0;
-        if (installers.Count > 0 || setupScripts.Count > 0)
-        {
-            if (Stopped())
-            {
-                foreach (var installer in installers)
-                {
-                    items.Add(Item(items.Count, StepItemKind.DriverInstaller, installer.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
-                }
-                foreach (var script in setupScripts)
-                {
-                    items.Add(Item(items.Count, StepItemKind.WindowsSetupScript, script.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
-                }
-                processed += installers.Count + setupScripts.Count;
-            }
-            else
-            {
-                progress("Staging Windows setup work", Percent(processed, total));
-                queued = StageWindowsSetupWork(input, installers, setupScripts, items, failDeployment);
-                processed += installers.Count + setupScripts.Count;
-                progress("Staging Windows setup work", Percent(processed, total));
+                RemoveWorkFolder();
             }
         }
 
@@ -145,6 +107,87 @@ public sealed partial class PrepareSetupService(
             return new PrepareSetupResult(ImagingStepStatus.Failed, failed.Count, items, detail.Length > MaxErrorDetailLength ? detail[..MaxErrorDetailLength] : detail);
         }
         return new PrepareSetupResult(ImagingStepStatus.Completed, failed.Count, items, null);
+    }
+
+    /// <summary>
+    /// Registry values, Offline scripts and Specialize staging, adding an item for each. Returns the
+    /// image's generalization state, the items processed and how many items the setup runner will start.
+    /// </summary>
+    private (int? GeneralizationState, int Processed, int Queued) RunPhases(
+        PrepareSetupInput input, Action<string, int> progress, List<ImagingStepItem> items, IReadOnlyList<SetupRegistryValue> registryValues,
+        List<SetupScript> winPeScripts, IReadOnlyList<SpecializeInstaller> installers, List<SetupScript> setupScripts, int total, bool failDeployment,
+        CancellationToken cancellationToken)
+    {
+        var processed = 0;
+        bool Stopped() => failDeployment && items.Any(i => i.Outcome == StepItemOutcome.Failed);
+
+        // Phase 1: registry values. Runs even without values, because the SYSTEM hive load is also
+        // what clears Setup\UnattendFile and reads the generalization state.
+        if (registryValues.Count > 0)
+        {
+            progress("Writing registry values", 0);
+        }
+        var written = new OfflineRegistryWriter(hive, logger).Write(registryValues, input.VolumeRoot, failDeployment, () => progress("Writing registry values", Percent(++processed, total)));
+        var generalizationState = written.GeneralizationState;
+        foreach (var outcome in written.Values)
+        {
+            items.Add(Item(items.Count, StepItemKind.RegistryValue, outcome.Value.Name, OfflineRegistryPath.DisplayTarget(outcome.Value), outcome.Outcome, outcome.Reason));
+        }
+
+        // Phase 2: Offline scripts, in profile order, after every hive is unloaded.
+        var windowsDrive = input.VolumeRoot.TrimEnd('\\');
+        for (var i = 0; i < winPeScripts.Count; i++)
+        {
+            var script = winPeScripts[i];
+            var line = string.Create(CultureInfo.InvariantCulture, $"Running Offline scripts ({i + 1} of {winPeScripts.Count})");
+            if (Stopped())
+            {
+                items.Add(Item(items.Count, StepItemKind.WinPEScript, script.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
+            }
+            else if (!input.ScriptFiles.TryGetValue(script.ContentSha256, out var textPath))
+            {
+                items.Add(Item(items.Count, StepItemKind.WinPEScript, script.Name, null, StepItemOutcome.Failed, TextMissingReason));
+            }
+            else
+            {
+                progress(line, Percent(processed, total));
+                var result = scripts.Run(script, textPath, i + 1, windowsDrive, cancellationToken);
+                items.Add(Item(items.Count, StepItemKind.WinPEScript, script.Name, null, result.Outcome, result.Reason) with
+                {
+                    ExitCode = result.ExitCode,
+                    DurationMs = result.DurationMs,
+                    LastOutputLine = Truncate(result.LastOutputLine, ImagingStepItem.MaxLastOutputLineLength),
+                });
+            }
+            progress(line, Percent(++processed, total));
+        }
+
+        // Phase 3: Specialize work for the setup runner. Driver installers come first, because
+        // network drivers and companion apps must be in place before the profile's own scripts.
+        var queued = 0;
+        if (installers.Count > 0 || setupScripts.Count > 0)
+        {
+            if (Stopped())
+            {
+                foreach (var installer in installers)
+                {
+                    items.Add(Item(items.Count, StepItemKind.DriverInstaller, installer.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
+                }
+                foreach (var script in setupScripts)
+                {
+                    items.Add(Item(items.Count, StepItemKind.WindowsSetupScript, script.Name, null, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason));
+                }
+                processed += installers.Count + setupScripts.Count;
+            }
+            else
+            {
+                progress("Staging Specialize work", Percent(processed, total));
+                queued = StageWindowsSetupWork(input, installers, setupScripts, items, failDeployment);
+                processed += installers.Count + setupScripts.Count;
+                progress("Staging Specialize work", Percent(processed, total));
+            }
+        }
+        return (generalizationState, processed, queued);
     }
 
     private static List<SetupScript> ScriptsFor(SetupProfileContent? content, SetupScriptPhase phase) =>
@@ -198,11 +241,20 @@ public sealed partial class PrepareSetupService(
             }
             var path = SetupRunnerManifestBuilder.ScriptPath(i + 1);
             scriptItems.Add(items.Count);
+            if (!input.ScriptFiles.TryGetValue(script.ContentSha256, out var textPath))
+            {
+                items.Add(Item(items.Count, StepItemKind.WindowsSetupScript, script.Name, null, StepItemOutcome.Failed, TextMissingReason));
+                continue;
+            }
             try
             {
-                byte[] bytes = [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(script.Content)];
-                files.WriteAllBytes(path, bytes);
-                staged.Add(new StagedScript(script.Name, path, SetupRunnerManifestBuilder.Sha256(bytes), script.TimeoutMinutes));
+                files.CopyFile(textPath, path);
+                string sha256;
+                using (var written = files.OpenRead(path))
+                {
+                    sha256 = Convert.ToHexStringLower(SHA256.HashData(written));
+                }
+                staged.Add(new StagedScript(script.Name, path, sha256, script.TimeoutMinutes));
                 items.Add(Item(items.Count, StepItemKind.WindowsSetupScript, script.Name, null, StepItemOutcome.Queued, null));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -238,6 +290,18 @@ public sealed partial class PrepareSetupService(
         }
     }
 
+    private void RemoveWorkFolder()
+    {
+        try
+        {
+            files.DeleteTree(WinPeScriptRunner.WorkFolder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogStagingFailed(logger, ex.Message);
+        }
+    }
+
     private void RemoveStaging()
     {
         try
@@ -261,7 +325,7 @@ public sealed partial class PrepareSetupService(
         byte[] bytes;
         try
         {
-            bytes = UnattendComposer.Compose(input.Content?.AnswerFile?.Content, hasWindowsSetupWork, input.Architecture);
+            bytes = UnattendComposer.Compose(input.AnswerFileText, hasWindowsSetupWork, input.Architecture);
         }
         catch (XmlException ex)
         {

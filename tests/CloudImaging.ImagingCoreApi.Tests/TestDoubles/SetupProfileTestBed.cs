@@ -32,14 +32,15 @@ internal sealed class SetupProfileTestBed
         Blobs = new InMemoryBlobContainerClient();
         Profiles = new SetupProfileRepository(tables);
         Targets = new SetupProfileTargetRepository(tables);
-        Versions = new SetupProfileVersionRepository(tables, Blobs);
+        Versions = new SetupProfileVersionRepository(tables, Blobs, Time);
+        Texts = new SetupProfileContentRepository(Blobs);
         History = new SetupProfileHistoryRepository(tables);
         Locations = new LocationRepository(tables);
         Sessions = new DeviceSessionRepository(tables);
         Steps = new ImagingStepRepository(tables);
         Items = new ImagingStepItemRepository(tables);
         Config = new PortalConfigurationRepository(tables, NullLogger<PortalConfigurationRepository>.Instance);
-        Service = new SetupProfileService(Profiles, Targets, Versions, History, Locations, Sessions, Config, Time, NullLogger<SetupProfileService>.Instance);
+        Service = new SetupProfileService(Profiles, Targets, Versions, Texts, History, Locations, Sessions, Config, Time, NullLogger<SetupProfileService>.Instance);
         Resolver = new SetupProfileResolver(Targets, Profiles);
         Stockholm = AddLocation("Stockholm HQ");
         Gothenburg = AddLocation("Gothenburg Office");
@@ -62,6 +63,8 @@ internal sealed class SetupProfileTestBed
     public SetupProfileTargetRepository Targets { get; }
 
     public SetupProfileVersionRepository Versions { get; }
+
+    public SetupProfileContentRepository Texts { get; }
 
     public SetupProfileHistoryRepository History { get; }
 
@@ -106,6 +109,28 @@ internal sealed class SetupProfileTestBed
     {
         RegistryValues = values.Length == 0 ? [Value()] : values,
     };
+
+    /// <summary>Lowercase hex SHA-256 of a text's UTF-8 bytes.</summary>
+    public static string Sha(string text) => SetupProfileContentRepository.Sha256(System.Text.Encoding.UTF8.GetBytes(text));
+
+    /// <summary>Stores a text as an upload would and returns its hash.</summary>
+    public string Upload(string text, string kind = SetupProfileContentRepository.ScriptKind) =>
+        Texts.StoreAsync(System.Text.Encoding.UTF8.GetBytes(text), kind, Time.GetUtcNow()).GetAwaiter().GetResult().Sha256;
+
+    /// <summary>A script whose text is uploaded first.</summary>
+    public SetupScript Script(string name = "Enable Wake on LAN", string text = "exit 0", Guid? id = null, int order = 1, SetupScriptPhase runs = SetupScriptPhase.WinPE, params Guid[] locations) => new()
+    {
+        Id = id,
+        Name = name,
+        Runs = runs,
+        Order = order,
+        TimeoutMinutes = 5,
+        ContentSha256 = Upload(text),
+        Locations = locations.Length == 0 ? new SetupScriptLocations() : new SetupScriptLocations { All = false, LocationIds = locations },
+    };
+
+    /// <summary>An answer file whose text is uploaded first.</summary>
+    public SetupAnswerFile AnswerFile(string xml) => new() { ContentSha256 = Upload(xml, SetupProfileContentRepository.AnswerFileKind) };
 
     public async Task<SetupProfileDetail> CreateAsync(string name, SetupProfileTargeting targeting, SetupProfileContent? content = null, string upn = "ops@contoso.com")
     {

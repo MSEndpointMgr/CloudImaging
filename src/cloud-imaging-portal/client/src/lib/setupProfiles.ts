@@ -3,7 +3,7 @@
  * pure helpers behind the list page and editor, and the API calls. Every rule here mirrors one in
  * Imaging Core, which checks them all again on save.
  */
-import { apiFetch, apiFetchWithRetry, extractErrorDetail } from './apiClient.ts';
+import { apiFetch, apiFetchWithRetry, extractErrorDetail, getApiAccessToken } from './apiClient.ts';
 
 export type SetupRegistryHive = 'Software' | 'System' | 'DefaultUser';
 export type SetupRegistryValueType = 'String' | 'ExpandString' | 'MultiString' | 'DWord' | 'QWord';
@@ -27,23 +27,31 @@ export interface SetupRegistryValue {
   data: string;
 }
 
+/** Where a script runs: every location of the profile, or the chosen ones. */
+export interface SetupScriptLocations {
+  all: boolean;
+  locationIds: string[];
+}
+
+/** A script refers to its uploaded text by hash; the text itself is loaded on demand. */
 export interface SetupScript {
   id: string | null;
   name: string;
   runs: SetupScriptPhase;
   order: number;
   timeoutMinutes: number;
-  content: string;
-  sha256?: string | null;
+  locations: SetupScriptLocations;
+  /** Lowercase hex SHA-256 of the uploaded text; empty until it is uploaded. */
+  contentSha256: string;
+  sizeBytes: number;
   lastModifiedAt?: string | null;
   lastModifiedBy?: string | null;
 }
 
 export interface SetupAnswerFile {
-  content: string;
+  contentSha256: string;
+  sizeBytes: number;
   passes?: string[];
-  sizeBytes?: number;
-  sha256?: string | null;
   lastModifiedAt?: string | null;
   lastModifiedBy?: string | null;
 }
@@ -130,8 +138,8 @@ export const VALUE_TYPE_LABELS: Record<SetupRegistryValueType, string> = {
 };
 
 export const SCRIPT_PHASE_LABELS: Record<SetupScriptPhase, string> = {
-  WinPE: 'In WinPE',
-  WindowsSetup: 'During Windows setup',
+  WinPE: 'Offline',
+  WindowsSetup: 'Specialize',
 };
 
 export const FAILURE_HANDLING_LABELS: Record<SetupFailureHandling, string> = {
@@ -209,19 +217,23 @@ export function draftFrom(detail: Pick<SetupProfileDetail, 'name' | 'targeting' 
     content: {
       failureHandling: detail.content.failureHandling,
       registryValues: detail.content.registryValues.map((v) => ({ ...v })),
-      scripts: detail.content.scripts.map((s) => ({ ...s })),
+      scripts: detail.content.scripts.map((s) => ({ ...s, locations: { all: s.locations?.all ?? true, locationIds: [...(s.locations?.locationIds ?? [])] } })),
       answerFile: detail.content.answerFile ? { ...detail.content.answerFile } : null,
     },
   };
 }
 
-/** Only the fields an operator edits; Core fills in hashes, sizes, passes and modified fields. */
+/** Only the fields an operator edits; Core fills in sizes, passes and modified fields. */
 export function contentForSave(content: SetupProfileContent): SetupProfileContent {
   return {
     failureHandling: content.failureHandling,
     registryValues: content.registryValues.map((v) => ({ id: v.id, name: v.name, hive: v.hive, key: v.key, valueName: v.valueName, type: v.type, data: v.data })),
-    scripts: content.scripts.map((s) => ({ id: s.id, name: s.name, runs: s.runs, order: s.order, timeoutMinutes: s.timeoutMinutes, content: s.content })),
-    answerFile: content.answerFile ? { content: content.answerFile.content } : null,
+    scripts: content.scripts.map((s) => ({
+      id: s.id, name: s.name, runs: s.runs, order: s.order, timeoutMinutes: s.timeoutMinutes,
+      locations: s.locations.all ? { all: true, locationIds: [] } : { all: false, locationIds: [...s.locations.locationIds].sort() },
+      contentSha256: s.contentSha256,
+    })) as SetupScript[],
+    answerFile: content.answerFile ? { contentSha256: content.answerFile.contentSha256 } as SetupAnswerFile : null,
   };
 }
 
@@ -249,11 +261,6 @@ export function draftChanges(saved: SetupProfileDraft, draft: SetupProfileDraft)
   const contentChanged = !sameContent(saved.content, draft.content);
   const metadataChanged = saved.name.trim() !== draft.name.trim() || !sameTargeting(saved.targeting, draft.targeting);
   return { contentChanged, metadataChanged, dirty: contentChanged || metadataChanged };
-}
-
-/** "Save as version N" when content changed (N = current + 1), else "Save changes". */
-export function saveLabel(currentVersion: number, contentChanged: boolean): string {
-  return contentChanged ? `Save as version ${String(currentVersion + 1)}` : 'Save changes';
 }
 
 /** "<name> (copy)", then "(copy 2)", "(copy 3)" until the name is free. */
@@ -339,20 +346,25 @@ export function validateRegistryValue(value: SetupRegistryValue, others: SetupRe
 
 // ── Scripts ──────────────────────────────────────────────────────────────────
 
-export const MAX_SCRIPTS = 20;
-export const MAX_SCRIPT_BYTES = 65_536;
+export const MAX_SCRIPTS = 1000;
+/** 24 MB of UTF-8 per script, a leading BOM not counted. */
+export const MAX_SCRIPT_BYTES = 25_165_824;
 export const TIMEOUT_MINUTES = [1, 2, 5, 10, 15, 20, 30] as const;
 export const DEFAULT_TIMEOUT_MINUTES = 5;
+export const SCRIPT_NOT_UPLOADED_MESSAGE = 'The script was not uploaded.';
+export const ANSWER_FILE_NOT_UPLOADED_MESSAGE = 'The answer file was not uploaded.';
 
-/** The Runs column: "WinPE" or "Windows setup". */
-export const SCRIPT_PHASE_SHORT_LABELS: Record<SetupScriptPhase, string> = {
-  WinPE: 'WinPE',
-  WindowsSetup: 'Windows setup',
-};
+/** The Runs column. */
+export const SCRIPT_PHASE_SHORT_LABELS: Record<SetupScriptPhase, string> = SCRIPT_PHASE_LABELS;
 
 export const SCRIPT_RUNS_OPTIONS = [
-  { value: 'WinPE', label: 'In WinPE', description: "Right after the image is applied. Shown on the timeline. A failure follows the profile's failure handling." },
-  { value: 'WindowsSetup', label: 'During Windows setup', description: 'Before OOBE, after the restart and before Autopilot. Logged on the device only.' },
+  { value: 'WinPE', label: 'Offline', description: "Right after the image is applied, in the boot image. Shown on the timeline. A failure follows the profile's failure handling." },
+  { value: 'WindowsSetup', label: 'Specialize', description: 'During Windows setup, after the restart and before OOBE and Autopilot. Logged on the device only.' },
+];
+
+export const SCRIPT_LOCATIONS_OPTIONS = [
+  { value: 'all', label: 'All locations of this profile' },
+  { value: 'selected', label: 'Selected locations' },
 ];
 
 /** "5 min" in the table. */
@@ -367,16 +379,46 @@ export function timeoutOptionLabel(minutes: number): string {
 
 export const TIMEOUT_OPTIONS = TIMEOUT_MINUTES.map((m) => ({ value: String(m), label: timeoutOptionLabel(m) }));
 
+/** UTF-8 length without encoding a copy, so a 24 MB script is measured on every keystroke cheaply. */
 export function utf8Length(text: string): number {
-  return new TextEncoder().encode(text).length;
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) { bytes += 4; i++; }
+    else bytes += 3;
+  }
+  return bytes;
 }
 
-/** "12.4 of 64 KB". */
-export function scriptSizeLabel(content: string): string {
-  return `${(utf8Length(content) / 1024).toFixed(1)} of 64 KB`;
+const MB = 1_048_576;
+
+function megabytes(bytes: number): string {
+  return (bytes / MB).toFixed(1);
 }
 
-/** WinPE scripts first, then Windows setup scripts, each by order. */
+/** "1.8 of 24 MB". */
+export function scriptSizeLabel(bytes: number): string {
+  return `${megabytes(bytes)} of 24 MB`;
+}
+
+/** "This script is 25.3 MB. A script can be at most 24 MB.", the size rounded up so it never reads 24.0. */
+export function scriptTooLargeMessage(bytes: number): string {
+  return `This script is ${(Math.ceil((bytes / MB) * 10) / 10).toFixed(1)} MB. A script can be at most 24 MB.`;
+}
+
+/** "Uploading 9.8 of 18.2 MB". */
+export function uploadProgressLabel(loaded: number, total: number): string {
+  return `Uploading ${megabytes(loaded)} of ${megabytes(total)} MB`;
+}
+
+/** "Loading the script (12.4 MB)". */
+export function loadingScriptLabel(bytes: number): string {
+  return `Loading the script (${megabytes(bytes)} MB)`;
+}
+
+/** Offline scripts first, then Specialize scripts, each by order. */
 export function orderedScripts(scripts: SetupScript[]): SetupScript[] {
   const rank = (s: SetupScript) => (s.runs === 'WinPE' ? 0 : 1);
   return [...scripts].sort((a, b) => rank(a) - rank(b) || a.order - b.order);
@@ -388,13 +430,70 @@ export function renumberScripts(scripts: SetupScript[]): SetupScript[] {
   return orderedScripts(scripts).map((s) => ({ ...s, order: ++next[s.runs] }));
 }
 
-/** Swaps a script with its neighbour in the same phase; a move past either end does nothing. */
-export function moveScript(scripts: SetupScript[], index: number, direction: -1 | 1): SetupScript[] {
+/** Rebuilds a list from the phases in their new sequence, numbering each phase from 1. */
+function fromPhases(offline: SetupScript[], specialize: SetupScript[]): SetupScript[] {
+  return [...offline.map((s, i) => ({ ...s, order: i + 1 })), ...specialize.map((s, i) => ({ ...s, order: i + 1 }))];
+}
+
+/**
+ * Moves a script so it runs directly before `before` (a script of the same phase), or last in its
+ * phase when `before` is null. Indexes are into `orderedScripts(scripts)`.
+ */
+export function moveScriptBefore(scripts: SetupScript[], index: number, before: number | null): SetupScript[] {
   const list = orderedScripts(scripts);
-  const target = index + direction;
-  if (target < 0 || target >= list.length || list[target].runs !== list[index].runs) return list;
-  [list[index], list[target]] = [list[target], list[index]];
-  return renumberScripts(list.map((s, i) => ({ ...s, order: i })));
+  const moving = list[index];
+  if (!moving || (before !== null && (list[before]?.runs !== moving.runs || before === index))) return list;
+  const anchor = before === null ? null : list[before];
+  const phase = list.filter((s) => s.runs === moving.runs && s !== moving);
+  const at = anchor === null ? phase.length : phase.indexOf(anchor);
+  phase.splice(at, 0, moving);
+  const offline = moving.runs === 'WinPE' ? phase : list.filter((s) => s.runs === 'WinPE');
+  const specialize = moving.runs === 'WindowsSetup' ? phase : list.filter((s) => s.runs === 'WindowsSetup');
+  return fromPhases(offline, specialize);
+}
+
+/**
+ * Moves a script to `order` within its phase: it is inserted there and the scripts from that place
+ * on move down one (or up one when it moves down). With a filter on, `visible` holds the rows on
+ * screen and the script lands directly before the first visible row at or after that place, or
+ * after the last visible row, so it stays among the scripts the operator sees.
+ */
+export function moveScriptTo(scripts: SetupScript[], index: number, order: number, visible?: SetupScript[]): SetupScript[] {
+  const list = orderedScripts(scripts);
+  const moving = list[index];
+  if (!moving || !Number.isFinite(order)) return list;
+  const phase = list.filter((s) => s.runs === moving.runs && s !== moving);
+  const at = Math.min(Math.max(Math.trunc(order), 1), phase.length + 1) - 1;
+  const shown = visible ? new Set(visible.filter((s) => s !== moving).map((s) => keyOf(s))) : null;
+  let anchor: SetupScript | null = phase[at] ?? null;
+  if (shown) {
+    const visibleInPhase = phase.filter((s) => shown.has(keyOf(s)));
+    if (visibleInPhase.length > 0) {
+      const next = phase.slice(at).find((s) => shown.has(keyOf(s)));
+      anchor = next ?? phase[phase.indexOf(visibleInPhase[visibleInPhase.length - 1]) + 1] ?? null;
+    }
+  }
+  return moveScriptBefore(list, index, anchor === null ? null : list.indexOf(anchor));
+}
+
+/**
+ * Moves a script one visible row up or down within its phase, for the arrow keys on its handle.
+ * Without a filter every row is visible.
+ */
+export function moveScriptBy(scripts: SetupScript[], index: number, direction: -1 | 1, visible?: SetupScript[]): SetupScript[] {
+  const list = orderedScripts(scripts);
+  const moving = list[index];
+  if (!moving) return list;
+  const shown = new Set((visible ?? list).map((s) => keyOf(s)));
+  const rows = list.filter((s) => s.runs === moving.runs && (s === moving || shown.has(keyOf(s))));
+  const target = rows[rows.indexOf(moving) + direction];
+  if (!target) return list;
+  return moveScriptTo(list, index, target.order, visible);
+}
+
+/** A stable key for a script row: its id, or for an unsaved one its phase, order and name. */
+export function keyOf(script: Pick<SetupScript, 'id' | 'runs' | 'order' | 'name'>): string {
+  return script.id ?? `new-${script.runs}-${String(script.order)}-${script.name}`;
 }
 
 /** Adds or replaces a script; a new script, or one moved to the other phase, goes last in its phase. */
@@ -413,20 +512,73 @@ export function validateScript(script: SetupScript, others: SetupScript[]): stri
   const problems: string[] = [];
   const name = script.name.trim();
   const scriptLabel = name ? `"${name}"` : 'a script without a name';
-  const sentenceLabel = name ? `"${name}"` : 'A script without a name';
   if (!name || name.length > MAX_NAME_LENGTH) problems.push('Every script needs a name of 1 to 100 characters.');
   else if (others.some((o) => o.name.trim().toLowerCase() === name.toLowerCase())) problems.push(`Script names must be unique. Rename ${scriptLabel} and save again.`);
   if (!(TIMEOUT_MINUTES as readonly number[]).includes(script.timeoutMinutes)) problems.push(`The timeout of ${scriptLabel} must be 1 to 30 minutes.`);
-  if (script.content.trim().length === 0) problems.push(`${sentenceLabel} is empty. Add the script text.`);
-  else if (utf8Length(script.content) > MAX_SCRIPT_BYTES) problems.push(`${sentenceLabel} is larger than 64 KB. Shorten it.`);
+  if (!script.locations.all && script.locations.locationIds.length === 0) problems.push('Choose at least one location, or run the script at all locations of this profile.');
   return problems;
+}
+
+/** "Empty" problem of the script text, checked in the dialog before it is uploaded. */
+export function scriptTextProblem(text: string): string | null {
+  if (text.trim().length === 0) return 'The script is empty. Add the script text.';
+  const bytes = utf8Length(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+  return bytes > MAX_SCRIPT_BYTES ? scriptTooLargeMessage(bytes) : null;
+}
+
+// ── Scripts per location ─────────────────────────────────────────────────────
+
+/** The locations a script may run at: the profile's own, or every location for an All devices profile. */
+export function profileLocationIds(targeting: SetupProfileTargeting, allLocationIds: string[]): string[] {
+  return targeting.allDevices ? allLocationIds : targeting.locationIds;
+}
+
+/** A script's chosen locations the profile still targets; null when it runs at all of them. */
+export function effectiveScriptLocations(script: SetupScript, targeting: SetupProfileTargeting, allLocationIds: string[]): string[] | null {
+  if (script.locations.all) return null;
+  const allowed = new Set(profileLocationIds(targeting, allLocationIds));
+  return script.locations.locationIds.filter((id) => allowed.has(id));
+}
+
+/** "\"<name>\" has no locations left. Choose a location or delete the script." */
+export function noLocationsLeftMessage(name: string): string {
+  return `"${name.trim()}" has no locations left. Choose a location or delete the script.`;
+}
+
+/** The save bar's message for the first script left without a location, or null. */
+export function scriptsWithoutLocationsProblem(scripts: SetupScript[], targeting: SetupProfileTargeting, allLocationIds: string[]): string | null {
+  const stranded = orderedScripts(scripts).find((s) => effectiveScriptLocations(s, targeting, allLocationIds)?.length === 0);
+  return stranded ? noLocationsLeftMessage(stranded.name) : null;
+}
+
+/** The scripts a device from `locationId` runs, in run order. */
+export function scriptsForLocation(scripts: SetupScript[], locationId: string, targeting: SetupProfileTargeting, allLocationIds: string[]): SetupScript[] {
+  return orderedScripts(scripts).filter((s) => effectiveScriptLocations(s, targeting, allLocationIds)?.includes(locationId) ?? true);
+}
+
+/** "4 of 186 scripts run on devices from Oslo Office". */
+export function locationFilterFooter(shown: number, total: number, locationName: string): string {
+  return `${String(shown)} of ${plural(total, 'script', 'scripts')} run on devices from ${locationName}`;
+}
+
+/** The draft as it is saved: every script keeps only the locations the profile still targets. */
+export function withEffectiveLocations(content: SetupProfileContent, targeting: SetupProfileTargeting, allLocationIds: string[]): SetupProfileContent {
+  return {
+    ...content,
+    scripts: content.scripts.map((s) => (s.locations.all ? s : { ...s, locations: { all: false, locationIds: effectiveScriptLocations(s, targeting, allLocationIds) ?? [] } })),
+  };
 }
 
 // ── Answer file ──────────────────────────────────────────────────────────────
 
 /** "2.4 KB" in the answer file row. */
-export function answerFileSizeLabel(content: string): string {
-  return `${(utf8Length(content) / 1024).toFixed(1)} KB`;
+export function answerFileSizeLabel(bytes: number): string {
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+/** "0.1 of 2 MB" under the answer file editor. */
+export function answerFileEditorSizeLabel(bytes: number): string {
+  return `${megabytes(bytes)} of 2 MB`;
 }
 
 /** Answer file problems from a refused save, with a missing line read as the whole file. */
@@ -476,9 +628,11 @@ export interface SetupProfileHistoryEntry {
   change: string;
 }
 
-/** Entries of the Targeting tab: everything that is not a version. */
+const TARGETING_HISTORY_KINDS: ReadonlySet<SetupProfileHistoryKind> = new Set(['Created', 'Renamed', 'TargetingChanged', 'LocationDeleted', 'Deleted']);
+
+/** Entries of the Targeting tab. Version kinds, duplication included, belong to the Versions tab. */
 export function targetingHistory(entries: SetupProfileHistoryEntry[]): SetupProfileHistoryEntry[] {
-  return entries.filter((e) => e.kind !== 'VersionSaved' && e.kind !== 'VersionRestored' && e.kind !== 'Deleted');
+  return entries.filter((e) => TARGETING_HISTORY_KINDS.has(e.kind));
 }
 
 /** "1 change", "3 changes". */
@@ -579,8 +733,8 @@ function plural(count: number, one: string, many: string): string {
 
 export const STEP_ITEM_KIND_LABELS: Record<StepItemKind, string> = {
   RegistryValue: 'Registry value',
-  WinPEScript: 'WinPE script',
-  WindowsSetupScript: 'Windows setup script',
+  WinPEScript: 'Offline script',
+  WindowsSetupScript: 'Specialize script',
   DriverInstaller: 'Driver installer',
   AnswerFile: 'Answer file',
 };
@@ -594,16 +748,16 @@ export interface SummaryItem {
 
 /**
  * The Prepare setup card's summary, one entry per outcome with failures first, for example
- * "1 WinPE script failed", "4 registry values written", "1 script and 5 driver installers queued
- * for Windows setup".
+ * "1 Offline script failed", "4 registry values written", "1 script and 5 driver installers queued
+ * for Specialize".
  */
 export function itemCountsSummary(counts: ImagingStepItemCount[]): SummaryItem[] {
   const total = (kind: StepItemKind, outcome: StepItemOutcome) =>
     counts.filter((c) => c.kind === kind && c.outcome === outcome).reduce((sum, c) => sum + c.count, 0);
   const nouns: Record<StepItemKind, [string, string]> = {
     RegistryValue: ['registry value', 'registry values'],
-    WinPEScript: ['WinPE script', 'WinPE scripts'],
-    WindowsSetupScript: ['Windows setup script', 'Windows setup scripts'],
+    WinPEScript: ['Offline script', 'Offline scripts'],
+    WindowsSetupScript: ['Specialize script', 'Specialize scripts'],
     DriverInstaller: ['driver installer', 'driver installers'],
     AnswerFile: ['answer file', 'answer files'],
   };
@@ -628,11 +782,11 @@ export function itemCountsSummary(counts: ImagingStepItemCount[]): SummaryItem[]
     queuedScripts > 0 ? plural(queuedScripts, 'script', 'scripts') : null,
     queuedInstallers > 0 ? plural(queuedInstallers, ...nouns.DriverInstaller) : null,
   ].filter((part): part is string => part !== null);
-  if (queued.length > 0) items.push({ tone: 'queued', text: `${queued.join(' and ')} queued for Windows setup` });
+  if (queued.length > 0) items.push({ tone: 'queued', text: `${queued.join(' and ')} queued for Specialize` });
   return items;
 }
 
-/** The status column of one item row, for example "Failed: exit code 1" or "Queued for Windows setup". */
+/** The status column of one item row, for example "Failed: exit code 1" or "Queued for Specialize". */
 export function itemStatusText(item: Pick<ImagingStepItem, 'kind' | 'outcome' | 'reason' | 'exitCode'>): string {
   switch (item.outcome) {
     case 'Failed': {
@@ -643,7 +797,7 @@ export function itemStatusText(item: Pick<ImagingStepItem, 'kind' | 'outcome' | 
     case 'NotRun':
       return 'Not run';
     case 'Queued':
-      return 'Queued for Windows setup';
+      return 'Queued for Specialize';
     case 'Succeeded':
       return item.kind === 'RegistryValue' || item.kind === 'AnswerFile' ? 'Written' : 'Succeeded';
   }
@@ -746,4 +900,57 @@ export async function restoreSetupProfileVersion(profileId: string, version: num
 
 export async function fetchStepItems(sessionId: string, stepName: string): Promise<ImagingStepItem[]> {
   return readJson(await apiFetchWithRetry(`/api/sessions/${encodeURIComponent(sessionId)}/steps/${encodeURIComponent(stepName)}/items`, { credentials: 'include' }), 'Could not load the items.');
+}
+
+/** What Imaging Core stored for one uploaded text; `problems` and `passes` come with an answer file. */
+export interface ContentUploadResult {
+  sha256: string;
+  sizeBytes: number;
+  passes?: string[];
+  problems?: { code: string; line: number; message: string }[];
+}
+
+/**
+ * Uploads one script or answer file text as raw UTF-8, reporting bytes sent as it goes.
+ * XMLHttpRequest because fetch cannot report upload progress. Aborting `signal` stops it.
+ */
+export async function uploadSetupProfileContent(
+  kind: 'script' | 'answerFile',
+  text: string,
+  onProgress?: (loaded: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<ContentUploadResult> {
+  const token = await getApiAccessToken();
+  const body = new Blob([text], { type: 'application/octet-stream' });
+  const fallback = kind === 'script' ? SCRIPT_NOT_UPLOADED_MESSAGE : ANSWER_FILE_NOT_UPLOADED_MESSAGE;
+  return new Promise<ContentUploadResult>((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException('Upload cancelled', 'AbortError')); return; }
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/setup-profiles/content?kind=${kind}`);
+    xhr.withCredentials = true;
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable) onProgress?.(e.loaded, e.total); });
+    xhr.addEventListener('load', () => {
+      let parsed: unknown = null;
+      try { parsed = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && parsed && typeof parsed === 'object') {
+        resolve(parsed as ContentUploadResult);
+        return;
+      }
+      const detail = parsed && typeof parsed === 'object' ? (parsed as { detail?: unknown }).detail : undefined;
+      reject(new SetupProfileApiError(typeof detail === 'string' && detail ? detail : fallback, xhr.status));
+    });
+    xhr.addEventListener('error', () => reject(new SetupProfileApiError(fallback, 0)));
+    xhr.addEventListener('abort', () => reject(new DOMException('Upload cancelled', 'AbortError')));
+    signal?.addEventListener('abort', () => xhr.abort());
+    xhr.send(body);
+  });
+}
+
+/** Loads a script or answer file text a retained version of the profile uses. */
+export async function fetchSetupProfileContent(profileId: string, sha256: string, signal?: AbortSignal): Promise<string> {
+  const res = await apiFetchWithRetry(`/api/setup-profiles/${encodeURIComponent(profileId)}/content/${encodeURIComponent(sha256)}`, { credentials: 'include', signal });
+  if (!res.ok) throw await failure(res, 'Could not load the script.');
+  return await res.text();
 }

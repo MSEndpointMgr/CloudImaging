@@ -1,46 +1,151 @@
-using CloudImaging.Client.Services;
-using CloudImaging.Contracts.Models;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
+using CloudImaging.Client.Services;
+using CloudImaging.Contracts.Models;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace CloudImaging.Client.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="BootImageSelfUpdateService"/> (T071b, FR-059a).
-///
-/// <see cref="BootImageSelfUpdateService.CheckAndUpdateAsync"/>'s first step locates the
-/// BOOT-labelled USB volume via WMI, which has no seam for faking in a unit test and never
-/// resolves to anything on a dev/CI machine (no such volume exists). Its full happy path
-/// (version-mismatch triggers download+verify+overwrite) therefore has no automated coverage,
-/// and no documented manual validation procedure either —
-/// specs/001-cloud-windows-imaging/validation-usb-autostart-matrix.md only checks that the
-/// manifest exists after USB preparation, not that self-update ever runs correctly. These tests
-/// instead cover what IS safely verifiable in-process: (1) the "never throws" contract that
-/// makes it safe to fire-and-forget at Client startup, and (2) the download/hash/manifest-merge/
-/// architecture-comparison helper methods in isolation via reflection, since they contain the
-/// actual decision and I/O logic.
+/// Unit tests for <see cref="BootImageSelfUpdateService"/> (T071b, FR-059a). The BOOT volume is
+/// replaced by a temporary folder through the <c>findBootDrive</c> seam, so the whole
+/// check, download, verify and replace path runs without a USB drive.
 /// </summary>
 public sealed class BootImageSelfUpdateServiceTests
 {
+    private static readonly byte[] CurrentImage = [9, 9];
+    private static readonly byte[] NewImage = [1, 2, 3, 4, 5, 6, 7, 8];
+
     [Fact]
-    public async Task CheckAndUpdateAsync_CompletesWithoutThrowing_WhenNoBootVolumeIsPresent()
+    public async Task CheckAndApply_CompleteWithoutThrowing_WhenNoBootVolumeIsPresent()
     {
-        // On a dev/CI machine there is no BOOT-labelled volume, so this exercises the real
-        // early-return path — the important regression guard is that NOTHING inside
-        // CheckAndUpdateAsync's try/catch escapes it, since it is invoked fire-and-forget
-        // (never awaited) from App.xaml.cs and must never crash the Client at startup.
+        // On a dev/CI machine there is no BOOT-labelled volume, so this exercises the real WMI lookup.
         var gateway = new DeviceGatewayApiClient(new HttpClient { BaseAddress = new Uri("https://gw.example.com") });
         var svc = new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance);
 
-        var act = async () => await svc.CheckAndUpdateAsync();
+        (await svc.CheckAsync()).Status.Should().Be(BootImageUpdateStatus.NotUsbMedia);
+        (await svc.ApplyAsync(null)).Should().BeFalse("there is nothing to apply");
+    }
 
-        await act.Should().NotThrowAsync();
+    [Fact]
+    public async Task Apply_WritesTheNewImageAndManifest_AndReportsEachPhase()
+    {
+        var payload = NewImage;
+        var drive = MediaWithManifest("2026.10.1", out var manifestPath);
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(drive, "sources", "boot.wim"), CurrentImage);
+            var svc = ServiceOffering(drive, "2026.10.2", Convert.ToHexString(SHA256.HashData(payload)), payload);
+            var phases = new List<BootImageUpdatePhase>();
+
+            (await svc.CheckAsync()).Should().Be(new BootImageUpdateCheck(BootImageUpdateStatus.UpdateAvailable, "2026.10.2"));
+            (await svc.ApplyAsync(p => phases.Add(p.Phase))).Should().BeTrue();
+
+            (await File.ReadAllBytesAsync(Path.Combine(drive, "sources", "boot.wim"))).Should().Equal(payload);
+            File.Exists(Path.Combine(drive, "sources", "boot.wim.download")).Should().BeFalse();
+            System.Text.Json.JsonSerializer.Deserialize<UsbPreparationManifest>(await File.ReadAllTextAsync(manifestPath))!.BootImageVersion.Should().Be("2026.10.2");
+            phases.Distinct().Should().Equal(BootImageUpdatePhase.Downloading, BootImageUpdatePhase.Verifying, BootImageUpdatePhase.Applying);
+            svc.HasPendingUpdate.Should().BeFalse();
+        }
+        finally
+        {
+            Directory.Delete(drive, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Apply_KeepsTheCurrentImage_WhenTheHashDoesNotMatch()
+    {
+        var drive = MediaWithManifest("2026.10.1", out var manifestPath);
+        try
+        {
+            await File.WriteAllBytesAsync(Path.Combine(drive, "sources", "boot.wim"), CurrentImage);
+            var svc = ServiceOffering(drive, "2026.10.2", new string('0', 64), NewImage);
+
+            await svc.CheckAsync();
+            (await svc.ApplyAsync(null)).Should().BeFalse();
+
+            (await File.ReadAllBytesAsync(Path.Combine(drive, "sources", "boot.wim"))).Should().Equal(CurrentImage);
+            File.Exists(Path.Combine(drive, "sources", "boot.wim.download")).Should().BeFalse("a rejected download must not fill the media");
+            System.Text.Json.JsonSerializer.Deserialize<UsbPreparationManifest>(await File.ReadAllTextAsync(manifestPath))!.BootImageVersion.Should().Be("2026.10.1");
+        }
+        finally
+        {
+            Directory.Delete(drive, recursive: true);
+        }
+    }
+
+    private static string MediaWithManifest(string version, out string manifestPath)
+    {
+        var drive = Directory.CreateTempSubdirectory("ci-selfupdate-").FullName;
+        Directory.CreateDirectory(Path.Combine(drive, "sources"));
+        manifestPath = Path.Combine(drive, UsbPreparationManifest.FileName);
+        var manifest = new UsbPreparationManifest { ManifestVersion = "1.0", ToolVersion = "1", BootImageVersion = version, SelectedDiskId = "1" };
+        File.WriteAllText(manifestPath, System.Text.Json.JsonSerializer.Serialize(manifest));
+        return drive;
+    }
+
+    private static BootImageSelfUpdateService ServiceOffering(string drive, string version, string sha256, byte[] payload)
+    {
+        var gateway = new DeviceGatewayApiClient(new HttpClient(new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent($$"""{"version":"{{version}}","sha256Hash":"{{sha256}}","sasTokenUrl":"https://sas.example.com/x"}""", System.Text.Encoding.UTF8, "application/json"),
+        }))
+        { BaseAddress = new Uri("https://gw.example.com") });
+        var download = new HttpClient(new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) }));
+        return new BootImageSelfUpdateService(gateway, download, NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive);
+    }
+
+    [Theory]
+    [InlineData("2026.10.1", BootImageUpdateStatus.UpToDate)]
+    [InlineData(null, BootImageUpdateStatus.Unavailable)]
+    public async Task Check_ReportsTheOutcome_FromTheMediaManifest(string? latestVersion, BootImageUpdateStatus expected)
+    {
+        var drive = Directory.CreateTempSubdirectory("ci-selfupdate-").FullName;
+        try
+        {
+            var manifest = new UsbPreparationManifest { ManifestVersion = "1.0", ToolVersion = "1", BootImageVersion = "2026.10.1", SelectedDiskId = "1" };
+            await File.WriteAllTextAsync(Path.Combine(drive, UsbPreparationManifest.FileName), System.Text.Json.JsonSerializer.Serialize(manifest));
+            var gateway = new DeviceGatewayApiClient(new HttpClient(new FakeHttpMessageHandler(_ => latestVersion is null
+                ? new HttpResponseMessage(HttpStatusCode.NoContent)
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($$"""{"version":"{{latestVersion}}","sha256Hash":"x","sasTokenUrl":"https://sas.example.com/x"}""", System.Text.Encoding.UTF8, "application/json") }))
+            { BaseAddress = new Uri("https://gw.example.com") });
+            var svc = new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive);
+
+            (await svc.CheckAsync()).Status.Should().Be(expected);
+            svc.HasPendingUpdate.Should().BeFalse("nothing is downloaded unless a newer image exists");
+        }
+        finally
+        {
+            Directory.Delete(drive, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Check_ReportsNotUsbMedia_AndFailed_WithoutThrowing()
+    {
+        var gateway = new DeviceGatewayApiClient(new HttpClient(new FakeHttpMessageHandler(_ => throw new HttpRequestException("No such host is known."))) { BaseAddress = new Uri("https://gw.example.com") });
+
+        (await new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => null).CheckAsync())
+            .Status.Should().Be(BootImageUpdateStatus.NotUsbMedia);
+
+        var drive = Directory.CreateTempSubdirectory("ci-selfupdate-").FullName;
+        try
+        {
+            var manifest = new UsbPreparationManifest { ManifestVersion = "1.0", ToolVersion = "1", BootImageVersion = "2026.10.1", SelectedDiskId = "1" };
+            await File.WriteAllTextAsync(Path.Combine(drive, UsbPreparationManifest.FileName), System.Text.Json.JsonSerializer.Serialize(manifest));
+            (await new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive).CheckAsync())
+                .Status.Should().Be(BootImageUpdateStatus.Failed);
+        }
+        finally
+        {
+            Directory.Delete(drive, recursive: true);
+        }
     }
 
     [Fact]
@@ -59,7 +164,7 @@ public sealed class BootImageSelfUpdateServiceTests
         {
             var method = typeof(BootImageSelfUpdateService).GetMethod(
                 "DownloadAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            await (Task)method.Invoke(svc, ["https://sas.example.com/x", destPath, CancellationToken.None])!;
+            await (Task)method.Invoke(svc, ["https://sas.example.com/x", destPath, null, CancellationToken.None])!;
 
             File.Exists(destPath).Should().BeTrue();
             (await File.ReadAllBytesAsync(destPath)).Should().BeEquivalentTo(payload,
@@ -67,30 +172,10 @@ public sealed class BootImageSelfUpdateServiceTests
         }
         finally
         {
-            if (File.Exists(destPath)) File.Delete(destPath);
-        }
-    }
-
-    [Fact]
-    public async Task ComputeSha256Async_ReturnsLowercaseHexDigest_MatchingTheFileContents()
-    {
-        var content = new byte[] { 10, 20, 30, 40, 50 };
-        var expectedHash = Convert.ToHexString(SHA256.HashData(content)).ToLowerInvariant();
-        var filePath = Path.Combine(Path.GetTempPath(), $"ci-selfupdate-hash-test-{Guid.NewGuid():N}.wim");
-        await File.WriteAllBytesAsync(filePath, content);
-
-        try
-        {
-            var method = typeof(BootImageSelfUpdateService).GetMethod(
-                "ComputeSha256Async", BindingFlags.Static | BindingFlags.NonPublic)!;
-            var actualHash = await (Task<string>)method.Invoke(null, [filePath, CancellationToken.None])!;
-
-            actualHash.Should().Be(expectedHash);
-            actualHash.Should().MatchRegex("^[0-9a-f]{64}$", "SHA-256 hex digest must be lowercase and 64 characters");
-        }
-        finally
-        {
-            File.Delete(filePath);
+            if (File.Exists(destPath))
+            {
+                File.Delete(destPath);
+            }
         }
     }
 

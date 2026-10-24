@@ -20,7 +20,7 @@ public static class ChangeSummaryBuilder
         var scriptNames = new List<string>();
         var scripts = Compare(
             previous?.Scripts ?? [], next.Scripts, s => s.Id, s => s.Name,
-            (a, b) => a.Name == b.Name && a.Runs == b.Runs && a.TimeoutMinutes == b.TimeoutMinutes && a.Content == b.Content,
+            (a, b) => a.Name == b.Name && a.Runs == b.Runs && a.TimeoutMinutes == b.TimeoutMinutes && a.ContentSha256 == b.ContentSha256 && SameLocations(a.Locations, b.Locations),
             scriptNames);
         scripts = scripts with { Reordered = previous is not null && IsReordered(previous.Scripts, next.Scripts) };
 
@@ -29,7 +29,7 @@ public static class ChangeSummaryBuilder
             (null, null) => SetupAnswerFileChange.NoChange,
             (null, _) => SetupAnswerFileChange.Added,
             (_, null) => SetupAnswerFileChange.Removed,
-            var (before, after) => before!.Content == after!.Content ? SetupAnswerFileChange.NoChange : SetupAnswerFileChange.Changed,
+            var (before, after) => before!.ContentSha256 == after!.ContentSha256 ? SetupAnswerFileChange.NoChange : SetupAnswerFileChange.Changed,
         };
 
         var failureHandling = previous is not null && previous.FailureHandling != next.FailureHandling
@@ -80,6 +80,14 @@ public static class ChangeSummaryBuilder
         var removedItems = before.Where(item => id(item) is not { } key || !current.Contains(key)).ToList();
         names.AddRange(removedItems.Select(name));
         return new SetupProfileSectionChange { Added = added, Removed = removedItems.Count, Changed = changed };
+    }
+
+    /// <summary>True when both run at all locations, or at the same set of locations.</summary>
+    public static bool SameLocations(SetupScriptLocations? a, SetupScriptLocations? b)
+    {
+        a ??= new SetupScriptLocations();
+        b ??= new SetupScriptLocations();
+        return a.All == b.All && (a.All || a.LocationIds.ToHashSet().SetEquals(b.LocationIds));
     }
 
     private static bool IsReordered(IReadOnlyList<SetupScript> before, IReadOnlyList<SetupScript> after)

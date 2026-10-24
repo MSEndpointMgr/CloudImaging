@@ -47,8 +47,10 @@ app.use(cors({
   credentials: true,
 }));
 
-// Setup profiles carry up to 20 scripts of 64 KB plus a 256 KB answer file, so their router gets a
-// larger limit. It must run first: body-parser skips a body that is already parsed.
+// A script or answer file text arrives as raw bytes, at most 24 MB plus a BOM, on its own route.
+// Saves carry references only, so the setup profiles router keeps a larger JSON limit just for
+// profiles with many items. Both must run first: body-parser skips a body that is already parsed.
+app.use('/api/setup-profiles/content', express.raw({ limit: '25mb' }));
 app.use('/api/setup-profiles', express.json({ limit: '4mb' }));
 app.use(express.json({ limit: '1mb' }));
 

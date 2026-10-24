@@ -26,6 +26,10 @@ public sealed class SetupProfileContractTests
           "contentUrlExpiresAt": "2026-10-23T10:15:00Z",
           "contentSha256": "3b1fe9",
           "contentSizeBytes": 18234,
+          "scripts": [
+            { "id": "c2d4c2d4-0000-0000-0000-000000000001", "contentSha256": "aa11", "sizeBytes": 1200, "contentUrl": "https://corestorage.blob.core.windows.net/setup-profiles/content/aa11?sig=secret", "contentUrlExpiresAt": "2026-10-23T10:15:00Z", "internalOnly": "x" }
+          ],
+          "answerFile": { "id": null, "contentSha256": "bb22", "sizeBytes": 2311, "contentUrl": "https://corestorage.blob.core.windows.net/setup-profiles/content/bb22?sig=secret", "contentUrlExpiresAt": "2026-10-23T10:15:00Z" },
           "internalOnly": "must not reach devices"
         }
         """;
@@ -55,8 +59,25 @@ public sealed class SetupProfileContractTests
         handler.Requests.Single().Request.RequestUri!.AbsolutePath.Should().Be($"/api/internal/sessions/{SessionId}/setup-profile");
         using var json = JsonDocument.Parse(await response.ReadBodyAsync());
         json.RootElement.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(
-            ["profileId", "profileName", "version", "failureHandling", "contentUrl", "contentUrlExpiresAt", "contentSha256", "contentSizeBytes"]);
+            ["profileId", "profileName", "version", "failureHandling", "contentUrl", "contentUrlExpiresAt", "contentSha256", "contentSizeBytes", "scripts", "answerFile"]);
         json.RootElement.GetProperty("version").GetInt32().Should().Be(8);
+        var script = json.RootElement.GetProperty("scripts").EnumerateArray().Single();
+        script.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(["id", "contentSha256", "sizeBytes", "contentUrl", "contentUrlExpiresAt"]);
+        script.GetProperty("sizeBytes").GetInt64().Should().Be(1200);
+        json.RootElement.GetProperty("answerFile").GetProperty("contentSha256").GetString().Should().Be("bb22");
+    }
+
+    [Fact]
+    public async Task Ok_FromACoreWithoutTexts_RelaysNoScriptsAndNoAnswerFile()
+    {
+        var old = CoreDescriptor[..CoreDescriptor.IndexOf("\"scripts\"", StringComparison.Ordinal)] + "\"internalOnly\": \"x\" }";
+        var (function, _, _) = Create(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(old, Encoding.UTF8, "application/json") });
+
+        var response = await RunAsync(function, SessionId.ToString());
+
+        using var json = JsonDocument.Parse(await response.ReadBodyAsync());
+        json.RootElement.GetProperty("scripts").GetArrayLength().Should().Be(0);
+        json.RootElement.GetProperty("answerFile").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

@@ -99,12 +99,12 @@ Each stage reports `Pending`, `InProgress`, `Completed`, or `Failed`. Imaging Co
 
 ### Prepare setup
 
-Prepare setup is an optional step that applies the device's [setup profile](setup-profiles.md). It runs after Apply Windows image and before Configure boot when the device has a setup profile or driver installers for Windows setup, and is skipped and not shown otherwise.
+Prepare setup is an optional step that applies the device's [setup profile](setup-profiles.md). It runs after Apply Windows image and before Configure boot when the device has a setup profile or driver installers for Specialize, and is skipped and not shown otherwise.
 
-- **Pinning**: when imaging starts, the session records the profile that targets the location on the device's USB media, and its current version. Edits saved later do not change what the device receives. The Client downloads that version before Prepare disk; if it cannot, the session fails before the disk is touched.
-- **Work**: writes the registry values, runs the In WinPE scripts, stages the During Windows setup work and writes the answer file. The timeline card shows the profile name and version, a summary per kind of item, and every item under **Show details**, failures first.
+- **Pinning**: when imaging starts, the session records the profile that targets the location on the device's USB media, and its current version. Edits saved later do not change what the device receives. Before Prepare disk the Client downloads and checks that version, the scripts for its location and the answer file; if any of them cannot be downloaded, the session fails before the disk is touched.
+- **Work**: downloads the scripts again, straight to the installed Windows ("Downloading scripts (2 of 12)"), then writes the registry values, runs the Offline scripts, stages the Specialize work and writes the answer file. A script that cannot be downloaded at this point fails on its own, and the profile's failure handling decides the result. The timeline card shows the profile name and version, a summary per kind of item (for example "2 Offline scripts succeeded"), and every item under **Show details**, failures first. Only the scripts that apply to the device's location are listed.
 - **Warnings or failure**: with the profile's failure handling set to **Complete with warnings**, a failed item leaves the step `Completed` with an amber warning marker and the session completes. With **Fail the deployment**, the first failed item stops the step, later items are reported as not run, Configure boot does not run, and the session fails. Fix the profile or the OS image and retry.
-- **Windows setup work** runs after the restart, when the portal no longer tracks the device. Its results are only in `C:\Windows\Logs\CloudImaging\SetupRunner.log` on the device.
+- **Specialize work** runs during Windows setup after the restart, when the portal no longer tracks the device. Its results are only in `C:\Windows\Logs\CloudImaging\SetupRunner.log` on the device.
 - **Not run**: a device whose boot image predates setup profiles images without its profile. The finished session shows Prepare setup as **Not run**, with a tooltip asking to update the boot image.
 
 ### Disk layout and firmware mode

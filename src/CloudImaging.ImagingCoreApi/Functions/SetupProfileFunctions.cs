@@ -187,6 +187,7 @@ public sealed class SetupProfileFunctions
         {
             SetupProfileOutcome.NotFound => (HttpStatusCode.NotFound, "Not found."),
             SetupProfileOutcome.Conflict => (HttpStatusCode.Conflict, "Conflict."),
+            SetupProfileOutcome.PayloadTooLarge => (HttpStatusCode.RequestEntityTooLarge, "Too large."),
             _ => (HttpStatusCode.BadRequest, "Invalid request."),
         };
         var response = req.CreateResponse(status);

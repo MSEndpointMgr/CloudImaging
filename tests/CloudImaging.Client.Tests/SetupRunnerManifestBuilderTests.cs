@@ -50,7 +50,7 @@ public sealed class SetupRunnerManifestBuilderTests
     {
         var item = SetupRunnerManifestBuilder.Build(SessionId, CreatedAt, "Stockholm", 8, [], [Staged("Wired 802.1X", 1, minutes: 2)]).Items.Single();
 
-        item.Files.Should().Equal(new SetupRunnerManifestFile(@"Windows\Setup\CloudImaging\Scripts\01.ps1", "77de"));
+        item.Files.Should().Equal(new SetupRunnerManifestFile(@"Windows\Setup\CloudImaging\Scripts\0001.ps1", "77de"));
         item.Command.Should().Be(new SetupRunnerManifestCommand(@"Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{0}\"", @"Windows\Setup\CloudImaging\Scripts"));
         item.TimeoutSeconds.Should().Be(120);
         item.SuccessExitCodes.Should().Equal(0);

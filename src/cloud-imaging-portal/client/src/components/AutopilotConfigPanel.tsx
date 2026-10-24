@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BadgeCheck, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
+import { BadgeCheck, Pencil, Plus, Save, Tag, Trash2 } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import {
@@ -310,7 +310,7 @@ function GroupTagManager(): React.ReactElement {
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setDraft(null)} disabled={saving}>Cancel</Button>
               <Button onClick={() => void save()} disabled={saving || !!draftError} loading={saving}>
-                {draft.id ? 'Save changes' : 'Add group tag'}
+                {draft.id ? <><Save />Save</> : <><Plus />Add group tag</>}
               </Button>
             </div>
           </div>

@@ -15,24 +15,43 @@ public partial class OperationSelectionView : Page
     {
         InitializeComponent();
         LoadBrandingLogo();
+        Loaded += (_, _) => (DataContext as ViewModels.OperationSelectionViewModel)?.StartWatchingNetwork();
+        Unloaded += (_, _) => (DataContext as ViewModels.OperationSelectionViewModel)?.StopWatchingNetwork();
+    }
+
+    /// <summary>Opens the Network panel above the footer button, with a fresh read of the adapters.</summary>
+    private void NetworkButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is ViewModels.OperationSelectionViewModel vm)
+            _ = vm.RefreshNetworkAsync();
+        NetworkPopup.IsOpen = true;
+    }
+
+    private void PanelCheckAgainButton_Click(object sender, RoutedEventArgs e)
+    {
+        NetworkPopup.IsOpen = false;
+        if (DataContext is ViewModels.OperationSelectionViewModel vm && vm.RecheckCommand.CanExecute(null))
+            vm.RecheckCommand.Execute(null);
     }
 
     /// <summary>
-    /// Opens the "Connect to Wi-Fi" support tool. Shown only on a Windows RE boot image (Windows PE
-    /// has no Wi-Fi); opening a Window is a View-layer concern, so this is a code-behind click handler.
+    /// Opens the "Connect to Wi-Fi" support tool, from the message card or the Network panel. Only
+    /// offered on a Windows RE boot image (Windows PE has no Wi-Fi); opening a Window is a View-layer
+    /// concern, so this is a code-behind click handler.
     /// </summary>
     private void ConnectWifiButton_Click(object sender, RoutedEventArgs e)
     {
+        NetworkPopup.IsOpen = false;
         var wifiWindow = new WifiConnectionWindow((DataContext as ViewModels.OperationSelectionViewModel)?.ManagedWifi);
         DialogHost.ShowDimmed(wifiWindow, Window.GetWindow(this));
+        if (DataContext is not ViewModels.OperationSelectionViewModel vm)
+            return;
 
         // A new Wi-Fi connection may be what was missing, so check again instead of making the technician ask.
-        if (wifiWindow.DataContext is ViewModels.WifiConnectionViewModel { HasConnected: true }
-            && DataContext is ViewModels.OperationSelectionViewModel { IsServiceBlocked: true } vm
-            && vm.RecheckCommand.CanExecute(null))
-        {
+        if (wifiWindow.DataContext is ViewModels.WifiConnectionViewModel { HasConnected: true } && vm.IsServiceBlocked && vm.RecheckCommand.CanExecute(null))
             vm.RecheckCommand.Execute(null);
-        }
+        else
+            _ = vm.RefreshNetworkAsync();
     }
 
     /// <summary>

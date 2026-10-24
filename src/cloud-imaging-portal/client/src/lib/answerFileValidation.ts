@@ -19,7 +19,7 @@ export interface AnswerFileValidation {
 }
 
 export const ANSWER_FILE_MESSAGES: Record<string, string> = {
-  tooLarge: 'The answer file is larger than 256 KB. Remove settings you do not need.',
+  tooLarge: 'The answer file is larger than 2 MB. Remove settings you do not need.',
   notWellFormed: 'This is not well-formed XML. Check for a missing closing tag or an unescaped & or < on or before this line.',
   dtdNotAllowed: 'Document type declarations are not allowed. Remove the DOCTYPE line.',
   notAnswerFile: 'This is not an answer file. The root element must be unattend in the urn:schemas-microsoft-com:unattend namespace.',
@@ -34,7 +34,7 @@ export const ANSWER_FILE_MESSAGES: Record<string, string> = {
   tooManySpecializeCommands: 'The specialize pass has more than 499 commands. Remove at least one, because Cloud Imaging adds its own.',
 };
 
-export const MAX_ANSWER_FILE_BYTES = 262_144;
+export const MAX_ANSWER_FILE_BYTES = 2_097_152;
 export const MAX_ANSWER_FILE_PROBLEMS = 50;
 const UNATTEND_NAMESPACE = 'urn:schemas-microsoft-com:unattend';
 const RUNNER_SCRIPT_NAME = 'invoke-cloudimagingsetup.ps1';

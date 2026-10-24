@@ -54,6 +54,88 @@ public sealed class SetupProfileContractTests
 
     private static ImagingCoreClient Core(CapturingHandler handler) => new(new HttpClient(handler) { BaseAddress = new Uri("https://core.internal") });
 
+    [Theory]
+    [InlineData("script")]
+    [InlineData("answerFile")]
+    [InlineData("unknown")]
+    public async Task ContentUpload_StreamsTheRawBodyAndKind_WithoutParsing(string kind)
+    {
+        const string text = "Write-Output 'H\u00e4lsningar' { not json";
+        const string coreBody = """{"sha256":"aa","sizeBytes":31}""";
+        var handler = new CapturingHandler(_ => Respond(HttpStatusCode.OK, coreBody));
+        var functions = new SetupProfileFunctions(Core(handler), NullLogger<SetupProfileFunctions>.Instance);
+        var context = FunctionHttp.Context();
+        var request = FunctionHttp.Request(context, "POST", $"https://operator/api/setup-profiles/content?kind={kind}", text);
+        request.Headers.Add("Content-Type", "application/octet-stream");
+
+        var response = await functions.UploadSetupProfileContent(request, context);
+
+        var (sent, body) = handler.Requests.Single();
+        sent.Method.Should().Be(HttpMethod.Post);
+        sent.RequestUri!.PathAndQuery.Should().Be($"/api/internal/setup-profiles/content?kind={kind}");
+        sent.Content!.Headers.ContentType!.MediaType.Should().Be("application/octet-stream");
+        body.Should().Be(text);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.ReadBodyAsync()).Should().Be(coreBody);
+    }
+
+    [Fact]
+    public async Task ContentUpload_PassesTheUploadingUserOn()
+    {
+        var handler = new CapturingHandler(_ => Respond(HttpStatusCode.OK, """{"sha256":"aa","sizeBytes":1}"""));
+        var functions = new SetupProfileFunctions(Core(handler), NullLogger<SetupProfileFunctions>.Instance);
+        var context = FunctionHttp.Context();
+
+        await functions.UploadSetupProfileContent(FunctionHttp.Request(context, "POST", "https://operator/api/setup-profiles/content?kind=script&uploadedBy=olle%40contoso.com", "x"), context);
+
+        handler.Requests.Single().Item1.RequestUri!.PathAndQuery.Should().Be("/api/internal/setup-profiles/content?kind=script&uploadedBy=olle%40contoso.com");
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.RequestEntityTooLarge)]
+    public async Task ContentUpload_RelaysCoreRefusals(HttpStatusCode status)
+    {
+        const string problem = """{"status":413,"detail":"This script is 25.3 MB. A script can be at most 24 MB."}""";
+        var handler = new CapturingHandler(_ => Respond(status, problem, "application/problem+json"));
+        var functions = new SetupProfileFunctions(Core(handler), NullLogger<SetupProfileFunctions>.Instance);
+        var context = FunctionHttp.Context();
+
+        var response = await functions.UploadSetupProfileContent(FunctionHttp.Request(context, "POST", "https://operator/api/setup-profiles/content?kind=script", "x"), context);
+
+        response.StatusCode.Should().Be(status);
+        response.ContentType().Should().Be("application/problem+json");
+        (await response.ReadBodyAsync()).Should().Be(problem);
+    }
+
+    [Fact]
+    public async Task ContentRead_RelaysTheTextAndItsMediaType()
+    {
+        var sha = new string('a', 64);
+        var handler = new CapturingHandler(_ => Respond(HttpStatusCode.OK, "Write-Output 'H\u00e4j'", "text/plain"));
+        var functions = new SetupProfileFunctions(Core(handler), NullLogger<SetupProfileFunctions>.Instance);
+        var context = FunctionHttp.Context();
+
+        var response = await functions.GetSetupProfileContent(FunctionHttp.Request(context, "GET", "https://operator/api/x"), ProfileId.ToString(), sha, context);
+
+        handler.Requests.Single().Request.RequestUri!.AbsolutePath.Should().Be($"/api/internal/setup-profiles/{ProfileId}/content/{sha}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.ContentType().Should().Be("text/plain; charset=utf-8");
+        (await response.ReadBodyAsync()).Should().Be("Write-Output 'H\u00e4j'");
+    }
+
+    [Fact]
+    public async Task ContentRead_NotFound_IsRelayed_AndANonGuidIdIs400()
+    {
+        var handler = new CapturingHandler(_ => Respond(HttpStatusCode.NotFound));
+        var functions = new SetupProfileFunctions(Core(handler), NullLogger<SetupProfileFunctions>.Instance);
+        var context = FunctionHttp.Context();
+
+        (await functions.GetSetupProfileContent(FunctionHttp.Request(context, "GET", "https://operator/api/x"), ProfileId.ToString(), "abc", context)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await functions.GetSetupProfileContent(FunctionHttp.Request(context, "GET", "https://operator/api/x"), "x", "abc", context)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        handler.Requests.Should().ContainSingle();
+    }
+
     private static HttpResponseMessage Respond(HttpStatusCode status, string? body = null, string mediaType = "application/json") =>
         body is null ? new HttpResponseMessage(status) : new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, mediaType) };
 
@@ -151,6 +233,8 @@ public sealed class SetupProfileContractTests
     [InlineData("GetSetupProfileVersion")]
     [InlineData("GetSetupProfileHistory")]
     [InlineData("GetSessionStepItems")]
+    [InlineData("UploadSetupProfileContent")]
+    [InlineData("GetSetupProfileContent")]
     public void MediaBuilderAccessAlone_IsRefused(string function)
     {
         AppRoleAuthorizationMiddleware.Deny(new HashSet<string> { AppRoleAuthorizationMiddleware.PortalAccessRole }, function).Should().BeNull();

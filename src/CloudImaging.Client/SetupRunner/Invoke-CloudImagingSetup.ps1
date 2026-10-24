@@ -6,7 +6,7 @@
     Started once by the answer file's RunSynchronous command in the specialize pass, as SYSTEM.
     Reads the manifest the Cloud Imaging Client wrote in WinPE, verifies the SHA-256 of every file
     an item needs, and starts each item in order: driver installers first, then the setup profile's
-    During Windows setup scripts. Every item runs with a restricted token that has no shutdown
+    Specialize scripts. Every item runs with a restricted token that has no shutdown
     privileges, inside a kill-on-close job that also blocks ExitWindows, so nothing it starts can
     restart the device in the middle of Windows setup. Items that time out are stopped with their
     whole process tree. A failed item never stops the next one.

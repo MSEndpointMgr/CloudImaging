@@ -1,32 +1,39 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
-using System.Text;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models.SetupProfiles;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.Client.Services.Setup;
 
-/// <summary>How one In WinPE script ended, in the shape the step item needs.</summary>
+/// <summary>How one Offline script ended, in the shape the step item needs.</summary>
 public sealed record WinPeScriptOutcome(StepItemOutcome Outcome, string? Reason, int? ExitCode, long? DurationMs, string? LastOutputLine);
 
-/// <summary>Runs one In WinPE script; an interface so Prepare setup can be tested without PowerShell.</summary>
+/// <summary>Runs one Offline script; an interface so Prepare setup can be tested without PowerShell.</summary>
 public interface IWinPeScriptRunner
 {
-    /// <summary>Runs <paramref name="script"/> as file number <paramref name="position"/> with the applied volume as <paramref name="windowsDrive"/> (for example <c>W:</c>).</summary>
-    WinPeScriptOutcome Run(SetupScript script, int position, string windowsDrive, CancellationToken cancellationToken);
+    /// <summary>
+    /// Runs <paramref name="script"/> from its downloaded <paramref name="textPath"/> (relative to the
+    /// applied volume) as file number <paramref name="position"/>, with the applied volume as
+    /// <paramref name="windowsDrive"/> (for example <c>W:</c>).
+    /// </summary>
+    WinPeScriptOutcome Run(SetupScript script, string textPath, int position, string windowsDrive, CancellationToken cancellationToken);
 }
 
 /// <summary>
-/// Writes the script to the WinPE RAM disk as UTF-8 with BOM (Windows PowerShell 5.1 reads files
-/// without one as ANSI), runs it through <see cref="IRestrictedProcessRunner"/> with the applied
-/// volume in <c>CI_WINDOWS_DRIVE</c>, and deletes it again.
+/// Copies the downloaded script (UTF-8 with BOM) to <c>Windows\Temp\CloudImaging\Scripts</c> on the
+/// applied volume, not to the WinPE RAM disk, runs it through <see cref="IRestrictedProcessRunner"/>
+/// with the applied volume in <c>CI_WINDOWS_DRIVE</c>, and deletes it again. Prepare setup removes
+/// the work folder once every script is done.
 /// </summary>
-public sealed partial class WinPeScriptRunner(IRestrictedProcessRunner processes, ISetupFileSystem scratch, Func<bool> supportsPowerShell, ILogger logger) : IWinPeScriptRunner
+public sealed partial class WinPeScriptRunner(IRestrictedProcessRunner processes, ISetupFileSystem volume, Func<bool> supportsPowerShell, ILogger logger) : IWinPeScriptRunner
 {
-    /// <summary>Where scripts are written, relative to <c>X:\Windows\Temp\CloudImaging</c>.</summary>
-    public const string ScriptFolder = "Scripts";
+    /// <summary>Our folder on the applied volume, removed by Prepare setup once the scripts are done.</summary>
+    public const string WorkFolder = @"Windows\Temp\CloudImaging";
+
+    /// <summary>Where scripts are written, relative to the applied volume's root.</summary>
+    public const string ScriptFolder = WorkFolder + @"\Scripts";
 
     /// <summary>Reason for every script when the boot image has no PowerShell.</summary>
     public const string NoPowerShellReason = "This boot image has no PowerShell, so the script cannot run. Generate a new boot image with Media Builder and update the USB media.";
@@ -36,31 +43,27 @@ public sealed partial class WinPeScriptRunner(IRestrictedProcessRunner processes
 
     private const int MaxLastOutputLength = 200;
 
-    /// <summary>The WinPE scratch folder scripts are written to.</summary>
-    public static string ScratchRoot => Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? @"X:\", @"Windows\Temp\CloudImaging");
-
     /// <inheritdoc/>
-    public WinPeScriptOutcome Run(SetupScript script, int position, string windowsDrive, CancellationToken cancellationToken)
+    public WinPeScriptOutcome Run(SetupScript script, string textPath, int position, string windowsDrive, CancellationToken cancellationToken)
     {
         if (!supportsPowerShell())
         {
             return new WinPeScriptOutcome(StepItemOutcome.Failed, NoPowerShellReason, null, null, null);
         }
 
-        var relativePath = Path.Combine(ScriptFolder, string.Create(CultureInfo.InvariantCulture, $"{position:00}.ps1"));
+        var relativePath = Path.Combine(ScriptFolder, string.Create(CultureInfo.InvariantCulture, $"{position:0000}.ps1"));
         try
         {
-            scratch.CreateDirectory(ScriptFolder);
-            scratch.WriteAllBytes(relativePath, [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(script.Content)]);
+            volume.CopyFile(textPath, relativePath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return new WinPeScriptOutcome(StepItemOutcome.Failed, $"The script could not be written to the boot image's temporary folder: {ex.Message}", null, null, null);
+            return new WinPeScriptOutcome(StepItemOutcome.Failed, $"The script could not be written to the Windows volume: {ex.Message}", null, null, null);
         }
 
         try
         {
-            var scriptPath = scratch.FullPath(relativePath);
+            var scriptPath = volume.FullPath(relativePath);
             var request = new RestrictedProcessRequest(
                 Path.Combine(Environment.SystemDirectory, BootImageCapabilities.PowerShellRelativePath),
                 $"-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{scriptPath}\"",
@@ -102,7 +105,7 @@ public sealed partial class WinPeScriptRunner(IRestrictedProcessRunner processes
         {
             try
             {
-                scratch.DeleteFile(relativePath);
+                volume.DeleteFile(relativePath);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -115,7 +118,7 @@ public sealed partial class WinPeScriptRunner(IRestrictedProcessRunner processes
     public static string StoppedAfter(int minutes) =>
         string.Create(CultureInfo.InvariantCulture, $"Stopped after {minutes} {(minutes == 1 ? "minute" : "minutes")}.");
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "WinPE script \"{Name}\" ended ({Outcome}, exit code {ExitCode}). Output:\n{Output}")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Offline script \"{Name}\" ended ({Outcome}, exit code {ExitCode}). Output:\n{Output}")]
     private static partial void LogScriptOutput(ILogger logger, string name, RestrictedProcessOutcome outcome, int? exitCode, string output);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The script file {Path} could not be deleted: {Reason}")]

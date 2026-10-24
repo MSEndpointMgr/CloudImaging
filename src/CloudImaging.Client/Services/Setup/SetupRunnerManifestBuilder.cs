@@ -81,8 +81,8 @@ public static class SetupRunnerManifestBuilder
         Converters = { new JsonStringEnumConverter() },
     };
 
-    /// <summary>Path of staged script number <paramref name="position"/> (1-based).</summary>
-    public static string ScriptPath(int position) => string.Create(CultureInfo.InvariantCulture, $@"{ScriptFolder}\{position:00}.ps1");
+    /// <summary>Path of staged script number <paramref name="position"/> (1-based), four digits so 1000 scripts sort in order.</summary>
+    public static string ScriptPath(int position) => string.Create(CultureInfo.InvariantCulture, $@"{ScriptFolder}\{position:0000}.ps1");
 
     /// <summary>Builds the manifest. Throws <see cref="ArgumentException"/> for a rooted path or one containing <c>..</c>.</summary>
     public static SetupRunnerManifest Build(

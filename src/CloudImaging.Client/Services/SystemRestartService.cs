@@ -5,7 +5,8 @@ namespace CloudImaging.Client.Services;
 
 /// <summary>
 /// Restarts the device via the Windows PE utility, invoked by
-/// <see cref="ViewModels.ResultsViewModel"/> once its post-success countdown reaches zero.
+/// <see cref="ViewModels.ResultsViewModel"/> once its post-success countdown reaches zero, and by
+/// Restart now after a boot image update.
 /// </summary>
 public sealed partial class SystemRestartService
 {
@@ -48,7 +49,7 @@ public sealed partial class SystemRestartService
         CreateNoWindow = true,
     };
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Imaging succeeded. Restarting the system now.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "Restarting the system now.")]
     private static partial void LogRestarting(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "DEV SIMULATION: system restart suppressed (would run wpeutil Reboot).")]

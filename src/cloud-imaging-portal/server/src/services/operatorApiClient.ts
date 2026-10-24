@@ -470,6 +470,30 @@ export class OperatorApiClient {
     return data;
   }
 
+  /** Sends one script or answer file text as raw bytes; Imaging Core applies every limit. */
+  async uploadSetupProfileContent(kind: string | undefined, body: Buffer, uploadedBy?: string): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/setup-profiles/content', body, {
+      params: uploadedBy ? { kind: kind ?? '', uploadedBy } : { kind: kind ?? '' },
+      headers: { 'Content-Type': 'application/octet-stream' },
+      maxBodyLength: Infinity,
+      timeout: PUBLISH_TIMEOUT_MS,
+    });
+    return data;
+  }
+
+  /** Reads a script or answer file text a retained version of the profile uses. */
+  async getSetupProfileContent(profileId: string, sha256: string): Promise<{ data: Buffer; contentType: string }> {
+    const res = await this.http.get(`/api/setup-profiles/${encodeURIComponent(profileId)}/content/${encodeURIComponent(sha256)}`, {
+      responseType: 'arraybuffer',
+      maxContentLength: Infinity,
+      timeout: PUBLISH_TIMEOUT_MS,
+    });
+    return {
+      data: Buffer.from(res.data as ArrayBuffer),
+      contentType: (res.headers['content-type'] as string | undefined) ?? 'text/plain; charset=utf-8',
+    };
+  }
+
   async getSessionStepItems(sessionId: string, stepName: string): Promise<unknown> {
     const { data } = await this.http.get<unknown>(`/api/sessions/${encodeURIComponent(sessionId)}/steps/${encodeURIComponent(stepName)}/items`);
     return data;

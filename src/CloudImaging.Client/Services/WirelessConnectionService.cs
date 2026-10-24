@@ -53,7 +53,7 @@ public sealed record VisibleWifiNetwork(string Ssid, int SignalPercent, WifiAuth
         >= 80 => Wpf.Ui.Controls.SymbolRegular.Wifi424,
         >= 55 => Wpf.Ui.Controls.SymbolRegular.Wifi324,
         >= 30 => Wpf.Ui.Controls.SymbolRegular.Wifi224,
-        _     => Wpf.Ui.Controls.SymbolRegular.Wifi124,
+        _ => Wpf.Ui.Controls.SymbolRegular.Wifi124,
     };
 }
 
@@ -124,6 +124,8 @@ public sealed partial class WirelessConnectionService
     // A freshly started WLAN service needs a moment to enumerate the adapter and finish a first scan.
     private static readonly TimeSpan ServiceStartSettleTime = TimeSpan.FromSeconds(4);
 
+    private static readonly TimeSpan WlanServiceStartTimeout = TimeSpan.FromSeconds(15);
+
     private readonly ILogger<WirelessConnectionService> _logger;
     private readonly Func<string, CancellationToken, Task<(int ExitCode, string StdOut, string StdErr)>> _runNetsh;
     private readonly Func<CancellationToken, Task<bool>> _startWlanService;
@@ -131,7 +133,7 @@ public sealed partial class WirelessConnectionService
 
     /// <param name="logger">Defaults to a no-op logger when not supplied.</param>
     /// <param name="runNetshOverride">Test seam. Defaults to a real <c>netsh.exe</c> invocation.</param>
-    /// <param name="startWlanServiceOverride">Test seam. Defaults to <c>sc.exe start wlansvc</c>.</param>
+    /// <param name="startWlanServiceOverride">Test seam. Defaults to starting <c>wlansvc</c> through the Service Control Manager.</param>
     /// <param name="serviceStartSettleTime">Test seam for the wait after starting the WLAN service.</param>
     public WirelessConnectionService(
         ILogger<WirelessConnectionService>? logger = null,
@@ -139,7 +141,7 @@ public sealed partial class WirelessConnectionService
         Func<CancellationToken, Task<bool>>? startWlanServiceOverride = null,
         TimeSpan? serviceStartSettleTime = null)
     {
-        _logger   = logger ?? NullLogger<WirelessConnectionService>.Instance;
+        _logger = logger ?? NullLogger<WirelessConnectionService>.Instance;
         _runNetsh = runNetshOverride ?? RunNetshAsync;
         _startWlanService = startWlanServiceOverride ?? StartWlanServiceAsync;
         _serviceStartSettleTime = serviceStartSettleTime ?? ServiceStartSettleTime;
@@ -156,11 +158,15 @@ public sealed partial class WirelessConnectionService
         {
             var result = await ScanOnceAsync(ct);
             if (result.Status != WifiScanStatus.ServiceNotRunning)
+            {
                 return result;
+            }
 
             LogStartingWlanService(_logger);
             if (!await _startWlanService(ct))
+            {
                 return result;
+            }
 
             await Task.Delay(_serviceStartSettleTime, ct);
             return await ScanOnceAsync(ct);
@@ -178,7 +184,9 @@ public sealed partial class WirelessConnectionService
         var output = stdOut + stdErr;
         IReadOnlyList<VisibleWifiNetwork> networks = exitCode == 0 ? ParseNetworks(stdOut) : [];
         if (networks.Count > 0)
+        {
             return new WifiScanResult(WifiScanStatus.Ok, networks);
+        }
 
         var status = ClassifyNetshOutput(output);
         if (status == WifiScanStatus.Ok && exitCode == 0)
@@ -196,7 +204,9 @@ public sealed partial class WirelessConnectionService
         }
 
         if (status != WifiScanStatus.Ok)
+        {
             LogScanFailed(_logger, exitCode, output.Trim());
+        }
 
         return new WifiScanResult(status, [], status == WifiScanStatus.Failed ? FirstLine(output) : null);
     }
@@ -205,13 +215,25 @@ public sealed partial class WirelessConnectionService
     internal static WifiScanStatus ClassifyNetshOutput(string output)
     {
         if (output.Contains("command was not found", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiScanStatus.NotSupported;
+        }
+
         if (output.Contains("wlansvc", StringComparison.OrdinalIgnoreCase) && output.Contains("not running", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiScanStatus.ServiceNotRunning;
+        }
+
         if (output.Contains("no wireless interface", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiScanStatus.NoAdapter;
+        }
+
         if (output.Contains("location permission", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiScanStatus.LocationPermissionRequired;
+        }
+
         return WifiScanStatus.Ok;
     }
 
@@ -315,8 +337,8 @@ public sealed partial class WirelessConnectionService
             if (ssidMatch.Success)
             {
                 FlushCurrent();
-                currentSsid   = ssidMatch.Groups[1].Value.Trim();
-                currentAuth   = WifiAuthKind.Unknown;
+                currentSsid = ssidMatch.Groups[1].Value.Trim();
+                currentAuth = WifiAuthKind.Unknown;
                 currentSignal = 0;
                 continue;
             }
@@ -333,7 +355,9 @@ public sealed partial class WirelessConnectionService
             {
                 var percent = int.Parse(signalMatch.Groups[1].Value, CultureInfo.InvariantCulture);
                 if (percent > currentSignal)
+                {
                     currentSignal = percent;
+                }
             }
         }
 
@@ -344,14 +368,23 @@ public sealed partial class WirelessConnectionService
     private static WifiAuthKind ClassifyAuth(string raw)
     {
         if (raw.Contains("Open", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiAuthKind.Open;
+        }
+
         if (raw.Contains("WPA2-Personal", StringComparison.OrdinalIgnoreCase)
             || raw.Contains("WPA3-Personal", StringComparison.OrdinalIgnoreCase)
             || raw.Contains("WPA-Personal", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiAuthKind.PersonalPsk;
+        }
+
         if (raw.Contains("Enterprise", StringComparison.OrdinalIgnoreCase)
             || raw.Contains("802.1x", StringComparison.OrdinalIgnoreCase))
+        {
             return WifiAuthKind.Enterprise;
+        }
+
         return WifiAuthKind.Unknown;
     }
 
@@ -363,7 +396,9 @@ public sealed partial class WirelessConnectionService
             var line = rawLine.Trim();
             var match = NameLineRegex().Match(line);
             if (match.Success)
+            {
                 return match.Groups[1].Value.Trim();
+            }
         }
 
         return null;
@@ -372,6 +407,53 @@ public sealed partial class WirelessConnectionService
     /// <summary>True when <c>netsh wlan show interfaces</c> output reports <c>State : connected</c> for any interface.</summary>
     public static bool IsConnected(string output) =>
         output.Split('\n').Select(l => l.Trim()).Any(l => StateConnectedRegex().IsMatch(l));
+
+    /// <summary>The network named in <c>netsh wlan show interfaces</c> output when it reports a connection; otherwise null.</summary>
+    public static string? ParseConnectedSsid(string output) =>
+        !IsConnected(output) ? null
+        : output.Split('\n').Select(l => ConnectedSsidLineRegex().Match(l.Trim())).FirstOrDefault(m => m.Success)?.Groups[1].Value.Trim();
+
+    /// <summary>The Wi-Fi network this device is connected to, or null. Never throws.</summary>
+    public async Task<string?> GetConnectedSsidAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var (exitCode, stdOut, _) = await _runNetsh("wlan show interfaces", ct);
+            return exitCode == 0 ? ParseConnectedSsid(stdOut) : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Leaves the connected Wi-Fi network, so Ethernet carries all traffic. Returns the network left, or null when none was connected. Never throws.</summary>
+    public async Task<string?> DisconnectAsync(CancellationToken ct = default)
+    {
+        var ssid = await GetConnectedSsidAsync(ct);
+        if (ssid is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var (exitCode, stdOut, stdErr) = await _runNetsh("wlan disconnect", ct);
+            if (exitCode != 0)
+            {
+                LogDisconnectFailed(_logger, (stdOut + stdErr).Trim());
+                return null;
+            }
+
+            LogDisconnected(_logger, ssid);
+            return ssid;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogDisconnectFailed(_logger, ex.Message);
+            return null;
+        }
+    }
 
     /// <summary>
     /// Builds a WLAN profile XML for <paramref name="ssid"/>. Without a <paramref name="security"/>
@@ -421,14 +503,16 @@ public sealed partial class WirelessConnectionService
     private static async Task<(int ExitCode, string StdOut, string StdErr)> RunNetshAsync(string arguments, CancellationToken ct) =>
         await RunProcessAsync("netsh.exe", arguments, ct);
 
-    /// <summary>True when <c>sc.exe</c> started the WLAN AutoConfig service; false when it is not installed or refused.</summary>
+    /// <summary>True when the WLAN AutoConfig service runs; false when it is not installed or would not start.</summary>
     private async Task<bool> StartWlanServiceAsync(CancellationToken ct)
     {
-        var (exitCode, stdOut, stdErr) = await RunProcessAsync("sc.exe", "start wlansvc", ct);
-        if (exitCode == 0)
+        var error = await Task.Run(() => WindowsServiceStarter.Start("wlansvc", WlanServiceStartTimeout), ct);
+        if (error == 0)
+        {
             return true;
+        }
 
-        LogWlanServiceStartFailed(_logger, exitCode, (stdOut + stdErr).Trim());
+        LogWlanServiceStartFailed(_logger, error, new System.ComponentModel.Win32Exception(error).Message, WindowsServiceStarter.DescribeDependencies("wlansvc"));
         return false;
     }
 
@@ -438,12 +522,12 @@ public sealed partial class WirelessConnectionService
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName               = fileName,
-                Arguments              = arguments,
-                UseShellExecute        = false,
+                FileName = fileName,
+                Arguments = arguments,
+                UseShellExecute = false,
                 RedirectStandardOutput = true,
-                RedirectStandardError  = true,
-                CreateNoWindow         = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
             },
         };
 
@@ -469,14 +553,23 @@ public sealed partial class WirelessConnectionService
     [GeneratedRegex(@"^State\s*:\s*connected$", RegexOptions.IgnoreCase)]
     private static partial Regex StateConnectedRegex();
 
+    [GeneratedRegex(@"^SSID\s*:\s*(.+)$")]
+    private static partial Regex ConnectedSsidLineRegex();
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Left Wi-Fi network {Ssid}: Ethernet is in use.")]
+    private static partial void LogDisconnected(ILogger logger, string ssid);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not leave the Wi-Fi network: {Output}")]
+    private static partial void LogDisconnectFailed(ILogger logger, string output);
+
     [LoggerMessage(Level = LogLevel.Warning, Message = "Wi-Fi scan failed (exit {ExitCode}): {Output}")]
     private static partial void LogScanFailed(ILogger logger, int exitCode, string output);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "WLAN AutoConfig service is not running; starting it.")]
     private static partial void LogStartingWlanService(ILogger logger);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not start the WLAN AutoConfig service (exit {ExitCode}): {Output}")]
-    private static partial void LogWlanServiceStartFailed(ILogger logger, int exitCode, string output);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not start the WLAN AutoConfig service (error {ErrorCode}): {Reason} Services it depends on: {Dependencies}")]
+    private static partial void LogWlanServiceStartFailed(ILogger logger, int errorCode, string reason, string dependencies);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "No wireless adapter found.")]
     private static partial void LogNoAdapter(ILogger logger);

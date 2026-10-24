@@ -55,7 +55,12 @@ interface BootImage {
   isActive: boolean;
 }
 
-type BootImageSortKey = 'version' | 'size' | 'sha256' | 'created' | 'status' | 'architecture';
+type BootImageSortKey = 'version' | 'size' | 'sha256' | 'created' | 'status' | 'architecture' | 'source';
+
+/** Boot images predate the base field, so an image without one is a Windows PE build. */
+function sourceLabel(base: BootImage['base']): string {
+  return base === 'WindowsRE' ? 'WinRE' : 'WinPE';
+}
 
 const BOOT_IMAGE_SORT_ACCESSORS: Record<BootImageSortKey, (row: BootImage) => string | number> = {
   version: row => row.version,
@@ -64,6 +69,7 @@ const BOOT_IMAGE_SORT_ACCESSORS: Record<BootImageSortKey, (row: BootImage) => st
   created: row => row.createdAt,
   status:  row => BOOT_IMAGE_STAGE_LABELS[bootImageStage(row)],
   architecture: row => row.architecture,
+  source:  row => sourceLabel(row.base),
 };
 
 const STAGE_BADGE: Record<ReturnType<typeof bootImageStage>, BadgeProps['variant']> = {
@@ -237,6 +243,7 @@ export default function BootImagesPage(): React.ReactElement {
             <TableRow className="hover:bg-transparent">
               <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} />
               <SortableHead label="Architecture" sortKey="architecture" sort={sort} onSort={toggleSort} />
+              <SortableHead label="Source" sortKey="source" sort={sort} onSort={toggleSort} />
               <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} />
               <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} />
               <SortableHead label="Created" sortKey="created" sort={sort} onSort={toggleSort} />
@@ -246,10 +253,10 @@ export default function BootImagesPage(): React.ReactElement {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableSkeletonRows columns={canManageCatalog ? 7 : 6} />
+              <TableSkeletonRows columns={canManageCatalog ? 8 : 7} />
             ) : images.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={canManageCatalog ? 7 : 6} className="p-0">
+                <TableCell colSpan={canManageCatalog ? 8 : 7} className="p-0">
                   <EmptyState
                     icon={HardDrive}
                     title="No boot images"
@@ -267,15 +274,9 @@ export default function BootImagesPage(): React.ReactElement {
               <TableRow key={img.bootImageId}>
                 <TableCell className="font-medium">{img.version}</TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    <Badge variant="outline">{archLabel(img.architecture)}</Badge>
-                    {img.base === 'WindowsRE' && (
-                      <Tooltip content="Built on Windows RE, so devices can join Wi-Fi.">
-                        <Badge variant="info">Wi-Fi</Badge>
-                      </Tooltip>
-                    )}
-                  </div>
+                  <Badge variant="outline">{archLabel(img.architecture)}</Badge>
                 </TableCell>
+                <TableCell>{sourceLabel(img.base)}</TableCell>
                 <TableCell>{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell>
                   <CopyableId

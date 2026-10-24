@@ -315,7 +315,7 @@ changes on devices until an Operator or Administrator saves a profile.
    Media Builder ([Part 4](#part-4-upgrade-the-media-builder)), then the Client by generating new
    boot images with that Media Builder and updating the USB media
    ([Part 3](#part-3-upgrade-the-cloud-imaging-client)). The new Media Builder adds PowerShell to
-   boot images, which In WinPE scripts need.
+   boot images, which Offline scripts need.
 3. **Expect older media to skip profiles.** A device started from an older boot image images as
    before without its profile, and the timeline shows Prepare setup as **Not run**. Profiles apply
    once the device's boot image is updated.

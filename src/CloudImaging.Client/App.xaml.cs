@@ -16,11 +16,11 @@ namespace CloudImaging.Client;
 
 public partial class App : Application
 {
-    // Covers the 20-second network wait plus the 15-second gateway probe.
-    private static readonly TimeSpan StartupChecksTimeout = TimeSpan.FromSeconds(40);
+    // Covers the 20-second network wait, the 15-second gateway probe and the 15-second update check.
+    private static readonly TimeSpan StartupChecksTimeout = TimeSpan.FromSeconds(55);
 
     // A Windows RE image may also scan and try each saved Wi-Fi network before the probe.
-    private static readonly TimeSpan WifiStartupChecksTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan WifiStartupChecksTimeout = TimeSpan.FromMinutes(2.5);
 
     // Long enough that Getting ready reads as a step rather than a flicker when there is nothing to load.
     private static readonly TimeSpan StartupMinimumDisplay = TimeSpan.FromSeconds(1);
@@ -30,11 +30,17 @@ public partial class App : Application
     /// <summary>What the startup checks found, reused so returning to Operation Selection never re-checks on screen.</summary>
     private static StartupReadiness? s_readiness;
 
-    /// <summary>Re-runs the startup checks from Operation Selection's Check again.</summary>
-    private static Action? s_recheck;
+    /// <summary>Check again on Operation Selection: re-runs the network and service checks on that screen.</summary>
+    private static Func<CancellationToken, Task<StartupReadiness>>? s_recheck;
+
+    // Covers the 10-second wait for an address and the 15-second gateway probe.
+    private static readonly TimeSpan RecheckTimeout = TimeSpan.FromSeconds(40);
 
     /// <summary>The portal's Wi-Fi networks; null on a Windows PE image, which has no Wi-Fi.</summary>
     private static ManagedWifiService? s_managedWifi;
+
+    /// <summary>Boot media self-update, run as a startup check once the service is reachable.</summary>
+    private static BootImageSelfUpdateService? s_selfUpdate;
 
     /// <summary>Wires up fatal-exception reporting, configures logging, and shows the first view.</summary>
     protected override void OnStartup(StartupEventArgs e)
@@ -70,21 +76,19 @@ public partial class App : Application
 
             var httpClient = new HttpClient(handler);
             if (!string.IsNullOrEmpty(config.DeviceGatewayBaseUrl))
+            {
                 httpClient.BaseAddress = new Uri(config.DeviceGatewayBaseUrl);
+            }
 
             var gatewayClient = new DeviceGatewayApiClient(
                 httpClient, startupResult.Certificate, loggerFactory.CreateLogger<DeviceGatewayApiClient>());
 
-            // T071b/FR-059a: kick off the boot image self-update check in the background.
-            // Fire-and-forget by design — it only affects the NEXT boot from this USB media
-            // (WinPE already loaded the current boot.wim into RAM before the Client started),
-            // so it must never delay startup or the current session, and it swallows its own
-            // failures internally (see BootImageSelfUpdateService remarks).
-            var selfUpdateService = new BootImageSelfUpdateService(
+            // T071b/FR-059a: checked on Getting ready once the service answers. A newer boot image is
+            // written to the media before anything else runs, then the device must restart.
+            s_selfUpdate = new BootImageSelfUpdateService(
                 gatewayClient,
                 new HttpClient(),
                 loggerFactory.CreateLogger<BootImageSelfUpdateService>());
-            _ = selfUpdateService.CheckAndUpdateAsync();
 
             // Decided from the image itself, so no setting can disagree with what the image can do.
             if (BootImageCapabilities.SupportsWifi())
@@ -174,17 +178,44 @@ public partial class App : Application
     {
         autopilotCapture ??= new AutopilotHashCaptureService(lf.CreateLogger<AutopilotHashCaptureService>());
         startupChecks ??= new StartupViewModel(gateway.ProbeAsync, autopilotCapture.IsToolingPresent, logger: lf.CreateLogger<StartupViewModel>(),
-            managedWifi: s_managedWifi, wifiSupported: s_managedWifi is not null);
+            managedWifi: s_managedWifi, wifiSupported: s_managedWifi is not null,
+            checkBootImageUpdate: s_selfUpdate is null ? null : s_selfUpdate.CheckAsync,
+            applyBootImageUpdate: s_selfUpdate is null ? null : s_selfUpdate.ApplyAsync,
+            restartDevice: new SystemRestartService(lf.CreateLogger<SystemRestartService>()).Restart);
         window.NavigateTo(new StartupView { DataContext = startupChecks });
         var minimumDisplay = Task.Delay(StartupMinimumDisplay);
 
         using var timeout = new CancellationTokenSource(s_managedWifi is null ? StartupChecksTimeout : WifiStartupChecksTimeout);
         var readiness = await startupChecks.RunAsync(timeout.Token);
 
+        // The running image is now older than the media's: Getting ready stays up with Restart now.
+        if (readiness.RestartRequired)
+        {
+            return;
+        }
+
         // Once online, fetch the current networks so a password changed in the portal reaches the USB copy.
         if (readiness.CanReachService && s_managedWifi is not null)
+        {
             _ = s_managedWifi.RefreshFromGatewayAsync(gateway);
-        Action recheck = () => _ = ShowOperationSelectionAsync(window, gateway, lf, autopilotCapture, autopilotPollInterval, rememberReadiness);
+        }
+
+        var current = readiness;
+        Func<CancellationToken, Task<StartupReadiness>> recheck = async ct =>
+        {
+            using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            limit.CancelAfter(RecheckTimeout);
+            current = await startupChecks.RecheckNetworkAsync(current, limit.Token);
+            if (current.CanReachService && s_managedWifi is not null)
+            {
+                _ = s_managedWifi.RefreshFromGatewayAsync(gateway, CancellationToken.None);
+            }
+            if (rememberReadiness)
+            {
+                s_readiness = current;
+            }
+            return current;
+        };
         if (rememberReadiness)
         {
             s_readiness = readiness;
@@ -211,11 +242,11 @@ public partial class App : Application
     {
         var launcher = new DevMode.DevSimulationLauncher(
             window,
-            onOperationSelectionView:   () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
-            onSessionInitView:          () => window.NavigateTo(BuildSampleSessionInitView(window, gateway, lf)),
-            onProgressView:             () => window.NavigateTo(BuildSampleProgressView()),
-            onResultsSuccessView:       () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.Success, "1234-5678-90", null)),
-            onResultsFailureView:       () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.Failure, "1234-5678-90", "Disk format failed: no writable target volume found.")),
+            onOperationSelectionView: () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
+            onSessionInitView: () => window.NavigateTo(BuildSampleSessionInitView(window, gateway, lf)),
+            onProgressView: () => window.NavigateTo(BuildSampleProgressView()),
+            onResultsSuccessView: () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.Success, "1234-5678-90", null)),
+            onResultsFailureView: () => window.NavigateTo(BuildResultsView(window, gateway, lf, ResultsViewModel.Outcome.Failure, "1234-5678-90", "Disk format failed: no writable target volume found.")),
             onResultsNotAuthorizedView: () => window.NavigateTo(BuildBlockedResultsView(window, gateway, lf, new SessionStatusResponse
             {
                 SessionId = Guid.NewGuid(),
@@ -252,8 +283,35 @@ public partial class App : Application
                         findLocalDisks: () => [],
                         findNetworkAdapter: () => null,
                         networkWait: TimeSpan.FromSeconds(3)))),
+                ("13 · Startup: boot media update", () => _ = ShowOperationSelectionAsync(window, gateway, lf,
+                    startupChecks: new StartupViewModel(
+                        _ => Task.FromResult(new GatewayProbeResult(GatewayReachability.Reachable, null)),
+                        autopilotToolingPresent: false,
+                        findNetworkAdapter: () => "Intel(R) Ethernet Connection I219-LM (10.20.4.31)",
+                        checkBootImageUpdate: _ => Task.FromResult(new BootImageUpdateCheck(BootImageUpdateStatus.UpdateAvailable, "2026.10.22.1")),
+                        applyBootImageUpdate: DevSimulateBootImageUpdateAsync,
+                        restartDevice: new SystemRestartService(lf.CreateLogger<SystemRestartService>()).Restart))),
             ]);
         launcher.Show();
+    }
+
+    /// <summary>DEV-ONLY: walks the boot image update through every phase in a few seconds.</summary>
+    private static async Task<bool> DevSimulateBootImageUpdateAsync(Action<BootImageUpdateProgress> onProgress, CancellationToken ct)
+    {
+        const long total = 640_000_000;
+        for (var percent = 0; percent <= 100; percent += 2)
+        {
+            onProgress(new BootImageUpdateProgress(BootImageUpdatePhase.Downloading, percent, total * percent / 100, total));
+            await Task.Delay(60, ct);
+        }
+        for (var percent = 0; percent <= 100; percent += 5)
+        {
+            onProgress(new BootImageUpdateProgress(BootImageUpdatePhase.Verifying, percent));
+            await Task.Delay(40, ct);
+        }
+        onProgress(new BootImageUpdateProgress(BootImageUpdatePhase.Applying, null));
+        await Task.Delay(800, ct);
+        return true;
     }
 
     /// <summary>DEV-ONLY: SessionInitView seeded with a fake session so the screen renders.</summary>
@@ -292,7 +350,7 @@ public partial class App : Application
         AutopilotHashCaptureService? autopilotCapture = null,
         TimeSpan? autopilotPollInterval = null,
         StartupReadiness? readiness = null,
-        Action? recheck = null)
+        Func<CancellationToken, Task<StartupReadiness>>? recheck = null)
     {
         var config = LoadConfiguration();
         var view = new OperationSelectionView();
@@ -300,7 +358,8 @@ public partial class App : Application
         readiness ??= s_readiness;
         recheck ??= s_recheck;
         var autopilotAvailability = readiness?.AutopilotAvailability;
-        view.DataContext = new OperationSelectionViewModel(
+        OperationSelectionViewModel? viewModel = null;
+        viewModel = new OperationSelectionViewModel(
             gateway,
             (sessionResponse, serialNumber) =>
                 window.NavigateTo(BuildSessionInitView(window, gateway, lf, sessionResponse, serialNumber)),
@@ -314,7 +373,8 @@ public partial class App : Application
             setMainWindowTopmost: window.SetTopmost,
             commandPromptLauncher: new CommandPromptLauncherService(lf.CreateLogger<CommandPromptLauncherService>()),
             autopilotToolingPresent: autopilotCapture.IsToolingPresent,
-            navigateToAutopilot: () => window.NavigateTo(BuildAutopilotRegistrationView(window, gateway, lf, autopilotCapture, autopilotPollInterval, readiness, recheck)),
+            // Check again may have changed the readiness since this screen opened.
+            navigateToAutopilot: () => window.NavigateTo(BuildAutopilotRegistrationView(window, gateway, lf, autopilotCapture, autopilotPollInterval, viewModel?.Readiness ?? readiness, recheck)),
             postureDetector: new DevicePostureDetector(lf.CreateLogger<DevicePostureDetector>()),
             startImagingImmediately: startImagingImmediately,
             autopilotAvailability: autopilotAvailability,
@@ -322,6 +382,7 @@ public partial class App : Application
             recheck: recheck,
             managedWifi: s_managedWifi,
             logger: lf.CreateLogger<OperationSelectionViewModel>());
+        view.DataContext = viewModel;
         return view;
     }
 
@@ -332,7 +393,7 @@ public partial class App : Application
         AutopilotHashCaptureService capture,
         TimeSpan? pollInterval = null,
         StartupReadiness? readiness = null,
-        Action? recheck = null)
+        Func<CancellationToken, Task<StartupReadiness>>? recheck = null)
     {
         var viewModel = new AutopilotRegistrationViewModel(
             gateway,
@@ -462,7 +523,9 @@ public partial class App : Application
     {
         var settingsPath = Path.Combine(AppContext.BaseDirectory, fileName);
         if (!File.Exists(settingsPath))
+        {
             return new ClientConfig(string.Empty, null);
+        }
 
         try
         {

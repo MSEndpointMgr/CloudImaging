@@ -793,7 +793,9 @@ the above.
      ISO, whose build, architecture and language match the installed ADK. Media Builder checks the
      source as soon as you pick it and shows why it does not fit. It takes Winre.wim plus the two
      DLLs the WLAN service needs from `install.wim`. Add the Wi-Fi adapter drivers for your
-     hardware as usual. The file name gets a `-winre` suffix.
+     hardware as usual. The file name gets a `-winre` suffix. Before finishing, Media Builder
+     checks that the image has every service, driver and DLL the WLAN service needs, and stops
+     with a list of what is missing rather than producing an image whose Wi-Fi cannot start.
 6. Optionally check **Enable command prompt access** under **Support Tools** (see
    [Client support tools](#client-support-tools) below); off by default
 7. Click **Generate**; the wizard produces a `.wim` file
@@ -811,9 +813,13 @@ the above.
 
 #### Client support tools
 
-The Operation Selection screen offers two troubleshooting tools, both accessible without leaving
+The Operation Selection screen offers these troubleshooting tools, all accessible without leaving
 the always-on-top Cloud Imaging Client window:
 
+- **Network button**: in the footer, names the connection in use (Ethernet, the Wi-Fi network, or
+  No network with a red dot) and opens a panel listing every adapter, its address, the one in use
+  and any adapter Windows found without a driver, with **Check again** and, on Windows RE,
+  **Connect to Wi-Fi**.
 - **Connect to Wi-Fi**: shown only on Windows RE boot images; Windows PE has no Wi-Fi, so the
   button is not there at all. Lists the location's managed networks first (marked **Managed**,
   joined without a password, hidden ones included), then every other visible network. Open and
@@ -823,9 +829,10 @@ the always-on-top Cloud Imaging Client window:
   schema) is deleted immediately after each connect attempt.
 - **Managed Wi-Fi at startup**: on a Windows RE boot image, when Ethernet has no address after
   the usual wait, the Client tries the managed networks in portal order and shows the network it
-  joined on the startup screen and on the Wi-Fi button. Once online it fetches the current list
-  from the Device Gateway and rewrites the USB copy, so a password changed in the portal reaches
-  the stick the next time it is online.
+  joined on the startup screen and on the network button. Ethernet plugged in during the attempt
+  stops it, and Ethernet always wins: the Client leaves Wi-Fi once Ethernet has an address. Once
+  online it fetches the current list from the Device Gateway and rewrites the USB copy, so a
+  password changed in the portal reaches the stick the next time it is online.
 - **Command Prompt**: hidden unless the boot image was built with **Enable command prompt
   access** checked (off by default, per boot image). Launches an interactive `cmd.exe` for
   advanced troubleshooting, temporarily dropping the Client window's always-on-top behavior so

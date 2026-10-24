@@ -21,6 +21,8 @@ const RESTORE_FIELDS = ['version', 'baseVersion'] as const;
 /** Highest version number a route accepts; matches the six-digit version blob names. */
 const MAX_VERSION = 999_999;
 
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 function toPayload(req: AuthenticatedRequest, fields: readonly string[]): Record<string, unknown> {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const payload: Record<string, unknown> = {};
@@ -50,6 +52,26 @@ function requireVersionParam(req: Request, res: Response, next: NextFunction): v
 router.get('/', requireTechnician, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.getSetupProfiles());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Raw bytes from express.raw in app.ts; a script or answer file text, never parsed here.
+router.post('/content', requireOperator, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (!Buffer.isBuffer(req.body)) {
+    res.status(400).json({
+      type: 'https://cloudimaging.io/errors/invalid-request',
+      title: 'Invalid request.',
+      status: 400,
+      detail: 'Send the text as application/octet-stream.',
+    });
+    return;
+  }
+  try {
+    const kind = typeof req.query['kind'] === 'string' ? req.query['kind'] : undefined;
+    // The uploading user comes from the token only; any uploadedBy in the query is ignored.
+    res.json(await operatorApiClient.uploadSetupProfileContent(kind, req.body, decidingUser(req)?.decidedByUpn));
   } catch (err) {
     next(err);
   }
@@ -115,6 +137,27 @@ router.get('/:profileId/versions/:version', requireTechnician, requireGuidParams
 router.get('/:profileId/history', requireTechnician, requireGuidParams('profileId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     res.json(await operatorApiClient.getSetupProfileHistory(req.params['profileId'] as string));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:profileId/content/:sha256', requireTechnician, requireGuidParams('profileId'), async (req: Request, res: Response, next: NextFunction) => {
+  const sha256 = req.params['sha256'];
+  if (typeof sha256 !== 'string' || !SHA256_PATTERN.test(sha256)) {
+    res.status(400).json({
+      type: 'https://cloudimaging.io/errors/invalid-parameter',
+      title: 'Invalid content hash.',
+      status: 400,
+      detail: "Route parameter 'sha256' must be 64 lowercase hexadecimal characters.",
+    });
+    return;
+  }
+  try {
+    const content = await operatorApiClient.getSetupProfileContent(req.params['profileId'] as string, sha256);
+    res.setHeader('Content-Type', content.contentType);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(content.data);
   } catch (err) {
     next(err);
   }

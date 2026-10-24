@@ -19,8 +19,17 @@ public sealed class ChangeSummaryBuilderTests
     private static SetupRegistryValue Value(Guid? id, string name, string data = "1") =>
         new() { Id = id, Name = name, Hive = SetupRegistryHive.Software, Key = "Policies\\Test", ValueName = name, Type = SetupRegistryValueType.DWord, Data = data };
 
-    private static SetupScript Script(Guid? id, string name, int order, string content = "exit 0") =>
-        new() { Id = id, Name = name, Runs = SetupScriptPhase.WinPE, Order = order, TimeoutMinutes = 5, Content = content };
+    private static SetupScript Script(Guid? id, string name, int order, string sha = "aa", params Guid[] locations) =>
+        new()
+        {
+            Id = id,
+            Name = name,
+            Runs = SetupScriptPhase.WinPE,
+            Order = order,
+            TimeoutMinutes = 5,
+            ContentSha256 = sha,
+            Locations = locations.Length == 0 ? new SetupScriptLocations() : new SetupScriptLocations { All = false, LocationIds = locations },
+        };
 
     [Fact]
     public void VersionOne_CountsEverythingAsAdded()
@@ -29,7 +38,7 @@ public sealed class ChangeSummaryBuilderTests
         {
             RegistryValues = [Value(null, "Time zone"), Value(null, "Encryption")],
             Scripts = [Script(null, "Wake on LAN", 1)],
-            AnswerFile = new SetupAnswerFile { Content = "<unattend/>" },
+            AnswerFile = new SetupAnswerFile { ContentSha256 = "bb" },
         });
 
         summary.RegistryValues.Should().BeEquivalentTo(new SetupProfileSectionChange { Added = 2 });
@@ -67,17 +76,29 @@ public sealed class ChangeSummaryBuilderTests
         summary.Total.Should().Be(1);
     }
 
+    [Fact]
+    public void ANewTextOrOtherLocations_ChangeAScript_TheSameReferenceDoesNot()
+    {
+        var before = new SetupProfileContent { Scripts = [Script(A, "Text", 1, "aa"), Script(B, "Where", 2, "bb", C), Script(C, "Same", 3, "cc", A, B)] };
+        var after = new SetupProfileContent { Scripts = [Script(A, "Text", 1, "a2"), Script(B, "Where", 2, "bb"), Script(C, "Same", 3, "cc", B, A)] };
+
+        var summary = ChangeSummaryBuilder.Build(before, after);
+
+        summary.Scripts.Changed.Should().Be(2);
+        summary.Names.Scripts.Should().Equal("Text", "Where");
+    }
+
     [Theory]
-    [InlineData(null, "<a/>", SetupAnswerFileChange.Added)]
-    [InlineData("<a/>", null, SetupAnswerFileChange.Removed)]
-    [InlineData("<a/>", "<b/>", SetupAnswerFileChange.Changed)]
-    [InlineData("<a/>", "<a/>", SetupAnswerFileChange.NoChange)]
+    [InlineData(null, "a1", SetupAnswerFileChange.Added)]
+    [InlineData("a1", null, SetupAnswerFileChange.Removed)]
+    [InlineData("a1", "b2", SetupAnswerFileChange.Changed)]
+    [InlineData("a1", "a1", SetupAnswerFileChange.NoChange)]
     [InlineData(null, null, SetupAnswerFileChange.NoChange)]
     public void TheAnswerFile_IsAddedRemovedChangedOrUnchanged(string? before, string? after, SetupAnswerFileChange expected)
     {
         var summary = ChangeSummaryBuilder.Build(
-            new SetupProfileContent { AnswerFile = before is null ? null : new SetupAnswerFile { Content = before } },
-            new SetupProfileContent { AnswerFile = after is null ? null : new SetupAnswerFile { Content = after } });
+            new SetupProfileContent { AnswerFile = before is null ? null : new SetupAnswerFile { ContentSha256 = before } },
+            new SetupProfileContent { AnswerFile = after is null ? null : new SetupAnswerFile { ContentSha256 = after } });
 
         summary.AnswerFile.Should().Be(expected);
         summary.Total.Should().Be(expected == SetupAnswerFileChange.NoChange ? 0 : 1);

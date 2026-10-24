@@ -61,7 +61,7 @@ public sealed class SetupProfileFunctionsTests
                 failureHandling = "CompleteWithWarnings",
                 registryValues = Array.Empty<object>(),
                 scripts = Array.Empty<object>(),
-                answerFile = new { content = "<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n<settings pass=\"windowsPE\"/>\n</unattend>" },
+                answerFile = new { contentSha256 = _bed.Upload("<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n<settings pass=\"windowsPE\"/>\n</unattend>", "answerFile") },
             },
             actor = new { upn = "ops@contoso.com" },
         };

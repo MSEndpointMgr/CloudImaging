@@ -1,6 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Copy, Crosshair, Database, FileCode, History, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Copy, Crosshair, Database, Eye, FileCode, History, Info, Pencil, Plus, RefreshCw, Save, ShieldCheck, SquareTerminal, Trash2, Undo2 } from 'lucide-react';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Select } from '../components/ui/select.tsx';
@@ -13,6 +13,7 @@ import { TargetingBadges } from '../components/TargetingBadges.tsx';
 import { RegistryValueDialog } from '../components/setup-profiles/RegistryValueDialog.tsx';
 import { ProfileHistoryDialog } from '../components/setup-profiles/ProfileHistoryDialog.tsx';
 import { ScriptDialog } from '../components/setup-profiles/ScriptDialog.tsx';
+import { ScriptsTable } from '../components/setup-profiles/ScriptsTable.tsx';
 import { SectionCard, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
 import { TargetingSection } from '../components/setup-profiles/TargetingSection.tsx';
 import { useAuth } from '../context/authContext.tsx';
@@ -23,7 +24,6 @@ import {
   FAILURE_HANDLING_LABELS,
   MAX_REGISTRY_VALUES,
   MAX_SCRIPTS,
-  SCRIPT_PHASE_SHORT_LABELS,
   SetupProfileApiError,
   answerFileProblems,
   answerFileSizeLabel,
@@ -35,27 +35,29 @@ import {
   duplicateName,
   emptyDraft,
   fetchSetupProfile,
+  fetchSetupProfileContent,
   fetchSetupProfileVersion,
   fetchSetupProfiles,
-  moveScript,
   orderedScripts,
+  profileLocationIds,
   readOnlyVersionBanner,
   registryValuePath,
   registryValueTooltip,
   renumberScripts,
   restoreImpact,
   restoreSetupProfileVersion,
-  saveLabel,
   saveSetupProfile,
+  scriptsWithoutLocationsProblem,
   targetedNames,
   targetingProblem,
-  timeoutLabel,
   upsertScript,
+  withEffectiveLocations,
   type SetupFailureHandling,
   type SetupProfileDetail,
   type SetupProfileDraft,
   type SetupProfileSummary,
   type SetupRegistryValue,
+  type SetupScript,
 } from '../lib/setupProfiles.ts';
 
 const FAILURE_HANDLING_OPTIONS = (Object.keys(FAILURE_HANDLING_LABELS) as SetupFailureHandling[]).map((value) => ({ value, label: FAILURE_HANDLING_LABELS[value] }));
@@ -108,6 +110,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const [retention, setRetention] = useState<number | null>(null);
   const [restoringViewed, setRestoringViewed] = useState(false);
   const [restoreBusy, setRestoreBusy] = useState(false);
+  // Texts uploaded or loaded in this editor, by hash, so a dialog reopens without another download.
+  const texts = useRef(new Map<string, string>());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,18 +150,35 @@ export default function SetupProfileEditorPage(): React.ReactElement {
 
   useEffect(() => { void load(); }, [load]);
 
+  // A duplicate's texts still belong to the profile it was copied from until it is saved.
+  const textSource = detail?.profileId ?? duplicatedFrom?.profileId;
+  const loadText = useCallback(async (sha256: string): Promise<string> => {
+    const cached = texts.current.get(sha256);
+    if (cached !== undefined) return cached;
+    if (!textSource) throw new Error('Could not load the text.');
+    const text = await fetchSetupProfileContent(textSource, sha256);
+    texts.current.set(sha256, text);
+    return text;
+  }, [textSource]);
+  const loadScriptText = useCallback((script: SetupScript) => loadText(script.contentSha256), [loadText]);
+
+  const allLocationIds = useMemo(() => locations.map((l) => l.locationId), [locations]);
+  const profileLocations = useMemo(() => {
+    const ids = new Set(profileLocationIds(draft.targeting, allLocationIds));
+    return locations.filter((l) => ids.has(l.locationId));
+  }, [draft.targeting, allLocationIds, locations]);
+
   const changes = draftChanges(saved, draft);
-  // A new profile always saves as version 1, even when it starts from a duplicate's content.
-  const contentChanged = isNew || changes.contentChanged;
   const dirty = !readOnly && changes.dirty;
   const targetProblem = targetingProblem(draft.targeting);
   const nameProblem = draft.name.trim().length === 0 || draft.name.trim().length > 100 ? 'Enter a profile name of 1 to 100 characters.' : null;
   const otherNames = useMemo(() => profiles.filter((p) => p.profileId !== profileId).map((p) => p.name.toLowerCase()), [profiles, profileId]);
   const duplicateNameProblem = otherNames.includes(draft.name.trim().toLowerCase()) ? `A setup profile named "${draft.name.trim()}" already exists. Choose another name.` : null;
-  const answerFileProblem = refusedAnswerFile !== null && draft.content.answerFile?.content === refusedAnswerFile
+  const answerFileProblem = refusedAnswerFile !== null && draft.content.answerFile?.contentSha256 === refusedAnswerFile
     ? 'The answer file has problems. Fix them before saving.'
     : null;
-  const blocked = targetProblem ?? nameProblem ?? duplicateNameProblem ?? answerFileProblem;
+  const scriptLocationsProblem = scriptsWithoutLocationsProblem(draft.content.scripts, draft.targeting, allLocationIds);
+  const blocked = targetProblem ?? nameProblem ?? duplicateNameProblem ?? answerFileProblem ?? scriptLocationsProblem;
 
   // Leaving with unsaved changes asks first. In-app links are caught before the router sees them;
   // closing or reloading the tab gets the browser's own prompt.
@@ -237,16 +258,18 @@ export default function SetupProfileEditorPage(): React.ReactElement {
     if (blocked) return;
     setSaving(true);
     setSaveError(null);
+    // Scripts keep only the locations the profile still targets.
+    const toSave = { ...draft, content: withEffectiveLocations(draft.content, draft.targeting, allLocationIds) };
     try {
       if (isNew) {
-        const created = await createSetupProfile(draft, duplicatedFrom);
+        const created = await createSetupProfile(toSave, duplicatedFrom);
         notify({ status: 'success', title: `Setup profile "${created.name}" created.` });
         setSaved(draftFrom(created));
         setDraft(draftFrom(created));
         void navigate(`/setup-profiles/${created.profileId}`, { replace: true });
         return;
       }
-      const result = await saveSetupProfile(detail!.profileId, detail!.currentVersion, draft, changes.contentChanged);
+      const result = await saveSetupProfile(detail!.profileId, detail!.currentVersion, toSave, changes.contentChanged);
       notify({
         status: 'success',
         title: result.currentVersion > detail!.currentVersion ? `Saved as version ${String(result.currentVersion)}.` : 'Changes saved.',
@@ -258,9 +281,14 @@ export default function SetupProfileEditorPage(): React.ReactElement {
     } catch (err) {
       const error = err instanceof SetupProfileApiError ? err : new SetupProfileApiError('Could not reach the server.', 0);
       setSaveError(error);
+      notify({
+        status: 'error',
+        title: isNew ? 'Could not create the setup profile.' : 'Could not save the setup profile.',
+        description: error.message,
+      });
       // Refused answer file problems belong next to the file, so the dialog opens with them.
       if (error.errors.length > 0 && draft.content.answerFile) {
-        setRefusedAnswerFile(draft.content.answerFile.content);
+        setRefusedAnswerFile(draft.content.answerFile.contentSha256);
         setAnswerDialog({ serverProblems: answerFileProblems(error.errors) });
       }
     } finally {
@@ -425,9 +453,9 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       <SectionCard
         icon={SquareTerminal}
         title="Scripts"
-        description="PowerShell, run as SYSTEM in the order below within each phase."
+        description="PowerShell, run as SYSTEM in the order below within each phase. A device runs the scripts for all locations and the ones for its own location."
         action={!readOnly && (
-          <Tooltip content={scripts.length >= MAX_SCRIPTS ? 'A profile can have at most 20 scripts.' : 'Add a script'}>
+          <Tooltip content={scripts.length >= MAX_SCRIPTS ? 'A profile can have at most 1000 scripts.' : 'Add a script'}>
             <Button variant="outline" disabled={scripts.length >= MAX_SCRIPTS} onClick={() => setScriptDialog({ mode: 'add' })}><Plus />Add script</Button>
           </Tooltip>
         )}
@@ -435,64 +463,16 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         {scripts.length === 0 ? (
           <p className="text-sm text-muted-foreground">No scripts.</p>
         ) : (
-          <div className="overflow-hidden rounded-md border border-border">
-            <Table className="table-fixed">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[72px] text-right">Order</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="w-[180px]">Runs</TableHead>
-                  <TableHead className="w-[100px] text-right">Timeout</TableHead>
-                  <TableHead className="w-[160px]">Last modified</TableHead>
-                  {!readOnly && <TableHead className="w-[160px]">Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {scripts.map((s, i) => {
-                  const first = i === 0 || scripts[i - 1].runs !== s.runs;
-                  const last = i === scripts.length - 1 || scripts[i + 1].runs !== s.runs;
-                  return (
-                    <TableRow key={s.id ?? `new-${s.runs}-${String(s.order)}`}>
-                      <TableCell className="text-right tabular-nums">{s.order}</TableCell>
-                      <TableCell><p className="truncate">{s.name}</p></TableCell>
-                      <TableCell>{SCRIPT_PHASE_SHORT_LABELS[s.runs]}</TableCell>
-                      <TableCell className="text-right tabular-nums">{timeoutLabel(s.timeoutMinutes)}</TableCell>
-                      <TableCell>
-                        {s.lastModifiedAt ? (
-                          <Tooltip content={s.lastModifiedBy ? `By ${s.lastModifiedBy}` : 'Author unknown'}>
-                            <span tabIndex={0} className="tabular-nums">{formatTimestamp(s.lastModifiedAt)}</span>
-                          </Tooltip>
-                        ) : (
-                          <span className="text-muted-foreground">Not saved yet</span>
-                        )}
-                      </TableCell>
-                      {!readOnly && (
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Tooltip content="Move up">
-                              <Button variant="ghost" size="icon" aria-label={`Move ${s.name} up`} className="text-muted-foreground" disabled={first} onClick={() => setContent({ scripts: moveScript(scripts, i, -1) })}><ArrowUp /></Button>
-                            </Tooltip>
-                            <Tooltip content="Move down">
-                              <Button variant="ghost" size="icon" aria-label={`Move ${s.name} down`} className="text-muted-foreground" disabled={last} onClick={() => setContent({ scripts: moveScript(scripts, i, 1) })}><ArrowDown /></Button>
-                            </Tooltip>
-                            <Tooltip content="Edit">
-                              <Button variant="ghost" size="icon" aria-label={`Edit ${s.name}`} onClick={() => setScriptDialog({ mode: 'edit', index: i })}><Pencil /></Button>
-                            </Tooltip>
-                            <Tooltip content="Delete">
-                              <Button variant="ghost" size="icon" aria-label={`Delete ${s.name}`} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => setContent({ scripts: renumberScripts(scripts.filter((_, j) => j !== i)) })}>
-                                <Trash2 />
-                              </Button>
-                            </Tooltip>
-                          </div>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <ScriptsTable
+            scripts={scripts}
+            targeting={draft.targeting}
+            locations={locations}
+            profileLocations={profileLocations}
+            readOnly={readOnly}
+            onChange={(next) => setContent({ scripts: next })}
+            onEdit={(index) => setScriptDialog({ mode: 'edit', index })}
+            onDelete={(index) => setContent({ scripts: renumberScripts(scripts.filter((_, j) => j !== index)) })}
+          />
         )}
       </SectionCard>
 
@@ -505,7 +485,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
                 <TableHead className="w-[220px]">Passes</TableHead>
                 <TableHead className="w-[100px] text-right">Size</TableHead>
                 <TableHead className="w-[160px]">Last modified</TableHead>
-                {!readOnly && <TableHead className="w-[96px]">Actions</TableHead>}
+                {(!readOnly || answerFile) && <TableHead className="w-[96px]">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -513,7 +493,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
                 <TableRow>
                   <TableCell className="font-mono text-xs">unattend.xml</TableCell>
                   <TableCell><p className="truncate">{(answerFile.passes ?? []).join(', ')}</p></TableCell>
-                  <TableCell className="text-right tabular-nums">{answerFileSizeLabel(answerFile.content)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{answerFileSizeLabel(answerFile.sizeBytes)}</TableCell>
                   <TableCell>
                     {answerFile.lastModifiedAt ? (
                       <Tooltip content={answerFile.lastModifiedBy ? `By ${answerFile.lastModifiedBy}` : 'Author unknown'}>
@@ -523,7 +503,13 @@ export default function SetupProfileEditorPage(): React.ReactElement {
                       <span className="text-muted-foreground">Not saved yet</span>
                     )}
                   </TableCell>
-                  {!readOnly && (
+                  {readOnly ? (
+                    <TableCell>
+                      <Tooltip content="View">
+                        <Button variant="ghost" size="icon" aria-label="View the answer file" onClick={() => setAnswerDialog({ serverProblems: [] })}><Eye /></Button>
+                      </Tooltip>
+                    </TableCell>
+                  ) : (
                     <TableCell>
                       <div className="flex gap-1">
                         <Tooltip content="Edit">
@@ -557,8 +543,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         </div>
       </SectionCard>
 
-      <SectionCard icon={ShieldCheck} title="Failure handling" description="What happens when a registry value cannot be written, or a WinPE script fails or times out.">
-        <SettingRow label="Deployment result" help="Windows setup scripts never change the result: they run after the portal stops tracking the device." htmlFor="setup-profile-failure-handling">
+      <SectionCard icon={ShieldCheck} title="Failure handling" description="What happens when a registry value cannot be written, or an Offline script fails or times out.">
+        <SettingRow label="Deployment result" help="Specialize scripts never change the result: they run after the portal stops tracking the device." htmlFor="setup-profile-failure-handling">
           {readOnly ? (
             <p className="text-sm">{FAILURE_HANDLING_LABELS[draft.content.failureHandling]}</p>
           ) : (
@@ -588,9 +574,9 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       {dirty && (
         <div className="sticky bottom-0 z-20 flex items-center justify-end gap-3 bg-background/95 py-3 backdrop-blur">
           <p className="text-sm text-muted-foreground">{blocked ?? 'You have unsaved changes.'}</p>
-          <Button variant="outline" onClick={() => (isNew ? leave('/setup-profiles') : setDraft(saved))} disabled={saving}>Discard</Button>
+          <Button variant="outline" onClick={() => (isNew ? leave('/setup-profiles') : setDraft(saved))} disabled={saving}><Undo2 />Discard</Button>
           <Button onClick={() => void save()} loading={saving} disabled={Boolean(blocked) || saving}>
-            {saveLabel(detail?.currentVersion ?? 0, contentChanged)}
+            <Save />Save
           </Button>
         </div>
       )}
@@ -598,11 +584,14 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       {answerDialog && (
         <Suspense fallback={null}>
           <AnswerFileDialog
-            content={answerFile?.content ?? ''}
+            answerFile={answerFile}
+            loadText={loadText}
             serverProblems={answerDialog.serverProblems}
+            readOnly={readOnly}
             onClose={() => setAnswerDialog(null)}
-            onApply={(content, passes) => {
-              setContent({ answerFile: content === answerFile?.content ? answerFile : { content, passes } });
+            onApply={(file, text) => {
+              texts.current.set(file.contentSha256, text);
+              setContent({ answerFile: file.contentSha256 === answerFile?.contentSha256 ? answerFile : file });
               setAnswerDialog(null);
             }}
           />
@@ -613,11 +602,16 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         <ScriptDialog
           script={scriptDialog.mode === 'edit' ? scripts[scriptDialog.index] : undefined}
           others={scripts.filter((_, j) => scriptDialog.mode !== 'edit' || j !== scriptDialog.index)}
+          locations={profileLocations}
+          loadText={loadScriptText}
+          readOnly={readOnly}
           onClose={() => setScriptDialog(null)}
-          onApply={(script) => {
+          onApply={(script, text) => {
+            texts.current.set(script.contentSha256, text);
             const before = scriptDialog.mode === 'edit' ? scripts[scriptDialog.index] : undefined;
             // An edited script shows as not saved until the profile is saved.
-            const changed = !before || before.name !== script.name || before.content !== script.content || before.runs !== script.runs || before.timeoutMinutes !== script.timeoutMinutes;
+            const changed = !before || before.name !== script.name || before.contentSha256 !== script.contentSha256 || before.runs !== script.runs
+              || before.timeoutMinutes !== script.timeoutMinutes || JSON.stringify(before.locations) !== JSON.stringify(script.locations);
             const next = changed ? { ...script, lastModifiedAt: null, lastModifiedBy: null } : script;
             setContent({ scripts: upsertScript(scripts, next, scriptDialog.mode === 'edit' ? scriptDialog.index : undefined) });
             setScriptDialog(null);

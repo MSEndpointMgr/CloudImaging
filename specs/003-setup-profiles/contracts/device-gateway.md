@@ -11,6 +11,14 @@
 > same three attempts and before Format disk. The answer file text is fetched the same way from
 > `answerFile.contentUrl`. A script in the version document that is not in `scripts` does not run
 > on this device and is not reported.
+>
+> Script texts are only hashed before Format disk, never kept, so the Client's working set stays
+> within its 512 MB budget whatever the profile holds (Constitution V). Prepare setup fetches the
+> descriptor again for fresh URLs, requires the same `contentSha256`, and streams each script to
+> `Windows\Temp\CloudImaging\Texts\{sha256}.ps1` on the applied volume as UTF-8 with BOM, checking
+> length and SHA-256 within three attempts. A script whose text cannot be fetched then fails on its
+> own with "The script could not be downloaded. Check the device's network connection."; the folder
+> is removed before the answer file is written. The answer file text (at most 2 MB) stays in memory.
 
 Both endpoints sit behind the existing device middleware: mTLS boot media certificate,
 `DeviceSessionTokenValidationMiddleware` (Bearer device session token; the session id in the route

@@ -22,10 +22,41 @@ public sealed class SetupProfileContentLoaderTests
     private static readonly Guid SessionId = Guid.NewGuid();
     private const string ContentUrl = "https://corestorage.blob.core.windows.net/setup-profiles/p/000008.json?sv=2024&sig=secret";
 
-    private static byte[] Document(int schemaVersion = 1) => Encoding.UTF8.GetBytes(
+    private static byte[] Document(int schemaVersion = 2) => Encoding.UTF8.GetBytes(
         $$"""{"schemaVersion":{{schemaVersion}},"version":8,"failureHandling":"CompleteWithWarnings","registryValues":[{"id":"7d0e5a1c-0000-4000-8000-000000000001","name":"Time zone","hive":"System","key":"CurrentControlSet\\Services\\tzautoupdate","valueName":"Start","type":"DWord","data":"3"}],"scripts":[],"answerFile":null}""");
 
-    private static string Descriptor(byte[] document, string? sha = null, long? size = null) => JsonSerializer.Serialize(new
+    private static readonly Guid Everywhere = Guid.Parse("c2d40000-0000-4000-8000-000000000001");
+    private static readonly Guid OsloOnly = Guid.Parse("c2d40000-0000-4000-8000-000000000002");
+    private static readonly byte[] EverywhereText = Encoding.UTF8.GetBytes("Write-Output 'everywhere'");
+    private static readonly byte[] OsloText = Encoding.UTF8.GetBytes("Write-Output 'oslo'");
+    private static readonly byte[] AnswerText = Encoding.UTF8.GetBytes("<unattend xmlns=\"urn:schemas-microsoft-com:unattend\"/>");
+
+    private static string Sha(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
+
+    private static byte[] DocumentWithTexts() => Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+    {
+        schemaVersion = 2,
+        version = 8,
+        failureHandling = "CompleteWithWarnings",
+        registryValues = Array.Empty<object>(),
+        scripts = new[]
+        {
+            new { id = Everywhere, name = "Everywhere", runs = "WinPE", order = 1, timeoutMinutes = 5, contentSha256 = Sha(EverywhereText), sizeBytes = EverywhereText.Length, locations = new { all = true, locationIds = Array.Empty<Guid>() } },
+            new { id = OsloOnly, name = "Oslo only", runs = "WinPE", order = 2, timeoutMinutes = 5, contentSha256 = Sha(OsloText), sizeBytes = OsloText.Length, locations = new { all = false, locationIds = new[] { Guid.NewGuid() } } },
+        },
+        answerFile = new { contentSha256 = Sha(AnswerText), sizeBytes = AnswerText.Length, passes = Array.Empty<string>() },
+    }));
+
+    private static object Text(Guid? id, byte[] bytes, string name, long? size = null) => new
+    {
+        id,
+        contentSha256 = Sha(bytes),
+        sizeBytes = size ?? bytes.Length,
+        contentUrl = $"https://corestorage.blob.core.windows.net/setup-profiles/content/{name}?sig=secret",
+        contentUrlExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15),
+    };
+
+    private static string Descriptor(byte[] document, string? sha = null, long? size = null, object[]? scripts = null, object? answerFile = null) => JsonSerializer.Serialize(new
     {
         profileId = Guid.NewGuid(),
         profileName = "Stockholm",
@@ -35,7 +66,22 @@ public sealed class SetupProfileContentLoaderTests
         contentUrlExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15),
         contentSha256 = sha ?? Convert.ToHexStringLower(SHA256.HashData(document)),
         contentSizeBytes = size ?? document.Length,
+        scripts = scripts ?? [],
+        answerFile,
     });
+
+    /// <summary>Serves the document and every text by the last segment of its URL.</summary>
+    private static Func<HttpRequestMessage, byte[]> Store(byte[] document, Func<string, byte[]?>? text = null) => request =>
+    {
+        var name = request.RequestUri!.AbsolutePath.Split('/')[^1];
+        return name == "000008.json" ? document : text?.Invoke(name) ?? name switch
+        {
+            "everywhere" => EverywhereText,
+            "oslo" => OsloText,
+            "answer" => AnswerText,
+            _ => [],
+        };
+    };
 
     private sealed class Harness
     {
@@ -46,12 +92,12 @@ public sealed class SetupProfileContentLoaderTests
         public required ListLogger Logger { get; init; }
     }
 
-    private static Harness Create(Func<int, HttpResponseMessage> gateway, Func<int, HttpResponseMessage>? download = null)
+    private static Harness Create(Func<int, HttpResponseMessage> gateway, Func<int, HttpResponseMessage>? download = null, Func<HttpRequestMessage, HttpResponseMessage>? byRequest = null)
     {
         var gatewayCalls = 0;
         var downloadCalls = 0;
         var gatewayHandler = new RecordingHandler(_ => gateway(++gatewayCalls));
-        var downloadHandler = new RecordingHandler(_ => download is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : download(++downloadCalls));
+        var downloadHandler = new RecordingHandler(request => byRequest is not null ? byRequest(request) : download is null ? new HttpResponseMessage(HttpStatusCode.NotFound) : download(++downloadCalls));
         var http = new HttpClient(gatewayHandler) { BaseAddress = new Uri("https://gateway.example.com") };
         var client = new DeviceGatewayApiClient(http);
         client.SetSessionToken("device-token");
@@ -170,7 +216,7 @@ public sealed class SetupProfileContentLoaderTests
     [Fact]
     public async Task NewerSchema_FailsWithTheUpdateMessage()
     {
-        var document = Document(schemaVersion: 2);
+        var document = Document(schemaVersion: 3);
         var h = Create(_ => Json(Descriptor(document)), _ => Bytes(document));
 
         var result = await h.Loader.LoadAsync(SessionId);
@@ -185,6 +231,190 @@ public sealed class SetupProfileContentLoaderTests
         var h = Create(_ => new HttpResponseMessage(HttpStatusCode.Conflict));
 
         (await h.Loader.LoadAsync(SessionId)).Status.Should().Be(SetupProfileLoadStatus.PipelineEnding);
+    }
+
+    [Fact]
+    public async Task OnlyTheListedScripts_AreVerified_WithTheAnswerFile()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(_ => Json(Descriptor(document, scripts: [Text(Everywhere, EverywhereText, "everywhere")], answerFile: Text(null, AnswerText, "answer"))), byRequest: r => Bytes(Store(document)(r)));
+
+        var result = await h.Loader.LoadAsync(SessionId);
+
+        result.Status.Should().Be(SetupProfileLoadStatus.Loaded);
+        result.Content!.Scripts.Select(s => s.Name).Should().Equal("Everywhere");
+        result.AnswerFileText.Should().Be(Encoding.UTF8.GetString(AnswerText));
+        h.Download.Requests.Select(r => r.Request.RequestUri!.AbsolutePath.Split('/')[^1]).Should().Equal("000008.json", "everywhere", "answer");
+        h.Download.Requests.Should().OnlyContain(r => r.Request.Headers.Authorization == null);
+    }
+
+    [Fact]
+    public async Task AScriptWithTheWrongHash_IsRetried_WithinTheSameThreeAttempts()
+    {
+        var document = DocumentWithTexts();
+        var calls = 0;
+        var h = Create(
+            _ => Json(Descriptor(document, scripts: [Text(Everywhere, EverywhereText, "everywhere"), Text(OsloOnly, OsloText, "oslo")], answerFile: Text(null, AnswerText, "answer"))),
+            byRequest: r => Bytes(Store(document, name => name == "oslo" && ++calls == 1 ? Encoding.UTF8.GetBytes("Write-Output 'OSLO'") : null)(r)));
+
+        var result = await h.Loader.LoadAsync(SessionId);
+
+        result.Status.Should().Be(SetupProfileLoadStatus.Loaded);
+        h.Gateway.Requests.Should().HaveCount(2);
+        h.Download.Requests.Count(r => r.Request.RequestUri!.AbsolutePath.EndsWith("/everywhere", StringComparison.Ordinal)).Should().Be(1, "a text verified in an earlier attempt is not checked again");
+    }
+
+    [Fact]
+    public async Task AScriptThatNeverVerifies_FailsBeforeFormatDisk_WithTheDownloadMessage()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(
+            _ => Json(Descriptor(document, scripts: [Text(Everywhere, EverywhereText, "everywhere", size: EverywhereText.Length - 1)], answerFile: Text(null, AnswerText, "answer"))),
+            byRequest: r => Bytes(Store(document)(r)));
+
+        var result = await h.Loader.LoadAsync(SessionId);
+
+        result.Status.Should().Be(SetupProfileLoadStatus.Failed);
+        result.FailureMessage.Should().Be(SetupProfileContentLoader.DownloadFailedMessage);
+        h.Gateway.Requests.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task ADescriptorListingAScriptTheDocumentDoesNotHave_Fails()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(_ => Json(Descriptor(document, scripts: [Text(Guid.NewGuid(), EverywhereText, "everywhere")], answerFile: Text(null, AnswerText, "answer"))), byRequest: r => Bytes(Store(document)(r)));
+
+        var result = await h.Loader.LoadAsync(SessionId);
+
+        result.Status.Should().Be(SetupProfileLoadStatus.Failed);
+        result.FailureMessage.Should().Be(SetupProfileContentLoader.DownloadFailedMessage);
+    }
+
+    [Fact]
+    public async Task NoListedScripts_RunNothing_ButTheAnswerFileIsStillLoaded()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(_ => Json(Descriptor(document, answerFile: Text(null, AnswerText, "answer"))), byRequest: r => Bytes(Store(document)(r)));
+
+        var result = await h.Loader.LoadAsync(SessionId);
+
+        result.Content!.Scripts.Should().BeEmpty();
+        result.AnswerFileText.Should().NotBeNull();
+    }
+
+    private static string ListedDescriptor(byte[] document) =>
+        Descriptor(document, scripts: [Text(Everywhere, EverywhereText, "everywhere"), Text(OsloOnly, OsloText, "oslo")], answerFile: Text(null, AnswerText, "answer"));
+
+    [Fact]
+    public async Task DownloadScripts_WritesEachScriptToTheVolume_WithABom_FromAFreshDescriptor()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(_ => Json(ListedDescriptor(document)), byRequest: r => Bytes(Store(document)(r)));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+        var volume = new FakeSetupFileSystem();
+
+        var files = await h.Loader.DownloadScriptsAsync(SessionId, loaded, volume);
+
+        h.Gateway.Requests.Should().HaveCount(2, "the read URLs from before Format disk have expired");
+        files.Should().Equal(new Dictionary<string, string>
+        {
+            [Sha(EverywhereText)] = SetupProfileContentLoader.TextPath(Sha(EverywhereText)),
+            [Sha(OsloText)] = SetupProfileContentLoader.TextPath(Sha(OsloText)),
+        });
+        files[Sha(EverywhereText)].Should().Be($@"Windows\Temp\CloudImaging\Texts\{Sha(EverywhereText)}.ps1");
+        volume.Files[files[Sha(EverywhereText)]].Should().Equal([.. Encoding.UTF8.GetPreamble(), .. EverywhereText]);
+        volume.Files[files[Sha(OsloText)]].Should().Equal([.. Encoding.UTF8.GetPreamble(), .. OsloText]);
+        h.Download.Requests.Should().OnlyContain(r => r.Request.Headers.Authorization == null);
+    }
+
+    [Fact]
+    public async Task DownloadScripts_ReportsTheScriptBeingDownloaded_AndRepeatsItOnARetry()
+    {
+        var document = DocumentWithTexts();
+        var afterFormat = false;
+        var osloCalls = 0;
+        var h = Create(_ => Json(ListedDescriptor(document)), byRequest: r => Bytes(Store(document, name => afterFormat && name == "oslo" && ++osloCalls == 1 ? Encoding.UTF8.GetBytes("Write-Output 'OSLO'") : null)(r)));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+        afterFormat = true;
+        var reported = new List<(int Number, int Total)>();
+
+        await h.Loader.DownloadScriptsAsync(SessionId, loaded, new FakeSetupFileSystem(), (number, total) => reported.Add((number, total)));
+
+        reported.Should().Equal((1, 2), (2, 2), (2, 2));
+    }
+
+    [Fact]
+    public async Task DownloadScripts_AScriptThatNeverVerifies_IsLeftOut_AndItsFileRemoved()
+    {
+        var document = DocumentWithTexts();
+        var afterFormat = false;
+        var h = Create(_ => Json(ListedDescriptor(document)), byRequest: r => Bytes(Store(document, name => afterFormat && name == "oslo" ? Encoding.UTF8.GetBytes("Write-Output 'OSLO'") : null)(r)));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+        afterFormat = true;
+        var volume = new FakeSetupFileSystem();
+
+        var files = await h.Loader.DownloadScriptsAsync(SessionId, loaded, volume);
+
+        files.Keys.Should().Equal(Sha(EverywhereText));
+        volume.Files.Keys.Should().Equal(SetupProfileContentLoader.TextPath(Sha(EverywhereText)));
+        h.Gateway.Requests.Should().HaveCount(1 + SetupProfileContentLoader.MaxAttempts);
+        h.Download.Requests.Count(r => r.Request.RequestUri!.AbsolutePath.EndsWith("/everywhere", StringComparison.Ordinal)).Should().Be(2, "a verified file is not downloaded again");
+    }
+
+    [Fact]
+    public async Task DownloadScripts_ADiskError_LeavesTheScriptOut()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(_ => Json(ListedDescriptor(document)), byRequest: r => Bytes(Store(document)(r)));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+        var volume = new FakeSetupFileSystem { FailWrites = true };
+
+        var files = await h.Loader.DownloadScriptsAsync(SessionId, loaded, volume);
+
+        files.Should().BeEmpty();
+        h.Logger.Messages.Should().Contain(m => m.Contains("could not be written to the Windows volume", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DownloadScripts_AnotherVersion_DownloadsNothing()
+    {
+        var document = DocumentWithTexts();
+        var h = Create(call => Json(call == 1 ? ListedDescriptor(document) : Descriptor(document, sha: new string('0', 64), scripts: [Text(Everywhere, EverywhereText, "everywhere")])), byRequest: r => Bytes(Store(document)(r)));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+        var before = h.Download.Requests.Count;
+
+        var files = await h.Loader.DownloadScriptsAsync(SessionId, loaded, new FakeSetupFileSystem());
+
+        files.Should().BeEmpty();
+        h.Download.Requests.Should().HaveCount(before);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Conflict)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task DownloadScripts_WithoutADescriptor_DownloadsNothing(HttpStatusCode status)
+    {
+        var document = DocumentWithTexts();
+        var h = Create(call => call == 1 ? Json(ListedDescriptor(document)) : new HttpResponseMessage(status), byRequest: r => Bytes(Store(document)(r)));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+
+        var files = await h.Loader.DownloadScriptsAsync(SessionId, loaded, new FakeSetupFileSystem());
+
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DownloadScripts_WithoutScripts_CallsNothing()
+    {
+        var document = Document();
+        var h = Create(_ => Json(Descriptor(document)), _ => Bytes(document));
+        var loaded = await h.Loader.LoadAsync(SessionId);
+
+        var files = await h.Loader.DownloadScriptsAsync(SessionId, loaded, new FakeSetupFileSystem());
+
+        files.Should().BeEmpty();
+        h.Gateway.Requests.Should().HaveCount(1);
     }
 
     [Fact]

@@ -236,7 +236,7 @@ export function WifiNetworkDialog({ network, networks, locations, onClose, onSav
 
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
           <Button variant="secondary" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={() => void save()} loading={busy}><Save />{editing ? 'Save changes' : 'Save network'}</Button>
+          <Button onClick={() => void save()} loading={busy}><Save />Save</Button>
         </div>
       </div>
     </div>,
