@@ -37,6 +37,8 @@ export default defineConfig({
     // `@testing-library/react` is here for the plainer reason that Node resolution walks up
     // from the *test* file, which never reaches this package's node_modules at all.
     alias: {
+      // The JSX runtime import plugin-react injects into a test file must resolve from this package.
+      react: path.resolve(__dirname, './node_modules/react'),
       '@azure/msal-react': path.resolve(__dirname, './node_modules/@azure/msal-react'),
       '@azure/msal-browser': path.resolve(__dirname, './node_modules/@azure/msal-browser'),
       '@testing-library/react': path.resolve(__dirname, './node_modules/@testing-library/react'),
