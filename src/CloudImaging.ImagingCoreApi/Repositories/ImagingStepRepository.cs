@@ -38,6 +38,7 @@ public sealed class ImagingStepRepository
             ["WarningCount"] = step.WarningCount,
             ["ItemCountsJson"] = step.ItemCounts.Count == 0 ? null : JsonSerializer.Serialize(step.ItemCounts, JsonOptions),
             ["ItemsTruncated"] = step.ItemsTruncated,
+            ["StatusNote"] = step.StatusNote,
         };
         await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, ct);
     }
@@ -61,6 +62,7 @@ public sealed class ImagingStepRepository
                 WarningCount = entity.GetInt32("WarningCount"),
                 ItemCounts = ReadItemCounts(entity.GetString("ItemCountsJson")),
                 ItemsTruncated = entity.GetBoolean("ItemsTruncated") ?? false,
+                StatusNote = entity.GetString("StatusNote"),
             });
         }
         return steps;

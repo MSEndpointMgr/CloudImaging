@@ -121,6 +121,24 @@ public static class DevicePayloadSignatureVerifier
             now);
     }
 
+    /// <summary>Verifies the proof-of-possession on a boot image update check, which covers the architecture, base and current image asked about.</summary>
+    public static Result VerifyBootImage(
+        X509Certificate2 clientCertificate,
+        LatestBootImageRequest request,
+        TimeSpan maxSkew,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(clientCertificate);
+        ArgumentNullException.ThrowIfNull(request);
+
+        return Verify(
+            clientCertificate,
+            request.ProofOfPossession,
+            pop => DevicePayloadSignature.BuildBootImageChallenge(request.SerialNumber, request.Architecture, request.Base, request.CurrentBootImageId, pop.TimestampUtc, pop.Nonce),
+            maxSkew,
+            now);
+    }
+
     private static Result Verify(
         X509Certificate2 clientCertificate,
         DeviceProofOfPossession? pop,

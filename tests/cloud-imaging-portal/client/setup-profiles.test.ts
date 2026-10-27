@@ -165,6 +165,10 @@ describe('Portal frontend: setup profile helpers', () => {
     it.each([
       ['HKLM\\SOFTWARE\\X', 'must be relative to the hive'],
       ['HKEY_LOCAL_MACHINE\\X', 'must be relative to the hive'],
+      ['HKCU\\Control Panel\\Desktop', 'must be relative to the hive'],
+      ['HKCU:\\Control Panel', 'must be relative to the hive'],
+      ['HKLM:\\SOFTWARE\\X', 'must be relative to the hive'],
+      ['HKU\\.DEFAULT\\X', 'must be relative to the hive'],
       ['\\X', 'must be relative to the hive'],
       ['A\\\\B', 'must be relative to the hive'],
       ['', 'must be 1 to 512 characters'],

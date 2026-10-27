@@ -1,4 +1,5 @@
 using CloudImaging.DeviceGatewayApi.Middleware;
+using CloudImaging.DeviceGatewayApi.Tests.TestDoubles;
 using FluentAssertions;
 using Xunit;
 
@@ -43,13 +44,42 @@ public sealed class RateLimitingContractTests
     }
 
     [Fact]
-    public void RateLimitKey_IsTokenHash_NotIpAddress()
+    public void RateLimitKey_IsTokenHash_ForSessionCalls()
     {
-        // Rate limiting is keyed by device-session token hash (per-session), not IP
-        // This prevents shared-NAT environments from being blocked together.
-        const string keyDescription = "device-session token hash";
-        keyDescription.Should().Contain("token",
-            "rate limiting is keyed by session token, not IP address");
+        // Calls with a session token are limited per token, so devices behind one NAT address do
+        // not share that limit.
+        RateLimitingMiddleware.ExemptFunctionNames.Should().NotContain("GetSessionStatus");
+    }
+
+    [Fact]
+    public void TokenFreeCalls_AreLimitedPerClientAddress_Generously()
+    {
+        RateLimitingMiddleware.TokenFreeMaxCallsPerWindow.Should().Be(300);
+        RateLimitingMiddleware.TokenFreeWindowDuration.Should().Be(TimeSpan.FromMinutes(1));
+        DeviceSessionTokenValidationMiddleware.ExemptFunctionNames.Should().Contain(["CreateSession", "CheckLatestBootImage", "GetManagedWifiNetworks"]);
+    }
+
+    [Theory]
+    [InlineData("203.0.113.7:51234", "203.0.113.7")]
+    [InlineData("203.0.113.7", "203.0.113.7")]
+    [InlineData("198.51.100.1, 203.0.113.7:443", "203.0.113.7")]
+    [InlineData("[2001:db8::1]:51234", "2001:db8::1")]
+    [InlineData("2001:db8::1", "2001:db8::1")]
+    [InlineData("not-an-address", null)]
+    public void ClientAddress_IsTheLastForwardedEntry_WithoutPort(string forwardedFor, string? expected)
+    {
+        var request = FunctionHttp.Request(FunctionHttp.Context(), "POST", "https://gateway.example/api/v1/sessions");
+        request.Headers.Add("X-Forwarded-For", forwardedFor);
+
+        RateLimitingMiddleware.ClientAddress(request).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ClientAddress_IsNull_WithoutForwardedHeader()
+    {
+        var request = FunctionHttp.Request(FunctionHttp.Context(), "POST", "https://gateway.example/api/v1/sessions");
+
+        RateLimitingMiddleware.ClientAddress(request).Should().BeNull();
     }
 
     [Fact]

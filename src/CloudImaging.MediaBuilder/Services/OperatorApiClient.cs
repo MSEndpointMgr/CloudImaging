@@ -127,6 +127,25 @@ public sealed partial class OperatorApiClient
             ?? new ManagedWifiNetworkSet { LocationId = locationId };
     }
 
+    // ── Driver sets ────────────────────────────────────────────────────────────
+
+    /// <summary>The current driver set of every onboarded model and Windows release for an architecture.</summary>
+    public async Task<IReadOnlyList<CloudImaging.Contracts.Models.Drivers.MediaBuilderDriverSet>> GetDriverSetsAsync(MachineArchitecture architecture, CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync($"/api/media-builder/driver-sets?architecture={architecture}", ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<List<CloudImaging.Contracts.Models.Drivers.MediaBuilderDriverSet>>(JsonOptions, ct) ?? [];
+    }
+
+    /// <summary>Read links for the files of chosen driver sets, one per distinct file. Reads only; nothing is pinned.</summary>
+    public async Task<CloudImaging.Contracts.Models.Drivers.MediaBuilderDriverSetLinks> GetDriverSetLinksAsync(IReadOnlyList<CloudImaging.Contracts.Models.Drivers.MediaBuilderDriverSetRef> sets, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync("/api/media-builder/driver-sets/links", new CloudImaging.Contracts.Models.Drivers.MediaBuilderDriverSetLinksRequest { Sets = sets }, JsonOptions, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<CloudImaging.Contracts.Models.Drivers.MediaBuilderDriverSetLinks>(JsonOptions, ct)
+            ?? throw new InvalidOperationException("Empty driver set links response from Operator API.");
+    }
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Operator API request: {Method} {Path}.")]
     private static partial void LogRequest(ILogger logger, string method, string path);
 }

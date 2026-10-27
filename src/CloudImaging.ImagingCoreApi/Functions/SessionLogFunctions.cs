@@ -27,7 +27,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 public sealed partial class SessionLogFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const string Container = "session-logs";
+    private const string Container = Storage.StorageContainers.SessionLogs;
 
     private readonly BlobServiceClient _blobClient;
     private readonly ILogger<SessionLogFunctions> _logger;

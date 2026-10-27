@@ -175,4 +175,101 @@ public sealed class BootMediaCertificateRepositoryTests
 
         demoteCount.Should().Be(2, "both previously active certs must be demoted atomically");
     }
+
+    // ── Rotation overlap ──────────────────────────────────────────────────────
+
+    private static BootMediaCertificate NewCert(string thumbprint) => new()
+    {
+        Thumbprint = thumbprint,
+        NotBefore = DateTimeOffset.UtcNow,
+        NotAfter = DateTimeOffset.UtcNow.AddDays(365),
+        KeyVaultSecretName = "boot-media-cert-new",
+    };
+
+    private static TableEntity PreviousEntity(string thumbprint, DateTimeOffset acceptedUntil)
+    {
+        var entity = ActiveEntity(thumbprint);
+        entity["IsActive"] = false;
+        entity["AcceptedUntil"] = acceptedUntil;
+        return entity;
+    }
+
+    [Fact]
+    public async Task ActivateAsync_WithOverlap_KeepsDemotedCertAcceptedUntilEndOfOverlap()
+    {
+        var (repo, _, capturedActions) = BuildRepo(new[] { ActiveEntity(Thumbprint1) });
+
+        await repo.ActivateAsync(NewCert(Thumbprint2), TimeSpan.FromDays(14));
+
+        var demoted = (TableEntity)capturedActions.Single(a => ((TableEntity)a.Entity).RowKey == Thumbprint1).Entity;
+        demoted.GetDateTimeOffset("AcceptedUntil").Should().BeCloseTo(DateTimeOffset.UtcNow.AddDays(14), TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task ActivateAsync_WithoutOverlap_EndsDemotedCertNow()
+    {
+        var (repo, _, capturedActions) = BuildRepo(new[] { ActiveEntity(Thumbprint1) });
+
+        await repo.ActivateAsync(NewCert(Thumbprint2));
+
+        var demoted = (TableEntity)capturedActions.Single(a => ((TableEntity)a.Entity).RowKey == Thumbprint1).Entity;
+        demoted.GetDateTimeOffset("AcceptedUntil").Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task ActivateAsync_EndsAnOlderOverlap_SoAtMostOnePreviousCertIsAccepted()
+    {
+        const string olderThumbprint = "99887766554433221100FFEEDDCCBBAA99887766";
+        var older = PreviousEntity(olderThumbprint, DateTimeOffset.UtcNow.AddDays(5));
+        var (repo, _, capturedActions) = BuildRepo(new[] { older, ActiveEntity(Thumbprint1) });
+
+        await repo.ActivateAsync(NewCert(Thumbprint2), TimeSpan.FromDays(14));
+
+        var olderUpdate = (TableEntity)capturedActions.Single(a => ((TableEntity)a.Entity).RowKey == olderThumbprint).Entity;
+        olderUpdate.GetDateTimeOffset("AcceptedUntil").Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task GetAcceptedAsync_ReturnsActiveFirst_AndOnlyPreviousCertsInsideTheirOverlap()
+    {
+        const string expiredThumbprint = "99887766554433221100FFEEDDCCBBAA99887766";
+        var (repo, _, _) = BuildRepo(new[]
+        {
+            PreviousEntity(Thumbprint2, DateTimeOffset.UtcNow.AddDays(3)),
+            PreviousEntity(expiredThumbprint, DateTimeOffset.UtcNow.AddDays(-1)),
+            ActiveEntity(Thumbprint1),
+        });
+
+        var accepted = await repo.GetAcceptedAsync(DateTimeOffset.UtcNow);
+
+        accepted.Select(c => c.Thumbprint).Should().Equal(Thumbprint1, Thumbprint2);
+        accepted[0].IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task StopAcceptingPreviousAsync_EndsTheOverlapNow_AndLeavesTheActiveCertAlone()
+    {
+        var (repo, _, capturedActions) = BuildRepo(new[]
+        {
+            PreviousEntity(Thumbprint2, DateTimeOffset.UtcNow.AddDays(3)),
+            ActiveEntity(Thumbprint1),
+        });
+
+        var stopped = await repo.StopAcceptingPreviousAsync(DateTimeOffset.UtcNow);
+
+        stopped.Should().Be(1);
+        capturedActions.Should().ContainSingle();
+        ((TableEntity)capturedActions[0].Entity).RowKey.Should().Be(Thumbprint2);
+    }
+
+    [Fact]
+    public async Task StopAcceptingPreviousAsync_WithNothingInOverlap_SubmitsNothing()
+    {
+        var (repo, mockTable, _) = BuildRepo(new[] { ActiveEntity(Thumbprint1) });
+
+        var stopped = await repo.StopAcceptingPreviousAsync(DateTimeOffset.UtcNow);
+
+        stopped.Should().Be(0);
+        mockTable.Verify(t => t.SubmitTransactionAsync(It.IsAny<IEnumerable<TableTransactionAction>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

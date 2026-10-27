@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { PieChart, HardDrive, AlertOctagon, ArrowRight, BarChart3, MapPin, BadgeCheck } from 'lucide-react';
+import { PieChart, HardDrive, AlertOctagon, ArrowRight, BarChart3, MapPin, BadgeCheck, RefreshCw } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card.tsx';
 
 interface ReportCard {
@@ -39,6 +39,12 @@ const REPORT_CARDS: ReportCard[] = [
     title: 'Autopilot Registration History',
     description: 'Every handled Autopilot request: outcome, approver, group tag and when it was closed.',
     icon: <BadgeCheck size={18} />,
+  },
+  {
+    to: '/reports/driver-synchronization',
+    title: 'Driver Synchronization',
+    description: 'Every driver synchronization and check for updates: how reliable and long they were, what they changed, what they downloaded and what keeps failing.',
+    icon: <RefreshCw size={18} />,
   },
 ];
 

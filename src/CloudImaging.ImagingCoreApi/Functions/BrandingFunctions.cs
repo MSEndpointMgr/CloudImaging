@@ -27,7 +27,7 @@ public sealed partial class BrandingFunctions
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly Regex HexColorPattern = new("^#[0-9a-fA-F]{6}$", RegexOptions.Compiled);
     private const int LogoSasMinutes = 60;
-    private const string LogoContainer = "branding";
+    private const string LogoContainer = Storage.StorageContainers.Branding;
     private const int MaxLogoBytes = 1024 * 1024; // 1 MB decoded
     /// <summary>
     /// Longest-side target (px) that uploaded raster logos are normalized to (FR-038). The Cloud

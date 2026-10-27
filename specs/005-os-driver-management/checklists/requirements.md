@@ -31,6 +31,6 @@
 
 ## Notes
 
-- The three clarifications were resolved on 2026-10-22 (see the spec's Clarifications section): critical driver categories per vendor (FR-053, FR-070), administrator-entered Windows release per OS image (FR-044), one link per component (FR-047). The roll back model (per component or per model) is still under discussion and may change FR-029, FR-030 and FR-073.
+- The three clarifications were resolved on 2026-10-22 (see the spec's Clarifications section): critical driver categories per vendor (FR-053, FR-070), administrator-entered Windows release per OS image (FR-044), one link per component (FR-047). The roll back model was settled on 2026-10-25: Roll back driver set undoes a whole set (FR-029, FR-030) and Roll back component holds one component at an earlier version (FR-089, FR-090).
 - Domain terms (WinPE, specialize pass, `Panther\unattend.xml`, SHA-256, IANA time zone, vendor catalog fields such as `DPBCompliant`) are product vocabulary for the IT administrator audience, not implementation choices. No languages, frameworks, storage technologies or compute choices are named.
 - Vendor classification tables quote vendor data fields because they define observable default behaviour that administrators see and can override.

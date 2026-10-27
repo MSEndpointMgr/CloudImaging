@@ -28,7 +28,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 public sealed partial class RecoveryImageUploadFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const string UploadContainer = "recovery-images";
+    private const string UploadContainer = Storage.StorageContainers.RecoveryImages;
 
     private readonly RecoveryImageRepository _recoveryImageRepo;
     private readonly UploadJobRepository _jobRepo;

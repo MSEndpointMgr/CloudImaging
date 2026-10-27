@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Check, Globe, Pencil, Plus, Save, Trash2, Undo2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Globe, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react';
+import { SaveBar } from './SaveBar.tsx';
+import { unsavedRail, type UnsavedChange } from '../lib/unsavedChanges.ts';
 import { Button, type ButtonStatus } from './ui/button.tsx';
+import { UndoChangeButton } from './ui/unsaved-change.tsx';
+import { cn } from '../lib/utils.ts';
 import { Input } from './ui/input.tsx';
 import { Select } from './ui/select.tsx';
 import { SearchInput } from './ui/search-input.tsx';
@@ -50,15 +54,39 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
   const [adding, setAdding] = useState<string | null>(null);
   const [pendingChanges, setPendingChanges] = useState<RegionChange[] | null>(null);
   const [saveStatus, setSaveStatus] = useState<ButtonStatus>('idle');
+  // Settles the promise a save returns once the region change confirmation is answered.
+  const confirmed = useRef<((saved: boolean) => void) | null>(null);
+
+  const draftPayload = JSON.stringify(toRegionsPayload(regions, countries));
+  const draftRef = useRef(draftPayload);
+  useEffect(() => { draftRef.current = draftPayload; });
+  const lastView = useRef<RegionsView | null>(null);
 
   useEffect(() => {
     if (!view) return;
+    const previous = lastView.current;
+    lastView.current = view;
+    // Locations reload the mapping after their own edits; an unsaved region edit survives that.
+    if (previous && draftRef.current !== JSON.stringify(toRegionsPayload(previous.regions, previous.countries))) return;
     setRegions(view.regions.map(({ regionId, code }) => ({ regionId, code })));
     setCountries(view.countries);
   }, [view]);
 
   const savedPayload = useMemo(() => (view ? JSON.stringify(toRegionsPayload(view.regions, view.countries)) : ''), [view]);
-  const isDirty = view !== null && JSON.stringify(toRegionsPayload(regions, countries)) !== savedPayload;
+  const isDirty = view !== null && draftPayload !== savedPayload;
+  const discard = () => {
+    if (!view) return;
+    setRegions(view.regions.map(({ regionId, code }) => ({ regionId, code })));
+    setCountries(view.countries);
+  };
+
+  const savedRegionOf = (countryCode: string) => view?.countries.find((c) => c.countryCode === countryCode)?.regionId ?? null;
+  const savedCodeOf = (regionId: string) => view?.regions.find((r) => r.regionId === regionId)?.code ?? null;
+  const changes: UnsavedChange[] = !view || !isDirty ? [] : [
+    ...regions.filter((r) => savedCodeOf(r.regionId) !== r.code).map((r) => ({ label: `Region ${r.code}`, scope: 'Regions' })),
+    ...view.regions.filter((s) => !regions.some((r) => r.regionId === s.regionId)).map((s) => ({ label: `Region ${s.code}`, scope: 'Regions' })),
+    ...countries.filter((c) => c.regionId !== savedRegionOf(c.countryCode)).map((c) => ({ label: countryName(c.countryCode) ?? c.countryCode, scope: 'Regions' })),
+  ];
 
   const regionOptions = useMemo(
     () => [...regions.map((r) => ({ value: r.regionId, label: r.code })), { value: NO_REGION, label: 'No region' }],
@@ -110,18 +138,27 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
     if (regionFilter === regionId) setRegionFilter('');
   };
 
-  const save = () => {
-    if (!view) return;
+  // Confirms first when locations would change region; resolves once that is answered and saved.
+  const save = (): Promise<boolean> => {
+    if (!view) return Promise.resolve(false);
     const changes = regionChanges(
       locations,
       (country) => regionCodeFor(view.regions, view.countries, country),
       (country) => regionCodeFor(regions, countries, country),
     );
-    if (changes.length > 0) setPendingChanges(changes);
-    else void persist();
+    if (changes.length === 0) return persist();
+    return new Promise((resolve) => {
+      confirmed.current = resolve;
+      setPendingChanges(changes);
+    });
   };
 
-  const persist = async () => {
+  const settle = (saved: boolean) => {
+    confirmed.current?.(saved);
+    confirmed.current = null;
+  };
+
+  const persist = async (): Promise<boolean> => {
     setSaveStatus('loading');
     try {
       const res = await apiFetch('/api/regions', {
@@ -133,15 +170,17 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
       if (!res.ok) {
         setSaveStatus('error');
         notify({ status: 'error', title: 'Could not save regions', description: await extractErrorDetail(res, 'The regions were not saved.') });
-        return;
+        return false;
       }
       setPendingChanges(null);
       setSaveStatus('success');
       notify({ status: 'success', title: 'Regions saved.' });
       await onSaved();
+      return true;
     } catch {
       setSaveStatus('error');
       notify({ status: 'error', title: 'Network error.', description: 'Could not reach the server.' });
+      return false;
     } finally {
       setTimeout(() => setSaveStatus('idle'), 1600);
     }
@@ -179,8 +218,10 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
         {regions.map((r) => {
           const stats = regionStats(r.regionId, r.code);
           const isRenaming = renaming?.regionId === r.regionId;
+          const savedCode = savedCodeOf(r.regionId);
+          const regionChanged = view !== null && savedCode !== r.code;
           return (
-            <div key={r.regionId} className="rounded-xl border border-border bg-card px-5 py-4">
+            <div key={r.regionId} className={cn('rounded-xl border border-border bg-card px-5 py-4', unsavedRail(regionChanged))}>
               {isRenaming ? (
                 <div className="space-y-2">
                   <div className="flex items-center gap-1">
@@ -212,6 +253,12 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-1">
+                    {regionChanged && (
+                      <UndoChangeButton
+                        label={`region ${r.code}`}
+                        onUndo={() => (savedCode === null ? removeRegion(r.regionId) : setRegions((current) => current.map((x) => (x.regionId === r.regionId ? { ...x, code: savedCode } : x))))}
+                      />
+                    )}
                     <Tooltip content="Rename">
                       <Button variant="ghost" size="icon" aria-label={`Rename region ${r.code}`} onClick={() => setRenaming({ regionId: r.regionId, code: r.code })}><Pencil /></Button>
                     </Tooltip>
@@ -292,12 +339,12 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
         <Table className="table-fixed">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-[32%]">Country</TableHead>
+              <TableHead className="w-[28%]">Country</TableHead>
               <TableHead className="w-[10%]">Code</TableHead>
               <TableHead className="w-[24%]">Region</TableHead>
               <TableHead className="w-[14%]">Default</TableHead>
               <TableHead className="w-[12%]">Locations</TableHead>
-              <TableHead className="w-[8%]">Actions</TableHead>
+              <TableHead className="w-[12%]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -309,9 +356,10 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
               </TableRow>
             ) : countryRows.map((c) => {
               const changed = c.regionId !== c.defaultRegionId;
+              const unsaved = c.regionId !== savedRegionOf(c.countryCode);
               return (
                 <TableRow key={c.countryCode}>
-                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell className={cn('font-medium', unsavedRail(unsaved))}>{c.name}</TableCell>
                   <TableCell className="font-mono text-sm">{c.countryCode}</TableCell>
                   <TableCell>
                     <Select
@@ -324,19 +372,22 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
                   <TableCell className="text-muted-foreground">{codeOf(c.defaultRegionId) ?? 'No region'}</TableCell>
                   <TableCell className="tabular-nums">{locationsByCountry.get(c.countryCode) ?? 0}</TableCell>
                   <TableCell>
-                    {changed && (
-                      <Tooltip content={`Reset to ${codeOf(c.defaultRegionId) ?? 'no region'}`}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`Reset ${c.name} to its default region`}
-                          className="text-muted-foreground"
-                          onClick={() => setCountryRegion(c.countryCode, c.defaultRegionId)}
-                        >
-                          <Undo2 />
-                        </Button>
-                      </Tooltip>
-                    )}
+                    <div className="flex gap-1">
+                      {unsaved && <UndoChangeButton label={c.name} onUndo={() => setCountryRegion(c.countryCode, savedRegionOf(c.countryCode))} />}
+                      {changed && (
+                        <Tooltip content={`Reset to ${codeOf(c.defaultRegionId) ?? 'no region'}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Reset ${c.name} to its default region`}
+                            className="text-muted-foreground"
+                            onClick={() => setCountryRegion(c.countryCode, c.defaultRegionId)}
+                          >
+                            <RotateCcw />
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -345,18 +396,13 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
         </Table>
       </div>
 
-      <div className="flex items-center gap-3">
-        <Button
-          onClick={save}
-          status={saveStatus}
-          variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
-          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
-        >
-          <Save />
-          Save
-        </Button>
-        {isDirty && saveStatus === 'idle' && <p className="text-sm text-muted-foreground">You have unsaved changes.</p>}
-      </div>
+      <SaveBar
+        changes={changes}
+        status={saveStatus}
+        savedMessage="Regions saved."
+        onDiscard={discard}
+        onSave={save}
+      />
 
       {pendingChanges && (
         <ConfirmImpactDialog
@@ -367,8 +413,8 @@ export function RegionsPanel({ view, loadError, locations, onSaved }: Props): Re
             destructive: false,
           }}
           busy={saveStatus === 'loading'}
-          onCancel={() => setPendingChanges(null)}
-          onConfirm={() => void persist()}
+          onCancel={() => { setPendingChanges(null); settle(false); }}
+          onConfirm={() => void persist().then(settle)}
           titleId="region-change-title"
         />
       )}

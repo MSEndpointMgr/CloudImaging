@@ -19,6 +19,11 @@
     upgrade does not re-run the Bicep template that normally sets it, so this keeps browser
     uploads of OS images working if the rule was ever lost.
 
+    The App Service security settings from the template are re-applied the same way: HTTPS only,
+    TLS 1.2 or later for the site and its deployment endpoint, FTP off, and basic authentication
+    for deployment off on the three Function Apps. The portal backend keeps basic authentication
+    for deployment, because its zip deploy uses it.
+
     Requirements:
         Az PowerShell module. The script signs in with Connect-AzAccount if no session exists
         Contributor on the resource group holding the deployment
@@ -45,7 +50,7 @@
     Author:      MSEndpointMgr
     Contact:     @MSEndpointMgr
     Created:     2026-09-13
-    Updated:     2026-10-17
+    Updated:     2026-10-26
 
     Version history:
     1.0.0 - (2026-09-13) Replaces update.ps1. Packages now come from the bundle instead of
@@ -54,6 +59,8 @@
                          sign in or select the subscription. All resources are now resolved
                          before anything changes, APIs upgrade dependency first, the SWA token
                          no longer appears on a command line, and the result is verified
+    1.2.0 - (2026-10-26) Re-applies the App Service security settings, so a release that
+                         tightens them never needs the Template Spec deployed again
 #>
 #Requires -Modules Az.Accounts, Az.Resources, Az.Storage, Az.Websites
 [CmdletBinding(SupportsShouldProcess)]
@@ -81,12 +88,25 @@ Begin {
     $PortalUrl = ""
     $BundleVersion = ""
 
+    # Blob containers the Imaging Core API reads and writes. A release that adds one would
+    # otherwise fail every write to it until the template was run again, because a component
+    # upgrade deploys code only.
+    $CoreDataContainers = @(
+        "os-images"
+        "boot-images"
+        "recovery-images"
+        "setup-profiles"
+        "branding"
+        "session-logs"
+        "drivers"
+    )
+
     $UpgradeResults = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
     $FunctionAppComponents = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
     $DeployedPackages = [ordered]@{}
     $CurrentStepCount = 0
     $FailureCount = 0
-    $TotalStepCount = 6
+    $TotalStepCount = 7
 
     $RequiredPackages = @(
         "DeviceGatewayApi.zip"
@@ -218,6 +238,72 @@ Begin {
         if ($Response.StatusCode -ne 200) {
             throw "Could not update the app settings for '$($Name)' (HTTP $($Response.StatusCode))."
         }
+    }
+
+    function Get-WebAppHardeningChange {
+        param (
+            [Parameter(Mandatory = $true, HelpMessage = "Resource group holding the app.")]
+            [ValidateNotNullOrEmpty()]
+            [string] $ResourceGroupName,
+            [Parameter(Mandatory = $true, HelpMessage = "Name of the app.")]
+            [ValidateNotNullOrEmpty()]
+            [string] $Name,
+            [Parameter(Mandatory = $true, HelpMessage = "Whether basic authentication for deployment must be off, not just FTP.")]
+            [bool] $DisableScmBasicAuth
+        )
+        # Mirrors the site settings in the Bicep modules; returns only the requests still needed, so a
+        # deployment that already matches is left untouched.
+        $SitePath = "/subscriptions/$($SubscriptionId)/resourceGroups/$($ResourceGroupName)/providers/Microsoft.Web/sites/$($Name)"
+        $ApiVersion = "api-version=2024-04-01"
+        $Changes = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
+
+        $Site = Invoke-AzRestMethod -Method GET -Path "$($SitePath)?$($ApiVersion)"
+        $WebConfig = Invoke-AzRestMethod -Method GET -Path "$($SitePath)/config/web?$($ApiVersion)"
+        if ($Site.StatusCode -ne 200 -or $WebConfig.StatusCode -ne 200) {
+            throw "Could not read the settings of '$($Name)' (HTTP $($Site.StatusCode), $($WebConfig.StatusCode))."
+        }
+
+        if (($Site.Content | ConvertFrom-Json).properties.httpsOnly -ne $true) {
+            $Changes.Add([PSCustomObject]@{
+                Description = "HTTPS only"
+                Method = "PATCH"
+                Path = "$($SitePath)?$($ApiVersion)"
+                Payload = '{"properties":{"httpsOnly":true}}'
+            })
+        }
+
+        # TLS 1.3 is stricter than the template's 1.2, so it is kept rather than lowered.
+        $SiteConfig = ($WebConfig.Content | ConvertFrom-Json).properties
+        $AcceptedTls = @("1.2", "1.3")
+        if (($SiteConfig.minTlsVersion -notin $AcceptedTls) -or ($SiteConfig.scmMinTlsVersion -notin $AcceptedTls) -or ($SiteConfig.ftpsState -ne "Disabled")) {
+            $MinTls = if ($SiteConfig.minTlsVersion -in $AcceptedTls) { $SiteConfig.minTlsVersion } else { "1.2" }
+            $ScmMinTls = if ($SiteConfig.scmMinTlsVersion -in $AcceptedTls) { $SiteConfig.scmMinTlsVersion } else { "1.2" }
+            $Changes.Add([PSCustomObject]@{
+                Description = "TLS 1.2 or later, FTP off"
+                Method = "PATCH"
+                Path = "$($SitePath)/config/web?$($ApiVersion)"
+                Payload = (@{ properties = @{ minTlsVersion = $MinTls; scmMinTlsVersion = $ScmMinTls; ftpsState = "Disabled" } } | ConvertTo-Json -Depth 3 -Compress)
+            })
+        }
+
+        $Policies = @("ftp")
+        if ($DisableScmBasicAuth) {
+            $Policies += "scm"
+        }
+        foreach ($Policy in $Policies) {
+            $PolicyPath = "$($SitePath)/basicPublishingCredentialsPolicies/$($Policy)?$($ApiVersion)"
+            $Current = Invoke-AzRestMethod -Method GET -Path $PolicyPath
+            if ($Current.StatusCode -ne 200 -or ($Current.Content | ConvertFrom-Json).properties.allow -ne $false) {
+                $Changes.Add([PSCustomObject]@{
+                    Description = "$($Policy.ToUpperInvariant()) basic authentication off"
+                    Method = "PUT"
+                    Path = $PolicyPath
+                    Payload = '{"properties":{"allow":false}}'
+                })
+            }
+        }
+
+        return $Changes
     }
 
     function Resolve-CloudImagingNaming {
@@ -414,6 +500,23 @@ Process {
         Write-Output ""
         Write-Output "Upgrading components"
 
+        # Run before the component upgrades so the Imaging Core API finds every container it
+        # needs the moment it restarts on the new package.
+        $CoreStorageContext = $StorageContexts[$StorageCore.StorageAccountName]
+        $CreatedContainers = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
+        foreach ($CoreDataContainer in $CoreDataContainers) {
+            if ($null -eq (Get-AzStorageContainer -Name $CoreDataContainer -Context $CoreStorageContext -ErrorAction SilentlyContinue)) {
+                if ($PSCmdlet.ShouldProcess($StorageCore.StorageAccountName, "Create blob container $($CoreDataContainer)")) {
+                    New-AzStorageContainer -Name $CoreDataContainer -Context $CoreStorageContext -Permission Off | Out-Null
+                    $CreatedContainers.Add($CoreDataContainer)
+                }
+            }
+        }
+        if ($CreatedContainers.Count -gt 0) {
+            Write-Output "  Created missing blob containers: $($CreatedContainers -join ', ')"
+            Set-UpgradeResult -Component "Imaging Core storage" -Action "Create containers" -Status "Success" -Detail ($CreatedContainers -join ", ")
+        }
+
         # Each component is handled on its own, so one failure never blocks the rest.
         foreach ($Component in $FunctionAppComponents) {
             $CurrentStepCount++
@@ -566,6 +669,43 @@ Process {
             $FailureCount++
             Write-Warning -Message "Could not verify the boot image storage CORS rule: $($_.Exception.Message)"
             Set-UpgradeResult -Component "Boot image storage" -Action "Verify CORS rule" -Status "Failed" -Detail $_.Exception.Message
+        }
+
+        # Same reason as the CORS rule: a release can tighten these in the template, and an upgrade
+        # never re-runs it, so every run brings the four App Services in line with it.
+        $CurrentStepCount++
+        Write-Progress -Activity "Upgrading Cloud Imaging" -Status "App Service security settings" -PercentComplete (($CurrentStepCount / $TotalStepCount) * 100)
+
+        $HardeningTargets = @(
+            [PSCustomObject]@{ Name = $Naming.ImagingCoreApi; DisableScmBasicAuth = $true }
+            [PSCustomObject]@{ Name = $Naming.OperatorApi; DisableScmBasicAuth = $true }
+            [PSCustomObject]@{ Name = $Naming.DeviceGatewayApi; DisableScmBasicAuth = $true }
+            [PSCustomObject]@{ Name = $Naming.PortalBackend; DisableScmBasicAuth = $false }
+        )
+        foreach ($HardeningTarget in $HardeningTargets) {
+            try {
+                $Changes = @(Get-WebAppHardeningChange -ResourceGroupName $ResourceGroupName -Name $HardeningTarget.Name -DisableScmBasicAuth $HardeningTarget.DisableScmBasicAuth)
+                if ($Changes.Count -eq 0) {
+                    continue
+                }
+
+                $ChangeSummary = ($Changes.Description -join ", ")
+                if ($PSCmdlet.ShouldProcess($HardeningTarget.Name, "Apply security settings: $($ChangeSummary)")) {
+                    foreach ($Change in $Changes) {
+                        $Response = Invoke-AzRestMethod -Method $Change.Method -Path $Change.Path -Payload $Change.Payload
+                        if ($Response.StatusCode -notin @(200, 201)) {
+                            throw "Could not apply '$($Change.Description)' (HTTP $($Response.StatusCode))."
+                        }
+                    }
+                    Write-Output "  $($HardeningTarget.Name): applied $($ChangeSummary)"
+                    Set-UpgradeResult -Component "Security settings $($HardeningTarget.Name)" -Action "Apply" -Status "Success" -Detail $ChangeSummary
+                }
+            }
+            catch [System.Exception] {
+                $FailureCount++
+                Write-Warning -Message "Could not apply the security settings to $($HardeningTarget.Name): $($_.Exception.Message)"
+                Set-UpgradeResult -Component "Security settings $($HardeningTarget.Name)" -Action "Apply" -Status "Failed" -Detail $_.Exception.Message
+            }
         }
 
         Write-Progress -Activity "Upgrading Cloud Imaging" -Completed

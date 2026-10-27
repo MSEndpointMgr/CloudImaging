@@ -1,30 +1,12 @@
-import { useState, useEffect } from 'react';
-import { ArrowUp, ArrowDown, HardDrive, Save } from 'lucide-react';
-import { apiFetch } from '../lib/apiClient.ts';
-import { Button, type ButtonStatus } from './ui/button.tsx';
+import { ArrowUp, ArrowDown, HardDrive } from 'lucide-react';
+import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card.tsx';
-import { useToast } from '../context/toastContext.tsx';
-
-type PartitionType = 'EfiSystem' | 'Msr' | 'Windows' | 'Recovery';
-
-interface PartitionDefinition {
-  partitionType: PartitionType;
-  sizeMb: number;
-  order: number;
-}
-
-interface PartitioningScheme {
-  partitions: PartitionDefinition[];
-}
-
-const PARTITION_LABELS: Record<PartitionType, string> = {
-  EfiSystem: 'EFI System Partition (ESP)',
-  Msr: 'Microsoft Reserved (MSR)',
-  Windows: 'Windows',
-  Recovery: 'Recovery (WinRE)',
-};
+import { UndoChangeButton } from './ui/unsaved-change.tsx';
+import { cn } from '../lib/utils.ts';
+import { unsavedRail } from '../lib/unsavedChanges.ts';
+import { PARTITION_LABELS, positionOf, sortedByOrder, undoPartition, type PartitionType, type PartitioningScheme } from '../lib/partitioningScheme.ts';
 
 const PARTITION_DESCRIPTIONS: Record<PartitionType, string> = {
   EfiSystem: 'Holds the UEFI boot loader (FAT32). Microsoft requires at least 200 MB, or 300 MB on 4K-native drives. 500 MB is the common enterprise default and leaves headroom for OEM firmware capsule updates and multiple boot loaders.',
@@ -55,59 +37,22 @@ const PARTITION_RECOMMENDED_MB: Record<PartitionType, number | null> = {
   Recovery: 990,
 };
 
-const DEFAULT_SCHEME: PartitioningScheme = {
-  partitions: [
-    { partitionType: 'EfiSystem', sizeMb: 500, order: 0 },
-    { partitionType: 'Msr', sizeMb: 16, order: 1 },
-    { partitionType: 'Windows', sizeMb: 0, order: 2 },
-    { partitionType: 'Recovery', sizeMb: 990, order: 3 },
-  ],
-};
-
-function sortedByOrder(scheme: PartitioningScheme): PartitionDefinition[] {
-  return [...scheme.partitions].sort((a, b) => a.order - b.order);
-}
-
-function schemeEquals(a: PartitioningScheme, b: PartitioningScheme): boolean {
-  const pa = sortedByOrder(a);
-  const pb = sortedByOrder(b);
-  if (pa.length !== pb.length) return false;
-  return pa.every((p, i) => p.partitionType === pb[i]?.partitionType && p.sizeMb === pb[i]?.sizeMb);
-}
-
 /**
  * Admin-configurable disk partitioning scheme: sizes and order for the four fixed,
  * well-known UEFI-bootable partition types. Applies globally to future imaging sessions only.
  */
-export function PartitioningSchemePanel(): React.ReactElement {
-  const { notify, update } = useToast();
-  const [scheme, setScheme] = useState<PartitioningScheme>(DEFAULT_SCHEME);
-  const [savedScheme, setSavedScheme] = useState<PartitioningScheme>(DEFAULT_SCHEME);
-  const [loading, setLoading] = useState(true);
-  const [saveStatus, setSaveStatus] = useState<ButtonStatus>('idle');
-  const isDirty = !schemeEquals(scheme, savedScheme);
-
-  useEffect(() => {
-    void (async () => {
-      setLoading(true);
-      try {
-        const res = await apiFetch('/api/partitioning-scheme', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json() as PartitioningScheme;
-          setScheme(data);
-          setSavedScheme(data);
-        }
-      } catch { /* use defaults */ }
-      finally { setLoading(false); }
-    })();
-  }, []);
-
+export function PartitioningSchemePanel({ scheme, savedScheme, loading, onChange }: {
+  scheme: PartitioningScheme;
+  savedScheme: PartitioningScheme;
+  loading: boolean;
+  onChange: (next: PartitioningScheme) => void;
+}): React.ReactElement {
   const partitions = sortedByOrder(scheme);
 
   const updateSize = (partitionType: PartitionType, sizeMb: number) => {
-    setScheme(s => ({
-      partitions: s.partitions.map(p => p.partitionType === partitionType ? { ...p, sizeMb } : p),
-    }));
+    onChange({
+      partitions: scheme.partitions.map(p => p.partitionType === partitionType ? { ...p, sizeMb } : p),
+    });
   };
 
   const move = (index: number, direction: -1 | 1) => {
@@ -117,44 +62,10 @@ export function PartitioningSchemePanel(): React.ReactElement {
     const tmp = reordered[index];
     reordered[index] = reordered[target]!;
     reordered[target] = tmp;
-    setScheme({ partitions: reordered.map((p, i) => ({ ...p, order: i })) });
+    onChange({ partitions: reordered.map((p, i) => ({ ...p, order: i })) });
   };
 
-  const save = async () => {
-    setSaveStatus('loading');
-    const toastId = notify({ status: 'loading', title: 'Saving partitioning scheme…' });
-    try {
-      const res = await apiFetch('/api/partitioning-scheme', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(scheme),
-      });
-      if (res.ok || res.status === 204) {
-        setSavedScheme(scheme);
-        setSaveStatus('success');
-        update(toastId, {
-          status: 'success',
-          title: 'Partitioning scheme saved',
-          description: 'New device sessions will use this layout.',
-        });
-      } else {
-        let description = 'Failed to save partitioning scheme.';
-        try { description = await res.text() || description; } catch { /* keep default */ }
-        setSaveStatus('error');
-        update(toastId, { status: 'error', title: 'Could not save partitioning scheme', description });
-      }
-    } catch {
-      setSaveStatus('error');
-      update(toastId, {
-        status: 'error',
-        title: 'Could not save partitioning scheme',
-        description: 'A network error occurred. Please try again.',
-      });
-    } finally {
-      setTimeout(() => setSaveStatus('idle'), 1600);
-    }
-  };
+  const undo = (type: PartitionType) => onChange(undoPartition(scheme, savedScheme, type));
 
   if (loading) return <p className="text-muted-foreground">Loading…</p>;
 
@@ -177,8 +88,11 @@ export function PartitioningSchemePanel(): React.ReactElement {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {partitions.map((p, index) => (
-            <div key={p.partitionType} className="flex items-center gap-4 rounded-md border border-border p-3">
+          {partitions.map((p, index) => {
+            const before = savedScheme.partitions.find((s) => s.partitionType === p.partitionType);
+            const changed = !!before && (before.sizeMb !== p.sizeMb || positionOf(savedScheme, p.partitionType) !== index);
+            return (
+            <div key={p.partitionType} className={cn('flex items-center gap-4 rounded-md border border-border p-3', unsavedRail(changed))}>
               <div className="flex flex-col gap-1">
                 <Button
                   type="button"
@@ -239,25 +153,14 @@ export function PartitioningSchemePanel(): React.ReactElement {
                   </>
                 )}
               </div>
+              <div className="w-8 shrink-0">
+                {changed && <UndoChangeButton label={PARTITION_LABELS[p.partitionType]} onUndo={() => undo(p.partitionType)} />}
+              </div>
             </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
-
-      <div className="flex items-center gap-3">
-        <Button
-          onClick={save}
-          status={saveStatus}
-          variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
-          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
-        >
-          <Save />
-          Save
-        </Button>
-        {isDirty && saveStatus === 'idle' && (
-          <p className="text-sm text-muted-foreground">You have unsaved changes.</p>
-        )}
-      </div>
     </div>
   );
 }

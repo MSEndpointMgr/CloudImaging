@@ -1,15 +1,17 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change  : 1.3.0 -> 1.4.0 (MINOR - API topology and product naming alignment)
-Modified        : Project Architecture (ingress/core API separation)
-                  Principle III (stack-appropriate Cloud Imaging Portal and Media Builder integration testing)
-Added sections  : Project Architecture
+Version change  : 1.4.0 -> 1.5.0 (MINOR - performance budget scope)
+Modified        : Principle V (reference workload excludes feature-added device payload;
+                  portal API budget exempts third-party cache misses that show progress)
+Added sections  : N/A
 Removed sections: N/A
 Templates status:
   - .specify/templates/plan-template.md    : reviewed, no changes required
   - .specify/templates/spec-template.md    : reviewed, no changes required
   - .specify/templates/tasks-template.md   : reviewed, no changes required
+Follow-up       : specs/005-os-driver-management plan, research and quickstart updated to
+                  cite the amended budgets instead of recording exceptions
 Deferred TODOs  : none
 -->
 
@@ -148,7 +150,10 @@ Every feature touching the imaging pipeline MUST meet defined performance budget
 
 - **End-to-end provisioning**: Cloud image round-trip (PXE/network boot to
   first-boot-complete of the provisioned OS) MUST complete within 15 minutes
-  for a reference workload on standard-tier Azure compute.
+  for a reference workload on standard-tier Azure compute. The reference
+  workload is the base OS image without device payload added by a feature
+  (for example drivers or applications). A feature that adds device payload
+  MUST state its own time budget for that payload in its plan and measure it.
 - **Cloud Imaging Client startup**: The Cloud Imaging Client MUST reach its main window within
   5 seconds of process launch on hardware meeting the minimum WinPE spec
   (2 GB RAM, dual-core CPU).
@@ -159,7 +164,10 @@ Every feature touching the imaging pipeline MUST meet defined performance budget
   Consumption plan.
 - **Cloud Imaging Portal**: All server-rendered page responses MUST be <= 500 ms at
   p95; all API calls from the portal MUST be <= 300 ms at p95 under a
-  50-concurrent-user load.
+  50-concurrent-user load. A call that has to wait on a third-party service
+  (for example a vendor catalog) because its cache is empty or stale is exempt,
+  provided the UI shows progress while it waits and the same call served from
+  cache meets the budget.
 - **Memory**: Cloud Imaging Client and Cloud Imaging Media Builder MUST each
   remain below 512 MB working set during normal operation; Function App
   instances MUST remain below 256 MB RSS under steady-state load.
@@ -226,4 +234,4 @@ All pull requests and code reviews MUST verify compliance with this
 constitution. Complexity MUST be justified against the principles above;
 unnecessary abstraction is a violation of Principle II and V.
 
-**Version**: 1.4.0 | **Ratified**: 2026-06-14 | **Last Amended**: 2026-06-15
+**Version**: 1.5.0 | **Ratified**: 2026-06-14 | **Last Amended**: 2026-10-25

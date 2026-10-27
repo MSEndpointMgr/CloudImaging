@@ -52,6 +52,9 @@ public sealed partial class ImageCacheMaintenanceService
         // 1. Purge expired entries
         int purged = await PurgeExpiredAsync(ct);
 
+        // Driver files on the same partition follow the same idle rule.
+        purged += Drivers.DriverFileCache.PurgeIdle(_cache.CacheRoot, CacheTtl);
+
         // 2. Check available space
         var freeSpace = _cache.GetAvailableDiskSpace();
         if (freeSpace < MinFreeSpaceBytes)

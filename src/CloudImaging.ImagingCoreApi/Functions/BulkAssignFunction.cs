@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using CloudImaging.ImagingCoreApi.Services;
+using CloudImaging.ImagingCoreApi.Services.Drivers;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -50,14 +51,26 @@ public sealed partial class BulkAssignFunction
             .Select(s => Guid.Parse(s!))
             .ToList();
 
+        // driverChoices: [{ sessionId, kind, modelId }] with actor, optional.
+        if (DriverChoices.TryRead(body.RootElement, sessionIds, out var choices, out var chosenBy) is { } choiceError)
+        {
+            var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync(choiceError, context.CancellationToken);
+            return bad;
+        }
+
         BulkAssignmentService.BulkAssignResult result;
         try
         {
-            result = await _bulkService.AssignAsync(sessionIds, osImageId, context.CancellationToken);
+            result = await _bulkService.AssignAsync(sessionIds, osImageId, choices, chosenBy, context.CancellationToken);
         }
         catch (ArchitectureMismatchException mismatch)
         {
             return await ArchitectureCompatibility.ConflictAsync(req, mismatch, context.CancellationToken);
+        }
+        catch (DriverChoiceConflictException conflict)
+        {
+            return await DriverChoices.ConflictAsync(req, conflict, context.CancellationToken);
         }
         catch (InvalidOperationException ex)
         {

@@ -60,7 +60,7 @@ public sealed record SetupProfileVersionBlob(byte[] Bytes, string Sha256);
 public sealed class SetupProfileVersionRepository
 {
     /// <summary>Blob container that holds version documents.</summary>
-    public const string ContainerName = "setup-profiles";
+    public const string ContainerName = Storage.StorageContainers.SetupProfiles;
 
     private const string TableName = "SetupProfileVersions";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);

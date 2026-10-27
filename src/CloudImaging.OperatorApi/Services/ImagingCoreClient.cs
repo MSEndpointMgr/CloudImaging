@@ -249,6 +249,10 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> RotateCertAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/cert/rotate", payload, JsonOptions, ct);
 
+    /// <summary>Stops accepting the boot media certificate the last rotation replaced.</summary>
+    public Task<HttpResponseMessage> StopAcceptingPreviousCertAsync(CancellationToken ct = default) =>
+        _http.PostAsync("/api/internal/cert/previous/stop", null, ct);
+
     // ── Location catalog ─────────────────────────────────────────────────────────
 
     /// <summary>Lists all location labels.</summary>
@@ -280,6 +284,22 @@ public sealed class ImagingCoreClient
     /// <summary>Lists setup profiles.</summary>
     public Task<HttpResponseMessage> GetSetupProfilesAsync(CancellationToken ct = default) =>
         _http.GetAsync("/api/internal/setup-profiles", ct);
+
+    /// <summary>
+    /// Forwards a driver request to <c>/api/internal/drivers/{path}</c> with the same method,
+    /// query and body. The path is built by the caller from validated route segments only.
+    /// </summary>
+    public Task<HttpResponseMessage> ForwardDriversAsync(HttpMethod method, string path, string? query, string? body, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(method);
+        var request = new HttpRequestMessage(method, $"/api/internal/drivers/{path}{query}");
+        if (body is not null)
+        {
+            request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+        }
+
+        return _http.SendAsync(request, ct);
+    }
 
     /// <summary>Returns a setup profile with its current content.</summary>
     public Task<HttpResponseMessage> GetSetupProfileAsync(Guid profileId, CancellationToken ct = default) =>

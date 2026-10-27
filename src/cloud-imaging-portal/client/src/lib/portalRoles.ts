@@ -49,6 +49,10 @@ export interface PortalCapabilities {
   canViewSetupProfiles: boolean;
   /** Create, edit, duplicate, delete and restore setup profiles. */
   canManageSetupProfiles: boolean;
+  /** Drivers page and model pages, read-only. */
+  canViewDrivers: boolean;
+  /** Onboard and remove models, change actions, rules, sync, storage and custom components. */
+  canManageDrivers: boolean;
   /** Branding, Configuration, pre-flight overrides and the update notice. */
   isAdministrator: boolean;
 }
@@ -68,6 +72,8 @@ export function capabilitiesFromRoles(raw: readonly string[]): PortalCapabilitie
     canViewAutopilotReport: has(ROLE_OPERATOR, ROLE_READER, ROLE_AUTOPILOT_APPROVER),
     canViewSetupProfiles: has(ROLE_TECHNICIAN),
     canManageSetupProfiles: has(ROLE_OPERATOR),
+    canViewDrivers: has(ROLE_TECHNICIAN),
+    canManageDrivers: has(ROLE_OPERATOR),
     isAdministrator: has(ROLE_ADMINISTRATOR),
   };
 }

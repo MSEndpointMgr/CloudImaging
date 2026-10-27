@@ -77,6 +77,9 @@ public enum StepItemKind
 
     /// <summary>The device's answer file.</summary>
     AnswerFile,
+
+    /// <summary>A driver component of the pinned driver set. Appended so stored values stay stable.</summary>
+    DriverComponent,
 }
 
 /// <summary>Outcome of a per-item step entry.</summary>
@@ -94,6 +97,9 @@ public enum StepItemOutcome
 
     /// <summary>The item was skipped because an earlier item failed and the profile fails the deployment.</summary>
     NotRun,
+
+    /// <summary>The component was not processed because the device lacks its hardware. Appended so stored values stay stable.</summary>
+    Skipped,
 }
 
 /// <summary>Kind of a setup profile history entry.</summary>

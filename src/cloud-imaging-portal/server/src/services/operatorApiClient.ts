@@ -65,14 +65,15 @@ export class OperatorApiClient {
     return data;
   }
 
-  async assignSession(sessionId: string, osImageId: string): Promise<unknown> {
+  async assignSession(sessionId: string, osImageId: string, extra?: Record<string, unknown>): Promise<unknown> {
     const { data } = await this.http.post<unknown>(
-      `/api/sessions/${encodeURIComponent(sessionId)}/assign`, { osImageId });
+      `/api/sessions/${encodeURIComponent(sessionId)}/assign`, { osImageId, ...extra });
     return data;
   }
 
-  async bulkAssign(sessionIds: string[], osImageId: string): Promise<unknown> {
-    const { data } = await this.http.post<unknown>('/api/sessions/bulk-assign', { sessionIds, osImageId });
+  /** `extra` carries the driver choices and the acting user, only when a choice was made. */
+  async bulkAssign(sessionIds: string[], osImageId: string, extra?: Record<string, unknown>): Promise<unknown> {
+    const { data } = await this.http.post<unknown>('/api/sessions/bulk-assign', { sessionIds, osImageId, ...extra });
     return data;
   }
 
@@ -253,6 +254,12 @@ export class OperatorApiClient {
     return data;
   }
 
+  /** Stops accepting the boot media certificate the last rotation replaced. False when none was still accepted. */
+  async stopAcceptingPreviousBootMediaCert(): Promise<boolean> {
+    const res = await this.http.post('/api/cert/previous/stop', undefined, { validateStatus: (s) => s === 204 || s === 404 });
+    return res.status === 204;
+  }
+
   // ── Branding ────────────────────────────────────────────────────────────────
 
   async getBranding(): Promise<unknown> {
@@ -429,6 +436,24 @@ export class OperatorApiClient {
   async getSetupProfiles(): Promise<unknown> {
     const { data } = await this.http.get<unknown>('/api/setup-profiles');
     return data;
+  }
+
+  /**
+   * Driver routes: forwards to `/api/drivers/<path>` with the same method, query and body and
+   * returns the upstream status with the body. The path is built from validated segments only.
+   */
+  async drivers(
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    path: string,
+    options: { body?: unknown; query?: Record<string, string | undefined> } = {},
+  ): Promise<{ status: number; data: unknown }> {
+    const response = await this.http.request<unknown>({
+      method,
+      url: `/api/drivers/${path}`,
+      params: options.query,
+      data: options.body,
+    });
+    return { status: response.status, data: response.data };
   }
 
   async getSetupProfile(profileId: string): Promise<unknown> {

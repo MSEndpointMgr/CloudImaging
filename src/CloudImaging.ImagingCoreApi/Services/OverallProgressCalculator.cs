@@ -8,7 +8,7 @@ namespace CloudImaging.ImagingCoreApi.Services;
 ///
 /// Calculation rule:
 ///   The pipeline the Client actually runs has 5 required steps (FormatDisk, DownloadImage,
-///   ApplyImage, ConfigureBoot, ApplyRecoveryImage) and optional steps (PrepareSetup) that only
+///   ApplyImage, ConfigureBoot, ApplyRecoveryImage) and optional steps (InstallDrivers, PrepareSetup) that only
 ///   run when the device has work for them; see CloudImaging.Client's ImagingWorkflowViewModel /
 ///   ProgressViewModel. Each step carries the same weight it does in the Client's own on-device
 ///   progress ring, so the portal and the device agree on the number rather than each telling the
@@ -31,6 +31,7 @@ public static class OverallProgressCalculator
         (ImagingStepName.FormatDisk, 8, true),
         (ImagingStepName.DownloadImage, 47, true),
         (ImagingStepName.ApplyImage, 25, true),
+        (ImagingStepName.InstallDrivers, 0, false),
         (ImagingStepName.PrepareSetup, 0, false),
         (ImagingStepName.ConfigureBoot, 5, true),
         (ImagingStepName.ApplyRecoveryImage, 15, true),

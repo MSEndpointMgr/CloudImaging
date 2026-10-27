@@ -128,10 +128,11 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Shows Prepare Setup between Apply Image and Configure Boot when this session runs it (a
-    /// setup profile applies, or earlier steps handed over Windows setup work), and hides it
-    /// otherwise, so a session without it keeps the five familiar steps.
+    /// setup profile applies, or earlier steps handed over Windows setup work), and Install
+    /// Drivers right after Apply Image when the session has driver work; hides each otherwise,
+    /// so a session without them keeps the five familiar steps.
     /// </summary>
-    public void ConfigureSteps(bool includePrepareSetup)
+    public void ConfigureSteps(bool includePrepareSetup, bool includeInstallDrivers = false)
     {
         var existing = Steps.FirstOrDefault(s => s.Step == ImagingStepName.PrepareSetup);
         if (includePrepareSetup && existing is null)
@@ -143,6 +144,18 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         {
             Steps.Remove(existing);
         }
+
+        var drivers = Steps.FirstOrDefault(s => s.Step == ImagingStepName.InstallDrivers);
+        if (includeInstallDrivers && drivers is null)
+        {
+            var applyImage = Steps.ToList().FindIndex(s => s.Step == ImagingStepName.ApplyImage);
+            Steps.Insert(applyImage < 0 ? Steps.Count : applyImage + 1, new ProgressStepItem(ImagingStepName.InstallDrivers, "Install Drivers"));
+        }
+        else if (!includeInstallDrivers && drivers is not null)
+        {
+            Steps.Remove(drivers);
+        }
+
         OnPropertyChanged(nameof(StepSubtitle));
     }
 

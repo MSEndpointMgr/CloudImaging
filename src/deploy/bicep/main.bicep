@@ -25,7 +25,8 @@ param mediaBuilderClientId string
 @description('Entra ID tenant ID (auto-populated from portal session).')
 param tenantId string = tenant().tenantId
 
-@description('Deploy Azure Application Gateway WAF_v2 in front of Device Gateway API (Enterprise tier).')
+// Enterprise tier is not finished; hidden from the deployment wizard until the edge design is reworked.
+@description('Reserved for a future Enterprise tier. Not available yet; leave false.')
 param deployApplicationGateway bool = false
 
 @description('Boot media certificate validity period in days.')

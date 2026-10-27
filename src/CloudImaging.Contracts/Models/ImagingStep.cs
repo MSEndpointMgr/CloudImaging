@@ -39,4 +39,10 @@ public sealed class ImagingStep
 
     /// <summary>True when the device reported more items than are kept.</summary>
     public bool ItemsTruncated { get; init; }
+
+    /// <summary>Longest kept <see cref="StatusNote"/>.</summary>
+    public const int MaxStatusNoteLength = 300;
+
+    /// <summary>Short note shown under the step, for example why driver installation was skipped.</summary>
+    public string? StatusNote { get; init; }
 }

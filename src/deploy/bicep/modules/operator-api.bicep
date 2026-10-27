@@ -49,12 +49,16 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
   }
   properties: {
     serverFarmId: plan.id
+    httpsOnly: true
     // Regional VNet integration + route-all so calls to the Imaging Core API are
     // routed through the VNet and resolve via the private DNS zone (FR-064).
     virtualNetworkSubnetId: vnetSubnetId
     vnetRouteAllEnabled: true
     siteConfig: {
       linuxFxVersion: 'DOTNET-ISOLATED|10'
+      minTlsVersion: '1.2'
+      scmMinTlsVersion: '1.2'
+      ftpsState: 'Disabled'
       appSettings: [
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
@@ -93,6 +97,19 @@ resource operatorPackageReadAccess 'Microsoft.Authorization/roleAssignments@2022
     principalId: func.identity.principalId
     principalType: 'ServicePrincipal'
   }
+}
+
+// Code ships as a package in storage, so neither FTP nor SCM basic-auth publishing is needed.
+resource ftpBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: func
+  name: 'ftp'
+  properties: { allow: false }
+}
+
+resource scmBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: func
+  name: 'scm'
+  properties: { allow: false }
 }
 
 output baseUrl string = 'https://${func.properties.defaultHostName}'

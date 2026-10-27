@@ -211,8 +211,7 @@ public static class SetupProfileValidator
             return "The key of {0} must be 1 to 512 characters.";
         }
 
-        if (key.StartsWith("HKLM\\", StringComparison.OrdinalIgnoreCase)
-            || key.StartsWith("HKEY_", StringComparison.OrdinalIgnoreCase)
+        if (StartsWithRootKey(key)
             || key.StartsWith('\\') || key.EndsWith('\\')
             || key.Split('\\').Any(component => component.Length == 0))
         {
@@ -231,6 +230,16 @@ public static class SetupProfileValidator
         }
         return null;
     }
+
+    // A pasted HKCU\ or HKLM:\ path would otherwise be written as a literal subkey of the hive.
+    private static bool StartsWithRootKey(string key)
+    {
+        var first = key.Split('\\')[0].TrimEnd(':');
+        return key.StartsWith("HKEY_", StringComparison.OrdinalIgnoreCase)
+            || RootKeyAbbreviations.Contains(first, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static readonly string[] RootKeyAbbreviations = ["HKLM", "HKCU", "HKU", "HKCR", "HKCC"];
 
     /// <summary>Returns a composite-format problem for data ({0} is the value's label), or null.</summary>
     private static string? ValidateData(SetupRegistryValueType type, string data) => type switch

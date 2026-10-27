@@ -78,6 +78,7 @@ public sealed partial class BootImageSelfUpdateService
     private readonly HttpClient _downloadHttp;
     private readonly ILogger<BootImageSelfUpdateService> _logger;
     private readonly Func<string?> _findBootDrive;
+    private readonly Func<string> _readSerialNumber;
     private PendingUpdate? _pending;
 
     private sealed record PendingUpdate(string BootDrive, string ManifestPath, UsbPreparationManifest Manifest, LatestBootImageInfo Latest);
@@ -87,16 +88,19 @@ public sealed partial class BootImageSelfUpdateService
     /// <param name="downloadHttp">Plain HTTP client for the SAS download.</param>
     /// <param name="logger">Logger.</param>
     /// <param name="findBootDrive">Test seam; defaults to the BOOT volume this Client runs from.</param>
+    /// <param name="readSerialNumber">Test seam; defaults to the BIOS serial number.</param>
     public BootImageSelfUpdateService(
         DeviceGatewayApiClient gateway,
         HttpClient downloadHttp,
         ILogger<BootImageSelfUpdateService> logger,
-        Func<string?>? findBootDrive = null)
+        Func<string?>? findBootDrive = null,
+        Func<string>? readSerialNumber = null)
     {
         _gateway = gateway;
         _downloadHttp = downloadHttp;
         _logger = logger;
         _findBootDrive = findBootDrive ?? FindBootVolumeDriveLetter;
+        _readSerialNumber = readSerialNumber ?? DeviceSerialNumber.Read;
     }
 
     /// <summary>True when the last <see cref="CheckAsync"/> found a newer image that <see cref="ApplyAsync"/> has not written yet.</summary>
@@ -139,6 +143,7 @@ public sealed partial class BootImageSelfUpdateService
                 currentManifest.Architecture ?? MachineArchitecture.X64,
                 currentManifest.PreparedForTesting ? currentManifest.BootImageId : null,
                 currentManifest.BootImageBase ?? (BootImageCapabilities.SupportsWifi() ? BootImageBase.WindowsRE : BootImageBase.WindowsPE),
+                _readSerialNumber(),
                 ct);
             if (latest is null)
             {

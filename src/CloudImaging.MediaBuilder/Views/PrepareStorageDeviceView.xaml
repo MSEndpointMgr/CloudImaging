@@ -215,6 +215,78 @@
                 </StackPanel>
             </ui:Card>
 
+            <!-- Driver sets: optional; copied to the CACHE partition so devices of these models do not download them. -->
+            <ui:Card Margin="0,0,0,16" Padding="20"
+                     Visibility="{Binding ShowDriverSetsCard, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel>
+                    <TextBlock Text="Driver sets"
+                               Style="{StaticResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,4" />
+                    <TextBlock Text="Copies drivers to the USB drive, so devices of these models do not download them."
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DriverSets.EmptyText}"
+                               Style="{StaticResource BodyTextBlockStyle}"
+                               Margin="0,12,0,0"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding DriverSets.HasEmptyText, Converter={StaticResource BoolToVisibility}}" />
+                    <ItemsControl ItemsSource="{Binding DriverSets.Groups}"
+                                  IsEnabled="{Binding IsFormEnabled}"
+                                  Margin="0,8,0,0"
+                                  Visibility="{Binding DriverSets.HasSets, Converter={StaticResource BoolToVisibility}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,4,0,0">
+                                    <TextBlock Text="{Binding VendorName}"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               Margin="0,4,0,2" />
+                                    <ItemsControl ItemsSource="{Binding Rows}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected}" VerticalAlignment="Center"
+                                                              AutomationProperties.Name="{Binding ModelName}" />
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="4,0,12,0">
+                                                        <TextBlock Text="{Binding ModelName}" Style="{StaticResource BodyTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding ReleaseName}" Style="{StaticResource CaptionTextBlockStyle}"
+                                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2" Text="{Binding SizeText}" Style="{StaticResource BodyTextBlockStyle}"
+                                                               VerticalAlignment="Center" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding DriverSets.Summary}"
+                               Style="{StaticResource CaptionTextBlockStyle}"
+                               Margin="0,12,0,0"
+                               TextWrapping="Wrap" />
+                    <ui:InfoBar Title="Less space for OS images"
+                                Message="Less than 20 GB stays free for OS images. Larger images are then downloaded every time instead of cached."
+                                Severity="Warning"
+                                IsOpen="{Binding DriverSets.ShowLowSpaceWarning}"
+                                IsClosable="False"
+                                Margin="0,12,0,0" />
+                    <ui:InfoBar Title="Driver sets do not fit"
+                                Message="{Binding DriverSetsDoNotFitMessage}"
+                                Severity="Error"
+                                IsOpen="{Binding DriverSets.DoesNotFit}"
+                                IsClosable="False"
+                                Margin="0,12,0,0" />
+                </StackPanel>
+            </ui:Card>
+
             <!-- Destructive confirmation -->
             <ui:Card Margin="0,0,0,16" Padding="16,14"
                      Visibility="{Binding PrepareAsUsb, Converter={StaticResource BoolToVisibility}}">

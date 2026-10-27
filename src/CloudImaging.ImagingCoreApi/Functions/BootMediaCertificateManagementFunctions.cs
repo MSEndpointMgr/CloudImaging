@@ -16,10 +16,17 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 /// Boot media certificate management endpoints (T176, FR-068).
 ///
 /// POST /api/internal/cert/generate  — generate a new self-signed boot media certificate
-/// POST /api/internal/cert/rotate    — rotate to a new certificate (generate + activate)
+/// POST /api/internal/cert/rotate    — rotate to a new certificate (generate + activate); the
+///                                     replaced one stays accepted for <c>previousAcceptedDays</c>
 /// </summary>
 public sealed partial class BootMediaCertificateManagementFunctions
 {
+    /// <summary>Overlap used when a rotation request does not say how long the previous certificate stays accepted.</summary>
+    public const int DefaultPreviousAcceptedDays = 14;
+
+    /// <summary>Longest overlap a rotation can ask for.</summary>
+    public const int MaxPreviousAcceptedDays = 30;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly BootMediaCertificateRepository _certRepo;
@@ -64,11 +71,12 @@ public sealed partial class BootMediaCertificateManagementFunctions
             NotAfter = cert.NotAfter,
             IsActive = true,        // Generate publishes the cert as the active boot media cert
             KeyVaultSecretName = secretName,
+            CertificateDer = Convert.ToBase64String(cert.Export(X509ContentType.Cert)),
         };
 
         // Store metadata in Table Storage and mark it active (atomic demote-old + activate-new)
         // so the Media Builder can immediately retrieve it via GET internal/cert/active/pfx.
-        await _certRepo.ActivateAsync(metadata, context.CancellationToken);
+        await _certRepo.ActivateAsync(metadata, TimeSpan.Zero, context.CancellationToken);
         LogCertGenerated(_logger, cert.Thumbprint, cert.NotAfter);
 
         var response = req.CreateResponse(HttpStatusCode.Created);
@@ -94,12 +102,25 @@ public sealed partial class BootMediaCertificateManagementFunctions
         // Verify confirmation flag to prevent accidental rotation
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
         if (!body.RootElement.TryGetProperty("confirmed", out var confirmedProp)
-            || confirmedProp.GetBoolean() != true)
+            || confirmedProp.ValueKind != JsonValueKind.True)
         {
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
             await bad.WriteStringAsync(
                 "Rotation requires { \"confirmed\": true } in the request body.", context.CancellationToken);
             return bad;
+        }
+
+        var previousAcceptedDays = DefaultPreviousAcceptedDays;
+        if (body.RootElement.TryGetProperty("previousAcceptedDays", out var daysProp))
+        {
+            if (daysProp.ValueKind != JsonValueKind.Number || !daysProp.TryGetInt32(out previousAcceptedDays)
+                || previousAcceptedDays < 0 || previousAcceptedDays > MaxPreviousAcceptedDays)
+            {
+                var bad = req.CreateResponse(HttpStatusCode.BadRequest);
+                await bad.WriteStringAsync(
+                    $"previousAcceptedDays must be a whole number from 0 to {MaxPreviousAcceptedDays}.", context.CancellationToken);
+                return bad;
+            }
         }
 
         var config = await _configRepo.GetAsync(context.CancellationToken);
@@ -115,11 +136,12 @@ public sealed partial class BootMediaCertificateManagementFunctions
             NotAfter = cert.NotAfter,
             IsActive = true,
             KeyVaultSecretName = secretName,
+            CertificateDer = Convert.ToBase64String(cert.Export(X509ContentType.Cert)),
         };
 
-        // Atomic swap — deactivates old cert, activates new cert
-        await _certRepo.ActivateAsync(newCert, context.CancellationToken);
-        LogCertRotated(_logger, cert.Thumbprint);
+        // Atomic swap: activates the new cert; the old one stays accepted for the overlap.
+        await _certRepo.ActivateAsync(newCert, TimeSpan.FromDays(previousAcceptedDays), context.CancellationToken);
+        LogCertRotated(_logger, cert.Thumbprint, previousAcceptedDays);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
@@ -129,6 +151,7 @@ public sealed partial class BootMediaCertificateManagementFunctions
             notBefore = cert.NotBefore,
             notAfter = cert.NotAfter,
             isActive = true,
+            previousAcceptedDays,
         }, JsonOptions), context.CancellationToken);
         return response;
     }
@@ -159,6 +182,6 @@ public sealed partial class BootMediaCertificateManagementFunctions
     private static partial void LogCertGenerated(ILogger logger, string thumbprint, DateTime expiry);
 
     [LoggerMessage(Level = LogLevel.Information,
-        Message = "Boot media certificate rotated: new thumbprint={Thumbprint}.")]
-    private static partial void LogCertRotated(ILogger logger, string thumbprint);
+        Message = "Boot media certificate rotated: new thumbprint={Thumbprint}, previous certificate accepted for {Days} days.")]
+    private static partial void LogCertRotated(ILogger logger, string thumbprint, int days);
 }

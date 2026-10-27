@@ -8,20 +8,26 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// <summary>
 /// Validates the device-session bearer token on all authenticated Device Gateway API endpoints.
 /// The public session bootstrap endpoint (POST /api/v1/sessions) is exempt — it has no token yet (FR-014, FR-018).
-/// GetLatestBootImage (GET /api/v1/boot-image/latest) is also exempt — the boot image self-update
-/// check (T071b, FR-059a) runs independently of session bootstrap/lifecycle, authenticated only
-/// by the mTLS boot-media certificate (enforced for every request regardless of this middleware).
+/// The boot image update check (POST /api/v1/boot-image/latest) is also exempt: the boot image self-update
+/// check (T071b, FR-059a) runs independently of session bootstrap/lifecycle, authenticated
+/// by the mTLS boot-media certificate (enforced for every request regardless of this middleware)
+/// and a signature with the boot media private key.
 /// Attaches the validated session ID to the function context for downstream handlers.
 /// </summary>
 public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMiddleware
 {
+    private readonly Security.DeviceSessionTokenVerifier _verifier;
+
+    /// <param name="verifier">Checks tokens against the hash Imaging Core stored.</param>
+    public DeviceSessionTokenValidationMiddleware(Security.DeviceSessionTokenVerifier verifier) => _verifier = verifier;
+
     /// <summary>Context item key for the resolved session ID.</summary>
     public const string SessionIdKey = "DeviceSessionId";
 
     /// <summary>Function names exempt from token validation (public/mTLS-only endpoints).</summary>
     /// <remarks>Autopilot availability and submission, and managed Wi-Fi networks, run before, and independently of, any imaging session.</remarks>
     public static readonly IReadOnlySet<string> ExemptFunctionNames =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "GetLatestBootImage", "GetAutopilotAvailability", "SubmitAutopilotRegistration", "GetManagedWifiNetworks" };
+        new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CreateSession", "CheckLatestBootImage", "GetAutopilotAvailability", "SubmitAutopilotRegistration", "GetManagedWifiNetworks" };
 
     /// <summary>
     /// Functions authenticated by a per-request Autopilot status token instead of a session token.
@@ -76,17 +82,31 @@ public sealed class DeviceSessionTokenValidationMiddleware : IFunctionsWorkerMid
             return;
         }
 
-        // The actual hash verification against the stored session token happens in the
-        // ImagingCoreClient call — here we just extract and route the session context.
-        var sessionId = Security.DeviceSessionTokenService.ExtractSessionId(token);
-        if (sessionId is null)
+        // Only a token whose hash matches the one Imaging Core stored for its session is accepted.
+        var (check, sessionId) = await _verifier.CheckAsync(token, context.CancellationToken);
+        if (check == Security.DeviceTokenCheck.Unavailable)
         {
-            await WriteUnauthorizedAsync(context, request, "Bearer token is malformed.");
+            var unavailable = request.CreateResponse(HttpStatusCode.ServiceUnavailable);
+            await unavailable.WriteStringAsync("The session could not be verified. Please retry.");
+            context.GetInvocationResult().Value = unavailable;
             return;
         }
 
-        // Store raw token and session hint for downstream handlers to validate against ImagingCoreApi
-        context.Items[SessionIdKey] = sessionId.Value;
+        if (check != Security.DeviceTokenCheck.Valid)
+        {
+            await WriteUnauthorizedAsync(context, request, "Session token rejected or expired.");
+            return;
+        }
+
+        // A token only ever acts on its own session, whatever the route names.
+        if (context.BindingContext.BindingData.TryGetValue("sessionId", out var routeSession) && routeSession is not null
+            && (!Guid.TryParse(routeSession.ToString(), out var routeSessionId) || routeSessionId != sessionId))
+        {
+            context.GetInvocationResult().Value = request.CreateResponse(HttpStatusCode.Forbidden);
+            return;
+        }
+
+        context.Items[SessionIdKey] = sessionId;
         context.Items["BearerToken"] = token;
 
         await next(context);

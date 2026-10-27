@@ -82,7 +82,7 @@ Portal backend's managed identity.
 |---|---|---|---|---|---|
 | Sign in | Allowed, but "Access denied" screen | ✅ | ✅ | ✅ | ✅ |
 | **Dashboard**: Completed Sessions summary | ❌ | ✅ (only stat shown) | ✅ (full) | ✅ (full) | ✅ (full) |
-| **Reports**: device outcomes, location statistics, image inventory, failure detail | ❌ | ✅ | ❌ | ✅ | ✅ |
+| **Reports**: device outcomes, location statistics, image inventory, failure detail, driver synchronization | ❌ | ✅ | ❌ | ✅ | ✅ |
 | **Sessions**: view, couple, single-assign, bulk-assign | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **Devices**: approve or revoke a pre-flight override | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **OS Images** catalog: view | ❌ | ❌ | ✅ (read-only) | ✅ | ✅ |
@@ -95,9 +95,12 @@ Portal backend's managed identity.
 | **Wi-Fi Networks**: view, add, edit, reorder, delete, assign to locations | ❌ | ❌ | ❌ | ✅ | ✅ |
 | **Setup Profiles**: view profiles, versions and history | ❌ | ❌ | ✅ (read-only) | ✅ | ✅ |
 | **Setup Profiles**: create, edit, duplicate, delete and restore, scripts and answer files included | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **Drivers**: view models, components, sync history and progress, downloads and storage | ❌ | ❌ | ✅ (read-only) | ✅ | ✅ |
+| **Drivers**: onboard and remove models, change actions and rules, approve, sync, roll back, custom components | ❌ | ❌ | ❌ | ✅ | ✅ |
+| **Devices**: choose a device's driver set when starting imaging | ❌ | ❌ | ✅ | ✅ | ✅ |
 | **Configuration** > **Miscellaneous**: setup profile versions kept per profile | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Branding**: view / edit logo | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view, update check and notice) | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Configuration** page (pre-flight authorization toggle, SAS/token expiry, boot media certificate generate/rotate/view and stop accepting the previous one, update check and notice) | ❌ | ❌ | ❌ | ❌ | ✅ |
 
 **Autopilot** registrations are a separate lane:
 
@@ -160,7 +163,7 @@ purpose.
 > authorization plumbing. `CloudImaging.Reader` is deliberately **outside** this chain: it never
 > implies `PortalAccess`, and is instead allowlisted explicitly on only the handful of read routes
 > Reports and the Dashboard need (session history, completion times for the Completed Sessions
-> stat, Autopilot Registration History, and the OS/boot/recovery image catalogs for the Image
+> stat, Autopilot Registration History, the Driver Synchronization report, and the OS/boot/recovery image catalogs for the Image
 > Inventory report). A Reader's token is
 > rejected by every other route, including `/api/sessions`, even if called directly, not just
 > hidden from the navigation menu.

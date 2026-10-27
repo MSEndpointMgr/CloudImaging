@@ -39,8 +39,8 @@ public sealed partial class SessionSetupProfileFunction
         {
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
-        if (context.Items.TryGetValue(DeviceSessionTokenValidationMiddleware.SessionIdKey, out var tokenSession)
-            && tokenSession is Guid tokenSessionId && tokenSessionId != sessionGuid)
+        if (!context.Items.TryGetValue(DeviceSessionTokenValidationMiddleware.SessionIdKey, out var tokenSession)
+            || tokenSession is not Guid tokenSessionId || tokenSessionId != sessionGuid)
         {
             return req.CreateResponse(HttpStatusCode.Forbidden);
         }

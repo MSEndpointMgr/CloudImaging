@@ -5,6 +5,7 @@ import { useToast } from '../context/toastContext.tsx';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { architectureLabel, countByArchitecture, type ImageArchitecture } from '../lib/wimMetadata.ts';
+import { releaseLabel, type WindowsRelease } from '../lib/drivers.ts';
 import { Button } from '../components/ui/button.tsx';
 import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
@@ -26,6 +27,7 @@ interface OsImage {
   sizeBytes: number;
   sha256Hash: string;
   architecture?: ImageArchitecture;
+  windowsRelease?: WindowsRelease | null;
   uploadedAt: string;
   isInUse: boolean;
 }
@@ -119,7 +121,7 @@ export default function OsImagesPage(): React.ReactElement {
     }
   };
 
-  const columnCount = canManageCatalog ? 9 : 8;
+  const columnCount = canManageCatalog ? 10 : 9;
   const selectedCount = checked.size;
   const atCapacity = images.length >= MAX_OS_IMAGES;
   const activeCounts = countByArchitecture(images);
@@ -177,11 +179,12 @@ export default function OsImagesPage(): React.ReactElement {
                   />
                 </TableHead>
               )}
-              <SortableHead label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[26%]" />
-              <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} className="w-[12%]" />
+              <SortableHead label="Name" sortKey="name" sort={sort} onSort={toggleSort} className="w-[21%]" />
+              <SortableHead label="Version" sortKey="version" sort={sort} onSort={toggleSort} className="w-[10%]" />
               <SortableHead label="Architecture" sortKey="architecture" sort={sort} onSort={toggleSort} className="w-[10%]" />
+              <TableHead className="w-[13%]">Windows release</TableHead>
               <SortableHead label="Size" sortKey="size" sort={sort} onSort={toggleSort} className="w-[9%]" />
-              <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} className="w-[13%]" />
+              <SortableHead label="SHA-256" sortKey="sha256" sort={sort} onSort={toggleSort} className="w-[11%]" />
               <SortableHead label="Uploaded" sortKey="uploaded" sort={sort} onSort={toggleSort} className="w-[12%]" />
               <SortableHead label="Status" sortKey="status" sort={sort} onSort={toggleSort} className="w-[10%]" />
               <TableHead className="w-[90px]">Actions</TableHead>
@@ -228,6 +231,9 @@ export default function OsImagesPage(): React.ReactElement {
                 <TableCell className="truncate">{img.version}</TableCell>
                 <TableCell>
                   <Badge variant="outline">{architectureLabel(img.architecture)}</Badge>
+                </TableCell>
+                <TableCell className="truncate" title={img.windowsRelease ? releaseLabel(img.windowsRelease) : undefined}>
+                  {img.windowsRelease ? releaseLabel(img.windowsRelease) : <span className="text-muted-foreground">Not set</span>}
                 </TableCell>
                 <TableCell className="truncate">{fmtSize(img.sizeBytes)}</TableCell>
                 <TableCell className="truncate">

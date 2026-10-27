@@ -76,4 +76,32 @@ public sealed class UsbPreparationManifest
 
     /// <summary>True when Media Builder configured the boot media for USB auto-start.</summary>
     public bool AutoStartConfigured { get; init; }
+
+    /// <summary>Driver sets preloaded on the CACHE partition. Preloading pins nothing; empty when none were chosen.</summary>
+    public IReadOnlyList<UsbPreparationDriverSet> DriverSets { get; init; } = [];
+}
+
+/// <summary>A driver set Media Builder copied to the USB drive.</summary>
+public sealed record UsbPreparationDriverSet
+{
+    /// <summary>Model id.</summary>
+    public Guid ModelId { get; init; }
+
+    /// <summary>Model display name at preparation time.</summary>
+    public required string ModelName { get; init; }
+
+    /// <summary>Windows release.</summary>
+    public CloudImaging.Contracts.Enums.WindowsRelease Release { get; init; }
+
+    /// <summary>Release name at preparation time, for example "Windows 11, version 24H2".</summary>
+    public required string ReleaseName { get; init; }
+
+    /// <summary>Set version that was copied.</summary>
+    public int SetVersion { get; init; }
+
+    /// <summary>Components in the set.</summary>
+    public int Components { get; init; }
+
+    /// <summary>Bytes of the set's files.</summary>
+    public long Bytes { get; init; }
 }

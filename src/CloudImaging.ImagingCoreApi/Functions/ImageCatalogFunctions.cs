@@ -127,6 +127,7 @@ public sealed partial class ImageCatalogFunctions
             StoragePath = image.StoragePath,
             Sha256Hash = image.Sha256Hash,
             Architecture = image.Architecture,
+            WindowsRelease = image.WindowsRelease,
             UploadedAt = image.UploadedAt == default ? DateTimeOffset.UtcNow : image.UploadedAt,
         };
 
@@ -160,6 +161,18 @@ public sealed partial class ImageCatalogFunctions
 
         using var body = await JsonDocument.ParseAsync(req.Body, cancellationToken: context.CancellationToken);
 
+        // Absent keeps the release; null clears it; an unknown value is refused.
+        var windowsRelease = existing.WindowsRelease;
+        if (body.RootElement.TryGetProperty("windowsRelease", out _))
+        {
+            if (!ImageArchitecture.TryReadWindowsRelease(body.RootElement, out windowsRelease))
+            {
+                var badRelease = req.CreateResponse(HttpStatusCode.BadRequest);
+                await badRelease.WriteStringAsync(ImageArchitecture.InvalidWindowsReleaseMessage, context.CancellationToken);
+                return badRelease;
+            }
+        }
+
         var updated = new OsImage
         {
             ImageId = existing.ImageId,
@@ -170,6 +183,7 @@ public sealed partial class ImageCatalogFunctions
             StoragePath = existing.StoragePath,
             Sha256Hash = existing.Sha256Hash,
             Architecture = existing.Architecture,
+            WindowsRelease = windowsRelease,
             UploadedAt = existing.UploadedAt,
             IsInUse = existing.IsInUse,
         };
@@ -230,6 +244,7 @@ public sealed partial class ImageCatalogFunctions
         IsInUse = isInUse,
         Sha256Hash = image.Sha256Hash,
         Architecture = image.Architecture,
+        WindowsRelease = image.WindowsRelease,
     };
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Image {ImageId} created: {Name}.")]

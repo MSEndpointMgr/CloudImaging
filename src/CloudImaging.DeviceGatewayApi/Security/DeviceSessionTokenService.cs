@@ -13,8 +13,8 @@ public sealed class DeviceSessionTokenService
 {
     private const int TokenByteLength = 32; // 256-bit token
 
-    /// <summary>Default token lifetime — 24 hours.</summary>
-    private static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(24);
+    /// <summary>Default token lifetime: 24 hours.</summary>
+    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(24);
 
     /// <summary>
     /// Issues a new opaque device-session token for the given session using the default lifetime.
@@ -66,8 +66,8 @@ public sealed class DeviceSessionTokenService
     }
 
     /// <summary>
-    /// Extracts the session ID from a plain token without validation.
-    /// Call only after <see cref="TryValidate"/> succeeds.
+    /// Extracts the session ID from a plain token without validation. The session it names is
+    /// trusted only after Imaging Core confirms the token's hash (DeviceSessionTokenVerifier).
     /// </summary>
     public static Guid? ExtractSessionId(string plainToken)
     {
@@ -93,4 +93,7 @@ public sealed class DeviceSessionTokenService
 
     private static string HashToken(string plainToken) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(plainToken))).ToLowerInvariant();
+
+    /// <summary>Lower-case hex SHA-256 of a token, the only form Imaging Core stores.</summary>
+    public static string Hash(string plainToken) => HashToken(plainToken);
 }

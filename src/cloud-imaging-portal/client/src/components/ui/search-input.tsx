@@ -12,6 +12,7 @@ interface SearchInputProps {
   'aria-label'?: string;
   /** Applied to the positioning wrapper, which participates in the parent's flex layout. */
   wrapperClassName?: string;
+  disabled?: boolean;
 }
 
 /**
@@ -27,6 +28,7 @@ export function SearchInput({
   id,
   'aria-label': ariaLabel,
   wrapperClassName,
+  disabled,
 }: SearchInputProps): React.ReactElement {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
@@ -43,12 +45,13 @@ export function SearchInput({
         aria-label={ariaLabel}
         value={value}
         placeholder={placeholder}
+        disabled={disabled}
         onChange={event => onValueChange(event.target.value)}
         // `pr-8` reserves the clear button's 32px track even while it is absent, so the text does
         // not reflow the moment the first character is typed.
         className="w-full pl-9 pr-8 [&::-webkit-search-cancel-button]:appearance-none"
       />
-      {value && (
+      {value && !disabled && (
         <Button
           variant="ghost"
           size="icon"

@@ -1,4 +1,58 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import express, { type NextFunction, type Response } from 'express';
+import request from 'supertest';
+import type { AuthenticatedRequest } from '@/middleware/auth.js';
+
+const operatorApi = vi.hoisted(() => ({
+  publishOsImageUpload: vi.fn().mockResolvedValue({ status: 'Pending' }),
+  startOsImageUpload: vi.fn().mockResolvedValue({ uploadId: 'u' }),
+}));
+
+vi.mock('@/services/operatorApiClient.js', () => ({ operatorApiClient: operatorApi }));
+
+const { imagesRouter } = await import('@/routes/images.js');
+
+describe('Portal backend: OS image upload with a Windows release', () => {
+  it('publish forwards windowsRelease with the rest of the body', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use((req: AuthenticatedRequest, _res: Response, next: NextFunction) => { req.user = { roles: ['CloudImaging.Operator'] } as AuthenticatedRequest['user']; next(); });
+    app.use('/api/images', imagesRouter);
+    const uploadId = '8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10';
+    const body = { blobName: 'uploads/x/win11.wim', blockIds: ['AA=='], sha256Hash: 'a'.repeat(64), name: 'win11.wim', version: '24H2', sizeBytes: 1, windowsRelease: 'Windows11_24H2' };
+
+    const res = await request(app).post(`/api/images/upload/${uploadId}/publish`).send(body);
+
+    expect(res.status).toBe(202);
+    expect(operatorApi.publishOsImageUpload).toHaveBeenCalledWith(uploadId, body);
+  });
+
+  function app(): express.Express {
+    const server = express();
+    server.use(express.json());
+    server.use((req: AuthenticatedRequest, _res: Response, next: NextFunction) => { req.user = { roles: ['CloudImaging.Operator'] } as AuthenticatedRequest['user']; next(); });
+    server.use('/api/images', imagesRouter);
+    return server;
+  }
+
+  it('start refuses an unknown Windows release before anything is staged', async () => {
+    operatorApi.startOsImageUpload.mockClear();
+
+    const res = await request(app()).post('/api/images/upload/start').send({ name: 'win11.wim', version: '24H2', sha256Hash: 'a'.repeat(64), windowsRelease: 'Windows12' });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'Unknown Windows release.' });
+    expect(operatorApi.startOsImageUpload).not.toHaveBeenCalled();
+  });
+
+  it('start forwards a known or absent Windows release', async () => {
+    const body = { name: 'win11.wim', version: '24H2', sha256Hash: 'a'.repeat(64), windowsRelease: 'Windows11_24H2' };
+
+    expect((await request(app()).post('/api/images/upload/start').send(body)).status).toBe(200);
+    expect(operatorApi.startOsImageUpload).toHaveBeenLastCalledWith(body);
+    expect((await request(app()).post('/api/images/upload/start').send({ ...body, windowsRelease: null })).status).toBe(200);
+  });
+});
 
 /**
  * Portal backend staged OS image upload tests (T082a, FR-036).

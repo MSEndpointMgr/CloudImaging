@@ -20,7 +20,8 @@ namespace CloudImaging.DeviceGatewayApi.Functions;
 ///
 /// The response is a <see cref="ManagedWifiEnvelope"/> encrypted to the presented certificate, so
 /// the passwords are never in plain text outside TLS and the Client can write the bytes straight
-/// to its USB media.
+/// to its USB media. When the device presents the certificate a rotation replaced, the envelope is
+/// also encrypted to the active one, so it stays readable after the media updates to a new boot image.
 /// </summary>
 public sealed partial class ManagedWifiNetworkFunctions
 {
@@ -29,17 +30,20 @@ public sealed partial class ManagedWifiNetworkFunctions
 
     private readonly ImagingCoreClient _coreClient;
     private readonly DeviceSessionNonceStore _nonceStore;
+    private readonly BootMediaCertificateThumbprintCache _certificates;
     private readonly TimeSpan _maxSignatureSkew;
     private readonly ILogger<ManagedWifiNetworkFunctions> _logger;
 
     /// <param name="coreClient">Imaging Core API client the networks are read from.</param>
     /// <param name="nonceStore">Single-use nonce store guarding proof-of-possession replay.</param>
+    /// <param name="certificates">Accepted boot media certificates, for the active one's public key.</param>
     /// <param name="configuration">Used to resolve the configured proof-of-possession max clock skew.</param>
     /// <param name="logger">Logger for this function.</param>
-    public ManagedWifiNetworkFunctions(ImagingCoreClient coreClient, DeviceSessionNonceStore nonceStore, IConfiguration configuration, ILogger<ManagedWifiNetworkFunctions> logger)
+    public ManagedWifiNetworkFunctions(ImagingCoreClient coreClient, DeviceSessionNonceStore nonceStore, BootMediaCertificateThumbprintCache certificates, IConfiguration configuration, ILogger<ManagedWifiNetworkFunctions> logger)
     {
         _coreClient = coreClient;
         _nonceStore = nonceStore;
+        _certificates = certificates;
         _logger = logger;
 
         var skewSeconds = configuration.GetValue<int?>("MtlsProofOfPossession:MaxSkewSeconds") ?? DefaultMaxSkewSeconds;
@@ -108,9 +112,19 @@ public sealed partial class ManagedWifiNetworkFunctions
         }
 
         LogDelivered(_logger, set.Networks.Count, request.LocationId, request.SerialNumber);
+        var recipients = new List<X509Certificate2> { clientCert };
+        var active = (await _certificates.GetAcceptedAsync(ct)).FirstOrDefault(c => c.IsActive);
+        using var activeCert = active is { CertificateDer: { Length: > 0 } der } && !string.Equals(active.Thumbprint, clientCert.Thumbprint, StringComparison.OrdinalIgnoreCase)
+            ? X509CertificateLoader.LoadCertificate(Convert.FromBase64String(der))
+            : null;
+        if (activeCert is not null)
+        {
+            recipients.Add(activeCert);
+        }
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteBytesAsync(ManagedWifiEnvelope.Encrypt(set, clientCert), ct);
+        await response.WriteBytesAsync(ManagedWifiEnvelope.Encrypt(set, recipients), ct);
         return response;
     }
 

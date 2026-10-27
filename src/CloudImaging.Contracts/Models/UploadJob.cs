@@ -55,6 +55,9 @@ public sealed class UploadJob
     /// </summary>
     public MachineArchitecture? Architecture { get; init; }
 
+    /// <summary>Windows release chosen for an OS image upload, copied to the catalog entry; null for none.</summary>
+    public WindowsRelease? WindowsRelease { get; init; }
+
     /// <summary>Size of the uploaded file as reported by the browser, used for the catalog entry.</summary>
     public long SizeBytes { get; init; }
 

@@ -26,6 +26,8 @@
     <!-- Shared with the portal tests, so the template preview and the server resolver are held to the same cases. -->
     <None Include="..\fixtures\autopilot-group-tag-cases.json" Link="fixtures\autopilot-group-tag-cases.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\fixtures\answer-file-cases.json" Link="fixtures\answer-file-cases.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Real HP and Dell catalogs; driver tests never call vendor hosts. -->
+    <None Include="..\fixtures\drivers\**\*" LinkBase="fixtures\drivers" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

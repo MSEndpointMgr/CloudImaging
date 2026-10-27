@@ -12,6 +12,19 @@ export interface ImagingStepDetails {
   itemCounts?: ImagingStepItemCount[] | null;
   /** The device reported more items than are kept. */
   itemsTruncated?: boolean | null;
+  /** Note shown under a step that was skipped, for example why no drivers were installed. */
+  statusNote?: string | null;
+}
+
+/** The driver set pinned on a session when imaging started, or why none applies. */
+export interface SessionDriverPin {
+  driverModelName?: string | null;
+  driverRelease?: string | null;
+  driverSetVersion?: number | null;
+  driverSkipReason?: string | null;
+  driverMatchKey?: string | null;
+  driverChosenManually?: boolean;
+  driverChosenBy?: string | null;
 }
 
 /**
@@ -22,6 +35,7 @@ export const PIPELINE_STEPS: readonly { name: string; label: string; optional: b
   { name: 'FormatDisk', label: 'Prepare disk', optional: false },
   { name: 'DownloadImage', label: 'Download image', optional: false },
   { name: 'ApplyImage', label: 'Apply Windows image', optional: false },
+  { name: 'InstallDrivers', label: 'Install drivers', optional: true },
   { name: 'PrepareSetup', label: 'Prepare setup', optional: true },
   { name: 'ConfigureBoot', label: 'Configure boot', optional: false },
   { name: 'ApplyRecoveryImage', label: 'Configure recovery', optional: false },

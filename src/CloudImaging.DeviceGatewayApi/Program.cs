@@ -14,7 +14,7 @@ var host = new HostBuilder()
         // 1. ProblemDetails (outermost — catches all exceptions)
         // 2. mTLS cert validation (client certificate must match active thumbprint)
         // 3. Token validation (rejects unauthenticated before rate limiting)
-        // 4. Rate limiting (per-session sliding window)
+        // 4. Rate limiting (per token, and per client address for the token-free endpoints)
         builder.UseMiddleware<ProblemDetailsMiddleware>();
         builder.UseMiddleware<MtlsCertificateValidationMiddleware>();
         builder.UseMiddleware<DeviceSessionTokenValidationMiddleware>();
@@ -50,6 +50,7 @@ var host = new HostBuilder()
 
         // Device-session token service (issues + validates opaque session bearer tokens)
         services.AddSingleton<CloudImaging.DeviceGatewayApi.Security.DeviceSessionTokenService>();
+        services.AddSingleton(sp => DeviceSessionTokenVerifier.ForCore(sp.GetRequiredService<ImagingCoreClient>, sp.GetRequiredService<ILogger<DeviceSessionTokenVerifier>>()));
 
         // Single-use nonce store for proof-of-possession replay prevention (FR-069).
         // Backed by an atomic Table Storage insert: AddEntity throws HTTP 409 on a duplicate row,
@@ -88,9 +89,10 @@ var host = new HostBuilder()
             return new DeviceSessionNonceStore(Register, logger);
         });
 
-        // Boot-media certificate thumbprint cache (60s TTL, FR-069)
+        // Boot-media certificate cache (60s TTL, FR-069): the active certificate plus the one a
+        // rotation replaced, while its overlap lasts.
         //
-        // Loader calls ImagingCoreApi's internal "GET /api/internal/cert/active" endpoint over
+        // Loader calls ImagingCoreApi's internal "GET /api/internal/cert/accepted" endpoint over
         // Private Link via ImagingCoreClient — the SAME cross-service call pattern used for
         // every other Device Gateway → Imaging Core data need in this file (sessions, boot
         // images, recovery images, session logs). ImagingCoreApi's BootMediaCertificateRepository
@@ -108,17 +110,12 @@ var host = new HostBuilder()
             var logger = sp.GetRequiredService<ILogger<BootMediaCertificateThumbprintCache>>();
             var jsonOptions = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
 
-            async Task<string?> Loader(CancellationToken ct)
+            async Task<IReadOnlyList<CloudImaging.Contracts.Models.AcceptedBootMediaCertificate>> Loader(CancellationToken ct)
             {
                 var coreClient = sp.GetRequiredService<ImagingCoreClient>();
-                using var response = await coreClient.GetActiveCertificateMetadataAsync(ct);
-                if (!response.IsSuccessStatusCode)
-                {
-                    return null;
-                }
-
-                var metadata = await response.Content.ReadFromJsonAsync<ActiveCertMetadata>(jsonOptions, ct);
-                return metadata?.Thumbprint;
+                using var response = await coreClient.GetAcceptedCertificatesAsync(ct);
+                response.EnsureSuccessStatusCode();
+                return await response.Content.ReadFromJsonAsync<List<CloudImaging.Contracts.Models.AcceptedBootMediaCertificate>>(jsonOptions, ct) ?? [];
             }
 
             return new BootMediaCertificateThumbprintCache(Loader, logger);
@@ -130,6 +127,3 @@ var host = new HostBuilder()
     .Build();
 
 host.Run();
-
-/// <summary>Shape of the JSON body returned by ImagingCoreApi's GET /api/internal/cert/active.</summary>
-internal sealed record ActiveCertMetadata(string Thumbprint, DateTimeOffset NotBefore, DateTimeOffset NotAfter, bool IsActive, string KeyVaultSecretName);

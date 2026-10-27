@@ -46,6 +46,18 @@ public sealed record ImagingStepItem
 
     /// <summary>Last non-empty output line of an In WinPE script.</summary>
     public string? LastOutputLine { get; init; }
+
+    /// <summary>Action of a driver component; null for other items.</summary>
+    public DriverAction? DriverAction { get; init; }
+
+    /// <summary>Version of a driver component.</summary>
+    public string? ComponentVersion { get; init; }
+
+    /// <summary>What kind of driver component the device got.</summary>
+    public DriverComponentOrigin? DriverOrigin { get; init; }
+
+    /// <summary>True when the driver file came from the USB drive instead of a download.</summary>
+    public bool? FromUsbCache { get; init; }
 }
 
 /// <summary>Number of items of one kind with one outcome.</summary>
@@ -59,4 +71,7 @@ public sealed record ImagingStepItemCount
 
     /// <summary>Number of items.</summary>
     public int Count { get; init; }
+
+    /// <summary>Items whose file came from the USB drive; null when none did.</summary>
+    public int? FromUsbCache { get; init; }
 }

@@ -62,6 +62,7 @@ public sealed partial class BootMediaCertificateFunctions
         var root = doc.RootElement;
 
         // Build metadata-only response — NEVER include PFX bytes or private key
+        var previous = root.TryGetProperty("previous", out var prev) && prev.ValueKind == JsonValueKind.Object ? prev : (JsonElement?)null;
         var metadata = new
         {
             thumbprintDisplay = GetStringOrNull(root, "thumbprint")?.ToUpperInvariant(),
@@ -69,6 +70,12 @@ public sealed partial class BootMediaCertificateFunctions
             issuedAt = root.TryGetProperty("notBefore", out var nb) ? nb.GetString() : null,
             expiresAt = root.TryGetProperty("notAfter", out var na) ? na.GetString() : null,
             isActive = root.TryGetProperty("isActive", out var ia) ? ia.GetBoolean() : false,
+            previous = previous is { } p ? new
+            {
+                thumbprintDisplay = GetStringOrNull(p, "thumbprint")?.ToUpperInvariant(),
+                expiresAt = GetStringOrNull(p, "notAfter"),
+                acceptedUntil = GetStringOrNull(p, "acceptedUntil"),
+            } : null,
         };
 
         LogMetadataReturned(_logger);
@@ -143,6 +150,23 @@ public sealed partial class BootMediaCertificateFunctions
         var payload = System.Text.Json.JsonSerializer.Deserialize<object>(body.RootElement.GetRawText());
         var coreResponse = await _coreClient.RotateCertAsync(payload!, context.CancellationToken);
         return await ProxyJsonAsync(req, coreResponse, context.CancellationToken);
+    }
+
+    // ── POST /api/cert/previous/stop ──────────────────────────────────────────
+
+    /// <summary>POST cert/previous/stop. Stops accepting the certificate the last rotation replaced.</summary>
+    [Function("StopAcceptingPreviousBootMediaCertificate")]
+    public async Task<HttpResponseData> StopAcceptingPrevious(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "cert/previous/stop")] HttpRequestData req,
+        FunctionContext context)
+    {
+        var coreResponse = await _coreClient.StopAcceptingPreviousCertAsync(context.CancellationToken);
+        if (!coreResponse.IsSuccessStatusCode && coreResponse.StatusCode != HttpStatusCode.NotFound)
+        {
+            LogUpstreamError(_logger, (int)coreResponse.StatusCode);
+            return req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+        }
+        return req.CreateResponse(coreResponse.StatusCode);
     }
 
     private static async Task<HttpResponseData> ProxyJsonAsync(

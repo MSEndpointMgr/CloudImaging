@@ -5,12 +5,15 @@ import { apiFetch } from '../lib/apiClient.ts';
 import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
+import { WindowsReleaseField } from './WindowsReleaseField.tsx';
+import type { WindowsRelease } from '../lib/drivers.ts';
 
 interface OsImage {
   imageId: string;
   name: string;
   version: string;
   description?: string;
+  windowsRelease?: WindowsRelease | null;
 }
 
 interface ImageEditorDialogProps {
@@ -29,6 +32,7 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
   const [name, setName]           = useState('');
   const [version, setVersion]     = useState('');
   const [description, setDesc]    = useState('');
+  const [windowsRelease, setWindowsRelease] = useState<WindowsRelease | null>(null);
   const [saving, setSaving]       = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
@@ -37,6 +41,7 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
       setName(image.name);
       setVersion(image.version);
       setDesc(image.description ?? '');
+      setWindowsRelease(image.windowsRelease ?? null);
       setError(null);
     }
   }, [image]);
@@ -56,7 +61,7 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ name, version, description }),
+        body: JSON.stringify({ name, version, description, windowsRelease }),
       });
       if (res.ok) { onSaved(); onClose(); }
       else setError('Failed to save changes.');
@@ -88,6 +93,7 @@ export function ImageEditorDialog({ image, onClose, onSaved, existingVersions = 
             <textarea value={description} onChange={e => setDesc(e.target.value)} rows={3}
               className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50" />
           </div>
+          <WindowsReleaseField id="imageWindowsRelease" value={windowsRelease} onChange={setWindowsRelease} disabled={saving} />
         </div>
 
         {error && <p className="text-sm text-destructive mt-3">{error}</p>}

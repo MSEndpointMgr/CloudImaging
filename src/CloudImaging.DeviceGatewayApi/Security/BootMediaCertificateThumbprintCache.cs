@@ -1,10 +1,11 @@
-using CloudImaging.DeviceGatewayApi.Security;
+using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.DeviceGatewayApi.Security;
 
 /// <summary>
-/// Singleton in-memory cache for the active boot-media certificate thumbprint (FR-069).
+/// Singleton in-memory cache of the boot-media certificates the gateway accepts (FR-069): the
+/// active one, plus the one a rotation replaced while its overlap lasts.
 ///
 /// The cache is refreshed at most once every 60 seconds to balance revocation
 /// responsiveness against per-request Table Storage latency.  A per-request
@@ -19,69 +20,71 @@ public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
     /// <summary>Minimum interval between backing-store refreshes.</summary>
     public static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(60);
 
-    private readonly Func<CancellationToken, Task<string?>> _loader;
+    private readonly Func<CancellationToken, Task<IReadOnlyList<AcceptedBootMediaCertificate>>> _loader;
     private readonly ILogger<BootMediaCertificateThumbprintCache> _logger;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private bool _disposed;
 
-    private string? _cachedThumbprint;
+    private IReadOnlyList<AcceptedBootMediaCertificate> _cached = [];
     private DateTimeOffset _lastRefreshed = DateTimeOffset.MinValue;
 
     // Expose for testing
     internal DateTimeOffset LastRefreshed => _lastRefreshed;
 
     /// <param name="loader">
-    /// Async delegate that fetches the active thumbprint from the backing store
-    /// (Table Storage in production).  Receives a <see cref="CancellationToken"/>.
+    /// Async delegate that fetches the accepted certificates, active first, from the backing store
+    /// (Imaging Core in production). Returns an empty list when none is configured.
     /// </param>
     /// <param name="logger">Logger for refresh/invalidate events.</param>
     public BootMediaCertificateThumbprintCache(
-        Func<CancellationToken, Task<string?>> loader,
+        Func<CancellationToken, Task<IReadOnlyList<AcceptedBootMediaCertificate>>> loader,
         ILogger<BootMediaCertificateThumbprintCache> logger)
     {
         _loader = loader;
         _logger = logger;
     }
 
+    /// <summary>The active certificate's thumbprint, or <c>null</c> if none is configured.</summary>
+    public async Task<string?> GetThumbprintAsync(CancellationToken ct = default) =>
+        (await GetAcceptedAsync(ct)).FirstOrDefault(c => c.IsActive)?.Thumbprint;
+
     /// <summary>
-    /// Returns the currently active thumbprint.  Refreshes from the backing store
-    /// when the cache has expired (≥ 60 seconds since the last successful read).
-    /// Returns <c>null</c> if no active certificate is found.
+    /// The accepted certificates, active first. Refreshes from the backing store when the cache
+    /// has expired (≥ 60 seconds since the last successful read). Empty when none is configured.
     /// </summary>
-    public async Task<string?> GetThumbprintAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<AcceptedBootMediaCertificate>> GetAcceptedAsync(CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
-        if (_cachedThumbprint is not null && (now - _lastRefreshed) < CacheTtl)
+        if (_cached.Count > 0 && (now - _lastRefreshed) < CacheTtl)
         {
-            return _cachedThumbprint;
+            return _cached;
         }
 
         // Only one concurrent refresh; others fall through with the stale value
         if (!await _refreshLock.WaitAsync(0, ct))
         {
             LogStaleReturn(_logger);
-            return _cachedThumbprint;
+            return _cached;
         }
 
         try
         {
             // Double-checked locking after acquiring the semaphore
             now = DateTimeOffset.UtcNow;
-            if (_cachedThumbprint is not null && (now - _lastRefreshed) < CacheTtl)
+            if (_cached.Count > 0 && (now - _lastRefreshed) < CacheTtl)
             {
-                return _cachedThumbprint;
+                return _cached;
             }
 
             LogRefreshing(_logger);
-            string? thumbprint = await _loader(ct);
-            _cachedThumbprint = thumbprint;
+            _cached = await _loader(ct);
             _lastRefreshed = DateTimeOffset.UtcNow;
-            return _cachedThumbprint;
+            return _cached;
         }
         catch (Exception ex)
         {
             LogRefreshFailed(_logger, ex);
-            return _cachedThumbprint;
+            return _cached;
         }
         finally
         {
@@ -90,14 +93,12 @@ public sealed partial class BootMediaCertificateThumbprintCache : IDisposable
     }
 
     /// <summary>
-    /// Forces the next call to <see cref="GetThumbprintAsync"/> to re-read from the
-    /// backing store, regardless of the TTL.  Used after a certificate rotation is
-    /// committed to Table Storage so the new thumbprint is picked up immediately.
+    /// Forces the next call to re-read from the backing store, regardless of the TTL.
     /// </summary>
     public void Invalidate()
     {
         _lastRefreshed = DateTimeOffset.MinValue;
-        _cachedThumbprint = null;
+        _cached = [];
         LogInvalidated(_logger);
     }
 

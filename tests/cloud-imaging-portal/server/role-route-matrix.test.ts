@@ -47,6 +47,7 @@ const operatorApi = vi.hoisted(() => {
     getSessionLogs: resolved([]),
     getSessionLogDownloadUrl: resolved(),
     getBootMediaCertMetadata: resolved(),
+    stopAcceptingPreviousBootMediaCert: resolved(true),
     getBranding: resolved(),
     putBranding: resolved(undefined),
     getBrandingLogoSas: resolved(),
@@ -90,6 +91,7 @@ const operatorApi = vi.hoisted(() => {
     uploadSetupProfileContent: resolved(),
     getSetupProfileContent: resolved({ data: Buffer.from('exit 0'), contentType: 'text/plain; charset=utf-8' }),
     getSessionStepItems: resolved([]),
+    drivers: resolved({ status: 200, data: {} }),
     // routes/cert.ts posts generate and rotate through the client's raw axios instance.
     http: { post: resolved({ data: {} }) },
   };
@@ -120,6 +122,7 @@ const { updateCheckRouter } = await import('@/routes/update-check.js');
 const { autopilotRouter } = await import('@/routes/autopilot.js');
 const { preFlightOverridesRouter } = await import('@/routes/preflight-overrides.js');
 const { setupProfilesRouter } = await import('@/routes/setup-profiles.js');
+const { driversRouter } = await import('@/routes/drivers.js');
 
 const MOUNTS: [string, Router][] = [
   ['/api/sessions', sessionsRouter],
@@ -140,6 +143,7 @@ const MOUNTS: [string, Router][] = [
   ['/api/autopilot', autopilotRouter],
   ['/api/preflight-overrides', preFlightOverridesRouter],
   ['/api/setup-profiles', setupProfilesRouter],
+  ['/api/drivers', driversRouter],
 ];
 
 type Role = 'Adm' | 'Ops' | 'Tech' | 'Rdr' | 'Appr';
@@ -200,6 +204,57 @@ const ROUTES: Row[] = [
   ['get', '/api/setup-profiles/:profileId/history', TECH, PA_USERS, null],
   ['post', '/api/setup-profiles/content', OPS, OPS_USERS, null],
   ['get', '/api/setup-profiles/:profileId/content/:sha256', TECH, PA_USERS, null],
+
+  ['get', '/api/drivers/vendors', TECH, PA_USERS, null],
+  ['get', '/api/drivers/catalog/models', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/preview', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/models', TECH, PA_USERS, null],
+  ['get', '/api/drivers/models/:modelId', TECH, PA_USERS, null],
+  ['post', '/api/drivers/models/:modelId/releases', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/:modelId/complete', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/sync/runs', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/sync/runs', TECH, PA_USERS, null],
+  ['post', '/api/drivers/models/check', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/:modelId/check', OPS, OPS_USERS, null],
+  ['put', '/api/drivers/models/:modelId/releases/:release/overrides/:lineageKey', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/models/:modelId/releases/:release/overrides/:lineageKey', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/:modelId/releases/:release/build', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/:modelId/releases/:release/approvals', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/rules', TECH, PA_USERS, null],
+  ['get', '/api/drivers/rules/suggestions', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/rules', OPS, OPS_USERS, null],
+  ['put', '/api/drivers/rules/:ruleId', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/rules/:ruleId', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/categories', TECH, PA_USERS, null],
+  ['put', '/api/drivers/critical-categories/:vendor', OPS, OPS_USERS, null],
+  ['put', '/api/drivers/vendors/:vendor', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/sync/settings', TECH, PA_USERS, null],
+  ['put', '/api/drivers/sync/settings', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/sync/runs/:runId/items', TECH, PA_USERS, null],
+  ['get', '/api/drivers/sync/runs/:runId/progress', TECH, PA_USERS, null],
+  ['get', '/api/drivers/reports/sync', HISTORY, ['Adm', 'Ops', 'Rdr'], null],
+  ['delete', '/api/drivers/models/:modelId/releases/:release', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/models/:modelId/removal-impact', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/models/:modelId', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/models/:modelId/releases/:release/components/:lineageKey', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/:modelId/releases/:release/rollback', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/storage', TECH, PA_USERS, null],
+  ['put', '/api/drivers/storage/settings', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/storage/models/:modelId', TECH, PA_USERS, null],
+  ['get', '/api/drivers/downloads', TECH, PA_USERS, null],
+  ['post', '/api/drivers/assignment-preview', TECH, PA_USERS, null],
+  ['get', '/api/drivers/models/:modelId/releases/:release/components/:lineageKey/versions', TECH, PA_USERS, null],
+  ['put', '/api/drivers/models/:modelId/releases/:release/components/:lineageKey/rollback', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/models/:modelId/releases/:release/components/:lineageKey/rollback', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/custom-components/uploads/start', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/custom-components/uploads/:uploadId/complete', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/custom-components/uploads/:uploadId/abandon', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/custom-components', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/custom-components', TECH, PA_USERS, null],
+  ['put', '/api/drivers/custom-components/:customId', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/custom-components/:customId', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/custom-components/:customId/notices/:modelId/dismiss', OPS, OPS_USERS, null],
 
   ['get', '/api/images', PA_RDR, PA_RDR_USERS, PA_RDR_BEFORE],
   ['post', '/api/images', OPS, OPS_USERS, ADM_BEFORE],
@@ -266,6 +321,7 @@ const ROUTES: Row[] = [
   ['get', '/api/cert/active', ADM, ADM_USERS, ADM_BEFORE],
   ['post', '/api/cert/generate', ADM, ADM_USERS, ADM_BEFORE],
   ['post', '/api/cert/rotate', ADM, ADM_USERS, ADM_BEFORE],
+  ['post', '/api/cert/previous/stop', ADM, ADM_USERS, null],
   ['get', '/api/partitioning-scheme', PA, PA_USERS, PA_BEFORE],
   ['put', '/api/partitioning-scheme', ADM, ADM_USERS, ADM_BEFORE],
   ['get', '/api/preflight-overrides', PA, PA_USERS, PA_BEFORE],
@@ -344,10 +400,10 @@ describe('Portal backend: route-by-role matrix', () => {
     vi.clearAllMocks();
   });
 
-  it('lists every route the 18 routers register exactly once', () => {
+  it('lists every route the 19 routers register exactly once', () => {
     const table = ROUTES.map(([method, path]) => `${method.toUpperCase()} ${path}`);
-    expect(MOUNTS).toHaveLength(18);
-    expect(ROUTES).toHaveLength(85);
+    expect(MOUNTS).toHaveLength(19);
+    expect(ROUTES).toHaveLength(136);
     expect(new Set(table).size).toBe(table.length);
     expect([...registeredRoutes()].sort()).toEqual([...table].sort());
   });

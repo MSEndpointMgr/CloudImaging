@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-25",
+  "note": "contentBytes and contentSha256 describe the single file inside each cabinet, as expanded by Windows expand.exe; CabinetReaderTests compare against them.",
+  "files": [
+    { "file": "platformList.cab", "url": "https://hpia.hpcloud.hp.com/ref/platformList.cab", "compression": "LZX", "contentBytes": 2605888, "contentSha256": "45b731cf95c55a2ed7736837bd7975fa481d0568c35fb412a05264a253c18ec4", "content": "HP platform list (system IDs, product names, OS releases per architecture)" },
+    { "file": "8c26_64_11.0.24h2.cab", "url": "https://hpia.hpcloud.hp.com/ref/8c26/8c26_64_11.0.24h2.cab", "compression": "LZX", "contentBytes": 3899888, "contentSha256": "1380e533b3d2a45d892a2f1b0d294d6bbc44c2e6570fb9a43843511316d80017", "content": "HP reference file, EliteBook 840/860 G11, Windows 11 24H2 x64" },
+    { "file": "8cbe_arm64_11.0.24h2.cab", "url": "https://hpia.hpcloud.hp.com/ref/8cbe/8cbe_arm64_11.0.24h2.cab", "compression": "LZX", "contentBytes": 928909, "contentSha256": "5fc4fa3a58152b6d800f509d8aba7690b2ab7834f74d9ff97a9e9d081e05cbd2", "content": "HP reference file, ARM64 platform 8CBE, Windows 11 24H2 ARM64" },
+    { "file": "CatalogIndexPC.cab", "url": "https://downloads.dell.com/catalog/CatalogIndexPC.cab", "compression": "MSZIP", "contentBytes": 4537946, "contentSha256": "925ff92bb98d48ceaab7b3c019d3b0a8afc7fb21caed3995faf70ee448ad95ce", "content": "Dell client catalog index (UTF-16, namespace openmanage/cm/dm)" },
+    { "file": "Latitude_0CB2.cab", "url": "https://downloads.dell.com/FOLDER15162537M/1/Latitude_0CB2.cab", "compression": "MSZIP", "sha256": "2367c19f2b4e5db80940f8d3f72fd55b5cd099f0bce2e4a9f9355020cfdf5ef3", "contentBytes": 10762888, "contentSha256": "f7a46e6b0b910130531cf1851895ca8c3fc553fb174ee8719e1318bf34ac5501", "content": "Dell Latitude 5450, SKU 0CB2" },
+    { "file": "Latitude_0CB4.cab", "url": "https://downloads.dell.com/FOLDER15162537M/1/Latitude_0CB4.cab", "compression": "MSZIP", "sha256": "f3ea8890a93915edb4efdecf9224206f3d31574fe9f941880ae2c610899ad2c7", "contentBytes": 10762888, "contentSha256": "e6c953548166941403407633d1609da36a8a5131f4fb9a801bfc7745ea667523", "content": "Dell Latitude 5450, SKU 0CB4" },
+    { "file": "Latitude_0C85.cab", "url": "https://downloads.dell.com/FOLDER15162537M/1/Latitude_0C85.cab", "compression": "MSZIP", "sha256": "3d1011b07e1003f8ec06982942e059a3b8d2cb0c3efca575436ce740e23e231e", "contentBytes": 3217298, "contentSha256": "2a3c049b36ecbfe8adeb2952fdfdf332ec114cf7703695701808bfa61fd7b636", "content": "Dell Latitude 7455 (Snapdragon, ARM64), SKU 0C85" }
+  ]
+}

@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, type LucideIcon } from 'lucide-react';
 import { Button } from './ui/button.tsx';
+import { useDialogFocus } from './drivers/useDialogFocus.ts';
 
 /** Copy shown in an impact confirmation overlay before a high-impact action runs. */
 export interface ConfirmImpactCopy {
@@ -41,6 +43,10 @@ export function ConfirmImpactDialog({
   /** Holds the confirm button while the impact text is still being completed. */
   confirmDisabled?: boolean;
 }): React.ReactElement {
+  // Focus starts on Cancel, stays in the dialog and returns on close; Escape cancels unless busy.
+  const panel = useRef<HTMLDivElement>(null);
+  useDialogFocus(panel, () => { if (!busy) onCancel(); });
+
   // Portalled to document.body so the dimming overlay always covers the full viewport (including
   // the app header) regardless of any stacking context introduced by this dialog's call site.
   return createPortal(
@@ -50,8 +56,8 @@ export function ConfirmImpactDialog({
       aria-modal="true"
       aria-labelledby={titleId}
     >
-      <div className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
-        <div className="flex items-center gap-3 p-5">
+      <div ref={panel} className="w-full max-w-md rounded-lg border border-border bg-background shadow-xl">
+        <div className="flex items-start gap-3 p-5">
           <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${copy.destructive ? 'bg-destructive/10 text-destructive' : 'bg-primary/15 text-primary'}`}>
             <Icon className="h-5 w-5" aria-hidden="true" />
           </div>

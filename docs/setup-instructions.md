@@ -327,11 +327,6 @@ Fill in the wizard. It has two tabs:
 - **Cloud Imaging Media Builder - Application (client) ID**:
   - From Registration 3 (`mediaBuilderClientId`), the app the Media Builder desktop tool
     authenticates as when it calls the Operator API on the signed-in technician's behalf.
-- **Deployment Tier**:
-  - `Standard` enforces mTLS at the Function App layer and is the right choice for most
-    organizations.
-  - `Enterprise` additionally puts an Application Gateway WAF_v2 in front of the Device Gateway
-    API.
 - **Compute**, **Security Settings**, and **Networking**: every field here is pre-filled with a
   working default. Only change them if you have specific sizing, certificate/token lifetime, or
   IP addressing requirements.
@@ -524,8 +519,7 @@ complete these one-time setup tasks. The first two are **required**; imaging can
 without them; the rest are optional and can be revisited any time from **Configuration**.
 
 1. **Generate the boot media certificate** (required).
-   - Navigate to **Configuration** > **Certificates** tab > click **Generate Certificate** and
-     wait for confirmation.
+   - Navigate to **Configuration** > **Certificates** tab > click **Generate** and confirm.
    - This certificate secures the mTLS handshake between booted devices and the Device Gateway
      API, and is embedded into every boot image Media Builder generates.
    - Without an active certificate, **Generate Boot Image** (Phase 4) refuses to run.

@@ -23,9 +23,9 @@ namespace CloudImaging.ImagingCoreApi.Services;
 /// </summary>
 public sealed partial class UploadPublishService
 {
-    private const string OsImageContainer = "os-images";
-    private const string BootImageContainer = "boot-images";
-    private const string RecoveryImageContainer = "recovery-images";
+    private const string OsImageContainer = Storage.StorageContainers.OsImages;
+    private const string BootImageContainer = Storage.StorageContainers.BootImages;
+    private const string RecoveryImageContainer = Storage.StorageContainers.RecoveryImages;
 
     /// <summary>
     /// Read-ahead buffer used when streaming the staged ISO. The SDK default is 4 MB; a larger
@@ -219,6 +219,7 @@ public sealed partial class UploadPublishService
             UploadedAt = DateTimeOffset.UtcNow,
             Sha256Hash = finalHash,
             Architecture = architecture ?? MachineArchitecture.X64,
+            WindowsRelease = job.WindowsRelease,
         };
 
         await _osImageRepo.CreateAsync(image, ct);

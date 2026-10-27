@@ -70,6 +70,7 @@ public sealed class OsImageRepository
         ["SizeBytes"] = i.SizeBytes,
         ["Sha256Hash"] = i.Sha256Hash,
         ["Architecture"] = MachineArchitecturePlatform.Slug(i.Architecture),
+        ["WindowsRelease"] = i.WindowsRelease?.ToString(),
         ["IsInUse"] = i.IsInUse,
         ["IsActive"] = true,
         ["UploadedAt"] = i.UploadedAt,
@@ -85,6 +86,7 @@ public sealed class OsImageRepository
         SizeBytes = e.GetInt64("SizeBytes") ?? 0L,
         Sha256Hash = e.GetString("Sha256Hash") ?? string.Empty,
         Architecture = MachineArchitecturePlatform.ParseSlugOrDefault(e.GetString("Architecture")),
+        WindowsRelease = Enum.TryParse<CloudImaging.Contracts.Enums.WindowsRelease>(e.GetString("WindowsRelease"), out var release) ? release : null,
         IsInUse = e.GetBoolean("IsInUse") ?? false,
         UploadedAt = e.GetDateTimeOffset("UploadedAt") ?? DateTimeOffset.UtcNow,
     };

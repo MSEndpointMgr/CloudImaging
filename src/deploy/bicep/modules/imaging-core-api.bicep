@@ -48,12 +48,16 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
   }
   properties: {
     serverFarmId: plan.id
+    httpsOnly: true
     virtualNetworkSubnetId: vnetSubnetId
     vnetRouteAllEnabled: true
     // No public access — accessible only via Private Link (FR-020)
     publicNetworkAccess: 'Disabled'
     siteConfig: {
       linuxFxVersion: 'DOTNET-ISOLATED|10'
+      minTlsVersion: '1.2'
+      scmMinTlsVersion: '1.2'
+      ftpsState: 'Disabled'
       appSettings: [
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'dotnet-isolated' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
@@ -135,6 +139,19 @@ resource corePackageReadAccess 'Microsoft.Authorization/roleAssignments@2022-04-
 // The managed identity principalId must be granted this role via PowerShell/CLI post-deploy
 // because Bicep does not natively support Graph API role assignments.
 // The post-install.ps1 script handles this step.
+
+// Code ships as a package in storage, so neither FTP nor SCM basic-auth publishing is needed.
+resource ftpBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: func
+  name: 'ftp'
+  properties: { allow: false }
+}
+
+resource scmBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: func
+  name: 'scm'
+  properties: { allow: false }
+}
 
 output internalBaseUrl string = 'https://${func.properties.defaultHostName}'
 output funcId string = func.id

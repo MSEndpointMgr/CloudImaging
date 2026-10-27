@@ -1,3 +1,5 @@
+using CloudImaging.Contracts.Enums;
+
 namespace CloudImaging.Contracts.Models;
 
 /// <summary>An OS image stored in the Storage Account (Key Entities, FR-036).</summary>
@@ -32,4 +34,10 @@ public sealed class OsImage
 
     /// <summary>Target processor architecture; x64 for catalog entries that predate it.</summary>
     public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
+
+    /// <summary>
+    /// Windows release the image installs, entered by an Operator or Administrator. Null means the
+    /// image predates driver management and devices get no drivers.
+    /// </summary>
+    public WindowsRelease? WindowsRelease { get; init; }
 }

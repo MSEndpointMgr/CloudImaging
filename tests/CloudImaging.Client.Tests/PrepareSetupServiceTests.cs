@@ -388,6 +388,26 @@ public sealed class PrepareSetupServiceTests
     }
 
     [Fact]
+    public void WithoutAProfile_DriverInstallersAloneAreStaged_WithTheRunnerInTheAnswerFile()
+    {
+        var (service, _, _, files) = CreateWithScripts();
+        files.Files[@"CloudImaging\Drivers\a.exe"] = [1];
+        files.Files[@"CloudImaging\Drivers\b.exe"] = [1];
+
+        var result = RunWith(service, null, [Installer("HP Hotkey Support", @"CloudImaging\Drivers\a.exe"), Installer("Realtek Audio Console", @"CloudImaging\Drivers\b.exe")]);
+
+        result.Status.Should().Be(ImagingStepStatus.Completed);
+        result.Items.Select(i => (i.Kind, i.Name, i.Outcome)).Should().Equal(
+            (StepItemKind.DriverInstaller, "HP Hotkey Support", StepItemOutcome.Queued),
+            (StepItemKind.DriverInstaller, "Realtek Audio Console", StepItemOutcome.Queued),
+            (StepItemKind.AnswerFile, "Answer file", StepItemOutcome.Succeeded));
+        var manifest = Encoding.UTF8.GetString(files.Files[@"Windows\Setup\CloudImaging\manifest.json"]);
+        manifest.Should().Contain("\"profile\": null");
+        manifest.IndexOf("HP Hotkey Support", StringComparison.Ordinal).Should().BeLessThan(manifest.IndexOf("Realtek Audio Console", StringComparison.Ordinal));
+        UnattendComposer.CountRunnerCommands(UnattendComposer.Parse(Encoding.UTF8.GetString(files.Files[PrepareSetupService.AnswerFilePath]))).Should().Be(1);
+    }
+
+    [Fact]
     public void WithoutAProfile_AnAnswerFileWriteFailure_NamesTheInstallersThatWillNotRun()
     {
         var (service, _, _, files) = CreateWithScripts();

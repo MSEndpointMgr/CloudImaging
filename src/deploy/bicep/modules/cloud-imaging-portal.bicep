@@ -46,8 +46,12 @@ resource appService 'Microsoft.Web/sites@2024-04-01' = {
   }
   properties: {
     serverFarmId: plan.id
+    httpsOnly: true
     siteConfig: {
       linuxFxVersion: 'NODE|22-lts'
+      minTlsVersion: '1.2'
+      scmMinTlsVersion: '1.2'
+      ftpsState: 'Disabled'
       // Without Always On, App Service unloads the app after ~20 min idle; the next
       // request pays a full Node cold start on top of the downstream Operator/Core API
       // round trip, which can exceed the portal's own 30s upstream timeout and surface
@@ -129,6 +133,13 @@ resource stappBackend 'Microsoft.Web/staticSites/linkedBackends@2024-04-01' = {
     backendResourceId: appService.id
     region: location
   }
+}
+
+// FTP is never used. SCM basic auth stays on: install.ps1 and upgrade.ps1 zip-deploy the backend with Publish-AzWebApp.
+resource ftpBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: appService
+  name: 'ftp'
+  properties: { allow: false }
 }
 
 output portalUrl string = 'https://${stapp.properties.defaultHostname}'

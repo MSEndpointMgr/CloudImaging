@@ -44,6 +44,10 @@ It is worth being precise about this, because the boundary catches people out.
 - Deploy the new portal frontend to the Static Web App
 - Re-apply the browser upload permission rules on the boot image storage account, which a
   code-only upgrade would otherwise miss
+- Re-apply the App Service security settings from the templates on every run: HTTPS only,
+  TLS 1.2 or later, FTP off, and basic authentication for deployment off on the three Function
+  Apps (the portal backend keeps it for its own deployment). Settings that already match are
+  left alone, so a release that tightens them needs no extra step
 
 **It does not:**
 
@@ -202,13 +206,15 @@ by **rebuilding boot media**, not by any script.
 
 ### USB media
 
-Existing USB drives keep running the older Client until they are rewritten. There is no
-over-the-air update for media already in the field.
+Existing USB drives keep running the older Client until they are rewritten, or until they update
+themselves to the newest production boot image when they boot online (media built with Client
+`mse-ci-client-v1.1.0` or later).
 
 Two things force a rewrite rather than merely suggesting one:
 
-- **The boot media certificate was rotated.** Old media stops authenticating immediately. See
-  the certificate rotation procedure in the [operations runbook](operations-runbook.md).
+- **The boot media certificate was rotated.** Old media keeps working only while the rotation's
+  overlap lasts, and updates itself during it if it boots online. See the certificate rotation
+  procedure in the [operations runbook](operations-runbook.md#rotating-the-boot-media-certificate).
 - **A release changes the device-facing contract.** Release notes call this out explicitly.
 
 Otherwise, older media continues to work, and you can roll new media out at your own pace.
@@ -323,6 +329,26 @@ changes on devices until an Operator or Administrator saves a profile.
 **Rollback**: an earlier backend ignores setup profiles, and devices image without them. The
 profiles, versions and history stay in storage and are back when the upgrade is reapplied.
 
+### Regenerate boot images for signed update checks
+
+**Applies when** upgrading the backend stream to `mse-ci-v1.1.0` or later from an earlier release.
+
+The boot image update check is now signed with the boot media private key, and the Device Gateway
+no longer answers the unsigned check that earlier Clients send. USB media built with a Client
+before `mse-ci-client-v1.1.0` therefore stops updating itself once the backend is upgraded. It
+still images devices.
+
+1. Upgrade the backend ([Part 1](#part-1-upgrade-the-azure-components)).
+2. Generate new boot images with Client `mse-ci-client-v1.1.0` or later
+   ([Part 3](#part-3-upgrade-the-cloud-imaging-client)) and prepare every USB media again. Media
+   built from them updates itself from then on.
+
+If you also follow [Turn on setup profiles](#turn-on-setup-profiles), the boot images generated
+there cover this step.
+
+**Rollback**: an earlier backend answers only the unsigned check, so media built with the new
+Client cannot update itself on it until the upgrade is reapplied. Imaging is unaffected.
+
 ---
 
 ## Rollback
@@ -366,7 +392,7 @@ Two limits worth knowing:
 | Portal backend: `no response from the new release` | The backend did not report the bundle's release within three minutes. It may still be starting: open `https://<backend-host>/api/config` and check `version`. If it still shows the old release, check the App Service log stream. |
 | Portal loads the old interface after upgrading | Browser cache. Hard refresh with Ctrl+F5. |
 | Portal shows errors or empty lists right after upgrading | A Function App is still restarting. Wait a minute and refresh. If it persists, check Application Insights as described in the [operations runbook](operations-runbook.md). |
-| Devices fail to authenticate after upgrading | Almost always a certificate rotation rather than the upgrade. Confirm whether the boot media certificate was regenerated; if so, boot media must be rebuilt. |
+| Devices fail to authenticate after upgrading | Almost always a certificate rotation rather than the upgrade. Check **Configuration → Certificates**: media built with a rotated certificate stops working once its overlap ends and must be prepared again. |
 
 Re-running `upgrade.ps1` is safe at any point. Every step is repeatable, and a partial upgrade is
 resolved by simply running it again.

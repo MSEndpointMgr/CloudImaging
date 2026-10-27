@@ -30,7 +30,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 public sealed partial class OsImageUploadFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const string UploadContainer = "os-images";
+    private const string UploadContainer = Storage.StorageContainers.OsImages;
 
     /// <summary>
     /// Block size the browser must use when staging. At 8 MB a 20 GB image stages about 2 560
@@ -105,6 +105,14 @@ public sealed partial class OsImageUploadFunctions
             return rejected;
         }
 
+        // An unknown release is refused before any bytes are staged, not after a long upload.
+        if (!ImageArchitecture.TryReadWindowsRelease(body.RootElement, out _))
+        {
+            var badRelease = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRelease.WriteStringAsync(ImageArchitecture.InvalidWindowsReleaseMessage, context.CancellationToken);
+            return badRelease;
+        }
+
         var uploadId = Guid.NewGuid().ToString("N");
         var baseName = Path.GetFileNameWithoutExtension(name).Replace(' ', '-');
         var blobName = $"uploads/{uploadId}/{baseName}-{version.Replace(' ', '-')}{extension}";
@@ -167,6 +175,13 @@ public sealed partial class OsImageUploadFunctions
             var badArch = req.CreateResponse(HttpStatusCode.BadRequest);
             await badArch.WriteStringAsync(ImageArchitecture.InvalidArchitectureMessage, context.CancellationToken);
             return badArch;
+        }
+
+        if (!ImageArchitecture.TryReadWindowsRelease(body.RootElement, out var windowsRelease))
+        {
+            var badRelease = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRelease.WriteStringAsync(ImageArchitecture.InvalidWindowsReleaseMessage, context.CancellationToken);
+            return badRelease;
         }
 
         // Reject before committing any blocks so the caller isn't left holding an orphaned blob.
@@ -253,6 +268,7 @@ public sealed partial class OsImageUploadFunctions
             Version = version,
             Name = name,
             Architecture = architecture,
+            WindowsRelease = windowsRelease,
             SizeBytes = sizeBytes,
             CreatedAt = now,
             UpdatedAt = now,

@@ -197,7 +197,7 @@ describe('Portal frontend: setup profile editor', () => {
 
       expect(rowNames()).toEqual(['Wake on LAN', 'Bergen only', 'Oslo print server', 'Nordic certificates', 'Wired 802.1X']);
       expect(orders()).toEqual(['1', '2', '3', '4', '1']);
-      expect(screen.getByText('You have unsaved changes.')).toBeTruthy();
+      expect(screen.getByText('1 unsaved change.')).toBeTruthy();
 
       fireEvent.click(screen.getByRole('button', { name: 'Change the order of Wake on LAN, now 1' }));
       fireEvent.change(screen.getByLabelText('Order of Wake on LAN'), { target: { value: '4' } });

@@ -45,20 +45,41 @@ describe('Portal frontend: setup profile version retention', () => {
     const input = await openMiscellaneous({ setupProfileVersionRetention: 25 });
 
     fireEvent.change(input, { target: { value: '10' } });
-    expect(screen.getByText('You have unsaved changes.')).toBeTruthy();
+    expect(screen.getByText('1 unsaved change on Miscellaneous.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await vi.waitFor(() => expect(saves()).toHaveLength(1));
     expect(JSON.parse(saves()[0].body as string)).toMatchObject({ setupProfileVersionRetention: 10 });
   });
 
-  it('refuses a value outside 5 to 100 and stays on the tab', async () => {
+  it('keeps an unsaved change in view after switching to another tab', async () => {
+    const input = await openMiscellaneous({ setupProfileVersionRetention: 25 });
+    fireEvent.change(input, { target: { value: '10' } });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Certificates' }));
+
+    expect(screen.getByText('1 unsaved change on Miscellaneous.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
+  });
+
+  it('undoes one changed setting from its row', async () => {
+    const input = await openMiscellaneous({ setupProfileVersionRetention: 25 });
+    fireEvent.change(input, { target: { value: '10' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo the unsaved change to Versions kept per profile' }));
+
+    expect(input.value).toBe('25');
+    expect(screen.queryByText(/unsaved change/)).toBeNull();
+  });
+
+  it('refuses a value outside 5 to 100 and says why in the save bar', async () => {
     const input = await openMiscellaneous();
     fireEvent.change(input, { target: { value: '4' } });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ description: 'Keep between 5 and 100 versions per profile.' }));
+    expect(screen.getByText('Keep between 5 and 100 versions per setup profile.')).toBeTruthy();
+    const save = screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(save);
     expect(saves()).toHaveLength(0);
     expect(screen.getByRole('tab', { name: 'Miscellaneous' }).getAttribute('aria-selected')).toBe('true');
   });

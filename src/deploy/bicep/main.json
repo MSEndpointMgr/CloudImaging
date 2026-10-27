@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.47.16.16243",
-      "templateHash": "13746011815965460537"
+      "templateHash": "10470229033130165789"
     }
   },
   "parameters": {
@@ -48,7 +48,7 @@
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Deploy Azure Application Gateway WAF_v2 in front of Device Gateway API (Enterprise tier)."
+        "description": "Reserved for a future Enterprise tier. Not available yet; leave false."
       }
     },
     "certValidityPeriodDays": {
@@ -635,7 +635,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "3762307008650032550"
+              "templateHash": "11167500822159593210"
             }
           },
           "parameters": {
@@ -744,6 +744,17 @@
               "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
               "apiVersion": "2023-05-01",
               "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'boot-images')]",
+              "properties": {
+                "publicAccess": "None"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts/blobServices', parameters('storageCoreApiName'), 'default')]"
+              ]
+            },
+            {
+              "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+              "apiVersion": "2023-05-01",
+              "name": "[format('{0}/{1}/{2}', parameters('storageCoreApiName'), 'default', 'drivers')]",
               "properties": {
                 "publicAccess": "None"
               },
@@ -1301,7 +1312,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "6509811024739731521"
+              "templateHash": "10058952394042064834"
             }
           },
           "parameters": {
@@ -1406,11 +1417,15 @@
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "httpsOnly": true,
                 "virtualNetworkSubnetId": "[parameters('vnetSubnetId')]",
                 "vnetRouteAllEnabled": true,
                 "publicNetworkAccess": "Disabled",
                 "siteConfig": {
                   "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "minTlsVersion": "1.2",
+                  "scmMinTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
                   "appSettings": [
                     {
                       "name": "FUNCTIONS_WORKER_RUNTIME",
@@ -1535,6 +1550,28 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
               ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('funcName'), 'ftp')]",
+              "properties": {
+                "allow": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('funcName'), 'scm')]",
+              "properties": {
+                "allow": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
             }
           ],
           "outputs": {
@@ -1613,7 +1650,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "14634338814281662457"
+              "templateHash": "1244651723167518006"
             }
           },
           "parameters": {
@@ -1701,12 +1738,16 @@
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "httpsOnly": true,
                 "virtualNetworkSubnetId": "[parameters('vnetSubnetId')]",
                 "vnetRouteAllEnabled": true,
                 "clientCertEnabled": true,
                 "clientCertMode": "Required",
                 "siteConfig": {
                   "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "minTlsVersion": "1.2",
+                  "scmMinTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
                   "ipSecurityRestrictions": "[if(parameters('deployApplicationGateway'), createArray(createObject('ipAddress', parameters('agwSubnetPrefix'), 'action', 'Allow', 'priority', 100, 'name', 'AllowApplicationGatewaySubnet', 'description', 'Allow traffic from Application Gateway subnet only'), createObject('ipAddress', 'Any', 'action', 'Deny', 'priority', 65000, 'name', 'DenyAll', 'description', 'Deny all other inbound traffic')), createArray())]",
                   "appSettings": [
                     {
@@ -1765,6 +1806,28 @@
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
                 "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01', 'full').identity.principalId]",
                 "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('funcName'), 'ftp')]",
+              "properties": {
+                "allow": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('funcName'), 'scm')]",
+              "properties": {
+                "allow": false
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
@@ -1948,7 +2011,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "18364433846278459800"
+              "templateHash": "9900853193094284319"
             }
           },
           "parameters": {
@@ -2035,10 +2098,14 @@
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "httpsOnly": true,
                 "virtualNetworkSubnetId": "[parameters('vnetSubnetId')]",
                 "vnetRouteAllEnabled": true,
                 "siteConfig": {
                   "linuxFxVersion": "DOTNET-ISOLATED|10",
+                  "minTlsVersion": "1.2",
+                  "scmMinTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
                   "appSettings": [
                     {
                       "name": "FUNCTIONS_WORKER_RUNTIME",
@@ -2104,6 +2171,28 @@
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('storageBlobDataReaderRoleId'))]",
                 "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('funcName')), '2024-04-01', 'full').identity.principalId]",
                 "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('funcName'), 'ftp')]",
+              "properties": {
+                "allow": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('funcName'), 'scm')]",
+              "properties": {
+                "allow": false
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Web/sites', parameters('funcName'))]"
@@ -2191,7 +2280,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.47.16.16243",
-              "templateHash": "8871062599962740504"
+              "templateHash": "14579822367807239014"
             }
           },
           "parameters": {
@@ -2273,8 +2362,12 @@
               },
               "properties": {
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('planName'))]",
+                "httpsOnly": true,
                 "siteConfig": {
                   "linuxFxVersion": "NODE|22-lts",
+                  "minTlsVersion": "1.2",
+                  "scmMinTlsVersion": "1.2",
+                  "ftpsState": "Disabled",
                   "alwaysOn": true,
                   "appCommandLine": "node dist/index.js",
                   "appSettings": [
@@ -2376,6 +2469,17 @@
               "dependsOn": [
                 "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]",
                 "[resourceId('Microsoft.Web/staticSites', parameters('stappName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Web/sites/basicPublishingCredentialsPolicies",
+              "apiVersion": "2024-04-01",
+              "name": "[format('{0}/{1}', parameters('appServiceName'), 'ftp')]",
+              "properties": {
+                "allow": false
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', parameters('appServiceName'))]"
               ]
             }
           ],

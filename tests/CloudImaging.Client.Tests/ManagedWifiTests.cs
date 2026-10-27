@@ -212,16 +212,21 @@ public sealed class ManagedWifiTests : IDisposable
     }
 
     [Theory]
-    [InlineData(BootImageBase.WindowsPE, false)]
-    [InlineData(BootImageBase.WindowsRE, true)]
-    public async Task SelfUpdate_AsksForTheSameBase_SoWindowsReMediaStaysOnWindowsRe(BootImageBase bootImageBase, bool sendsBase)
+    [InlineData(BootImageBase.WindowsPE)]
+    [InlineData(BootImageBase.WindowsRE)]
+    public async Task SelfUpdate_AsksForTheSameBase_SoWindowsReMediaStaysOnWindowsRe(BootImageBase bootImageBase)
     {
-        var handler = new CapturingHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent)));
-        var gateway = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        string? body = null;
+        var handler = new CapturingHandler(async request =>
+        {
+            body = await request.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        var gateway = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") }, _certificate);
 
-        await gateway.GetLatestBootImageAsync(MachineArchitecture.X64, null, bootImageBase);
+        await gateway.GetLatestBootImageAsync(MachineArchitecture.X64, null, bootImageBase, "SN123");
 
-        handler.Requests.Single().RequestUri!.Query.Contains("base=WindowsRE", StringComparison.Ordinal).Should().Be(sendsBase);
+        JsonSerializer.Deserialize<LatestBootImageRequest>(body!, WebJson)!.Base.Should().Be(bootImageBase);
     }
 
     // Wi-Fi profile

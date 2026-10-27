@@ -90,6 +90,10 @@ public sealed class ImagingStepItemRepository
             ["ExitCode"] = item.ExitCode,
             ["DurationMs"] = item.DurationMs,
             ["LastOutputLine"] = item.LastOutputLine,
+            ["DriverAction"] = item.DriverAction?.ToString(),
+            ["ComponentVersion"] = item.ComponentVersion,
+            ["DriverOrigin"] = item.DriverOrigin?.ToString(),
+            ["FromUsbCache"] = item.FromUsbCache,
         };
 
     private static ImagingStepItem FromEntity(TableEntity e) => new()
@@ -103,5 +107,9 @@ public sealed class ImagingStepItemRepository
         ExitCode = e.GetInt32("ExitCode"),
         DurationMs = e.GetInt64("DurationMs"),
         LastOutputLine = e.GetString("LastOutputLine"),
+        DriverAction = Enum.TryParse<DriverAction>(e.GetString("DriverAction"), out var action) ? action : null,
+        ComponentVersion = e.GetString("ComponentVersion"),
+        DriverOrigin = Enum.TryParse<DriverComponentOrigin>(e.GetString("DriverOrigin"), out var origin) ? origin : null,
+        FromUsbCache = e.GetBoolean("FromUsbCache"),
     };
 }
