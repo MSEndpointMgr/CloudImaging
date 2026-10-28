@@ -1,6 +1,9 @@
 import { Info, ShieldCheck } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card.tsx';
 import { Switch } from './ui/switch.tsx';
+import { UndoChangeButton } from './ui/unsaved-change.tsx';
+import { unsavedRail } from '../lib/unsavedChanges.ts';
+import { cn } from '../lib/utils.ts';
 import { PRE_FLIGHT_ICONS, isPreFlightSettingsValid, type PreFlightCheckName, type PreFlightSettings } from '../lib/preflight.ts';
 
 type RequirementKey = Exclude<keyof PreFlightSettings, 'devicePreFlightAuthorizationEnabled'>;
@@ -38,13 +41,17 @@ const REQUIREMENTS: { key: RequirementKey; check: PreFlightCheckName; title: str
  * it back on restores the previous selection.
  */
 export function PreFlightAuthorizationToggle({
-  settings, onChange, disabled = false,
+  settings, saved, onChange, disabled = false,
 }: {
   settings: PreFlightSettings;
+  /** The saved values, to mark and undo what has changed since. */
+  saved?: PreFlightSettings;
   onChange: (next: PreFlightSettings) => void;
   disabled?: boolean;
 }): React.ReactElement {
   const enabled = settings.devicePreFlightAuthorizationEnabled;
+  const changed = (key: keyof PreFlightSettings) => saved !== undefined && saved[key] !== settings[key];
+  const undo = (key: keyof PreFlightSettings) => { if (saved) onChange({ ...settings, [key]: saved[key] }); };
   return (
     <Card>
       <CardHeader>
@@ -59,7 +66,7 @@ export function PreFlightAuthorizationToggle({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4">
+        <div className={cn('flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4', unsavedRail(changed('devicePreFlightAuthorizationEnabled')))}>
           <div>
             <p className="text-sm font-medium">Require pre-flight authorization</p>
             <p className="mt-0.5 text-sm text-muted-foreground">
@@ -67,12 +74,15 @@ export function PreFlightAuthorizationToggle({
               Firmware mode, Secure Boot and TPM version are recorded on each session either way.
             </p>
           </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={v => onChange({ ...settings, devicePreFlightAuthorizationEnabled: v })}
-            disabled={disabled}
-            label="Require pre-flight authorization"
-          />
+          <div className="flex shrink-0 items-center gap-2">
+            {changed('devicePreFlightAuthorizationEnabled') && <UndoChangeButton label="Require pre-flight authorization" onUndo={() => undo('devicePreFlightAuthorizationEnabled')} />}
+            <Switch
+              checked={enabled}
+              onCheckedChange={v => onChange({ ...settings, devicePreFlightAuthorizationEnabled: v })}
+              disabled={disabled}
+              label="Require pre-flight authorization"
+            />
+          </div>
         </div>
 
         {enabled && (
@@ -80,7 +90,7 @@ export function PreFlightAuthorizationToggle({
             {REQUIREMENTS.map(r => {
               const Icon = PRE_FLIGHT_ICONS[r.check];
               return (
-                <div key={r.key} className="flex items-center justify-between gap-4 rounded-md border border-border p-4">
+                <div key={r.key} className={cn('flex items-center justify-between gap-4 rounded-md border border-border p-4', unsavedRail(changed(r.key)))}>
                   <div className="flex items-start gap-3">
                     <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <div>
@@ -88,12 +98,15 @@ export function PreFlightAuthorizationToggle({
                       <p className="mt-0.5 text-sm text-muted-foreground">{r.description}</p>
                     </div>
                   </div>
-                  <Switch
-                    checked={settings[r.key]}
-                    onCheckedChange={v => onChange({ ...settings, [r.key]: v })}
-                    disabled={disabled}
-                    label={r.title}
-                  />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {changed(r.key) && <UndoChangeButton label={r.title} onUndo={() => undo(r.key)} />}
+                    <Switch
+                      checked={settings[r.key]}
+                      onCheckedChange={v => onChange({ ...settings, [r.key]: v })}
+                      disabled={disabled}
+                      label={r.title}
+                    />
+                  </div>
                 </div>
               );
             })}

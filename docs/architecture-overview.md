@@ -64,11 +64,11 @@ Windows RE boot images can join Wi-Fi; Windows PE images cannot.
 1. An Administrator saves networks under **Wi-Fi Networks**. Imaging Core keeps the settings in Table Storage and each password in Key Vault.
 2. Media Builder fetches the location's networks while preparing USB media and writes them to the BOOT partition, encrypted to the boot media certificate.
 3. At startup, when Ethernet has no address, the Client decrypts the file and joins the first saved network in range.
-4. Once online, the Client asks the Device Gateway for the current list (mTLS plus a signed, single-use request; no session token) and replaces the USB copy.
+4. Once online, the Client asks the Device Gateway for the current list (mTLS plus a signed, single-use request; no session token) and replaces the USB copy. During a certificate rotation overlap the gateway encrypts the list to both certificates, so the boot image the media updates to can still read it.
 
 ## Security boundaries
 
-- The **Device Gateway API** is the only API exposed to WinPE devices. It requires the boot-media certificate for mutual TLS and validates device-session tokens.
+- The **Device Gateway API** is the only API exposed to WinPE devices. It requires the boot-media certificate for mutual TLS, accepts the certificate a rotation replaced only while its overlap lasts, validates device-session tokens, and rate-limits calls per token and, for calls without one, per client address.
 - The **Operator API** accepts technician and Portal traffic. Microsoft Entra ID authentication and app roles determine available operations.
 - The **Imaging Core API** is not internet-facing. Device Gateway and Operator API reach it through Private Link.
 - Workloads use **managed identities** for Azure service access. Deployment does not require storage account keys in application configuration.

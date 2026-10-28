@@ -2,7 +2,9 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
+using CloudImaging.Contracts.Models.Drivers;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Services.Drivers;
 using Microsoft.Extensions.Logging;
 
 namespace CloudImaging.ImagingCoreApi.Services;
@@ -19,6 +21,7 @@ public sealed partial class BulkAssignmentService
     private readonly PortalConfigurationRepository _configRepo;
     private readonly BlobServiceClient _blobClient;
     private readonly SetupProfileResolver _setupProfileResolver;
+    private readonly DriverSetResolver _driverSetResolver;
     private readonly ILogger<BulkAssignmentService> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
@@ -26,6 +29,7 @@ public sealed partial class BulkAssignmentService
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="blobClient">Blob service client used to issue image download SAS URLs upon assignment.</param>
     /// <param name="setupProfileResolver">Resolves the setup profile pinned at assignment.</param>
+    /// <param name="driverSetResolver">Resolves the driver set pinned at assignment.</param>
     /// <param name="logger">Logger for this service.</param>
     public BulkAssignmentService(
         DeviceSessionRepository sessionRepo,
@@ -33,6 +37,7 @@ public sealed partial class BulkAssignmentService
         PortalConfigurationRepository configRepo,
         BlobServiceClient blobClient,
         SetupProfileResolver setupProfileResolver,
+        DriverSetResolver driverSetResolver,
         ILogger<BulkAssignmentService> logger)
     {
         _sessionRepo = sessionRepo;
@@ -40,6 +45,7 @@ public sealed partial class BulkAssignmentService
         _configRepo = configRepo;
         _blobClient = blobClient;
         _setupProfileResolver = setupProfileResolver;
+        _driverSetResolver = driverSetResolver;
         _logger = logger;
     }
 
@@ -57,11 +63,14 @@ public sealed partial class BulkAssignmentService
     /// <summary>
     /// Assigns <paramref name="osImageId"/> to each session in <paramref name="sessionIds"/>
     /// that is currently in <see cref="SessionState.SessionAssigned"/> state.
-    /// Returns a summary of assigned vs skipped sessions.
+    /// Returns a summary of assigned vs skipped sessions. Manual driver choices replace the match
+    /// for their sessions; when any of them can no longer be used, nothing is assigned.
     /// </summary>
     public async Task<BulkAssignResult> AssignAsync(
         IEnumerable<Guid> sessionIds,
         Guid osImageId,
+        IReadOnlyList<DriverChoice>? driverChoices = null,
+        string? chosenBy = null,
         CancellationToken ct = default)
     {
         var image = await _imageRepo.GetByIdAsync(osImageId, ct);
@@ -85,6 +94,31 @@ public sealed partial class BulkAssignmentService
         if (incompatible.Count > 0)
         {
             throw new ArchitectureMismatchException(image.Architecture, incompatible);
+        }
+
+        // Every choice for an assignable session is checked before any session is assigned.
+        var choices = (driverChoices ?? []).ToDictionary(c => c.SessionId);
+        var chosenPins = new Dictionary<Guid, DriverPin>();
+        var choiceErrors = new List<DriverChoiceError>();
+        foreach (var (sessionId, session) in sessions)
+        {
+            if (IsAssignable(session) && choices.TryGetValue(sessionId, out var choice))
+            {
+                var (pin, reason) = await _driverSetResolver.ResolveChoiceAsync(session!, image, choice, ct);
+                if (pin is null)
+                {
+                    choiceErrors.Add(new DriverChoiceError { SessionId = sessionId, Reason = reason! });
+                }
+                else
+                {
+                    chosenPins[sessionId] = pin;
+                }
+            }
+        }
+
+        if (choiceErrors.Count > 0)
+        {
+            throw new DriverChoiceConflictException(choiceErrors);
         }
 
         var config = await _configRepo.GetAsync(ct);
@@ -136,7 +170,9 @@ public sealed partial class BulkAssignmentService
                 setupProfile = resolvedWithoutLocation;
             }
 
-            var updated = session with
+            var chosen = chosenPins.TryGetValue(sessionId, out var chosenPin);
+            var driverPin = chosen ? chosenPin! : await _driverSetResolver.ResolveAsync(session, image, ct);
+            var updated = driverPin.ApplyTo(session with
             {
                 State = SessionState.SessionStarted,
                 AssignedOsImageId = osImageId,
@@ -147,7 +183,9 @@ public sealed partial class BulkAssignmentService
                 SetupProfileId = setupProfile?.ProfileId,
                 SetupProfileVersion = setupProfile?.Version,
                 SetupProfileName = setupProfile?.Name,
-            };
+                DriverChosenManually = chosen,
+                DriverChosenBy = chosen ? chosenBy : null,
+            });
 
             await _sessionRepo.UpdateAsync(updated, ct);
             assigned.Add(sessionId);

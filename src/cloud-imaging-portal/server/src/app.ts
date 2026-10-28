@@ -102,6 +102,7 @@ import { updateCheckRouter } from './routes/update-check.js';
 import { autopilotRouter } from './routes/autopilot.js';
 import { preFlightOverridesRouter } from './routes/preflight-overrides.js';
 import { setupProfilesRouter } from './routes/setup-profiles.js';
+import { driversRouter } from './routes/drivers.js';
 
 // Apply Entra auth to all /api routes except the public /api/health and /api/config
 app.use('/api', (req, res, next) => {
@@ -127,6 +128,7 @@ app.use('/api/update-check',        updateCheckRouter);
 app.use('/api/autopilot',           autopilotRouter);
 app.use('/api/preflight-overrides', preFlightOverridesRouter);
 app.use('/api/setup-profiles',      setupProfilesRouter);
+app.use('/api/drivers',             driversRouter);
 
 // ── Global error handler ─────────────────────────────────────────────────────
 app.use(errorHandler);

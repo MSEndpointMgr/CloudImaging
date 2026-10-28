@@ -28,6 +28,8 @@ const NONE: PortalCapabilities = {
   canViewAutopilotReport: false,
   canViewSetupProfiles: false,
   canManageSetupProfiles: false,
+  canViewDrivers: false,
+  canManageDrivers: false,
   isAdministrator: false,
 };
 
@@ -43,6 +45,8 @@ const OPERATOR: PortalCapabilities = {
   canViewAutopilotReport: true,
   canViewSetupProfiles: true,
   canManageSetupProfiles: true,
+  canViewDrivers: true,
+  canManageDrivers: true,
   isAdministrator: false,
 };
 
@@ -102,6 +106,7 @@ describe('portalRoles: capabilitiesFromRoles', () => {
       canUseImaging: true,
       canViewAutopilot: true,
       canViewSetupProfiles: true,
+      canViewDrivers: true,
     });
   });
 
@@ -131,6 +136,18 @@ describe('portalRoles: capabilitiesFromRoles', () => {
 
   it('an empty role list has no capability', () => {
     expect(capabilitiesFromRoles([])).toEqual(NONE);
+  });
+
+  it.each([
+    [ROLE_ADMINISTRATOR, true, true],
+    [ROLE_OPERATOR, true, true],
+    [ROLE_TECHNICIAN, true, false],
+    [ROLE_READER, false, false],
+    [ROLE_AUTOPILOT_APPROVER, false, false],
+  ])('%s: view drivers %s, manage drivers %s', (role, canView, canManage) => {
+    const caps = capabilitiesFromRoles([role]);
+    expect(caps.canViewDrivers).toBe(canView);
+    expect(caps.canManageDrivers).toBe(canManage);
   });
 
   it.each([

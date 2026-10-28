@@ -58,6 +58,23 @@ over what a tenant sets.
 a `text-xs` (16px) line box the same offset pushes the icon low. Match the offset to the line box,
 or drop it.
 
+**Icon beside a block of text:** in dialogs and overlays (`ConfirmImpactDialog`, edit dialogs,
+any modal with a leading icon circle) the icon is top-aligned with the title (`items-start`).
+Everywhere else (setting rows, table cells, status lines, banners, list rows, tiles) the icon is
+vertically centred on the block next to it (`items-center`); never rely on the flex default
+`stretch`, which renders top-aligned.
+
+**Status columns use one style.** Every value in a status column is icon + label (16px lucide
+icon in the state colour, label in normal text: `CircleCheck` green "Stored", `Download` blue
+"Downloading", `CircleX` red "Failed"), or every value is a `Badge`. Never mix the two in one
+column or table; icon + label is the default. When a state has detail (a failure reason), the
+status icon itself is the `Tooltip` trigger (focusable, with an accessible name); no separate info
+icon next to the label.
+
+**Column headers are short nouns** for the value (`Size`, `Status`, `Version`, `Downloaded`),
+consistent across every table and tab. No participles or conditional phrases (`Stored`, `Freed
+if removed`).
+
 ## 4. Icons
 
 - **Scale is 12 / 16 / 20 / 24** (plus 40 for the brand mark). An icon matches the step of the text
@@ -97,6 +114,13 @@ second copy is how the two `role="switch"` implementations silently drifted apar
 - **`Switch`**: the only `role="switch"`. `label` is required.
 - **`EmptyState`**: pass an `action` when there is a meaningful next step; omit it when there
   isn't. An empty state that only says "nothing here" wastes the moment.
+- **`SaveBar`**: every page that holds a draft until Save. Pass `changes` (one entry per changed
+  setting, with `scope` set to the tab on tabbed pages), never a bare dirty flag, so the bar can say
+  what and where. It also guards leaving the page, and the router allows one guard at a time, so
+  use **one bar per page**: a tabbed page with several drafts saves them all from one bar. Hold each
+  draft above its tab so switching tabs never drops it. Mark each changed row with `unsavedRail`
+  and `UndoChangeButton`; `Undo2` means "revert my unsaved edit" only, and "reset to default" is
+  `RotateCcw`.
 
 `index.css` declares `color-scheme: light` on `:root` and `color-scheme: dark` on `.dark`. This is
 the **only** lever over UA-drawn chrome (select popups, scrollbars, spinners, file-picker buttons);

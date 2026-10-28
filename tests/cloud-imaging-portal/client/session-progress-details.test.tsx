@@ -30,7 +30,9 @@ describe('Portal frontend: session progress details', () => {
     expect(screen.getByText('Configure boot')).toBeTruthy();
     expect(screen.getByText('Configure recovery')).toBeTruthy();
 
-    expect(screen.getAllByText('\u2014')).toHaveLength(5);
+    // An unreported stage keeps its duration line empty, never a dash.
+    expect(screen.queryByText('\u2014')).toBeNull();
+    expect(document.querySelectorAll('p.tabular-nums')).toHaveLength(5);
     expect(screen.getByText('Waiting for the first progress report')).toBeTruthy();
   });
 
@@ -239,6 +241,116 @@ describe('Portal frontend: session progress details', () => {
       expect(screen.getByText('The device does not start Windows. Retry the deployment after fixing the profile or the OS image.')).toBeTruthy();
       expect(screen.queryByText('Prepare setup failed')).toBeNull();
       expect(screen.getByText(/Failed on Prepare setup after 4s/)).toBeTruthy();
+    });
+  });
+
+  describe('Install drivers', () => {
+    const driverPin = { driverModelName: 'HP EliteBook 840 G11', driverRelease: 'Windows11_24H2', driverSetVersion: 7, driverSkipReason: null, driverMatchKey: '8C26', driverChosenManually: false, driverChosenBy: null };
+
+    it('shows the step between Apply image and Prepare setup when a driver set is pinned, with the set line', () => {
+      render(<SessionProgressDetails overallPercent={10} currentStep="DownloadImage" steps={[]} driverPin={driverPin} setupProfile={{ profileId: 'p', name: 'Lab', version: 1 }} />);
+
+      const labels = screen.getAllByRole('listitem').map(li => li.querySelector('p')?.textContent);
+      expect(labels.indexOf('Install drivers')).toBe(labels.indexOf('Apply image') + 1);
+      expect(labels.indexOf('Prepare setup')).toBe(labels.indexOf('Install drivers') + 1);
+      expect(screen.getByText('Driver set: HP EliteBook 840 G11, Windows 11 24H2, set 7')).toBeTruthy();
+    });
+
+    it('is not shown for a session without a driver pin', () => {
+      render(<SessionProgressDetails overallPercent={10} currentStep={null} steps={[]} />);
+
+      expect(screen.queryByText('Install drivers')).toBeNull();
+    });
+
+    it('shows the skip note, and completed with warnings uses the amber marker', () => {
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 1, statusNote: 'No onboarded model matches this device (system ID 8D41).', startedAt: '2026-09-11T08:00:00.000Z', completedAt: '2026-09-11T08:00:01.000Z' }];
+
+      render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={{ ...driverPin, driverSetVersion: null, driverSkipReason: 'NoMatchingModel' }} />);
+
+      expect(screen.getByText('No onboarded model matches this device (system ID 8D41).')).toBeTruthy();
+      expect(screen.getByText('!')).toBeTruthy();
+    });
+
+    it('summarises outcomes and lists failures first with version and origin', async () => {
+      api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
+        { index: 0, kind: 'DriverComponent', name: 'Intel Wireless LAN Driver', target: 'sp200', outcome: 'Succeeded', driverAction: 'Offline', componentVersion: '23.80.0.4', driverOrigin: 'Vendor' },
+        { index: 1, kind: 'DriverComponent', name: 'Lab Wi-Fi', target: 'custom', outcome: 'Succeeded', driverAction: 'OfflineAndSpecialize', componentVersion: '2.1', driverOrigin: 'Custom' },
+        { index: 2, kind: 'DriverComponent', name: 'Intel Graphics', target: 'sp300', outcome: 'Failed', reason: 'The downloaded file does not match its checksum.', driverAction: 'Offline', componentVersion: '31.0', driverOrigin: 'RolledBack' },
+      ]), { status: 200 }));
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 1, itemCounts: [{ kind: 'DriverComponent', outcome: 'Succeeded', count: 2 }, { kind: 'DriverComponent', outcome: 'Failed', count: 1 }] }];
+
+      render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={driverPin} sessionId="s1" />);
+
+      expect(screen.getByText('1 failed')).toBeTruthy();
+      expect(screen.getByText('2 installed offline')).toBeTruthy();
+      expect(await screen.findByText('Failed: The downloaded file does not match its checksum')).toBeTruthy();
+      expect(screen.getByText('Rolled back')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+
+      expect(await screen.findByText('Installed, app staged')).toBeTruthy();
+      expect(screen.getByText('Custom')).toBeTruthy();
+      expect(screen.getByText('23.80.0.4')).toBeTruthy();
+      expect(screen.getByText('sp200')).toBeTruthy();
+    });
+
+    it('shows Specialize components as staged, with no result', async () => {
+      api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
+        { index: 0, kind: 'DriverComponent', name: 'HP Audio Control', target: 'sp400', outcome: 'Queued', driverAction: 'Specialize', componentVersion: '1.2', driverOrigin: 'Vendor' },
+      ]), { status: 200 }));
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 0, itemCounts: [{ kind: 'DriverComponent', outcome: 'Queued', count: 1 }] }];
+
+      render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={driverPin} sessionId="s1" />);
+
+      expect(screen.getByText('1 staged for Specialize')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+      expect(await screen.findByText('Staged for Specialize')).toBeTruthy();
+    });
+
+    it('names who chose the driver set manually', () => {
+      render(<SessionProgressDetails overallPercent={10} currentStep={null} steps={[]} driverPin={{ ...driverPin, driverChosenManually: true, driverChosenBy: 'olle@contoso.com' }} />);
+
+      expect(screen.getByText('Chosen manually by olle@contoso.com')).toBeTruthy();
+    });
+
+    it('says how many files came from the USB drive, and marks those items', async () => {
+      api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
+        { index: 0, kind: 'DriverComponent', name: 'Intel Wireless LAN Driver', target: 'sp200', outcome: 'Succeeded', driverAction: 'Offline', componentVersion: '23.80', driverOrigin: 'Vendor', fromUsbCache: true },
+        { index: 1, kind: 'DriverComponent', name: 'Realtek Audio', target: 'sp201', outcome: 'Succeeded', driverAction: 'Offline', componentVersion: '6.0', driverOrigin: 'Vendor', fromUsbCache: false },
+      ]), { status: 200 }));
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 0, itemCounts: [{ kind: 'DriverComponent', outcome: 'Succeeded', count: 26, fromUsbCache: 24 }] }];
+
+      render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={driverPin} sessionId="s1" />);
+
+      expect(screen.getByText('24 from the USB drive, 2 downloaded')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+      expect(await screen.findAllByText('From the USB drive')).toHaveLength(1);
+    });
+
+    it('says nothing about the USB drive when no item came from it', async () => {
+      api.apiFetchWithRetry.mockResolvedValue(new Response(JSON.stringify([
+        { index: 0, kind: 'DriverComponent', name: 'Realtek Audio', target: 'sp201', outcome: 'Succeeded', driverAction: 'Offline', componentVersion: '6.0', driverOrigin: 'Vendor', fromUsbCache: false },
+      ]), { status: 200 }));
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 0, itemCounts: [{ kind: 'DriverComponent', outcome: 'Succeeded', count: 1 }] }];
+
+      render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={driverPin} sessionId="s1" />);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+      expect(await screen.findByText('Realtek Audio')).toBeTruthy();
+      expect(screen.queryByText(/USB drive/)).toBeNull();
+    });
+
+    it('reads the items again for another session, never showing the first one', async () => {
+      api.apiFetchWithRetry.mockImplementation((url: string) => Promise.resolve(new Response(JSON.stringify([
+        { index: 0, kind: 'DriverComponent', name: url.includes('s2') ? 'Second session driver' : 'First session driver', target: 'sp1', outcome: 'Failed', reason: 'x', driverAction: 'Offline', componentVersion: '1', driverOrigin: 'Vendor' },
+      ]), { status: 200 })));
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 1, itemCounts: [{ kind: 'DriverComponent', outcome: 'Failed', count: 1 }] }];
+
+      const { rerender } = render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={driverPin} sessionId="s1" />);
+      expect(await screen.findByText('First session driver')).toBeTruthy();
+      rerender(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={driverPin} sessionId="s2" />);
+
+      expect(await screen.findByText('Second session driver')).toBeTruthy();
+      expect(screen.queryByText('First session driver')).toBeNull();
     });
   });
 });

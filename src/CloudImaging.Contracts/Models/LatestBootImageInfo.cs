@@ -1,10 +1,10 @@
 namespace CloudImaging.Contracts.Models;
 
 /// <summary>
-/// Response for the Device Gateway API's <c>GET /api/v1/boot-image/latest</c> endpoint
-/// (T071b, FR-059a) — the latest published boot image's version, integrity hash, and a
-/// time-limited SAS download URL, used by the Cloud Imaging Client to detect and self-update
-/// stale boot media while running from it.
+/// Response for the Device Gateway API's boot image update check (<c>POST /api/v1/boot-image/latest</c>)
+/// (T071b, FR-059a): the latest published boot image's version, integrity hash, and a time-limited
+/// SAS download URL, used by the Cloud Imaging Client to detect and self-update stale boot media
+/// while running from it.
 /// </summary>
 public sealed class LatestBootImageInfo
 {
@@ -26,4 +26,26 @@ public sealed class LatestBootImageInfo
 
     /// <summary>Windows PE or Windows RE. Null from gateways that predate it; treated as Windows PE.</summary>
     public BootImageBase? Base { get; init; }
+}
+
+/// <summary>
+/// Device request for the latest boot image for its media, signed with the boot media private key
+/// over <see cref="DevicePayloadSignature.BuildBootImageChallenge"/>.
+/// </summary>
+public sealed class LatestBootImageRequest
+{
+    /// <summary>Device serial number, for the gateway's log.</summary>
+    public required string SerialNumber { get; init; }
+
+    /// <summary>Architecture of the boot media.</summary>
+    public MachineArchitecture Architecture { get; init; } = MachineArchitecture.X64;
+
+    /// <summary>Windows PE or Windows RE, so Wi-Fi media stays on Windows RE images.</summary>
+    public BootImageBase Base { get; init; } = BootImageBase.WindowsPE;
+
+    /// <summary>Sent only by media prepared for testing, so a pre-production image is not replaced.</summary>
+    public Guid? CurrentBootImageId { get; init; }
+
+    /// <summary>Proof that the caller holds the boot media private key.</summary>
+    public DeviceProofOfPossession? ProofOfPossession { get; init; }
 }

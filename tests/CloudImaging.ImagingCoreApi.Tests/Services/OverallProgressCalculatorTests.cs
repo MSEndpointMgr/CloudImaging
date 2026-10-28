@@ -21,6 +21,44 @@ public sealed class OverallProgressCalculatorTests
     ];
 
     [Fact]
+    public void Calculate_InstallDriversInProgress_HoldsOverallAtEighty()
+    {
+        var steps = new List<ImagingStep>
+        {
+            Step(ImagingStepName.FormatDisk, ImagingStepStatus.Completed),
+            Step(ImagingStepName.DownloadImage, ImagingStepStatus.Completed),
+            Step(ImagingStepName.ApplyImage, ImagingStepStatus.Completed),
+            Step(ImagingStepName.InstallDrivers, ImagingStepStatus.InProgress, percent: 40),
+        };
+
+        OverallProgressCalculator.Calculate(steps).Should().Be(80);
+    }
+
+    [Fact]
+    public void IsPipelineComplete_RequiredStepsCompletedWithoutInstallDrivers_ReturnsTrue()
+    {
+        OverallProgressCalculator.IsPipelineComplete(RequiredStepsCompleted()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsPipelineComplete_InstallDriversFailed_ReturnsFalse()
+    {
+        var steps = RequiredStepsCompleted();
+        steps.Add(Step(ImagingStepName.InstallDrivers, ImagingStepStatus.Failed));
+
+        OverallProgressCalculator.IsPipelineComplete(steps).Should().BeFalse();
+    }
+
+    [Fact]
+    public void PipelineOrder_InstallDrivers_RunsAfterApplyImageAndBeforePrepareSetup()
+    {
+        var order = OverallProgressCalculator.PipelineOrder.ToList();
+
+        order.IndexOf(ImagingStepName.InstallDrivers).Should().Be(order.IndexOf(ImagingStepName.ApplyImage) + 1);
+        order.IndexOf(ImagingStepName.PrepareSetup).Should().Be(order.IndexOf(ImagingStepName.InstallDrivers) + 1);
+    }
+
+    [Fact]
     public void Calculate_PrepareSetupInProgress_HoldsOverallAtEighty()
     {
         var steps = new List<ImagingStep>
@@ -150,6 +188,7 @@ public sealed class OverallProgressCalculatorTests
             ImagingStepName.FormatDisk,
             ImagingStepName.DownloadImage,
             ImagingStepName.ApplyImage,
+            ImagingStepName.InstallDrivers,
             ImagingStepName.PrepareSetup,
             ImagingStepName.ConfigureBoot,
             ImagingStepName.ApplyRecoveryImage);

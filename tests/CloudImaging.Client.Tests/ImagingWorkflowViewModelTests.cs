@@ -57,6 +57,27 @@ public sealed class ImagingWorkflowViewModelTests
     // ── ProgressViewModel state machine ──────────────────────────────────────
 
     [Fact]
+    public void ProgressViewModel_ConfigureSteps_PutsInstallDriversRightAfterApplyImage_AndHidesItOtherwise()
+    {
+        var vm = new ProgressViewModel();
+
+        vm.ConfigureSteps(includePrepareSetup: true, includeInstallDrivers: true);
+        vm.Steps.Select(s => s.Step).Should().ContainInOrder(ImagingStepName.ApplyImage, ImagingStepName.InstallDrivers, ImagingStepName.PrepareSetup, ImagingStepName.ConfigureBoot);
+        vm.Steps.Single(s => s.Step == ImagingStepName.InstallDrivers).Label.Should().Be("Install Drivers");
+
+        vm.ConfigureSteps(includePrepareSetup: false);
+        vm.Steps.Should().NotContain(s => s.Step == ImagingStepName.InstallDrivers || s.Step == ImagingStepName.PrepareSetup);
+    }
+
+    [Fact]
+    public void ShouldRunPrepareSetup_IsTrue_WhenInstallDriversHandedOverInstallers()
+    {
+        var installer = new CloudImaging.Client.Services.Setup.SpecializeInstaller("HP Audio", [], new("x\\HPUP.exe", "/s", "x"), 1200, [0, 3010], ["CloudImaging\\Drivers\\000-sp1"]);
+
+        ImagingWorkflowViewModel.ShouldRunPrepareSetup(CloudImaging.Client.Services.Setup.SetupProfileLoadStatus.None, [installer]).Should().BeTrue();
+    }
+
+    [Fact]
     public void ProgressViewModel_DefaultsToZeroPercent()
     {
         var vm = new ProgressViewModel();

@@ -33,13 +33,30 @@ router.post('/generate', requireRole('CloudImaging.Administrator'), async (_req:
   } catch (err) { next(err); }
 });
 
-// POST /api/cert/rotate
+// POST /api/cert/rotate: the replaced certificate stays accepted for previousAcceptedDays (0 ends it now).
 router.post('/rotate', requireRole('CloudImaging.Administrator'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { confirmed } = req.body as { confirmed?: boolean };
+    const { confirmed, previousAcceptedDays } = req.body as { confirmed?: boolean; previousAcceptedDays?: unknown };
+    if (previousAcceptedDays !== undefined
+      && (typeof previousAcceptedDays !== 'number' || !Number.isInteger(previousAcceptedDays) || previousAcceptedDays < 0 || previousAcceptedDays > 30)) {
+      res.status(400).json({ title: 'Bad Request', status: 400, detail: 'previousAcceptedDays must be a whole number from 0 to 30.' });
+      return;
+    }
     const axiosRes = await (operatorApiClient as unknown as { http: import('axios').AxiosInstance }).http
-      .post('/api/cert/rotate', { confirmed });
+      .post('/api/cert/rotate', { confirmed, previousAcceptedDays });
     res.json(axiosRes.data);
+  } catch (err) { next(err); }
+});
+
+// POST /api/cert/previous/stop: the certificate the last rotation replaced is no longer accepted.
+router.post('/previous/stop', requireRole('CloudImaging.Administrator'), async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const stopped = await operatorApiClient.stopAcceptingPreviousBootMediaCert();
+    if (!stopped) {
+      res.status(404).json({ title: 'Not Found', status: 404, detail: 'No previous certificate is still accepted.' });
+      return;
+    }
+    res.status(204).end();
   } catch (err) { next(err); }
 });
 

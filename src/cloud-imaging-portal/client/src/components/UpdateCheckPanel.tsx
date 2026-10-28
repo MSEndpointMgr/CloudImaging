@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/
 import { Switch } from './ui/switch.tsx';
 import { Button, type ButtonStatus } from './ui/button.tsx';
 import { Skeleton } from './ui/skeleton.tsx';
+import { UndoChangeButton } from './ui/unsaved-change.tsx';
+import { unsavedRail } from '../lib/unsavedChanges.ts';
 import { cn } from '../lib/utils.ts';
 import { fetchUpdateStatus, triggerUpdateCheck, displayVersion, type UpdateStatus, type UpdateCheckStatus } from '../lib/updateCheck.ts';
 
@@ -18,6 +20,8 @@ const STATUS_MESSAGE: Record<UpdateCheckStatus, string> = {
 
 interface Props {
   enabled: boolean;
+  /** The saved value, to mark and undo a change. */
+  savedEnabled?: boolean;
   onChange: (enabled: boolean) => void;
   disabled?: boolean;
 }
@@ -47,7 +51,8 @@ function MetadataValue({
  * The toggle reflects unsaved state from the parent form, but the status shown is whatever the
  * backend last resolved, so it only changes after the setting is saved and re-checked.
  */
-export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props): React.ReactElement {
+export function UpdateCheckPanel({ enabled, savedEnabled, onChange, disabled = false }: Props): React.ReactElement {
+  const changed = savedEnabled !== undefined && savedEnabled !== enabled;
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkStatus, setCheckStatus] = useState<ButtonStatus>('idle');
@@ -112,19 +117,22 @@ export function UpdateCheckPanel({ enabled, onChange, disabled = false }: Props)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4">
+        <div className={cn('flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4', unsavedRail(changed))}>
           <div>
             <p className="text-sm font-medium">Check GitHub for new releases</p>
             <p className="mt-0.5 text-sm text-muted-foreground">
               When enabled, the portal periodically contacts github.com to read the latest published release number.
             </p>
           </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={onChange}
-            disabled={disabled}
-            label="Check GitHub for new releases"
-          />
+          <div className="flex shrink-0 items-center gap-2">
+            {changed && <UndoChangeButton label="Check GitHub for new releases" onUndo={() => onChange(!enabled)} />}
+            <Switch
+              checked={enabled}
+              onCheckedChange={onChange}
+              disabled={disabled}
+              label="Check GitHub for new releases"
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-4 rounded-md border border-border bg-muted/30 p-4 sm:grid-cols-3">

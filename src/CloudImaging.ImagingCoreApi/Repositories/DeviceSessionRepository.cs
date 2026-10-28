@@ -118,6 +118,29 @@ public sealed class DeviceSessionRepository
     }
 
     /// <summary>
+    /// Records the device-session token hash and expiry with a Merge, so it never clobbers a
+    /// concurrent write. False when the session is not active.
+    /// </summary>
+    public async Task<bool> SetDeviceTokenAsync(Guid sessionId, string tokenHash, DateTimeOffset expiresAt, CancellationToken ct = default)
+    {
+        var entity = new TableEntity(ActivePartition, sessionId.ToString())
+        {
+            ["DeviceSessionTokenHash"] = tokenHash,
+            ["DeviceSessionTokenExpiresAt"] = expiresAt,
+        };
+
+        try
+        {
+            await _table.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Merge, ct);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Find a session with a matching passcode hash among currently active (non-terminal) sessions.
     /// Used for coupling passcode validation (FR-021, FR-032).
     /// </summary>
@@ -244,7 +267,7 @@ public sealed class DeviceSessionRepository
         ["PasscodeHash"] = s.Passcode,
         ["PasscodeExpiresAt"] = s.PasscodeExpiresAt,
         ["PasscodeConsumed"] = s.PasscodeConsumed,
-        ["DeviceSessionToken"] = s.DeviceSessionToken,
+        ["DeviceSessionTokenHash"] = s.DeviceSessionTokenHash,
         ["DeviceSessionTokenExpiresAt"] = s.DeviceSessionTokenExpiresAt,
         ["AssignedOsImageId"] = s.AssignedOsImageId?.ToString(),
         ["SasTokenUrl"] = s.SasTokenUrl,
@@ -253,6 +276,15 @@ public sealed class DeviceSessionRepository
         ["SetupProfileId"] = s.SetupProfileId?.ToString(),
         ["SetupProfileVersion"] = s.SetupProfileVersion,
         ["SetupProfileName"] = s.SetupProfileName,
+        ["DriverModelId"] = s.DriverModelId?.ToString(),
+        ["DriverModelName"] = s.DriverModelName,
+        ["DriverRelease"] = s.DriverRelease?.ToString(),
+        ["DriverSetVersion"] = s.DriverSetVersion,
+        ["DriverSkipReason"] = s.DriverSkipReason?.ToString(),
+        ["DriverMatchKey"] = s.DriverMatchKey,
+        ["DriverChosenManually"] = s.DriverChosenManually,
+        ["DriverChosenBy"] = s.DriverChosenBy,
+        ["DriverCriticalCategories"] = s.DriverCriticalCategories,
         ["OverallProgressPercent"] = s.OverallProgressPercent,
         ["CurrentStep"] = s.CurrentStep,
         ["CreatedAt"] = s.CreatedAt,
@@ -288,7 +320,7 @@ public sealed class DeviceSessionRepository
         Passcode = e.GetString("PasscodeHash"),
         PasscodeExpiresAt = e.GetDateTimeOffset("PasscodeExpiresAt"),
         PasscodeConsumed = e.GetBoolean("PasscodeConsumed") ?? false,
-        DeviceSessionToken = e.GetString("DeviceSessionToken"),
+        DeviceSessionTokenHash = e.GetString("DeviceSessionTokenHash"),
         DeviceSessionTokenExpiresAt = e.GetDateTimeOffset("DeviceSessionTokenExpiresAt"),
         AssignedOsImageId = e.GetString("AssignedOsImageId") is string sid ? Guid.Parse(sid) : null,
         SasTokenUrl = e.GetString("SasTokenUrl"),
@@ -297,6 +329,15 @@ public sealed class DeviceSessionRepository
         SetupProfileId = Guid.TryParse(e.GetString("SetupProfileId"), out var profileId) ? profileId : null,
         SetupProfileVersion = e.GetInt32("SetupProfileVersion"),
         SetupProfileName = e.GetString("SetupProfileName"),
+        DriverModelId = Guid.TryParse(e.GetString("DriverModelId"), out var driverModelId) ? driverModelId : null,
+        DriverModelName = e.GetString("DriverModelName"),
+        DriverRelease = Enum.TryParse<WindowsRelease>(e.GetString("DriverRelease"), out var driverRelease) ? driverRelease : null,
+        DriverSetVersion = e.GetInt32("DriverSetVersion"),
+        DriverSkipReason = Enum.TryParse<DriverSkipReason>(e.GetString("DriverSkipReason"), out var driverSkip) ? driverSkip : null,
+        DriverMatchKey = e.GetString("DriverMatchKey"),
+        DriverChosenManually = e.GetBoolean("DriverChosenManually") ?? false,
+        DriverChosenBy = e.GetString("DriverChosenBy"),
+        DriverCriticalCategories = e.GetString("DriverCriticalCategories"),
         OverallProgressPercent = e.GetInt32("OverallProgressPercent") ?? 0,
         CurrentStep = e.GetString("CurrentStep"),
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,

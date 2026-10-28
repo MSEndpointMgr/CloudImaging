@@ -194,8 +194,19 @@ public sealed partial class CreateSessionFunction
         var state = root.GetProperty("state").GetString()!;
         var preFlightResult = root.GetProperty("preFlightResult").GetString()!;
 
-        // Issue device-session token (opaque 256-bit bearer)
-        var token = _tokenService.IssueToken(sessionId);
+        // Issue the device-session token; Imaging Core keeps only its hash, and every later
+        // session call is accepted only when that hash matches (fail closed if it cannot be stored).
+        var (token, tokenHash, tokenExpiresAt) = _tokenService.Issue(sessionId, DeviceSessionTokenService.DefaultLifetime);
+        using (var stored = await _coreClient.SetDeviceTokenAsync(sessionId, tokenHash, tokenExpiresAt, context.CancellationToken))
+        {
+            if (!stored.IsSuccessStatusCode)
+            {
+                LogCoreApiError(_logger, (int)stored.StatusCode, payload.SerialNumber);
+                var err = req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+                await err.WriteStringAsync("Session creation failed. Please retry.", context.CancellationToken);
+                return err;
+            }
+        }
 
         LogSessionCreated(_logger, sessionId, state, preFlightResult);
 

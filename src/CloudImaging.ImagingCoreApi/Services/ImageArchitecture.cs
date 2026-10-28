@@ -55,4 +55,23 @@ public static class ImageArchitecture
 
     /// <summary>Error message used when a requested architecture string is neither "x64" nor "arm64".</summary>
     public const string InvalidArchitectureMessage = "architecture must be \"x64\" or \"arm64\".";
+
+    /// <summary>Error message for an unknown <c>windowsRelease</c> value.</summary>
+    public const string InvalidWindowsReleaseMessage = "Unknown Windows release.";
+
+    /// <summary>
+    /// Reads the optional <c>windowsRelease</c> property (<c>Windows11_24H2</c>). Missing or null
+    /// means none (no driver work); an unknown value returns false so it is rejected.
+    /// </summary>
+    public static bool TryReadWindowsRelease(JsonElement body, out Contracts.Enums.WindowsRelease? release)
+    {
+        release = null;
+        if (!body.TryGetProperty("windowsRelease", out var prop) || prop.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        release = prop.ValueKind == JsonValueKind.String ? Drivers.DriverModelService.ParseRelease(prop.GetString()) : null;
+        return release is not null;
+    }
 }

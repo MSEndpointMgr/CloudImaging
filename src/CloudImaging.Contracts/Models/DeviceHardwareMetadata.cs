@@ -20,4 +20,13 @@ public sealed class DeviceHardwareMetadata
 
     /// <summary>Storage device descriptors detected on the machine.</summary>
     public IReadOnlyList<string> StorageLayout { get; init; } = [];
+
+    /// <summary>Longest kept <see cref="SystemSku"/>.</summary>
+    public const int MaxSystemSkuLength = 64;
+
+    /// <summary>
+    /// <c>Win32_ComputerSystem.SystemSKUNumber</c>, trimmed. Dell devices are matched to an
+    /// onboarded driver model by it.
+    /// </summary>
+    public string? SystemSku { get; init; }
 }

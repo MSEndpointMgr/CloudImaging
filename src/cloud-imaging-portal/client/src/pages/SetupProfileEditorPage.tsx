@@ -1,6 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Copy, Crosshair, Database, Eye, FileCode, History, Info, Pencil, Plus, RefreshCw, Save, ShieldCheck, SquareTerminal, Trash2, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Copy, Crosshair, Database, Eye, FileCode, History, Info, Pencil, Plus, RefreshCw, ShieldCheck, SquareTerminal, Trash2, Undo2 } from 'lucide-react';
+import { SaveBar } from '../components/SaveBar.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { Select } from '../components/ui/select.tsx';
@@ -19,7 +20,9 @@ import { TargetingSection } from '../components/setup-profiles/TargetingSection.
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { apiFetchWithRetry } from '../lib/apiClient.ts';
-import { formatTimestamp } from '../lib/utils.ts';
+import { cn, formatTimestamp } from '../lib/utils.ts';
+import { UndoChangeButton } from '../components/ui/unsaved-change.tsx';
+import { unsavedRail } from '../lib/unsavedChanges.ts';
 import {
   FAILURE_HANDLING_LABELS,
   MAX_REGISTRY_VALUES,
@@ -30,6 +33,8 @@ import {
   createSetupProfile,
   deleteImpact,
   deleteSetupProfile,
+  DRAFT_SECTION_LABELS,
+  changedSections,
   draftChanges,
   draftFrom,
   duplicateName,
@@ -59,6 +64,7 @@ import {
   type SetupRegistryValue,
   type SetupScript,
 } from '../lib/setupProfiles.ts';
+import type { DraftSection } from '../lib/setupProfiles.ts';
 
 const FAILURE_HANDLING_OPTIONS = (Object.keys(FAILURE_HANDLING_LABELS) as SetupFailureHandling[]).map((value) => ({ value, label: FAILURE_HANDLING_LABELS[value] }));
 
@@ -67,9 +73,6 @@ type ScriptDialogState = { mode: 'add' } | { mode: 'edit'; index: number } | nul
 
 // Its XML parser stays out of the editor's bundle until someone opens the answer file.
 const AnswerFileDialog = lazy(() => import('../components/setup-profiles/AnswerFileDialog.tsx'));
-
-/** Where a confirmed leave goes; Duplicate carries router state. */
-type PendingLeave = { to: string; state?: unknown } | null;
 
 /**
  * Create, edit or view one setup profile. Viewers get the same layout as text. Saving with
@@ -102,7 +105,6 @@ export default function SetupProfileEditorPage(): React.ReactElement {
   const [registryDialog, setRegistryDialog] = useState<RegistryDialog>(null);
   const [scriptDialog, setScriptDialog] = useState<ScriptDialogState>(null);
   const [answerDialog, setAnswerDialog] = useState<{ serverProblems: { code: string; line: number; message: string }[] } | null>(null);
-  const [pendingLeave, setPendingLeave] = useState<PendingLeave>(null);
   const [targetingTouched, setTargetingTouched] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -179,33 +181,12 @@ export default function SetupProfileEditorPage(): React.ReactElement {
     : null;
   const scriptLocationsProblem = scriptsWithoutLocationsProblem(draft.content.scripts, draft.targeting, allLocationIds);
   const blocked = targetProblem ?? nameProblem ?? duplicateNameProblem ?? answerFileProblem ?? scriptLocationsProblem;
+  const sections = dirty ? changedSections(saved, draft) : [];
+  const sectionChanged = (section: DraftSection) => sections.includes(section);
+  const unsavedChanges = sections.map((section) => ({ label: DRAFT_SECTION_LABELS[section] }));
 
-  // Leaving with unsaved changes asks first. In-app links are caught before the router sees them;
-  // closing or reloading the tab gets the browser's own prompt.
-  useEffect(() => {
-    if (!dirty) return;
-    const onClick = (event: MouseEvent) => {
-      const anchor = (event.target as Element | null)?.closest?.('a[href]');
-      if (!anchor || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey) return;
-      const url = new URL((anchor as HTMLAnchorElement).href);
-      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingLeave({ to: url.pathname + url.search });
-    };
-    const onBeforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
-    document.addEventListener('click', onClick, true);
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => {
-      document.removeEventListener('click', onClick, true);
-      window.removeEventListener('beforeunload', onBeforeUnload);
-    };
-  }, [dirty]);
-
-  const leave = (to: string, state?: unknown) => {
-    if (dirty) setPendingLeave({ to, state });
-    else void navigate(to, { state });
-  };
+  // Leaving with unsaved changes is caught by the save bar's guard, so this can simply navigate.
+  const leave = (to: string, state?: unknown) => { void navigate(to, { state }); };
 
   const set = (patch: Partial<SetupProfileDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const setContent = (patch: Partial<SetupProfileDraft['content']>) => setDraft((d) => ({ ...d, content: { ...d.content, ...patch } }));
@@ -254,8 +235,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
     }
   };
 
-  const save = async () => {
-    if (blocked) return;
+  const save = async (): Promise<boolean> => {
+    if (blocked) return false;
     setSaving(true);
     setSaveError(null);
     // Scripts keep only the locations the profile still targets.
@@ -266,8 +247,9 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         notify({ status: 'success', title: `Setup profile "${created.name}" created.` });
         setSaved(draftFrom(created));
         setDraft(draftFrom(created));
-        void navigate(`/setup-profiles/${created.profileId}`, { replace: true });
-        return;
+        // After the draft settles, so the leave guard sees a saved page.
+        setTimeout(() => navigate(`/setup-profiles/${created.profileId}`, { replace: true }), 0);
+        return true;
       }
       const result = await saveSetupProfile(detail!.profileId, detail!.currentVersion, toSave, changes.contentChanged);
       notify({
@@ -278,6 +260,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
       setSaved(draftFrom(result));
       setDraft(draftFrom(result));
       setProfiles((list) => list.map((p) => (p.profileId === result.profileId ? result : p)));
+      return true;
     } catch (err) {
       const error = err instanceof SetupProfileApiError ? err : new SetupProfileApiError('Could not reach the server.', 0);
       setSaveError(error);
@@ -291,6 +274,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         setRefusedAnswerFile(draft.content.answerFile.contentSha256);
         setAnswerDialog({ serverProblems: answerFileProblems(error.errors) });
       }
+      return false;
     } finally {
       setSaving(false);
     }
@@ -333,16 +317,18 @@ export default function SetupProfileEditorPage(): React.ReactElement {
             <span className="truncate">{crumb}</span>
           </nav>
           {readOnly ? (
-            <h2 className="truncate text-xl font-semibold">{draft.name}</h2>
+            <h2 className="truncate text-lg font-semibold">{draft.name}</h2>
           ) : (
-            <Input
-              aria-label="Profile name"
-              placeholder="Profile name"
-              value={draft.name}
-              maxLength={100}
-              onChange={(e) => set({ name: e.target.value })}
-              className="max-w-md text-xl font-semibold"
-            />
+            <div className={cn('flex max-w-md items-center gap-2', unsavedRail(sectionChanged('name'), 'bare'))}>
+              <Input
+                aria-label="Profile name"
+                placeholder="Profile name"
+                value={draft.name}
+                maxLength={100}
+                onChange={(e) => set({ name: e.target.value })}
+              />
+              {sectionChanged('name') && <UndoChangeButton label="Profile name" onUndo={() => set({ name: saved.name })} />}
+            </div>
           )}
           {duplicateNameProblem && <p className="mt-1 text-sm text-destructive">{duplicateNameProblem}</p>}
           {detail && (
@@ -379,7 +365,13 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         </div>
       )}
 
-      <SectionCard icon={Crosshair} title="Targeting" description="Which devices get this profile, based on the location set on the USB media they started from.">
+      <SectionCard
+        icon={Crosshair}
+        title="Targeting"
+        description="Which devices get this profile, based on the location set on the USB media they started from."
+        changed={sectionChanged('targeting')}
+        onUndo={() => set({ targeting: saved.targeting })}
+      >
         {readOnly ? (
           <TargetingBadges all={draft.targeting.allDevices} locationIds={draft.targeting.locationIds} locations={locations} allLabel="All devices" editNoun="profile" />
         ) : (
@@ -398,6 +390,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         icon={Database}
         title="Registry values"
         description="Written before Windows starts, so they are in place before Autopilot and Intune policy."
+        changed={sectionChanged('registryValues')}
+        onUndo={() => setContent({ registryValues: saved.content.registryValues })}
         action={!readOnly && (
           <Tooltip content={registryValues.length >= MAX_REGISTRY_VALUES ? 'A profile can have at most 200 registry values.' : 'Add a registry value'}>
             <Button variant="outline" disabled={registryValues.length >= MAX_REGISTRY_VALUES} onClick={() => setRegistryDialog({ mode: 'add' })}><Plus />Add value</Button>
@@ -454,6 +448,8 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         icon={SquareTerminal}
         title="Scripts"
         description="PowerShell, run as SYSTEM in the order below within each phase. A device runs the scripts for all locations and the ones for its own location."
+        changed={sectionChanged('scripts')}
+        onUndo={() => setContent({ scripts: saved.content.scripts })}
         action={!readOnly && (
           <Tooltip content={scripts.length >= MAX_SCRIPTS ? 'A profile can have at most 1000 scripts.' : 'Add a script'}>
             <Button variant="outline" disabled={scripts.length >= MAX_SCRIPTS} onClick={() => setScriptDialog({ mode: 'add' })}><Plus />Add script</Button>
@@ -476,7 +472,13 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         )}
       </SectionCard>
 
-      <SectionCard icon={FileCode} title="Answer file" description="Optional. Your own unattend.xml for Windows setup, for settings this profile has no control for.">
+      <SectionCard
+        icon={FileCode}
+        title="Answer file"
+        description="Optional. Your own unattend.xml for Windows setup, for settings this profile has no control for."
+        changed={sectionChanged('answerFile')}
+        onUndo={() => setContent({ answerFile: saved.content.answerFile })}
+      >
         <div className="overflow-hidden rounded-md border border-border">
           <Table className="table-fixed">
             <TableHeader>
@@ -543,7 +545,13 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         </div>
       </SectionCard>
 
-      <SectionCard icon={ShieldCheck} title="Failure handling" description="What happens when a registry value cannot be written, or an Offline script fails or times out.">
+      <SectionCard
+        icon={ShieldCheck}
+        title="Failure handling"
+        description="What happens when a registry value cannot be written, or an Offline script fails or times out."
+        changed={sectionChanged('failureHandling')}
+        onUndo={() => setContent({ failureHandling: saved.content.failureHandling })}
+      >
         <SettingRow label="Deployment result" help="Specialize scripts never change the result: they run after the portal stops tracking the device." htmlFor="setup-profile-failure-handling">
           {readOnly ? (
             <p className="text-sm">{FAILURE_HANDLING_LABELS[draft.content.failureHandling]}</p>
@@ -571,15 +579,13 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         </div>
       )}
 
-      {dirty && (
-        <div className="sticky bottom-0 z-20 flex items-center justify-end gap-3 bg-background/95 py-3 backdrop-blur">
-          <p className="text-sm text-muted-foreground">{blocked ?? 'You have unsaved changes.'}</p>
-          <Button variant="outline" onClick={() => (isNew ? leave('/setup-profiles') : setDraft(saved))} disabled={saving}><Undo2 />Discard</Button>
-          <Button onClick={() => void save()} loading={saving} disabled={Boolean(blocked) || saving}>
-            <Save />Save
-          </Button>
-        </div>
-      )}
+      <SaveBar
+        changes={unsavedChanges}
+        status={saving ? 'loading' : 'idle'}
+        blockedReason={blocked}
+        onDiscard={() => setDraft(saved)}
+        onSave={save}
+      />
 
       {answerDialog && (
         <Suspense fallback={null}>
@@ -632,22 +638,6 @@ export default function SetupProfileEditorPage(): React.ReactElement {
             });
             setRegistryDialog(null);
           }}
-        />
-      )}
-
-      {pendingLeave && (
-        <ConfirmImpactDialog
-          copy={{ confirmTitle: 'Discard your changes?', impact: 'Your changes to this setup profile have not been saved and will be lost.', confirmLabel: 'Discard', destructive: true }}
-          busy={false}
-          onCancel={() => setPendingLeave(null)}
-          onConfirm={() => {
-            const target = pendingLeave;
-            setPendingLeave(null);
-            setDraft(saved);
-            // Navigating after the draft resets lets the leave guard see a clean page.
-            setTimeout(() => navigate(target.to, { state: target.state }), 0);
-          }}
-          titleId="discard-setup-profile-title"
         />
       )}
 

@@ -34,6 +34,8 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
             "GetEndpointConfiguration",
             "GetLocations",
             "GetManagedWifiNetworksForMediaBuilder",
+            "GetDriverSetsForMediaBuilder",
+            "GetDriverSetLinksForMediaBuilder",
         };
 
     // Wi-Fi passwords leave the service only for USB media, so the portal's full-access role cannot read them.
@@ -41,6 +43,8 @@ public sealed class AppRoleAuthorizationMiddleware : IFunctionsWorkerMiddleware
         new(StringComparer.OrdinalIgnoreCase)
         {
             "GetManagedWifiNetworksForMediaBuilder",
+            "GetDriverSetsForMediaBuilder",
+            "GetDriverSetLinksForMediaBuilder",
         };
 
     /// <summary>Returns why <paramref name="roles"/> may not call <paramref name="functionName"/>, or null when allowed.</summary>

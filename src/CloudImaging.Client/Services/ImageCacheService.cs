@@ -35,6 +35,9 @@ public sealed partial class ImageCacheService
         _logger    = logger;
     }
 
+    /// <summary>The cache partition root.</summary>
+    public string CacheRoot => _cacheRoot;
+
     // ── Cache entry metadata ──────────────────────────────────────────────────
 
     /// <summary>Metadata persisted alongside a cached WIM, used to validate and expire cache entries.</summary>

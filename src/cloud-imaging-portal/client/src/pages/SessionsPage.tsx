@@ -18,6 +18,8 @@ import { RelativeTime } from '../components/ui/relative-time.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { StartImagingProfileLines } from '../components/setup-profiles/StartImagingProfileLines.tsx';
+import { DriverSetCell, StartImagingDriverLines } from '../components/drivers/DriverSetCell.tsx';
+import { choiceFor, fetchModels, useDriverAssignmentPreview } from '../lib/drivers.ts';
 import { SessionDetailsPanel, type SessionHardware } from '../components/SessionDetailsPanel.tsx';
 import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx';
 import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
@@ -42,8 +44,9 @@ import {
 } from '../components/ui/table.tsx';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
 import { useColumnWidths } from '../lib/useColumnWidths.tsx';
+import type { SessionDriverPin } from '../lib/imagingProgress.ts';
 
-interface Session {
+interface Session extends SessionDriverPin {
   sessionId: string;
   state: string;
   deviceSerialNumber: string;
@@ -207,7 +210,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
 
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
-  const { isAdministrator, canViewSetupProfiles } = useAuth();
+  const { isAdministrator, canViewSetupProfiles, canUseImaging } = useAuth();
   const { preferredLocationId, preferredLocationName } = useUserPreferences();
   const [sessions, setSessions]         = useState<Session[]>([]);
   // Active pre-flight overrides, and whether pre-flight authorization is on at all. Both come from
@@ -395,6 +398,28 @@ function SessionsPageImpl(): React.ReactElement {
   const targetSessions = useMemo(
     () => compatibleSessions(coupled, images.find(i => i.imageId === selectedImageId)),
     [coupled, images, selectedImageId]);
+
+  // The Driver set column: only once a model is onboarded, and only for users who start imaging.
+  const [driversOnboarded, setDriversOnboarded] = useState(false);
+  const [driversCheckFailed, setDriversCheckFailed] = useState(false);
+  const [driversCheck, setDriversCheck] = useState(0);
+  useEffect(() => {
+    if (!canUseImaging) return undefined;
+    let current = true;
+    fetchModels()
+      .then(models => { if (current) { setDriversOnboarded(models.some(m => m.state === 'Active')); setDriversCheckFailed(false); } })
+      .catch(() => { if (current) setDriversCheckFailed(true); });
+    return () => { current = false; };
+  }, [canUseImaging, driversCheck]);
+  const [driverChoices, setDriverChoices] = useState<Record<string, string>>({});
+  const targetIds = useMemo(() => targetSessions.map(s => s.sessionId), [targetSessions]);
+  const driverPreview = useDriverAssignmentPreview(canUseImaging && driversOnboarded ? selectedImageId : null, targetIds);
+  const showDriverColumn = canUseImaging && driversOnboarded
+    && !(driverPreview.preview && driverPreview.preview.release !== null && driverPreview.preview.options.length === 0 && driverPreview.preview.sessions.every(s => !s.matchedModelId));
+  const chooseImage = (value: string): void => {
+    setSelectedImageId(value || null);
+    setDriverChoices({});
+  };
   const monitor = useMemo(() => sortRows(
     locationFiltered.filter(s => MONITOR_STATES.has(s.state)),
     monitorSort,
@@ -562,12 +587,16 @@ function SessionsPageImpl(): React.ReactElement {
     if (!selectedImageId || targetSessions.length === 0 || startingImages) return;
     setPendingBulkAssign(false);
     setStartingImages(true);
+    // Only rows that differ from their match are sent, and only while the column is shown.
+    const choices = showDriverColumn && driverPreview.preview
+      ? targetSessions.filter(s => driverChoices[s.sessionId] !== undefined).map(s => choiceFor(s.sessionId, driverChoices[s.sessionId]))
+      : [];
     try {
       const res = await apiFetch('/api/sessions/bulk-assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ sessionIds: targetSessions.map(s => s.sessionId), osImageId: selectedImageId }),
+        body: JSON.stringify({ sessionIds: targetSessions.map(s => s.sessionId), osImageId: selectedImageId, ...(choices.length > 0 ? { driverChoices: choices } : {}) }),
       });
       if (res.ok) {
         const data = await res.json() as { assigned: number; skipped: number; assignedIds: string[]; skippedIds: string[] };
@@ -587,8 +616,16 @@ function SessionsPageImpl(): React.ReactElement {
           notify({ status: 'success', title: assignedTitle });
         }
         setSelectedImageId(null);
+        setDriverChoices({});
         handleRefresh();
       } else {
+        // A chosen driver model that can no longer be used: those rows return to their match.
+        const problem = res.status === 409 ? await res.clone().json().catch(() => null) as { errors?: { sessionId?: string }[] } | null : null;
+        const rejected = (problem?.errors ?? []).map(e => e.sessionId).filter((id): id is string => typeof id === 'string');
+        if (rejected.length > 0) {
+          setDriverChoices(current => Object.fromEntries(Object.entries(current).filter(([id]) => !rejected.includes(id))));
+        }
+        if (res.status === 409 && showDriverColumn) driverPreview.refetch();
         notify({
           status: 'error',
           title: 'Failed to start imaging.',
@@ -804,7 +841,7 @@ function SessionsPageImpl(): React.ReactElement {
                 wrapperClassName="min-w-[10rem] max-w-full sm:max-w-xl"
                 aria-label="OS image to assign"
                 value={selectedImageId ?? ''}
-                onValueChange={(value: string) => setSelectedImageId(value || null)}
+                onValueChange={chooseImage}
                 options={pickerImages.map(img => ({ value: img.imageId, label: imageOptionLabel(img) }))}
                 placeholder={hasOsImages ? 'Select OS image\u2026' : 'No OS images uploaded'}
                 disabled={coupled.length === 0 || pickerImages.length === 0}
@@ -824,6 +861,12 @@ function SessionsPageImpl(): React.ReactElement {
                 No OS image matches the coupled devices' architecture. Upload an image for {[...new Set(coupled.map(s => architectureLabel(s.architecture)))].join(' and ')}.
               </p>
             )}
+            {canUseImaging && driversCheckFailed && coupled.length > 0 && (
+              <p role="alert" className="flex items-center gap-2 border-b border-border px-4 py-3 text-sm text-muted-foreground">
+                Driver sets could not be checked, so the Driver set column is hidden.
+                <Button variant="link" className="h-auto px-0" onClick={() => setDriversCheck(n => n + 1)}>Retry</Button>
+              </p>
+            )}
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -831,6 +874,7 @@ function SessionsPageImpl(): React.ReactElement {
                   <SortableHead label="Model" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('device')}>{coupledCols.handle('device', 'Model')}</SortableHead>
                   <SortableHead label="Architecture" sortKey="architecture" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('architecture')}>{coupledCols.handle('architecture', 'Architecture')}</SortableHead>
                   <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('location')}>{coupledCols.handle('location', 'Location')}</SortableHead>
+                  {showDriverColumn && <TableHead className="w-[300px]">Driver set</TableHead>}
                   <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} style={coupledCols.style('registered')} />
                   {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
                       The other columns above intentionally leave headroom (don't sum to 100%) so this
@@ -841,7 +885,7 @@ function SessionsPageImpl(): React.ReactElement {
               <TableBody>
                 {coupled.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6} className="p-0">
+                    <TableCell colSpan={showDriverColumn ? 7 : 6} className="p-0">
                       <EmptyState
                         icon={CheckCircle2}
                         title="No devices ready for imaging"
@@ -861,6 +905,36 @@ function SessionsPageImpl(): React.ReactElement {
                       <Badge variant="outline">{architectureLabel(s.architecture)}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    {showDriverColumn && (
+                      <TableCell>
+                        {!selectedImageId ? (
+                          <span className="text-sm text-muted-foreground">Choose an OS image first</span>
+                        ) : !targetIds.includes(s.sessionId) ? (
+                          <span className="text-sm text-muted-foreground">Not compatible with this image</span>
+                        ) : driverPreview.error ? (
+                          <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                            Driver sets could not be loaded
+                            <Button variant="link" className="h-auto px-0" onClick={driverPreview.refetch}>Retry</Button>
+                          </span>
+                        ) : driverPreview.loading || !driverPreview.preview ? (
+                          <Skeleton className="h-8 w-full" />
+                        ) : (
+                          <DriverSetCell
+                            sessionId={s.sessionId}
+                            serial={s.deviceSerialNumber}
+                            manufacturer={s.deviceManufacturer}
+                            preview={driverPreview.preview}
+                            choice={driverChoices[s.sessionId]}
+                            onChoose={value => setDriverChoices(current => {
+                              const next = { ...current };
+                              if (value === undefined) delete next[s.sessionId];
+                              else next[s.sessionId] = value;
+                              return next;
+                            })}
+                          />
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell className="text-xs text-muted-foreground"><RelativeTime value={s.createdAt} /></TableCell>
                     <TableCell>
                       <Tooltip content="Remove this coupled device (e.g. if the device or VM was rebooted/aborted)">
@@ -977,6 +1051,7 @@ function SessionsPageImpl(): React.ReactElement {
                         steps={s.steps}
                         sessionId={s.sessionId}
                         setupProfile={s.setupProfile}
+                        driverPin={s}
                         terminal={Boolean(s.terminalAt)}
                       />
                     </TableCell>
@@ -1067,6 +1142,7 @@ function SessionsPageImpl(): React.ReactElement {
                           steps={s.steps}
                           sessionId={s.sessionId}
                           setupProfile={s.setupProfile}
+                          driverPin={s}
                           terminal={Boolean(s.terminalAt)}
                         />
                       </TableCell>
@@ -1175,6 +1251,7 @@ function SessionsPageImpl(): React.ReactElement {
                           steps={s.steps}
                           sessionId={s.sessionId}
                           setupProfile={s.setupProfile}
+                          driverPin={s}
                           terminal={Boolean(s.terminalAt)}
                         />
                       </TableCell>
@@ -1361,7 +1438,12 @@ function SessionsPageImpl(): React.ReactElement {
           onCancel={() => setPendingBulkAssign(false)}
           onConfirm={() => { void handleStartImaging(); }}
           titleId="bulk-assign-confirm-title"
-          details={canViewSetupProfiles ? <StartImagingProfileLines sessions={targetSessions} /> : undefined}
+          details={(canViewSetupProfiles || (showDriverColumn && driverPreview.preview)) ? (
+            <div className="space-y-3">
+              {canViewSetupProfiles && <StartImagingProfileLines sessions={targetSessions} />}
+              {showDriverColumn && driverPreview.preview && <StartImagingDriverLines sessionIds={targetIds} preview={driverPreview.preview} choices={driverChoices} />}
+            </div>
+          ) : undefined}
         />
       )}
     </div>

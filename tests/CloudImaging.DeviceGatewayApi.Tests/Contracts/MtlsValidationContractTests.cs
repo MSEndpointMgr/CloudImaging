@@ -103,7 +103,7 @@ public sealed class MtlsValidationContractTests : IDisposable
         int loadCount = 0;
 
         using var cache = new BootMediaCertificateThumbprintCache(
-            ct => { loadCount++; return Task.FromResult<string?>(storedThumbprint); },
+            ct => { loadCount++; return Task.FromResult<IReadOnlyList<CloudImaging.Contracts.Models.AcceptedBootMediaCertificate>>([new(storedThumbprint, true, null, null)]); },
             NullLogger<BootMediaCertificateThumbprintCache>.Instance);
 
         // Prime cache with old thumbprint
@@ -181,6 +181,37 @@ public sealed class MtlsValidationContractTests : IDisposable
 
         // Assert
         isValid.Should().BeFalse("certificate not yet valid must be rejected");
+    }
+
+    // ── Extended key usage ─────────────────────────────────────────────────────────
+
+    private static X509Certificate2 CertificateWithUsages(params string[] oids)
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest("CN=EKU Test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        if (oids.Length > 0)
+        {
+            var usages = new OidCollection();
+            foreach (var oid in oids)
+            {
+                usages.Add(new Oid(oid));
+            }
+            req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(usages, critical: false));
+        }
+        return req.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddDays(1));
+    }
+
+    [Theory]
+    [InlineData(true, "1.3.6.1.5.5.7.3.2")]
+    [InlineData(true, "1.3.6.1.5.5.7.3.1", "1.3.6.1.5.5.7.3.2")]
+    [InlineData(true)]
+    [InlineData(false, "1.3.6.1.5.5.7.3.1")]
+    [InlineData(false, "1.3.6.1.5.5.7.3.3")]
+    public void ExtendedKeyUsage_MustAllowClientAuthentication_WhenPresent(bool allowed, params string[] oids)
+    {
+        using var cert = CertificateWithUsages(oids);
+
+        MtlsCertificateValidationMiddleware.AllowsClientAuthentication(cert).Should().Be(allowed);
     }
 
     public void Dispose() => _validCert.Dispose();

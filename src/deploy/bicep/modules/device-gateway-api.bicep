@@ -45,6 +45,7 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
   }
   properties: {
     serverFarmId: plan.id
+    httpsOnly: true
     // Regional VNet integration + route-all so calls to the Imaging Core API are
     // routed through the VNet and resolve via the private DNS zone (FR-064).
     virtualNetworkSubnetId: vnetSubnetId
@@ -53,7 +54,11 @@ resource func 'Microsoft.Web/sites@2024-04-01' = {
     clientCertEnabled: true
     clientCertMode: 'Required'
     siteConfig: {
-      linuxFxVersion: 'DOTNET-ISOLATED|10'      // When Application Gateway is deployed, restrict inbound traffic to the AGW subnet.
+      linuxFxVersion: 'DOTNET-ISOLATED|10'
+      minTlsVersion: '1.2'
+      scmMinTlsVersion: '1.2'
+      ftpsState: 'Disabled'
+      // When Application Gateway is deployed, restrict inbound traffic to the AGW subnet.
       // This is a defence-in-depth layer on top of mTLS cert validation (T163/T164).
       ipSecurityRestrictions: deployApplicationGateway ? [
         {
@@ -117,6 +122,19 @@ module agw 'application-gateway.bicep' = if (deployApplicationGateway) {
     agwName: agwName
     backendFqdn: func.properties.defaultHostName
   }
+}
+
+// Code ships as a package in storage, so neither FTP nor SCM basic-auth publishing is needed.
+resource ftpBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: func
+  name: 'ftp'
+  properties: { allow: false }
+}
+
+resource scmBasicAuth 'Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-04-01' = {
+  parent: func
+  name: 'scm'
+  properties: { allow: false }
 }
 
 output baseUrl string = 'https://${func.properties.defaultHostName}'

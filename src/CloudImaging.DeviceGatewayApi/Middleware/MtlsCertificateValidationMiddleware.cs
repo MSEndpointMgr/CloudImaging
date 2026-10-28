@@ -15,9 +15,10 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// Validation rules:
 ///   1. The header must be present and non-empty.
 ///   2. The header value must be a valid Base-64-encoded DER certificate.
-///   3. The SHA-1 thumbprint of the presented certificate must match the active
-///      thumbprint returned by <see cref="BootMediaCertificateThumbprintCache"/>.
-///   4. The certificate must not be expired at the time of the request.
+///   3. The certificate must not be expired at the time of the request.
+///   4. If it carries an Extended Key Usage, that must include client authentication.
+///   5. The SHA-1 thumbprint must be one the gateway accepts (<see cref="BootMediaCertificateThumbprintCache"/>):
+///      the active certificate, or the one a rotation replaced while its overlap lasts.
 ///
 /// On failure the middleware short-circuits with HTTP 401.
 ///
@@ -31,6 +32,7 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWorkerMiddleware
 {
     private const string ClientCertHeader = "X-ARR-ClientCert";
+    private const string ClientAuthenticationOid = "1.3.6.1.5.5.7.3.2";
 
     /// <summary>
     /// <see cref="FunctionContext.Items"/> key under which the validated client certificate is
@@ -113,25 +115,35 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
             return;
         }
 
-        // 4. Compare thumbprint against active cached thumbprint
-        string? activeThumbprint = await _thumbprintCache.GetThumbprintAsync(context.CancellationToken);
-        if (activeThumbprint is null)
+        // 4. A certificate that restricts its use must allow client authentication.
+        if (!AllowsClientAuthentication(cert))
+        {
+            LogWrongPurpose(_logger, cert.Thumbprint);
+            await WriteUnauthorizedAsync(context, httpContext, "Client certificate is not for client authentication.");
+            return;
+        }
+
+        // 5. The active certificate, or the one a rotation replaced while its overlap lasts.
+        var accepted = await _thumbprintCache.GetAcceptedAsync(context.CancellationToken);
+        if (accepted.Count == 0)
         {
             LogNoActiveCert(_logger);
             await WriteUnauthorizedAsync(context, httpContext, "No active boot media certificate.");
             return;
         }
 
-        bool thumbprintMatch = string.Equals(
-            cert.Thumbprint,
-            activeThumbprint,
-            StringComparison.OrdinalIgnoreCase);
-
-        if (!thumbprintMatch)
+        // The cached list can be up to a minute old, so the overlap end is checked here as well.
+        var match = accepted.FirstOrDefault(c => string.Equals(c.Thumbprint, cert.Thumbprint, StringComparison.OrdinalIgnoreCase)
+            && (c.IsActive || c.AcceptedUntil > now));
+        if (match is null)
         {
-            LogThumbprintMismatch(_logger, cert.Thumbprint, activeThumbprint);
+            LogThumbprintMismatch(_logger, cert.Thumbprint, accepted[0].Thumbprint);
             await WriteUnauthorizedAsync(context, httpContext, "Client certificate is not authorized.");
             return;
+        }
+        if (!match.IsActive)
+        {
+            LogPreviousCertificateUsed(_logger, cert.Thumbprint, match.AcceptedUntil);
         }
 
         // Store thumbprint and the parsed certificate for downstream functions. The certificate's
@@ -141,6 +153,13 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
         context.Items[ClientCertificateItemKey] = cert;
 
         await next(context);
+    }
+
+    /// <summary>True when the certificate has no extended key usage, or one that includes client authentication.</summary>
+    public static bool AllowsClientAuthentication(X509Certificate2 cert)
+    {
+        var eku = cert.Extensions.OfType<X509EnhancedKeyUsageExtension>().FirstOrDefault();
+        return eku is null || eku.EnhancedKeyUsages.Cast<System.Security.Cryptography.Oid>().Any(o => o.Value == ClientAuthenticationOid);
     }
 
     private static async Task WriteUnauthorizedAsync(
@@ -176,5 +195,11 @@ public sealed partial class MtlsCertificateValidationMiddleware : IFunctionsWork
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "mTLS: Thumbprint mismatch. Presented={Presented}, Active={Active}")]
     private static partial void LogThumbprintMismatch(ILogger logger, string presented, string active);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "mTLS: Certificate does not allow client authentication. Thumbprint={Thumbprint}")]
+    private static partial void LogWrongPurpose(ILogger logger, string thumbprint);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "mTLS: Previous boot media certificate used, accepted until {AcceptedUntil}. Thumbprint={Thumbprint}")]
+    private static partial void LogPreviousCertificateUsed(ILogger logger, string thumbprint, DateTimeOffset? acceptedUntil);
 }
 

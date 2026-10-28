@@ -52,7 +52,7 @@ public sealed class DeviceSessionEntityMappingTests
         Passcode = "hashed-passcode",
         PasscodeExpiresAt = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.Zero),
         PasscodeConsumed = true,
-        DeviceSessionToken = "opaque-token",
+        DeviceSessionTokenHash = new string('a', 64),
         DeviceSessionTokenExpiresAt = new DateTimeOffset(2026, 9, 10, 14, 0, 0, TimeSpan.Zero),
         AssignedOsImageId = Guid.Parse("2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f"),
         SasTokenUrl = "https://example.blob.core.windows.net/images/win11.wim?sig=redacted",

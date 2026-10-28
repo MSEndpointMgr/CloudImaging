@@ -21,7 +21,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 public sealed partial class BootImageUploadFunctions
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private const string UploadContainer = "boot-images";
+    private const string UploadContainer = Storage.StorageContainers.BootImages;
 
     private readonly UploadJobRepository _jobRepo;
     private readonly BootImageValidationService _validator;

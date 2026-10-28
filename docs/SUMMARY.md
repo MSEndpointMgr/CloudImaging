@@ -19,4 +19,5 @@
 * [Troubleshooting index](troubleshooting-index.md)
 * [Operations runbook](operations-runbook.md)
 * [Setup profiles](setup-profiles.md)
+* [Drivers](drivers.md)
 * [Roles and access](roles-and-access.md)

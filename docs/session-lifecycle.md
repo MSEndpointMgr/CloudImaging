@@ -82,7 +82,8 @@ The Overrides tab and the Approve action are hidden while pre-flight authorizati
 flowchart LR
     Format["1. Prepare disk<br/><code>FormatDisk</code>"] --> Download["2. Download image<br/><code>DownloadImage</code>"]
     Download --> Apply["3. Apply Windows image<br/><code>ApplyImage</code>"]
-    Apply --> Prepare["Prepare setup (optional)<br/><code>PrepareSetup</code>"]
+    Apply --> Drivers["Install drivers (optional)<br/><code>InstallDrivers</code>"]
+    Drivers --> Prepare["Prepare setup (optional)<br/><code>PrepareSetup</code>"]
     Prepare --> Boot["4. Configure boot<br/><code>ConfigureBoot</code>"]
     Boot --> Recovery["5. Configure recovery<br/><code>ApplyRecoveryImage</code>"]
     Recovery --> Complete["SessionCompleted"]
@@ -90,12 +91,22 @@ flowchart LR
     Format -. failure .-> Failed["SessionFailed"]
     Download -. failure .-> Failed
     Apply -. failure .-> Failed
+    Drivers -. failure .-> Failed
     Prepare -. failure .-> Failed
     Boot -. failure .-> Failed
     Recovery -. failure .-> Failed
 ```
 
 Each stage reports `Pending`, `InProgress`, `Completed`, or `Failed`. Imaging Core calculates overall progress from all five stages; the optional Prepare setup step adds no weight, so the percentage holds while it runs. The session enters `SessionInProgress` as soon as the first stage starts, even when its percentage is still 0.
+
+### Install drivers
+
+Install drivers is an optional step that installs the device model's [driver set](drivers.md). It runs after Apply Windows image when the backend supports drivers, and is not shown otherwise.
+
+- **Pinning**: when imaging starts, the session records the matched model, the Windows release of the OS image and the model's current driver set version, or the model or "no drivers" chosen on the Devices page. Sets built later do not change what the device receives.
+- **Work**: per component, the Client copies the file from the USB drive or downloads it ("Downloading drivers (3 of 26)"), checks its SHA-256, extracts it and adds the drivers with DISM. Installers for the Specialize pass are handed to Prepare setup. The timeline card shows the set, a summary (for example "24 installed offline", "24 from the USB drive, 2 downloaded") and every component under **Show details**, failures first.
+- **Skipped**: when no set applies the step completes with a note: no onboarded model matches the device (with its system ID or system SKU), the OS image has no Windows release, the model is not onboarded for that release, the model has no driver set yet, or the architectures differ. Imaging continues without drivers.
+- **Warnings or failure**: a component that fails leaves the step `Completed` with a warning. A component in a category marked critical on the **Rules** tab fails the step and the session, naming the components, the cause and the fix.
 
 ### Prepare setup
 

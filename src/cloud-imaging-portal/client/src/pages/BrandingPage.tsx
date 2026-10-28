@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Upload, ImageIcon, RotateCcw, Save } from 'lucide-react';
+import { Upload, ImageIcon, RotateCcw } from 'lucide-react';
+import { SaveBar } from '../components/SaveBar.tsx';
+import { unsavedRail, type UnsavedChange } from '../lib/unsavedChanges.ts';
+import { UndoChangeButton } from '../components/ui/unsaved-change.tsx';
+import { cn } from '../lib/utils.ts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -60,22 +64,23 @@ function appearanceOf(config: BrandingConfig): AppearanceFields {
   };
 }
 
-function appearanceEquals(a: AppearanceFields, b: AppearanceFields): boolean {
-  return a.primaryColor === b.primaryColor
-    && a.accentColor === b.accentColor
-    && a.applicationName === b.applicationName
-    && a.sidebarBackgroundLight === b.sidebarBackgroundLight
-    && a.sidebarBackgroundDark === b.sidebarBackgroundDark
-    && a.cardBackgroundLight === b.cardBackgroundLight
-    && a.cardBackgroundDark === b.cardBackgroundDark
-    && a.pageBackgroundLight === b.pageBackgroundLight
-    && a.pageBackgroundDark === b.pageBackgroundDark
-    && a.headerBackgroundLight === b.headerBackgroundLight
-    && a.headerBackgroundDark === b.headerBackgroundDark;
-}
-
 /** Which logo an upload targets. */
 type LogoKind = 'portal' | 'boot';
+
+/** How the save bar and the leave prompt name each field. */
+const APPEARANCE_LABELS: Record<keyof AppearanceFields, string> = {
+  applicationName: 'Application name',
+  primaryColor: 'Primary colour',
+  accentColor: 'Accent colour',
+  sidebarBackgroundLight: 'Sidebar background, light theme',
+  sidebarBackgroundDark: 'Sidebar background, dark theme',
+  headerBackgroundLight: 'Header background, light theme',
+  headerBackgroundDark: 'Header background, dark theme',
+  cardBackgroundLight: 'Card background, light theme',
+  cardBackgroundDark: 'Card background, dark theme',
+  pageBackgroundLight: 'Page background, light theme',
+  pageBackgroundDark: 'Page background, dark theme',
+};
 
 /** Maximum logo size accepted by the portal (keeps the request within the API body limit). */
 const MAX_LOGO_BYTES = 512 * 1024;
@@ -109,15 +114,20 @@ interface ColorFieldProps {
   id: string;
   label: string;
   value: string;
+  /** The saved value, to mark and undo a change. */
+  savedValue: string;
+  /** Names the field on its own, where `label` only makes sense under a heading. */
+  changeLabel?: string;
   defaultValue: string;
   error: string | null;
   onChange: (hex: string) => void;
 }
 
 /** A hex colour swatch + text input + "reset to default" button, shared by every colour field on this page. */
-function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFieldProps): React.ReactElement {
+function ColorField({ id, label, value, savedValue, changeLabel = label, defaultValue, error, onChange }: ColorFieldProps): React.ReactElement {
+  const changed = value !== savedValue;
   return (
-    <div className="space-y-2">
+    <div className={cn('space-y-2', unsavedRail(changed, 'bare'))}>
       <Label htmlFor={id}>{label}</Label>
       <div className="flex items-center gap-2">
         <input
@@ -146,6 +156,7 @@ function ColorField({ id, label, value, defaultValue, error, onChange }: ColorFi
             <RotateCcw />
           </Button>
         </Tooltip>
+        {changed && <UndoChangeButton label={changeLabel} onUndo={() => onChange(savedValue)} />}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
@@ -171,7 +182,10 @@ export default function BrandingPage(): React.ReactElement {
     pageBackgroundLight: DEFAULT_PAGE_BG_LIGHT, pageBackgroundDark: DEFAULT_PAGE_BG_DARK,
     headerBackgroundLight: DEFAULT_HEADER_BG_LIGHT, headerBackgroundDark: DEFAULT_HEADER_BG_DARK,
   });
-  const isDirty = !appearanceEquals(appearanceOf(config), savedAppearance);
+  const current = appearanceOf(config);
+  const changes: UnsavedChange[] = (Object.keys(APPEARANCE_LABELS) as (keyof AppearanceFields)[])
+    .filter((key) => current[key] !== savedAppearance[key])
+    .map((key) => ({ label: APPEARANCE_LABELS[key] }));
   const primaryColorError = HEX_COLOR_PATTERN.test(config.primaryColor) ? null : 'Must be a 6-digit hex color, e.g. #0078D4.';
   const accentColorError = HEX_COLOR_PATTERN.test(config.accentColor) ? null : 'Must be a 6-digit hex color, e.g. #005A9E.';
   const applicationNameError = config.applicationName.trim().length < 1 || config.applicationName.trim().length > 100
@@ -231,8 +245,8 @@ export default function BrandingPage(): React.ReactElement {
     if (bootLogoUrlRef.current) URL.revokeObjectURL(bootLogoUrlRef.current);
   }, []);
 
-  const handleSave = async () => {
-    if (hasValidationError) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (hasValidationError) return false;
     setSaveStatus('loading');
     const toastId = notify({ status: 'loading', title: 'Saving branding settings…' });
     try {
@@ -264,6 +278,7 @@ export default function BrandingPage(): React.ReactElement {
           description: 'The portal appearance has been updated.',
         });
         setTimeout(() => setSaveStatus('idle'), 1600);
+        return true;
       } else {
         setSaveStatus('error');
         update(toastId, {
@@ -272,6 +287,7 @@ export default function BrandingPage(): React.ReactElement {
           description: await extractError(res, 'Failed to save branding settings.'),
         });
         setTimeout(() => setSaveStatus('idle'), 1600);
+        return false;
       }
     } catch {
       setSaveStatus('error');
@@ -281,6 +297,7 @@ export default function BrandingPage(): React.ReactElement {
         description: 'A network error occurred. Please try again.',
       });
       setTimeout(() => setSaveStatus('idle'), 1600);
+      return false;
     }
   };
 
@@ -494,15 +511,20 @@ export default function BrandingPage(): React.ReactElement {
           <CardDescription>Application name and theme colours.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
+          <div className={cn('space-y-2', unsavedRail(config.applicationName !== savedAppearance.applicationName, 'bare'))}>
             <Label htmlFor="applicationName">Application name</Label>
-            <Input
-              id="applicationName"
-              type="text"
-              value={config.applicationName}
-              onChange={e => setConfig({ ...config, applicationName: e.target.value })}
-              aria-invalid={!!applicationNameError}
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="applicationName"
+                type="text"
+                value={config.applicationName}
+                onChange={e => setConfig({ ...config, applicationName: e.target.value })}
+                aria-invalid={!!applicationNameError}
+              />
+              {config.applicationName !== savedAppearance.applicationName && (
+                <UndoChangeButton label="Application name" onUndo={() => setConfig({ ...config, applicationName: savedAppearance.applicationName })} />
+              )}
+            </div>
             {applicationNameError && (
               <p className="text-sm text-destructive">{applicationNameError}</p>
             )}
@@ -514,6 +536,7 @@ export default function BrandingPage(): React.ReactElement {
                 id="primaryColor"
                 label="Primary colour"
                 value={config.primaryColor}
+                savedValue={savedAppearance.primaryColor}
                 defaultValue={DEFAULT_PRIMARY_COLOR}
                 error={primaryColorError}
                 onChange={hex => setConfig({ ...config, primaryColor: hex })}
@@ -524,6 +547,7 @@ export default function BrandingPage(): React.ReactElement {
                 id="accentColor"
                 label="Accent colour"
                 value={config.accentColor}
+                savedValue={savedAppearance.accentColor}
                 defaultValue={DEFAULT_ACCENT_COLOR}
                 error={accentColorError}
                 onChange={hex => setConfig({ ...config, accentColor: hex })}
@@ -556,6 +580,8 @@ export default function BrandingPage(): React.ReactElement {
                     id={surface.lightKey}
                     label="Light theme"
                     value={config[surface.lightKey]}
+                    savedValue={savedAppearance[surface.lightKey]}
+                    changeLabel={APPEARANCE_LABELS[surface.lightKey]}
                     defaultValue={surface.lightDefault}
                     error={surfaceColorErrors[surface.lightKey]}
                     onChange={hex => setConfig({ ...config, [surface.lightKey]: hex })}
@@ -566,6 +592,8 @@ export default function BrandingPage(): React.ReactElement {
                     id={surface.darkKey}
                     label="Dark theme"
                     value={config[surface.darkKey]}
+                    savedValue={savedAppearance[surface.darkKey]}
+                    changeLabel={APPEARANCE_LABELS[surface.darkKey]}
                     defaultValue={surface.darkDefault}
                     error={surfaceColorErrors[surface.darkKey]}
                     onChange={hex => setConfig({ ...config, [surface.darkKey]: hex })}
@@ -577,20 +605,14 @@ export default function BrandingPage(): React.ReactElement {
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-3">
-        <Button
-          onClick={handleSave}
-          status={saveStatus}
-          variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
-          disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle') || hasValidationError}
-        >
-          <Save />
-          Save
-        </Button>
-        {isDirty && saveStatus === 'idle' && (
-          <p className="text-sm text-muted-foreground">You have unsaved changes.</p>
-        )}
-      </div>
+      <SaveBar
+        changes={changes}
+        status={saveStatus}
+        blockedReason={hasValidationError ? 'Fix the highlighted fields before saving.' : null}
+        savedMessage="Branding saved."
+        onDiscard={() => setConfig((c) => ({ ...c, ...savedAppearance }))}
+        onSave={handleSave}
+      />
     </div>
 
       {pendingReset && (

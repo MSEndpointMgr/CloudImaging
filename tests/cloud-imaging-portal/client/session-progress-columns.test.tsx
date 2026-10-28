@@ -7,14 +7,6 @@ vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => (
   extractErrorDetail: vi.fn(),
 }));
 
-// A later optional step (for example driver installation) must not need a component change.
-vi.mock('../../../src/cloud-imaging-portal/client/src/lib/imagingProgress.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../src/cloud-imaging-portal/client/src/lib/imagingProgress.ts')>();
-  const steps = [...actual.PIPELINE_STEPS];
-  steps.splice(3, 0, { name: 'InstallDrivers', label: 'Install drivers', optional: true });
-  return { ...actual, PIPELINE_STEPS: steps };
-});
-
 import { SessionProgressDetails } from '../../../src/cloud-imaging-portal/client/src/components/SessionProgressDetails.tsx';
 
 describe('Portal frontend: deployment timeline columns', () => {

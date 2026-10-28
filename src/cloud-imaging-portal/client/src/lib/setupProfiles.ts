@@ -9,8 +9,8 @@ export type SetupRegistryHive = 'Software' | 'System' | 'DefaultUser';
 export type SetupRegistryValueType = 'String' | 'ExpandString' | 'MultiString' | 'DWord' | 'QWord';
 export type SetupScriptPhase = 'WinPE' | 'WindowsSetup';
 export type SetupFailureHandling = 'CompleteWithWarnings' | 'FailDeployment';
-export type StepItemKind = 'RegistryValue' | 'WinPEScript' | 'WindowsSetupScript' | 'DriverInstaller' | 'AnswerFile';
-export type StepItemOutcome = 'Succeeded' | 'Failed' | 'Queued' | 'NotRun';
+export type StepItemKind = 'RegistryValue' | 'WinPEScript' | 'WindowsSetupScript' | 'DriverInstaller' | 'AnswerFile' | 'DriverComponent';
+export type StepItemOutcome = 'Succeeded' | 'Failed' | 'Queued' | 'NotRun' | 'Skipped';
 
 export interface SetupProfileTargeting {
   allDevices: boolean;
@@ -93,6 +93,8 @@ export interface ImagingStepItemCount {
   kind: StepItemKind;
   outcome: StepItemOutcome;
   count: number;
+  /** Items whose file came from the USB drive; absent when none did. */
+  fromUsbCache?: number | null;
 }
 
 export interface ImagingStepItem {
@@ -105,6 +107,10 @@ export interface ImagingStepItem {
   exitCode?: number | null;
   durationMs?: number | null;
   lastOutputLine?: string | null;
+  driverAction?: 'Offline' | 'OfflineAndSpecialize' | 'Specialize' | 'Skip' | null;
+  componentVersion?: string | null;
+  driverOrigin?: 'Vendor' | 'Custom' | 'RolledBack' | null;
+  fromUsbCache?: boolean | null;
 }
 
 /** What the editor edits. A new profile has no `profileId` and `currentVersion` 0. */
@@ -152,6 +158,7 @@ export const ITEM_OUTCOME_LABELS: Record<StepItemOutcome, string> = {
   Failed: 'Failed',
   Queued: 'Queued',
   NotRun: 'Not run',
+  Skipped: 'Skipped',
 };
 
 export const HIVE_OPTIONS = (Object.keys(HIVE_LABELS) as SetupRegistryHive[]).map((value) => ({ value, label: HIVE_LABELS[value] }));
@@ -263,6 +270,33 @@ export function draftChanges(saved: SetupProfileDraft, draft: SetupProfileDraft)
   return { contentChanged, metadataChanged, dirty: contentChanged || metadataChanged };
 }
 
+export type DraftSection = 'name' | 'targeting' | 'registryValues' | 'scripts' | 'answerFile' | 'failureHandling';
+
+/** How the save bar and the leave prompt name each part of a profile. */
+export const DRAFT_SECTION_LABELS: Record<DraftSection, string> = {
+  name: 'Profile name',
+  targeting: 'Targeting',
+  registryValues: 'Registry values',
+  scripts: 'Scripts',
+  answerFile: 'Answer file',
+  failureHandling: 'Failure handling',
+};
+
+/** Which parts of the draft differ from the saved profile. Together they are exactly `draftChanges().dirty`. */
+export function changedSections(saved: SetupProfileDraft, draft: SetupProfileDraft): DraftSection[] {
+  const before = contentForSave(saved.content);
+  const after = contentForSave(draft.content);
+  const differs: Record<DraftSection, boolean> = {
+    name: saved.name.trim() !== draft.name.trim(),
+    targeting: !sameTargeting(saved.targeting, draft.targeting),
+    registryValues: JSON.stringify(before.registryValues) !== JSON.stringify(after.registryValues),
+    scripts: JSON.stringify(before.scripts) !== JSON.stringify(after.scripts),
+    answerFile: JSON.stringify(before.answerFile) !== JSON.stringify(after.answerFile),
+    failureHandling: before.failureHandling !== after.failureHandling,
+  };
+  return (Object.keys(differs) as DraftSection[]).filter((s) => differs[s]);
+}
+
 /** "<name> (copy)", then "(copy 2)", "(copy 3)" until the name is free. */
 export function duplicateName(name: string, existing: string[]): string {
   const taken = new Set(existing.map((n) => n.trim().toLowerCase()));
@@ -317,7 +351,7 @@ export function validateRegistryValue(value: SetupRegistryValue, others: SetupRe
   const parts = key.split('\\');
   if (!key.trim() || key.length > MAX_KEY_LENGTH) {
     problems.push(`The key of ${name} must be 1 to 512 characters.`);
-  } else if (/^(HKLM\\|HKEY_)/i.test(key) || key.startsWith('\\') || key.endsWith('\\') || parts.some((p) => p.length === 0)) {
+  } else if (/^(HKEY_|(HKLM|HKCU|HKU|HKCR|HKCC):?(\\|$))/i.test(key) || key.startsWith('\\') || key.endsWith('\\') || parts.some((p) => p.length === 0)) {
     problems.push(`The key of ${name} must be relative to the hive, for example Policies\\Microsoft\\FVE.`);
   } else if (parts.some((p) => p.length > MAX_KEY_PART_LENGTH)) {
     problems.push(`Each part of the key of ${name} can be at most 255 characters.`);
@@ -737,6 +771,7 @@ export const STEP_ITEM_KIND_LABELS: Record<StepItemKind, string> = {
   WindowsSetupScript: 'Specialize script',
   DriverInstaller: 'Driver installer',
   AnswerFile: 'Answer file',
+  DriverComponent: 'Driver',
 };
 
 export type SummaryTone = 'failed' | 'notRun' | 'succeeded' | 'queued';
@@ -760,6 +795,7 @@ export function itemCountsSummary(counts: ImagingStepItemCount[]): SummaryItem[]
     WindowsSetupScript: ['Specialize script', 'Specialize scripts'],
     DriverInstaller: ['driver installer', 'driver installers'],
     AnswerFile: ['answer file', 'answer files'],
+    DriverComponent: ['driver', 'drivers'],
   };
   const kinds: StepItemKind[] = ['RegistryValue', 'WinPEScript', 'WindowsSetupScript', 'DriverInstaller', 'AnswerFile'];
   const items: SummaryItem[] = [];
@@ -796,6 +832,8 @@ export function itemStatusText(item: Pick<ImagingStepItem, 'kind' | 'outcome' | 
     }
     case 'NotRun':
       return 'Not run';
+    case 'Skipped':
+      return 'Skipped';
     case 'Queued':
       return 'Queued for Specialize';
     case 'Succeeded':
@@ -811,7 +849,7 @@ export function itemTooltip(item: Pick<ImagingStepItem, 'reason' | 'lastOutputLi
 
 /** Failed items first, then not run, then the rest, each group in device order. */
 export function sortItemsFailuresFirst<T extends Pick<ImagingStepItem, 'index' | 'outcome'>>(items: T[]): T[] {
-  const rank: Record<StepItemOutcome, number> = { Failed: 0, NotRun: 1, Succeeded: 2, Queued: 2 };
+  const rank: Record<StepItemOutcome, number> = { Failed: 0, NotRun: 1, Succeeded: 2, Queued: 2, Skipped: 2 };
   return [...items].sort((a, b) => rank[a.outcome] - rank[b.outcome] || a.index - b.index);
 }
 

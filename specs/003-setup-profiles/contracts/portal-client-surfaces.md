@@ -121,7 +121,8 @@ Section cards in order, each with the icon chip header:
    timeline."); a row of Hive (Select: HKLM SOFTWARE, HKLM SYSTEM, Default user) and Key (two
    columns wide); a row of Value name (placeholder "(Default)"), Type (Select) and Data (input;
    textarea for Multi-string, one string per line). Help under the Key row: "Relative to the hive,
-   for example Policies\Microsoft\FVE. Under HKLM SYSTEM, CurrentControlSet is mapped to the
+   for example Policies\Microsoft\FVE. Default user keys are written as they appear under HKCU,
+   for example Control Panel\Desktop. Under HKLM SYSTEM, CurrentControlSet is mapped to the
    image's current control set. 32-bit software reads WOW6432Node keys; name them explicitly."
    Footer Cancel and Add (or Done when editing).
 3. **Scripts** (`SquareTerminal`): description "PowerShell, run as SYSTEM in the order below within

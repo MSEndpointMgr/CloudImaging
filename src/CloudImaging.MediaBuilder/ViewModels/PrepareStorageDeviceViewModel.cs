@@ -70,6 +70,11 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
     private bool _isLoadingWifi;
     private string? _wifiLoadError;
     private int _wifiLoadVersion;
+    private int _driverLoadVersion;
+    private readonly DriverSetDownloadService _driverDownloads;
+
+    // BOOT takes the first 2 GB; the rest of the drive is the CACHE partition.
+    private const long BootPartitionBytes = 2048L * 1024 * 1024;
 
     /// <summary>Builds the view model over the Operator API, Entra auth, USB validation/preparation, and boot image download/cache services.</summary>
     public PrepareStorageDeviceViewModel(
@@ -82,9 +87,20 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         Action navigateBack,
         UsbDeviceChangeWatcher? deviceWatcher = null,
         IsoGenerationService? isoGeneration = null,
-        Func<bool>? isAdkInstalled = null)
+        Func<bool>? isAdkInstalled = null,
+        DriverSetDownloadService? driverDownloads = null)
     {
         _operatorApi = operatorApi;
+        _driverDownloads = driverDownloads ?? new DriverSetDownloadService(new System.Net.Http.HttpClient(), Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        DriverSets.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(DriverSetSelection.DoesNotFit) or nameof(DriverSetSelection.IsLoading))
+            {
+                OnPropertyChanged(nameof(CanPrepare));
+                OnPropertyChanged(nameof(DriverSetsDoNotFitMessage));
+                CommandManager.InvalidateRequerySuggested();
+            }
+        };
         _authService = authService;
         _validator = validator;
         _downloader = downloader;
@@ -154,6 +170,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanPrepare));
             _ = RefreshWifiNetworksAsync();
+            _ = RefreshDriverSetsAsync();
 
             // Keep the suggested ISO filename version-specific by default (FR: technicians who
             // never click Browse should still get "cloud-imaging-boot-v{version}.iso" instead of
@@ -181,6 +198,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         set
         {
             _selectedDisk = value;
+            DriverSets.CacheBytes = value is null ? null : Math.Max(0, value.Info.SizeBytes - BootPartitionBytes);
             OnPropertyChanged();
             OnPropertyChanged(nameof(ValidationMessage));
             OnPropertyChanged(nameof(HasValidationMessage));
@@ -300,6 +318,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged();
             OnPropertyChanged(nameof(PrepareAsIso));
             OnPropertyChanged(nameof(ShowWifiCard));
+            OnPropertyChanged(nameof(ShowDriverSetsCard));
             OnPropertyChanged(nameof(CanPrepare));
             OnPropertyChanged(nameof(PrepareButtonLabel));
             OnPropertyChanged(nameof(PrepareDescription));
@@ -324,6 +343,7 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             OnPropertyChanged();
             OnPropertyChanged(nameof(PrepareAsUsb));
             OnPropertyChanged(nameof(ShowWifiCard));
+            OnPropertyChanged(nameof(ShowDriverSetsCard));
             OnPropertyChanged(nameof(CanPrepare));
             OnPropertyChanged(nameof(PrepareButtonLabel));
             OnPropertyChanged(nameof(PrepareDescription));
@@ -536,7 +556,18 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
         && SelectedBootImage is not null
         && (PrepareAsIso
             ? !string.IsNullOrWhiteSpace(IsoOutputPath)
-            : SelectedDisk is { IsValid: true } && ConfirmErase);
+            : SelectedDisk is { IsValid: true } && ConfirmErase && !DriverSets.DoesNotFit && !DriverSets.IsLoading);
+
+    /// <summary>Driver sets that can be copied to the USB drive.</summary>
+    public DriverSetSelection DriverSets { get; } = new();
+
+    /// <summary>The Driver sets card applies to USB drives only, once a boot image is chosen.</summary>
+    public bool ShowDriverSetsCard => SelectedBootImage is not null && !PrepareAsIso;
+
+    /// <summary>The does-not-fit error with its support reference, or null when the selection fits.</summary>
+    public string? DriverSetsDoNotFitMessage => DriverSets.DoesNotFit
+        ? $"{DriverSetSelection.DoesNotFitMessage} Reference: {SupportReferenceCode.ForMediaBuilder("PREPUSB", "DRV")}"
+        : null;
 
     /// <summary>Re-fetches the published boot image list.</summary>
     public ICommand RefreshCommand { get; }
@@ -773,6 +804,10 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 wifiEnvelope = await BuildWifiEnvelopeAsync(SelectedLocation?.Id, ct);
             }
 
+            // Driver files are downloaded and verified here: the elevated worker has no network
+            // access, and a failed download must stop before the drive is erased.
+            var (driverFiles, driverSets) = await DownloadDriverSetsAsync(ct);
+
             _currentStage = "PRT";
             SetProgress("Partitioning USB device…", 60);
 
@@ -804,12 +839,15 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
                 SelectedBootImage.Dto.BootImageId,
                 !SelectedBootImage.Dto.IsProduction,
                 SelectedBootImage.Dto.Base,
-                wifiEnvelope);
+                wifiEnvelope,
+                driverFiles,
+                driverSets);
             await _preparation.PrepareElevatedAsync(preparationParams, ct);
 
             SetProgress("USB device prepared successfully.", 100);
             StatusMessage = string.Create(CultureInfo.InvariantCulture,
-                $"Boot image v{SelectedBootImage.Dto.Version} was written to disk {SelectedDisk.DiskNumber} ({SelectedDisk.Info.Caption}, {FormatBytes(SelectedDisk.Info.SizeBytes)}). Boot the target machine from it to start imaging.");
+                $"Boot image v{SelectedBootImage.Dto.Version} was written to disk {SelectedDisk.DiskNumber} ({SelectedDisk.Info.Caption}, {FormatBytes(SelectedDisk.Info.SizeBytes)}). Boot the target machine from it to start imaging.")
+                + string.Concat(driverSets.Select(s => $"{Environment.NewLine}{s.ModelName}, {s.ReleaseName}"));
             IsComplete = true;
         }
         catch (OperationCanceledException)
@@ -1252,6 +1290,100 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
 
     /// <summary>A Wi-Fi network as the card lists it: its name only, never the password.</summary>
     public sealed record WifiNetworkRow(string Ssid);
+
+    /// <summary>
+    /// Loads the driver sets for the selected boot image's architecture. A later selection
+    /// supersedes an earlier one still in flight. Nothing is selected by default.
+    /// </summary>
+    private async Task RefreshDriverSetsAsync()
+    {
+        OnPropertyChanged(nameof(ShowDriverSetsCard));
+        var version = ++_driverLoadVersion;
+        if (SelectedBootImage is not { } image)
+        {
+            DriverSets.Clear();
+            return;
+        }
+
+        var architecture = image.Dto.Architecture;
+
+        // The previous image's sets and selection never carry over to another architecture.
+        DriverSets.Load(architecture, []);
+        DriverSets.IsLoading = true;
+        DriverSets.LoadError = null;
+        try
+        {
+            var token = await _authService.GetAccessTokenAsync();
+            if (token is null)
+            {
+                return;
+            }
+
+            _operatorApi.SetAccessToken(token);
+            var sets = await _operatorApi.GetDriverSetsAsync(architecture);
+            if (version == _driverLoadVersion)
+            {
+                DriverSets.Load(architecture, sets);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version == _driverLoadVersion)
+            {
+                DriverSets.Load(architecture, []);
+                DriverSets.LoadError = OperatorApiErrorDescription.Describe(ex);
+            }
+        }
+        finally
+        {
+            if (version == _driverLoadVersion)
+            {
+                DriverSets.IsLoading = false;
+            }
+        }
+    }
+
+    /// <summary>The download progress line, for example "Downloading driver sets (12 of 58 files, 1.1 of 4.8 GB)".</summary>
+    /// <param name="progress">Progress.</param>
+    public static string DriverDownloadText(DriverDownloadProgress progress)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        const double Gb = 1024d * 1024 * 1024;
+        return string.Create(CultureInfo.InvariantCulture, $"Downloading driver sets ({progress.Files} of {progress.TotalFiles} files, {progress.Bytes / Gb:0.0} of {progress.TotalBytes / Gb:0.0} GB)");
+    }
+
+    private async Task<(IReadOnlyList<PreloadDriverFile> Files, IReadOnlyList<UsbPreparationDriverSet> Sets)> DownloadDriverSetsAsync(CancellationToken ct)
+    {
+        var chosen = DriverSets.Selected;
+        if (chosen.Count == 0)
+        {
+            return ([], []);
+        }
+
+        _currentStage = "DRV";
+        SetProgress("Requesting driver set links...", 58);
+        var refs = chosen.Select(s => new Contracts.Models.Drivers.MediaBuilderDriverSetRef { ModelId = s.ModelId, Release = s.Release }).ToList();
+        var links = await _operatorApi.GetDriverSetLinksAsync(refs, ct);
+
+        // The sets may have changed since the list was loaded, so the files actually linked are checked against the drive.
+        if (DriverSets.CacheBytes is { } cacheBytes && links.Files.Sum(f => f.SizeBytes) > cacheBytes)
+        {
+            throw new InvalidOperationException(DriverSetSelection.DoesNotFitMessage);
+        }
+
+        var files = await _driverDownloads.DownloadAsync(links.Files, progress => SetProgress(DriverDownloadText(progress), 58), async refreshCt => (await _operatorApi.GetDriverSetLinksAsync(refs, refreshCt)).Files, ct);
+        var sets = chosen.Select(s => new UsbPreparationDriverSet
+        {
+            ModelId = s.ModelId,
+            ModelName = s.ModelName,
+            Release = s.Release,
+            ReleaseName = s.ReleaseName,
+            SetVersion = links.Sets.FirstOrDefault(v => v.ModelId == s.ModelId && v.Release == s.Release)?.SetVersion ?? s.SetVersion,
+            Components = s.Components,
+            Bytes = s.Bytes,
+        }).ToList();
+        return (files, sets);
+    }
 
     /// <summary>
     /// Loads the networks for the selected location for display. A later selection supersedes an

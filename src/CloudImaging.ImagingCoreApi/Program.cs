@@ -1,6 +1,9 @@
 using CloudImaging.ImagingCoreApi.Middleware;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Repositories.Drivers;
 using CloudImaging.ImagingCoreApi.Services;
+using CloudImaging.ImagingCoreApi.Services.Drivers;
+using CloudImaging.ImagingCoreApi.Storage;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -59,6 +62,57 @@ var host = new HostBuilder()
             sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(SetupProfileVersionRepository.ContainerName)));
         services.AddSingleton<SetupProfileHistoryRepository>();
         services.AddSingleton<ImagingStepItemRepository>();
+        services.AddSingleton<DriverStore>();
+        services.AddSingleton<DriverModelRepository>();
+        services.AddSingleton<DriverSetPointerRepository>();
+        services.AddSingleton<DriverSyncRunRepository>();
+        services.AddSingleton(sp => new DriverSetDocumentRepository(
+            sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(DriverTables.Container)));
+
+        // The driver-work queue lives on the AzureWebJobsStorage account, where Core's identity
+        // already holds Storage Queue Data Contributor; the queue trigger reads Base64 bodies.
+        services.AddSingleton(sp =>
+        {
+            var accountName = ctx.Configuration["AzureWebJobsStorage:accountName"]
+                ?? ctx.Configuration["AzureWebJobsStorage__accountName"]
+                ?? throw new InvalidOperationException("Storage account name is not configured.");
+            return new Azure.Storage.Queues.QueueServiceClient(
+                new Uri($"https://{accountName}.queue.core.windows.net"),
+                new Azure.Identity.DefaultAzureCredential(),
+                new Azure.Storage.Queues.QueueClientOptions { MessageEncoding = Azure.Storage.Queues.QueueMessageEncoding.Base64 });
+        });
+        services.AddSingleton<DriverWorkSender>();
+        services.AddSingleton<IDriverWorkSender>(sp => sp.GetRequiredService<DriverWorkSender>());
+        services.AddSingleton<IDriverVendorAdapter, HpDriverVendorAdapter>();
+        services.AddSingleton<IDriverVendorAdapter, DellDriverVendorAdapter>();
+
+        // Redirects are followed by DriverStorageService itself so every hop passes the vendor host allowlist.
+        services.AddHttpClient(DriverStorageService.HttpClientName, client => client.Timeout = TimeSpan.FromMinutes(55))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+        services.AddSingleton(sp =>
+        {
+            var blobs = sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>();
+            return new DriverStorageService(
+                blobs,
+                blobs.GetBlobContainerClient(DriverTables.Container),
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(DriverStorageService.HttpClientName),
+                sp.GetRequiredService<TimeProvider>());
+        });
+        services.AddSingleton(sp => new DriverCatalogService(
+            sp.GetRequiredService<DriverStore>(),
+            sp.GetRequiredService<DriverModelRepository>(),
+            sp.GetRequiredService<DriverStorageService>(),
+            sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(DriverTables.Container),
+            sp.GetServices<IDriverVendorAdapter>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton<DriverSyncService>();
+        services.AddSingleton<DriverModelService>();
+        services.AddSingleton<DriverPolicyService>();
+        services.AddSingleton<DriverSyncScheduler>();
+        services.AddSingleton<DriverLifecycleService>();
+        services.AddSingleton<DriverComponentHistoryService>();
+        services.AddSingleton<DriverCustomComponentService>();
+        services.AddSingleton<DriverSetResolver>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<SetupProfileResolver>();
         services.AddSingleton<SetupProfileService>();
@@ -152,6 +206,24 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<SetupProfileVersionRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<SetupProfileHistoryRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<ImagingStepItemRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<DriverStore>().EnsureTablesExistAsync(ct);
+    await sp.GetRequiredService<DriverModelRepository>().EnsureTablesExistAsync(ct);
+    await sp.GetRequiredService<DriverSetPointerRepository>().EnsureTableExistsAsync(ct);
+    await sp.GetRequiredService<DriverSyncRunRepository>().EnsureTablesExistAsync(ct);
+    await sp.GetRequiredService<DriverWorkSender>().EnsureQueuesExistAsync(ct);
+
+    // A lost ScheduledSync message never stops the schedule: every start enqueues the next slot,
+    // and the copies that lose the slot claim are dropped.
+    await sp.GetRequiredService<DriverSyncScheduler>().EnqueueNextAsync(ct);
+
+    // Containers were created only by the IaC, so an environment deployed before one was added
+    // failed every write to it until the next template run. Created here for the same reason the
+    // tables above are.
+    var blobs = sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>();
+    foreach (var container in StorageContainers.All)
+    {
+        await blobs.GetBlobContainerClient(container).CreateIfNotExistsAsync(cancellationToken: ct);
+    }
 }
 
 host.Run();

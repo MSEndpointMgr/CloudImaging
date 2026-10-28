@@ -4,7 +4,9 @@ using CloudImaging.Contracts.Models;
 using CloudImaging.Contracts.Models.SetupProfiles;
 using CloudImaging.ImagingCoreApi.Functions;
 using CloudImaging.ImagingCoreApi.Repositories;
+using CloudImaging.ImagingCoreApi.Repositories.Drivers;
 using CloudImaging.ImagingCoreApi.Services;
+using CloudImaging.ImagingCoreApi.Services.Drivers;
 using CloudImaging.ImagingCoreApi.Tests.TestDoubles;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,7 +29,10 @@ public sealed class SetupProfileIntegrationTests
     }
 
     private AssignSessionFunction AssignFunction() =>
-        new(_bed.Sessions, _images, _bed.Config, _bed.BlobService, _bed.Resolver, NullLogger<AssignSessionFunction>.Instance);
+        new(_bed.Sessions, _images, _bed.Config, _bed.BlobService, _bed.Resolver, DriverResolver(), NullLogger<AssignSessionFunction>.Instance);
+
+    private DriverSetResolver DriverResolver() =>
+        new(new DriverStore(_bed.Tables), new DriverModelRepository(_bed.Tables), new DriverSetPointerRepository(_bed.Tables), [new HpDriverVendorAdapter()]);
 
     private SessionSetupProfileFunction DescriptorFunction() =>
         new(_bed.Sessions, _bed.Profiles, _bed.Versions, _bed.Service, _bed.BlobService, _bed.Time, NullLogger<SessionSetupProfileFunction>.Instance);
@@ -137,7 +142,7 @@ public sealed class SetupProfileIntegrationTests
         var first = await _bed.AddSessionAsync(SessionState.SessionAssigned, _bed.Stockholm);
         var second = await _bed.AddSessionAsync(SessionState.SessionAssigned, _bed.Stockholm);
         var other = await _bed.AddSessionAsync(SessionState.SessionAssigned, _bed.Malmo);
-        var service = new BulkAssignmentService(_bed.Sessions, _images, _bed.Config, _bed.BlobService, _bed.Resolver, NullLogger<BulkAssignmentService>.Instance);
+        var service = new BulkAssignmentService(_bed.Sessions, _images, _bed.Config, _bed.BlobService, _bed.Resolver, DriverResolver(), NullLogger<BulkAssignmentService>.Instance);
 
         await service.AssignAsync([first.SessionId, second.SessionId, other.SessionId], _imageId);
 

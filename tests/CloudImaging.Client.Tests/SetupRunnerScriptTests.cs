@@ -185,6 +185,69 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
         File.Exists(_logPath).Should().BeTrue();
     }
 
+    /// <summary>A driver installer as Install drivers hands it over: a staged folder with a command script that appends to <paramref name="order"/>.</summary>
+    private SpecializeInstaller DriverInstaller(string name, string folder, string order, string mark, int exitCode)
+    {
+        var script = Stage($@"{folder}\setup.cmd", $"@echo off\r\n(echo {mark})>>\"{order}\"\r\nexit /b {exitCode}\r\n");
+        var dll = Stage($@"{folder}\driver.dll", "payload");
+        return new SpecializeInstaller(
+            name,
+            [new SpecializeInstallerFile(script.Path, script.Sha256), new SpecializeInstallerFile(dll.Path, dll.Sha256)],
+            new SpecializeInstallerCommand("cmd.exe", "/c setup.cmd", folder),
+            1200,
+            [0, 3010],
+            [folder]);
+    }
+
+    /// <summary>The manifest Prepare setup writes, with the profile script started through cmd.exe, since the stand-in drive has no Windows folder.</summary>
+    private void WriteBuiltManifest(IReadOnlyList<SpecializeInstaller> installers, string order)
+    {
+        var script = Stage(SetupRunnerManifestBuilder.ScriptPath(1), "Write-Output 'x'");
+        var built = SetupRunnerManifestBuilder.Build(Guid.NewGuid(), new DateTimeOffset(2026, 10, 23, 10, 2, 11, TimeSpan.Zero), "Stockholm", 8, installers, [new StagedScript("Wired 802.1X", script.Path, script.Sha256, 1)]);
+        var items = built.Items.Select(i => i.Kind == SetupRunnerItemKind.Script
+            ? i with { Command = new SetupRunnerManifestCommand("cmd.exe", $"/c (echo script)>>\"{order}\"", SetupRunnerManifestBuilder.ScriptFolder) }
+            : i).ToList();
+        File.WriteAllBytes(_manifestPath, SetupRunnerManifestBuilder.Serialize(built with { Items = items }));
+    }
+
+    [Fact]
+    public void DriverInstallers_RunFirstInOrder_3010Succeeds_AFailureDoesNotStopTheNext_AndTheirFoldersAreDeleted()
+    {
+        var order = Path.Combine(_root, "order.txt");
+        var first = DriverInstaller("HP Audio Control", @"CloudImaging\Drivers\000-sp1", order, "first", 3010);
+        var second = DriverInstaller("HP Hotkey Support", @"CloudImaging\Drivers\001-sp2", order, "second", 1);
+        WriteBuiltManifest([first, second], order);
+
+        var (exitCode, log) = Run();
+
+        exitCode.Should().Be(0, "the runner never asks Windows setup for a restart");
+        File.ReadAllLines(order).Select(l => l.Trim()).Should().Equal("first", "second", "script");
+        log.Should().Contain(l => l.Contains("1/3  DriverInstaller  \"HP Audio Control\"  Succeeded  exit 3010", StringComparison.Ordinal));
+        log.Should().Contain(l => l.Contains("2/3  DriverInstaller  \"HP Hotkey Support\"  Failed  exit 1", StringComparison.Ordinal));
+        log.Should().Contain(l => l.Contains("3/3  Script  \"Wired 802.1X\"  Succeeded", StringComparison.Ordinal));
+        Directory.Exists(Path.Combine(_root, @"CloudImaging\Drivers\000-sp1")).Should().BeFalse();
+        Directory.Exists(Path.Combine(_root, @"CloudImaging\Drivers\001-sp2")).Should().BeFalse("folders are deleted after a failure too");
+
+        // Results go only to the local log: nothing else is written besides the marker this test asked for.
+        Directory.EnumerateFiles(_root, "*", SearchOption.AllDirectories).Select(f => Path.GetRelativePath(_root, f)).Should().BeEquivalentTo(@"Windows\Logs\CloudImaging\SetupRunner.log", "order.txt");
+    }
+
+    [Fact]
+    public void AChangedStagedInstallerFile_IsRefused_TheNextItemRuns_AndTheFolderIsStillDeleted()
+    {
+        var order = Path.Combine(_root, "order.txt");
+        var tampered = DriverInstaller("HP Audio Control", @"CloudImaging\Drivers\000-sp1", order, "first", 0);
+        var second = DriverInstaller("HP Hotkey Support", @"CloudImaging\Drivers\001-sp2", order, "second", 0);
+        File.WriteAllText(Path.Combine(_root, @"CloudImaging\Drivers\000-sp1\driver.dll"), "changed");
+        WriteBuiltManifest([tampered, second], order);
+
+        var (_, log) = Run();
+
+        log.Should().Contain(l => l.Contains("1/3  DriverInstaller  \"HP Audio Control\"  Failed  File does not match the manifest", StringComparison.Ordinal));
+        File.ReadAllLines(order).Select(l => l.Trim()).Should().Equal("second", "script");
+        Directory.Exists(Path.Combine(_root, @"CloudImaging\Drivers\000-sp1")).Should().BeFalse();
+    }
+
     [Fact]
     public void AMissingManifest_LogsOneLine_CleansUp_AndExitsZero()
     {

@@ -86,6 +86,9 @@ public sealed partial class DeviceGatewayApiClient
     private static bool IsTransientTransportFailure(HttpRequestException ex) =>
         ex.HttpRequestError is HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError;
 
+    /// <summary>Manufacturer sent when the session was created; words the driver skip note (system ID or SKU).</summary>
+    public string? DeviceManufacturer { get; private set; }
+
     private async Task<CreateSessionResponse?> CreateSessionOnceAsync(
         DeviceRegistrationPayload payload,
         CancellationToken ct)
@@ -93,6 +96,7 @@ public sealed partial class DeviceGatewayApiClient
         // Re-signed per attempt so a retry carries a fresh timestamp and nonce, rather than
         // replaying a proof the gateway may now consider outside its clock-skew window.
         var signedPayload = SignPayload(payload);
+        DeviceManufacturer = payload.Manufacturer;
         LogCreateSessionRequest(_logger, payload.SerialNumber, payload.Manufacturer, payload.Model);
 
         var response = await _http.PostAsJsonAsync("/api/v1/sessions", signedPayload, JsonOptions, ct);
@@ -257,6 +261,58 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
+    /// GET /api/v1/sessions/{sessionId}/driver-set: the driver set pinned at assignment, or why
+    /// none applies. 404 (no driver work, or an older backend) means the step is not shown; 409
+    /// means the session is ending; 429 carries how long to wait. Read links are never logged.
+    /// </summary>
+    public async Task<DriverSetFetch> GetDriverSetAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        var path = $"/api/v1/sessions/{sessionId}/driver-set";
+        LogHttpRequest(_logger, "GET", path);
+        using var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+        switch (response.StatusCode)
+        {
+            case System.Net.HttpStatusCode.OK:
+                var descriptor = await response.Content.ReadFromJsonAsync<CloudImaging.Contracts.Models.Drivers.SessionDriverSetDescriptor>(DriverJsonOptions, ct);
+                return descriptor is null
+                    ? new DriverSetFetch(DriverSetFetchStatus.Failed, null, null)
+                    : new DriverSetFetch(DriverSetFetchStatus.Loaded, descriptor, null);
+            case System.Net.HttpStatusCode.NotFound:
+                return new DriverSetFetch(DriverSetFetchStatus.None, null, null);
+            case System.Net.HttpStatusCode.Conflict:
+                return new DriverSetFetch(DriverSetFetchStatus.PipelineEnding, null, null);
+            case System.Net.HttpStatusCode.TooManyRequests:
+                return new DriverSetFetch(DriverSetFetchStatus.RateLimited, null, response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(5));
+            default:
+                var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+                LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+                return new DriverSetFetch(DriverSetFetchStatus.Failed, null, null);
+        }
+    }
+
+    /// <summary>
+    /// POST /api/v1/sessions/{sessionId}/driver-set/components/{index}/link: a new read link for
+    /// one component, or null when the gateway refused it.
+    /// </summary>
+    public async Task<CloudImaging.Contracts.Models.Drivers.SessionDriverComponentLink?> RefreshDriverComponentLinkAsync(Guid sessionId, int index, CancellationToken ct = default)
+    {
+        var path = $"/api/v1/sessions/{sessionId}/driver-set/components/{index}/link";
+        LogHttpRequest(_logger, "POST", path);
+        using var response = await _http.PostAsync(path, null, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<CloudImaging.Contracts.Models.Drivers.SessionDriverComponentLink>(DriverJsonOptions, ct)
+            : null;
+    }
+
+    // Driver contracts carry string enums, including wire names such as Windows11_24H2.
+    private static readonly JsonSerializerOptions DriverJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+    };
+
+    /// <summary>
     /// POST /api/v1/sessions/{sessionId}/sas/refresh: Refresh the SAS token URL.
     /// Returns both the (possibly unchanged) URL and its actual server-computed expiry, so the caller
     /// never has to guess the new expiry (see <see cref="SasRefreshCoordinator"/>).
@@ -290,28 +346,28 @@ public sealed partial class DeviceGatewayApiClient
     }
 
     /// <summary>
-    /// GET /api/v1/boot-image/latest: Retrieve the latest published boot image's version,
-    /// hash, and SAS download URL, used by <see cref="BootImageSelfUpdateService"/> to detect
-    /// stale boot media (T071b, FR-059a). Requires only the mTLS boot-media certificate: no
-    /// device-session token: so it can run independently of session bootstrap. Returns null on
-    /// any non-success response (no active session/token is required, but network/service
-    /// errors are treated as "nothing to update" rather than thrown, since this check must never
-    /// block Client startup). Also null on 204, which means this stick runs a pre-production
-    /// image that must not be replaced.
+    /// POST /api/v1/boot-image/latest: the latest published boot image's version, hash and SAS
+    /// download URL, used by <see cref="BootImageSelfUpdateService"/> to detect stale boot media
+    /// (T071b, FR-059a). Signed with the boot media private key, because the answer is a link to a
+    /// boot image that carries that key; no device-session token. Returns null without a boot media
+    /// certificate, on any non-success response (this check must never block Client startup), and on
+    /// 204, which means this stick runs a pre-production image that must not be replaced.
     /// </summary>
-    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, Guid? currentBootImageId = null, BootImageBase bootImageBase = BootImageBase.WindowsPE, CancellationToken ct = default)
+    public async Task<LatestBootImageInfo?> GetLatestBootImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, Guid? currentBootImageId = null, BootImageBase bootImageBase = BootImageBase.WindowsPE, string? serialNumber = null, CancellationToken ct = default)
     {
-        // Only Windows RE sends a base: older gateways ignore it, and Windows PE is what they assume.
-        var path = $"/api/v1/boot-image/latest?architecture={MachineArchitecturePlatform.Slug(architecture)}"
-            + (currentBootImageId is { } current ? $"&currentBootImageId={current}" : string.Empty)
-            + (bootImageBase == BootImageBase.WindowsRE ? "&base=WindowsRE" : string.Empty);
-        LogHttpRequest(_logger, "GET", path);
-        var response = await _http.GetAsync(path, ct);
-        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+        const string path = "/api/v1/boot-image/latest";
+        if (_signingCertificate is null)
+        {
+            return null;
+        }
+
+        LogHttpRequest(_logger, "POST", path);
+        using var response = await _http.PostAsJsonAsync(path, SignBootImageRequest(serialNumber ?? "UNKNOWN", architecture, bootImageBase, currentBootImageId), JsonOptions, ct);
+        LogHttpResponse(_logger, "POST", path, (int)response.StatusCode);
         if (!response.IsSuccessStatusCode)
         {
             var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
-            LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+            LogHttpRequestFailed(_logger, "POST", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
             return null;
         }
 
@@ -327,6 +383,28 @@ public sealed partial class DeviceGatewayApiClient
             LogLatestBootImage(_logger, result.Version, result.Sha256Hash, redactedSasUrl);
         }
         return result;
+    }
+
+    private LatestBootImageRequest SignBootImageRequest(string serialNumber, MachineArchitecture architecture, BootImageBase bootImageBase, Guid? currentBootImageId)
+    {
+        using var rsa = _signingCertificate!.GetRSAPrivateKey()
+            ?? throw new InvalidOperationException("Boot-media certificate has no RSA private key.");
+        var timestampUtc = DateTimeOffset.UtcNow.ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+        var nonce = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var challenge = DevicePayloadSignature.BuildBootImageChallenge(serialNumber, architecture, bootImageBase, currentBootImageId, timestampUtc, nonce);
+        return new LatestBootImageRequest
+        {
+            SerialNumber = serialNumber,
+            Architecture = architecture,
+            Base = bootImageBase,
+            CurrentBootImageId = currentBootImageId,
+            ProofOfPossession = new DeviceProofOfPossession
+            {
+                Nonce = nonce,
+                TimestampUtc = timestampUtc,
+                Signature = Convert.ToBase64String(rsa.SignData(challenge, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1)),
+            },
+        };
     }
 
     /// <summary>
@@ -739,6 +817,28 @@ public enum SetupProfileFetchStatus
 
 /// <summary>Result of <see cref="DeviceGatewayApiClient.GetSetupProfileAsync"/>.</summary>
 public sealed record SetupProfileFetch(SetupProfileFetchStatus Status, CloudImaging.Contracts.Models.SetupProfiles.SetupProfileDescriptor? Descriptor, TimeSpan? RetryAfter);
+
+/// <summary>How the driver set descriptor request ended.</summary>
+public enum DriverSetFetchStatus
+{
+    /// <summary>A descriptor came back, with components or a skip reason.</summary>
+    Loaded,
+
+    /// <summary>No driver work for this session, or the backend has no driver management.</summary>
+    None,
+
+    /// <summary>The session is no longer starting or in progress.</summary>
+    PipelineEnding,
+
+    /// <summary>Rate limited; wait <see cref="DriverSetFetch.RetryAfter"/>.</summary>
+    RateLimited,
+
+    /// <summary>The Device Gateway or Imaging Core failed.</summary>
+    Failed,
+}
+
+/// <summary>Result of <see cref="DeviceGatewayApiClient.GetDriverSetAsync"/>.</summary>
+public sealed record DriverSetFetch(DriverSetFetchStatus Status, CloudImaging.Contracts.Models.Drivers.SessionDriverSetDescriptor? Descriptor, TimeSpan? RetryAfter);
 
 /// <summary>
 /// Response from the Device Gateway API POST /api/v1/sessions/{sessionId}/logs/upload-url

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BadgeCheck, Pencil, Plus, Save, Tag, Trash2 } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
-import { formatDateTime } from '../lib/utils.ts';
+import { formatDateTime, cn } from '../lib/utils.ts';
 import {
   TEMPLATE_TOKENS, resolveTemplate, validateGroupTagDefinition,
   type GroupTagDefinition, type GroupTagKind,
@@ -17,6 +17,8 @@ import { Badge } from './ui/badge.tsx';
 import { EmptyState } from './ui/empty-state.tsx';
 import { Tooltip } from './ui/tooltip.tsx';
 import { TableSkeletonRows } from './ui/skeleton.tsx';
+import { UndoChangeButton } from './ui/unsaved-change.tsx';
+import { unsavedRail } from '../lib/unsavedChanges.ts';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table.tsx';
 import { ConfirmImpactDialog } from './ConfirmImpactDialog.tsx';
 
@@ -27,11 +29,16 @@ interface LocationEntry {
   countryCode?: string | null;
 }
 
-interface Props {
+interface AutopilotSettings {
   enabled: boolean;
   groupTagRequired: boolean;
   expiryDays: number;
   retentionDays: number;
+}
+
+interface Props extends AutopilotSettings {
+  /** The saved values, to mark and undo what has changed since. */
+  saved?: AutopilotSettings;
   onEnabledChange: (value: boolean) => void;
   onGroupTagRequiredChange: (value: boolean) => void;
   onExpiryDaysChange: (value: number) => void;
@@ -40,9 +47,10 @@ interface Props {
 
 /**
  * Autopilot registration settings. The three switches/limits are part of the portal
- * configuration and saved with Save Configuration; the group tag list is managed immediately.
+ * configuration and saved with the page's save bar; the group tag list is managed immediately.
  */
 export function AutopilotConfigPanel(props: Props): React.ReactElement {
+  const changed = (key: keyof AutopilotSettings) => props.saved !== undefined && props.saved[key] !== props[key];
   return (
     <div className="space-y-6">
       <Card>
@@ -61,42 +69,52 @@ export function AutopilotConfigPanel(props: Props): React.ReactElement {
           <SettingRow
             title="Allow Autopilot registration"
             description="When enabled, boot media offers Register with Autopilot so technicians can submit a device's hardware hash for approval."
+            changed={changed('enabled')}
+            onUndo={() => props.onEnabledChange(props.saved!.enabled)}
           >
             <Switch checked={props.enabled} onCheckedChange={props.onEnabledChange} label="Allow Autopilot registration" />
           </SettingRow>
           <SettingRow
             title="Require a group tag"
             description="When enabled, approvers must select a group tag before a device can be imported."
+            changed={changed('groupTagRequired')}
+            onUndo={() => props.onGroupTagRequiredChange(props.saved!.groupTagRequired)}
           >
             <Switch checked={props.groupTagRequired} onCheckedChange={props.onGroupTagRequiredChange} label="Require a group tag" />
           </SettingRow>
-          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
+          <div className={cn('space-y-2 rounded-md border border-border bg-muted/30 p-4', unsavedRail(changed('expiryDays')))}>
             <Label htmlFor="autopilotPendingExpiryDays">Pending requests expire after (days)</Label>
             <p className="text-sm text-muted-foreground">Undecided requests expire and their hardware hash is deleted. 1 to 90 days.</p>
-            <Input
-              id="autopilotPendingExpiryDays"
-              type="number"
-              min={1}
-              max={90}
-              value={props.expiryDays}
-              onChange={(e) => props.onExpiryDaysChange(Number(e.target.value))}
-              className="w-40"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="autopilotPendingExpiryDays"
+                type="number"
+                min={1}
+                max={90}
+                value={props.expiryDays}
+                onChange={(e) => props.onExpiryDaysChange(Number(e.target.value))}
+                className="w-40"
+              />
+              {changed('expiryDays') && <UndoChangeButton label="Pending requests expire after" onUndo={() => props.onExpiryDaysChange(props.saved!.expiryDays)} />}
+            </div>
           </div>
-          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-4">
+          <div className={cn('space-y-2 rounded-md border border-border bg-muted/30 p-4', unsavedRail(changed('retentionDays')))}>
             <Label htmlFor="autopilotRetentionDays">Keep handled requests for (days)</Label>
             <p className="text-sm text-muted-foreground">
               Imported, rejected and expired requests stay in the Autopilot registration history report for auditing, then are deleted. 30 to 3650 days.
             </p>
-            <Input
-              id="autopilotRetentionDays"
-              type="number"
-              min={30}
-              max={3650}
-              value={props.retentionDays}
-              onChange={(e) => props.onRetentionDaysChange(Number(e.target.value))}
-              className="w-40"
-            />
+            <div className="flex items-center gap-2">
+              <Input
+                id="autopilotRetentionDays"
+                type="number"
+                min={30}
+                max={3650}
+                value={props.retentionDays}
+                onChange={(e) => props.onRetentionDaysChange(Number(e.target.value))}
+                className="w-40"
+              />
+              {changed('retentionDays') && <UndoChangeButton label="Keep handled requests for" onUndo={() => props.onRetentionDaysChange(props.saved!.retentionDays)} />}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -106,14 +124,23 @@ export function AutopilotConfigPanel(props: Props): React.ReactElement {
   );
 }
 
-function SettingRow({ title, description, children }: { title: string; description: string; children: React.ReactNode }): React.ReactElement {
+function SettingRow({ title, description, changed = false, onUndo, children }: {
+  title: string;
+  description: string;
+  changed?: boolean;
+  onUndo?: () => void;
+  children: React.ReactNode;
+}): React.ReactElement {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4">
+    <div className={cn('flex items-center justify-between gap-4 rounded-md border border-border bg-muted/30 p-4', unsavedRail(changed))}>
       <div>
         <p className="text-sm font-medium">{title}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
       </div>
-      {children}
+      <div className="flex shrink-0 items-center gap-2">
+        {changed && onUndo && <UndoChangeButton label={title} onUndo={onUndo} />}
+        {children}
+      </div>
     </div>
   );
 }

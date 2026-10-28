@@ -4,8 +4,10 @@ using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
+using CloudImaging.Contracts.Models.Drivers;
 using CloudImaging.ImagingCoreApi.Repositories;
 using CloudImaging.ImagingCoreApi.Services;
+using CloudImaging.ImagingCoreApi.Services.Drivers;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -35,6 +37,7 @@ public sealed partial class AssignSessionFunction
     private readonly PortalConfigurationRepository _configRepo;
     private readonly BlobServiceClient _blobClient;
     private readonly SetupProfileResolver _setupProfileResolver;
+    private readonly DriverSetResolver _driverSetResolver;
     private readonly ILogger<AssignSessionFunction> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
@@ -42,6 +45,7 @@ public sealed partial class AssignSessionFunction
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="blobClient">Blob service client used to issue the assigned image's download SAS URL.</param>
     /// <param name="setupProfileResolver">Resolves the setup profile pinned at assignment.</param>
+    /// <param name="driverSetResolver">Resolves the driver set pinned at assignment.</param>
     /// <param name="logger">Logger for this function.</param>
     public AssignSessionFunction(
         DeviceSessionRepository sessionRepo,
@@ -49,6 +53,7 @@ public sealed partial class AssignSessionFunction
         PortalConfigurationRepository configRepo,
         BlobServiceClient blobClient,
         SetupProfileResolver setupProfileResolver,
+        DriverSetResolver driverSetResolver,
         ILogger<AssignSessionFunction> logger)
     {
         _sessionRepo = sessionRepo;
@@ -56,6 +61,7 @@ public sealed partial class AssignSessionFunction
         _configRepo = configRepo;
         _blobClient = blobClient;
         _setupProfileResolver = setupProfileResolver;
+        _driverSetResolver = driverSetResolver;
         _logger = logger;
     }
 
@@ -79,6 +85,14 @@ public sealed partial class AssignSessionFunction
             var bad = req.CreateResponse(HttpStatusCode.BadRequest);
             await bad.WriteStringAsync("osImageId field (GUID) is required.", context.CancellationToken);
             return bad;
+        }
+
+        // driverChoice: { kind, modelId } with actor, optional.
+        if (DriverChoices.TryRead(body.RootElement, [sessionGuid], out var choices, out var chosenBy) is { } choiceError)
+        {
+            var badChoice = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badChoice.WriteStringAsync(choiceError, context.CancellationToken);
+            return badChoice;
         }
 
         var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
@@ -111,6 +125,19 @@ public sealed partial class AssignSessionFunction
                 req, new ArchitectureMismatchException(image.Architecture, [(sessionGuid, session.Architecture)]), context.CancellationToken);
         }
 
+        // A manual choice is checked before anything is issued or written.
+        DriverPin? chosenPin = null;
+        if (choices.Count == 1)
+        {
+            var (pin, reason) = await _driverSetResolver.ResolveChoiceAsync(session, image, choices[0], context.CancellationToken);
+            if (pin is null)
+            {
+                return await DriverChoices.ConflictAsync(req, new DriverChoiceConflictException([new DriverChoiceError { SessionId = sessionGuid, Reason = reason! }]), context.CancellationToken);
+            }
+
+            chosenPin = pin;
+        }
+
         // Read SAS expiry from portal configuration
         var config = await _configRepo.GetAsync(context.CancellationToken);
         var sasExpiry = TimeSpan.FromMinutes(
@@ -119,9 +146,10 @@ public sealed partial class AssignSessionFunction
         // Generate SAS token URL for the OS image blob
         var sasUrl = await GenerateSasUrlAsync(image.StoragePath, sasExpiry, context.CancellationToken);
         var setupProfile = await _setupProfileResolver.ResolveAsync(session.LocationId, context.CancellationToken);
+        var driverPin = chosenPin ?? await _driverSetResolver.ResolveAsync(session, image, context.CancellationToken);
 
-        // Transition: SessionAssigned -> SessionStarted, pinning the setup profile version so later edits never change what the device gets.
-        var assigned = session with
+        // Transition: SessionAssigned -> SessionStarted, pinning the setup profile version and the driver set so later edits never change what the device gets.
+        var assigned = driverPin.ApplyTo(session with
         {
             State = SessionState.SessionStarted,
             AssignedOsImageId = imageId,
@@ -132,7 +160,9 @@ public sealed partial class AssignSessionFunction
             SetupProfileId = setupProfile?.ProfileId,
             SetupProfileVersion = setupProfile?.Version,
             SetupProfileName = setupProfile?.Name,
-        };
+            DriverChosenManually = chosenPin is not null,
+            DriverChosenBy = chosenPin is not null ? chosenBy : null,
+        });
 
         await _sessionRepo.UpdateAsync(assigned, context.CancellationToken);
         LogSessionAssigned(_logger, sessionGuid, imageId);

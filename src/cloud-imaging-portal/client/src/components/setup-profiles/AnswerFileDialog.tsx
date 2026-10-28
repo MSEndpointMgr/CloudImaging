@@ -128,8 +128,10 @@ export default function AnswerFileDialog({ answerFile, loadText, serverProblems,
   const bytes = useMemo(() => (text === null ? answerFile?.sizeBytes ?? 0 : utf8Length(text)), [text, answerFile]);
   const pending = text !== checked;
   const uploading = state.kind === 'uploading';
-  const problems = shownServerProblems.length > 0 ? shownServerProblems : result.problems;
-  const answerFileReady = text !== null && !pending && problems.length === 0 && uploadError === null;
+  // An editor nobody has typed into yet has nothing wrong with it, so it is not marked up as such.
+  const blank = text !== null && text.trim().length === 0;
+  const problems = blank ? [] : shownServerProblems.length > 0 ? shownServerProblems : result.problems;
+  const answerFileReady = text !== null && !blank && !pending && problems.length === 0 && uploadError === null;
 
   return createPortal(
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="answer-file-title">

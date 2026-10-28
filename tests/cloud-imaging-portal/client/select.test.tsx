@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Select } from '../../../src/cloud-imaging-portal/client/src/components/ui/select.tsx';
 
@@ -106,5 +106,39 @@ describe('Portal frontend: select primitive', () => {
     expect(renderedOptions[0].querySelector('[data-select-check]')).not.toBeNull();
     expect(renderedOptions[1].querySelector('[data-select-check]')).toBeNull();
     expect(renderedOptions[1].className).not.toContain('gap-2');
+  });
+
+  it('draws group headings that arrow keys and type-ahead skip, and meta text that type-ahead does not match', () => {
+    const chosen: string[] = [];
+    const grouped = [
+      { value: 'a', label: 'HP EliteBook 840 G11', group: 'HP', meta: '2.41 GB' },
+      { value: 'b', label: 'HP ProBook 450 G10', group: 'HP', meta: '1.1 GB' },
+      { value: 'c', label: 'Latitude 5450', group: 'Dell', meta: '900 MB' },
+      { value: 'none', label: 'No drivers' },
+    ];
+    render(<Select value="" onValueChange={v => chosen.push(v)} options={grouped} aria-label="Driver set for 5CG1234" />);
+    const trigger = screen.getByRole('combobox', { name: 'Driver set for 5CG1234' });
+
+    fireEvent.click(trigger);
+
+    const groups = screen.getAllByRole('group');
+    expect(groups.map(g => g.getAttribute('aria-label'))).toEqual(['HP', 'Dell']);
+    expect(screen.getAllByRole('option').map(o => o.getAttribute('title'))).toEqual(['HP EliteBook 840 G11', 'HP ProBook 450 G10', 'Latitude 5450', 'No drivers']);
+    expect(screen.getByText('2.41 GB')).toBeTruthy();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(trigger.getAttribute('aria-activedescendant')).toMatch(/-2$/);
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+
+    // Each key starts a new type-ahead search.
+    let now = 0;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (now += 1000));
+    fireEvent.keyDown(trigger, { key: '9' });
+    expect(chosen).toEqual([]);
+    fireEvent.keyDown(trigger, { key: 'D' });
+    expect(chosen).toEqual([]);
+    fireEvent.keyDown(trigger, { key: 'L' });
+    expect(chosen).toEqual(['c']);
+    clock.mockRestore();
   });
 });

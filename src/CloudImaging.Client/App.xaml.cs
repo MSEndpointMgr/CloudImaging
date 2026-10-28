@@ -36,6 +36,9 @@ public partial class App : Application
     // Covers the 10-second wait for an address and the 15-second gateway probe.
     private static readonly TimeSpan RecheckTimeout = TimeSpan.FromSeconds(40);
 
+    // Bounds the Wi-Fi refresh that runs before the restart into an updated boot image.
+    private static readonly TimeSpan WifiRefreshBeforeRestartTimeout = TimeSpan.FromSeconds(20);
+
     /// <summary>The portal's Wi-Fi networks; null on a Windows PE image, which has no Wi-Fi.</summary>
     private static ManagedWifiService? s_managedWifi;
 
@@ -189,8 +192,15 @@ public partial class App : Application
         var readiness = await startupChecks.RunAsync(timeout.Token);
 
         // The running image is now older than the media's: Getting ready stays up with Restart now.
+        // Refresh the Wi-Fi copy first: the gateway also encrypts it to the active certificate, which the
+        // updated image may carry after a certificate rotation, so the next boot can still read it.
         if (readiness.RestartRequired)
         {
+            if (readiness.CanReachService && s_managedWifi is not null)
+            {
+                using var refreshLimit = new CancellationTokenSource(WifiRefreshBeforeRestartTimeout);
+                await s_managedWifi.RefreshFromGatewayAsync(gateway, refreshLimit.Token);
+            }
             return;
         }
 

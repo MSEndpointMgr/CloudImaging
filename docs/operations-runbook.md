@@ -58,7 +58,18 @@ the device (or restart it) to register a new session; the blocked session cannot
 
 **Resolution**:
 1. **Token expiry**: Restart the device; the Client re-registers and gets a new token.
-2. **mTLS mismatch**: The boot media certificate has been rotated since the USB was prepared. Regenerate the boot image (Media Builder → Generate Boot Image) and re-prepare the USB drive.
+2. **mTLS mismatch**: The boot media certificate was rotated and the overlap for the certificate on this USB drive has ended (or was stopped). Check **Configuration** > **Certificates**, then generate a new boot image (Media Builder → Generate Boot Image) and re-prepare the USB drive.
+3. **Session started before a backend upgrade**: The Device Gateway checks each token against the hash Imaging Core stored when the session started. Sessions started before that check existed have no stored hash. Restart the device.
+
+If the Client gets HTTP 503 instead, the Device Gateway could not reach Imaging Core to check the token. Check the Imaging Core Function App's health.
+
+---
+
+### Symptom: Devices get HTTP 429 Too Many Requests at startup
+
+**Cause**: Calls made before a session exists (session start, boot image update check, Wi-Fi networks, Autopilot) are limited to 300 per minute per client address. Many devices starting at once behind one NAT address, or a script calling the gateway in a loop, can reach it.
+
+**Resolution**: Wait for the time given in the response's `Retry-After` header, then retry. If a site regularly reaches the limit, spread device startups or give the site more than one outbound address.
 
 ---
 
@@ -201,8 +212,9 @@ The Client log records each attempt; passwords are never logged.
 2. USB drives that come online (Ethernet, or another managed network) fetch the new password at
    startup and rewrite their copy.
 3. Prepare the USB drive again for drives that never get another network.
-4. Rotating the boot media certificate also means preparing every USB drive again, which writes a
-   fresh Wi-Fi file encrypted to the new certificate.
+4. After a boot media certificate rotation, media that updates itself during the overlap also
+   rewrites its Wi-Fi file so the new certificate can read it. Drives prepared again get a fresh
+   file encrypted to the new certificate.
 
 ---
 
@@ -288,25 +300,34 @@ one; boot it online once so it updates.
 Portal → Configuration → Certificates → Rotate…
 ```
 
-⚠️ **There is no way to stage a certificate in advance.** Both **Generate/Regenerate** and
-**Rotate** issue the new certificate *and activate it immediately*, retiring the previous one in
-the same operation. The moment either completes, every USB drive built with the old certificate
-stops authenticating against the Device Gateway API. Plan for that, rather than expecting to
-prepare new media ahead of the switch.
+**Rotate** issues a new certificate and activates it immediately. In the confirmation dialog you
+choose how long the Device Gateway keeps accepting the certificate it replaces: **Stop
+immediately**, **7 days**, **14 days** (default) or **30 days**. While that overlap lasts, USB
+media built with the previous certificate keeps working and updates itself to the newest
+production boot image when it boots online, which moves it to the new certificate without
+re-preparing the drive.
 
 **Rotation procedure**:
-1. Schedule a maintenance window. Imaging cannot run between the rotation and the point where
-   new media is in technicians' hands.
-2. Confirm you have a technician workstation ready with Media Builder and the Windows ADK, so
-   new boot images can be built immediately after rotating.
-3. Rotate the certificate in the portal and confirm the impact dialog.
-4. Regenerate boot images in Media Builder; they pick up the newly activated certificate
-   automatically.
-5. Test the new media on at least one device before wider distribution.
-6. Re-prepare and redistribute USB media to every imaging station.
+1. Confirm you have a technician workstation ready with Media Builder and the Windows ADK, so
+   new boot images can be built right after rotating.
+2. Rotate the certificate in the portal and choose the overlap.
+3. Generate a new boot image for every stream and architecture you use (Windows PE and
+   Windows RE, x64 and ARM64) in Media Builder; it picks up the new certificate automatically.
+4. Upload each image on the **Boot Images** page, test it on one device, and promote it to
+   production.
+5. Ask technicians to boot every USB drive online once before the overlap ends. Each one updates
+   itself, refreshes its Wi-Fi file for the new certificate, and asks for a restart.
+6. Re-prepare drives that did not boot in time. Once the overlap ends they stop authenticating.
 
-If you need to validate a rotation without disrupting production, do it in a separate
-(for example `dev`) deployment first; a single deployment only ever has one active certificate.
+The portal shows the previous certificate and when it stops being accepted. **Stop accepting…**
+ends the overlap at once.
+
+**Compromised certificate**: rotate with **Stop immediately**, or use **Stop accepting…** if a
+rotation is already in its overlap. Every USB drive built with the old certificate stops
+authenticating at once and must be prepared again.
+
+Only one previous certificate is accepted at a time: rotating again during an overlap ends the
+earlier overlap.
 
 ---
 
@@ -323,6 +344,19 @@ from the expiry date reported by the portal rather than from Key Vault.
 
 The certificate's validity period is fixed when it is issued, from the **Boot Media Certificate
 Validity (days)** deployment parameter (default 365).
+
+---
+
+### Symptom: USB media no longer updates itself to the latest boot image
+
+Every boot image contains the boot media certificate's private key, so the Device Gateway only
+hands out a boot image link to media that proves it holds that key: the Client signs its update
+check, and each signature can be used once. Boot media built with a Client from before signed
+checks sends an unsigned check, which the gateway no longer answers, so that media keeps its
+current boot image.
+
+Generate a new boot image in Media Builder and prepare the USB media again. Media built from it
+updates itself again from then on.
 
 ---
 

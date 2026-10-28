@@ -11,6 +11,8 @@ import { computeSha256Streaming } from '../lib/sha256.ts';
 import { isDuplicateVersion } from '../lib/versionSuggestion.ts';
 import { useWimArchitecture } from '../lib/useWimArchitecture.ts';
 import { ArchitectureField } from './ArchitectureField.tsx';
+import { WindowsReleaseField } from './WindowsReleaseField.tsx';
+import type { WindowsRelease } from '../lib/drivers.ts';
 import {
   startChunkedUpload,
   uploadBlocks,
@@ -62,6 +64,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
   // watches for what is by far the longest part of a multi-GB upload.
   const [publishJob, setPublishJob] = useState<UploadJob | null>(null);
   const wimArchitecture           = useWimArchitecture();
+  const [windowsRelease, setWindowsRelease] = useState<WindowsRelease | null>(null);
   const abortRef                  = useRef<AbortController | null>(null);
   const sessionRef                = useRef<ChunkedUploadSession | null>(null);
   const hashRunId                 = useRef(0);
@@ -150,7 +153,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
     try {
       const session: ChunkedUploadSession = resuming && resumable
         ? resumable
-        : await startChunkedUpload(file.name, version, sha256);
+        : await startChunkedUpload(file.name, version, sha256, windowsRelease);
       sessionRef.current = session;
 
       const persist = (stagedBlockCount: number) => {
@@ -175,7 +178,7 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
       setPublishJob(null);
       const result = await finalizeChunkedUpload(
         session, blockIds, file.name, version, sha256, file.size, architecture,
-        { onStatus: setPublishJob },
+        { onStatus: setPublishJob, windowsRelease },
       );
       clearPersistedUpload();
       setResumable(null);
@@ -320,6 +323,8 @@ export function ChunkedUploadDialog({ open, onClose, onUploaded, existingVersion
             isIso={!!file && file.name.toLowerCase().endsWith('.iso')}
             disabled={state === 'uploading' || state === 'finalizing'}
           />
+
+          <WindowsReleaseField id="osImageWindowsRelease" value={windowsRelease} onChange={setWindowsRelease} disabled={state === 'uploading' || state === 'finalizing'} />
 
           {(state === 'uploading' || state === 'finalizing') && (
             <UploadProgressBar percent={stagePercent} label={stageLabel} />

@@ -35,12 +35,13 @@ export async function startChunkedUpload(
   name: string,
   version: string,
   sha256Hash: string,
+  windowsRelease: string | null = null,
 ): Promise<ChunkedUploadSession> {
   const res = await apiFetch('/api/images/upload/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ name, version, sha256Hash }),
+    body: JSON.stringify({ name, version, sha256Hash, windowsRelease }),
   });
   if (!res.ok) throw new Error(await extractErrorDetail(res, `Failed to start upload: HTTP ${res.status}`));
   return res.json() as Promise<ChunkedUploadSession>;
@@ -203,13 +204,13 @@ export async function finalizeChunkedUpload(
   sha256Hash: string,
   sizeBytes:  number,
   architecture: ImageArchitecture,
-  options?:   { onStatus?: (job: UploadJob) => void; signal?: AbortSignal },
+  options?:   { onStatus?: (job: UploadJob) => void; signal?: AbortSignal; windowsRelease?: string | null },
 ): Promise<UploadJob> {
   const res = await apiFetch(`/api/images/upload/${session.uploadId}/publish`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ blobName: session.blobName, blockIds, name, version, sha256Hash, sizeBytes, architecture }),
+    body: JSON.stringify({ blobName: session.blobName, blockIds, name, version, sha256Hash, sizeBytes, architecture, windowsRelease: options?.windowsRelease ?? null }),
   });
   if (!res.ok) {
     const msg = await extractErrorDetail(res, `Finalize failed: HTTP ${res.status}`);

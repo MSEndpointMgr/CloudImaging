@@ -235,9 +235,15 @@ flowchart TB
 - **Mutual TLS (mTLS)**: all Cloud Imaging Client requests to the Device Gateway API
   require a boot media client certificate embedded at boot image generation time;
   the Device Gateway API runs on Azure Functions Premium EP1 with
-  `clientCertificateMode=require`; an optional Azure Application Gateway can be
-  deployed as additive edge enforcement via the `deployApplicationGateway`
-  deployment parameter
+  `clientCertificateMode=require` and also checks the certificate is valid, allows
+  client authentication and is the active one, or the one a rotation replaced while
+  its overlap lasts
+- **Proof of possession**: session start, the boot image update check and Wi-Fi
+  requests are signed with the boot media private key, and each signature can be
+  used once
+- **Certificate rotation with overlap**: a rotated certificate can stay accepted for
+  up to 30 days, so USB media updates itself to a new boot image instead of being
+  prepared again; the overlap can be ended at once for a compromised certificate
 - **Entra ID + app roles**: the Portal and Media Builder each have their own app
   registration, and the user roles are assigned independently per registration
   (`CloudImaging.Administrator`, `CloudImaging.Operator` and
@@ -252,6 +258,10 @@ flowchart TB
 - **Passcode abuse controls**: composite-key rate limiting on coupling attempts
   (session ID + source context hash) detects and blocks distributed brute-force
   attacks; passcodes are stored as hashes at rest and consumed on first use
+- **Device Gateway rate limits**: calls with a session token are limited per token;
+  calls without one are limited to 300 per minute per client address
+- **Hosting hardening**: every App Service requires HTTPS and TLS 1.2 or later, FTP is
+  off, and the Function Apps also turn off basic authentication for deployment
 - **Token replay prevention**: replayed or stale device-session tokens are rejected
   with a configurable clock-skew tolerance window; replay events are emitted as
   structured security audit events

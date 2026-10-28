@@ -153,7 +153,7 @@ Derived at read time (not stored): `isCurrent`, `inUseCount` (sessions in the `a
 | `id` | Guid, stable across versions (drives change summaries). |
 | `name` | 1 to 100 characters. States why the value is set. |
 | `hive` | `SetupRegistryHive`. |
-| `key` | 1 to 512 characters; relative to the hive root (no `HKLM\`, `HKEY_`, leading or trailing backslash, empty component); each component at most 255 characters. Under `System`, a leading `CurrentControlSet\` is allowed and mapped offline (research R5). |
+| `key` | 1 to 512 characters; relative to the hive root (no root such as `HKLM\`, `HKCU\`, `HKU\`, `HKCR\`, `HKCC\`, their `HKLM:\` drive form or `HKEY_`; no leading or trailing backslash, empty component); each component at most 255 characters. Under `System`, a leading `CurrentControlSet\` is allowed and mapped offline (research R5). |
 | `valueName` | 0 to 255 characters; empty means the key's default value. |
 | `type` | `SetupRegistryValueType`. |
 | `data` | String and ExpandString: at most 4,096 characters. MultiString: lines separated by `\n`, no empty line, at most 4,096 characters total. DWord: decimal `0` to `4294967295` or `0x` hex up to 8 digits. QWord: decimal `0` to `18446744073709551615` or `0x` hex up to 16 digits. |

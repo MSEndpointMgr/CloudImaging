@@ -119,6 +119,7 @@ public sealed partial class ReportProgressFunction
             WarningCount = isFinal ? payload.WarningCount : existingStep?.WarningCount,
             ItemCounts = isFinal && payload.Items is not null ? CountItems(items) : existingStep?.ItemCounts ?? [],
             ItemsTruncated = isFinal ? truncated : existingStep?.ItemsTruncated ?? false,
+            StatusNote = Cap(payload.StatusNote, ImagingStep.MaxStatusNoteLength) ?? existingStep?.StatusNote,
         };
 
         if (isFinal && payload.Items is not null)
@@ -205,6 +206,7 @@ public sealed partial class ReportProgressFunction
         public string? ErrorDetail { get; init; }
         public int? WarningCount { get; init; }
         public IReadOnlyList<ImagingStepItem>? Items { get; init; }
+        public string? StatusNote { get; init; }
     }
 
     /// <summary>
@@ -219,6 +221,7 @@ public sealed partial class ReportProgressFunction
             Target = Cap(item.Target, ImagingStepItem.MaxTargetLength),
             Reason = Cap(item.Reason, ImagingStepItem.MaxReasonLength),
             LastOutputLine = Cap(item.LastOutputLine, ImagingStepItem.MaxLastOutputLineLength),
+            ComponentVersion = Cap(item.ComponentVersion, ImagingStepItem.MaxNameLength),
         }).ToList();
         return (kept, items.Count > ImagingStepItem.MaxItemsPerReport);
     }
@@ -228,7 +231,7 @@ public sealed partial class ReportProgressFunction
         [.. items
             .GroupBy(item => (item.Kind, item.Outcome))
             .OrderBy(group => group.Key.Kind).ThenBy(group => group.Key.Outcome)
-            .Select(group => new ImagingStepItemCount { Kind = group.Key.Kind, Outcome = group.Key.Outcome, Count = group.Count() })];
+            .Select(group => new ImagingStepItemCount { Kind = group.Key.Kind, Outcome = group.Key.Outcome, Count = group.Count(), FromUsbCache = group.Count(item => item.FromUsbCache == true) is > 0 and var usb ? usb : null })];
 
     private static string? Cap(string? value, int max) =>
         value is null || value.Length <= max ? value : value[..max];

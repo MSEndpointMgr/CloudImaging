@@ -107,6 +107,7 @@ public sealed partial class ImagingProgressReporter
         int warningCount,
         IReadOnlyList<CloudImaging.Contracts.Models.SetupProfiles.ImagingStepItem> items,
         string? errorDetail = null,
+        string? statusNote = null,
         CancellationToken ct = default)
     {
         try
@@ -119,6 +120,7 @@ public sealed partial class ImagingProgressReporter
                 errorDetail,
                 warningCount,
                 items,
+                statusNote,
             }, ct);
 
             LogResultReported(_logger, stepName, status, warningCount, items.Count);

@@ -1,3 +1,4 @@
+using CloudImaging.Contracts.Models;
 using CloudImaging.DeviceGatewayApi.Security;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,10 +20,11 @@ public sealed class BootMediaCertificateThumbprintCacheTests : IDisposable
 
     private BootMediaCertificateThumbprintCache BuildCache()
     {
-        Task<string?> Loader(CancellationToken ct)
+        Task<IReadOnlyList<AcceptedBootMediaCertificate>> Loader(CancellationToken ct)
         {
             _loaderCallCount++;
-            return Task.FromResult(_storedThumbprint);
+            IReadOnlyList<AcceptedBootMediaCertificate> accepted = _storedThumbprint is null ? [] : [new(_storedThumbprint, true, null, null)];
+            return Task.FromResult(accepted);
         }
 
         return new BootMediaCertificateThumbprintCache(

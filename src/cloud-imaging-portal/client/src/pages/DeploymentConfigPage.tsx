@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Lock, Link as LinkIcon, RotateCcw, Save, SlidersHorizontal } from 'lucide-react';
+import { Lock, Link as LinkIcon, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { SaveBar } from '../components/SaveBar.tsx';
+import { unsavedRail, type UnsavedChange } from '../lib/unsavedChanges.ts';
+import { partitioningChanges } from '../lib/partitioningScheme.ts';
+import { usePartitioningScheme } from '../hooks/usePartitioningScheme.ts';
 import { PreFlightAuthorizationToggle } from '../components/PreFlightAuthorizationToggle.tsx';
-import { BootMediaCertPanel } from '../components/BootMediaCertPanel.tsx';
+import { BootMediaCertPanel, type CertMetadata } from '../components/BootMediaCertPanel.tsx';
 import { PartitioningSchemePanel } from '../components/PartitioningSchemePanel.tsx';
 import { UpdateCheckPanel } from '../components/UpdateCheckPanel.tsx';
 import { AutopilotConfigPanel } from '../components/AutopilotConfigPanel.tsx';
 import { SectionCard, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
+import { UndoChangeButton } from '../components/ui/unsaved-change.tsx';
 import { apiFetch, apiFetchWithRetry } from '../lib/apiClient.ts';
 import { cn } from '../lib/utils';
 import { Button, type ButtonStatus } from '../components/ui/button.tsx';
@@ -40,12 +45,7 @@ interface PortalConfig {
   setupProfileVersionRetention: number;
 }
 
-interface CertMeta {
-  thumbprintDisplay?: string;
-  issuedAt?: string;
-  expiresAt?: string;
-  isActive?: boolean;
-}
+type CertMeta = CertMetadata;
 
 type TabKey = 'certificates' | 'security' | 'preflight' | 'autopilot' | 'partitioning' | 'misc';
 
@@ -60,22 +60,46 @@ const TABS: { key: TabKey; label: string }[] = [
 
 /** True when the two configs have identical persisted field values (no unsaved changes). */
 function portalConfigEquals(a: PortalConfig, b: PortalConfig): boolean {
-  return a.devicePreFlightAuthorizationEnabled === b.devicePreFlightAuthorizationEnabled
-    && a.preFlightRequireAutopilotPresence === b.preFlightRequireAutopilotPresence
-    && a.preFlightRequireUefiFirmware === b.preFlightRequireUefiFirmware
-    && a.preFlightRequireSecureBoot === b.preFlightRequireSecureBoot
-    && a.preFlightRequireTpm20 === b.preFlightRequireTpm20
-    && a.sasTokenUrlExpiryMinutes === b.sasTokenUrlExpiryMinutes
-    && a.bootImageSasExpiryMinutes === b.bootImageSasExpiryMinutes
-    && a.certValidityPeriodDays === b.certValidityPeriodDays
-    && a.clockSkewToleranceSeconds === b.clockSkewToleranceSeconds
-    && a.sessionHistoryRetentionDays === b.sessionHistoryRetentionDays
-    && a.updateCheckEnabled === b.updateCheckEnabled
-    && a.autopilotRegistrationEnabled === b.autopilotRegistrationEnabled
-    && a.autopilotGroupTagRequired === b.autopilotGroupTagRequired
-    && a.autopilotPendingExpiryDays === b.autopilotPendingExpiryDays
-    && a.autopilotRetentionDays === b.autopilotRetentionDays
-    && a.setupProfileVersionRetention === b.setupProfileVersionRetention;
+  return CONFIG_KEYS.every((key) => a[key] === b[key]);
+}
+
+/** Every saved field, with the name and tab the save bar uses to point at it. */
+const FIELD_META: Record<keyof PortalConfig, { label: string; tab: TabKey }> = {
+  devicePreFlightAuthorizationEnabled: { label: 'Require pre-flight authorization', tab: 'preflight' },
+  preFlightRequireAutopilotPresence: { label: 'Require Autopilot presence', tab: 'preflight' },
+  preFlightRequireUefiFirmware: { label: 'Require UEFI firmware mode', tab: 'preflight' },
+  preFlightRequireSecureBoot: { label: 'Require Secure Boot', tab: 'preflight' },
+  preFlightRequireTpm20: { label: 'Require TPM 2.0', tab: 'preflight' },
+  sasTokenUrlExpiryMinutes: { label: 'OS image download link expiry', tab: 'misc' },
+  bootImageSasExpiryMinutes: { label: 'Boot image download link expiry', tab: 'misc' },
+  certValidityPeriodDays: { label: 'Certificate validity period', tab: 'security' },
+  clockSkewToleranceSeconds: { label: 'Clock skew tolerance', tab: 'security' },
+  sessionHistoryRetentionDays: { label: 'Session history retention', tab: 'misc' },
+  updateCheckEnabled: { label: 'Check GitHub for new releases', tab: 'misc' },
+  autopilotRegistrationEnabled: { label: 'Allow Autopilot registration', tab: 'autopilot' },
+  autopilotGroupTagRequired: { label: 'Require a group tag', tab: 'autopilot' },
+  autopilotPendingExpiryDays: { label: 'Pending requests expire after', tab: 'autopilot' },
+  autopilotRetentionDays: { label: 'Keep handled requests for', tab: 'autopilot' },
+  setupProfileVersionRetention: { label: 'Versions kept per profile', tab: 'misc' },
+};
+
+const CONFIG_KEYS = Object.keys(FIELD_META) as (keyof PortalConfig)[];
+
+const TAB_LABEL = Object.fromEntries(TABS.map((t) => [t.key, t.label])) as Record<TabKey, string>;
+
+/** Why the configuration cannot be saved as it stands, or null. */
+function configProblem(config: PortalConfig): string | null {
+  if (!isPreFlightSettingsValid(config)) return 'Select at least one pre-flight requirement, or turn pre-flight authorization off.';
+  if (!Number.isInteger(config.autopilotPendingExpiryDays) || config.autopilotPendingExpiryDays < 1 || config.autopilotPendingExpiryDays > 90) {
+    return 'Autopilot pending requests must expire after 1 to 90 days.';
+  }
+  if (!Number.isInteger(config.autopilotRetentionDays) || config.autopilotRetentionDays < 30 || config.autopilotRetentionDays > 3650) {
+    return 'Handled Autopilot requests must be kept for 30 to 3650 days.';
+  }
+  if (!Number.isInteger(config.setupProfileVersionRetention) || config.setupProfileVersionRetention < 5 || config.setupProfileVersionRetention > 100) {
+    return 'Keep between 5 and 100 versions per setup profile.';
+  }
+  return null;
 }
 
 /** Reads a problem-details `detail`/`title` from an error response, falling back to a default message. */
@@ -141,9 +165,19 @@ export default function DeploymentConfigPage(): React.ReactElement {
   /** Snapshot of the config as last loaded/saved. Used to detect unsaved changes. */
   const [savedConfig, setSavedConfig] = useState<PortalConfig>(DEFAULT_CONFIG);
   const isDirty = !portalConfigEquals(config, savedConfig);
+  const partitioning = usePartitioningScheme();
   const [certMeta, setCertMeta] = useState<CertMeta | null>(null);
   const [loading, setLoading]   = useState(true);
   const [saveStatus, setSaveStatus] = useState<ButtonStatus>('idle');
+
+  const changes: UnsavedChange[] = [
+    ...CONFIG_KEYS.filter((key) => config[key] !== savedConfig[key])
+      .map((key) => ({ label: FIELD_META[key].label, scope: TAB_LABEL[FIELD_META[key].tab] })),
+    ...partitioningChanges(partitioning.scheme, partitioning.savedScheme, TAB_LABEL.partitioning),
+  ];
+  const blockedReason = isDirty ? configProblem(config) : null;
+  const changed = (key: keyof PortalConfig) => config[key] !== savedConfig[key];
+  const undo = (key: keyof PortalConfig) => setConfig(c => ({ ...c, [key]: savedConfig[key] }));
 
   const load = async () => {
     setLoading(true);
@@ -175,62 +209,41 @@ export default function DeploymentConfigPage(): React.ReactElement {
     if (certMeta) maybeWarnCertExpiry(certMeta, notify);
   }, [certMeta, notify]);
 
-  const save = async () => {
-    if (!isPreFlightSettingsValid(config)) {
-      setActiveTab('preflight');
-      notify({ status: 'error', title: 'Could not save configuration', description: 'Select at least one pre-flight requirement, or turn pre-flight authorization off.' });
-      return;
-    }
-    if (!Number.isInteger(config.autopilotPendingExpiryDays) || config.autopilotPendingExpiryDays < 1 || config.autopilotPendingExpiryDays > 90) {
-      setActiveTab('autopilot');
-      notify({ status: 'error', title: 'Could not save configuration', description: 'Autopilot pending requests must expire after 1 to 90 days.' });
-      return;
-    }
-    if (!Number.isInteger(config.autopilotRetentionDays) || config.autopilotRetentionDays < 30 || config.autopilotRetentionDays > 3650) {
-      setActiveTab('autopilot');
-      notify({ status: 'error', title: 'Could not save configuration', description: 'Handled Autopilot requests must be kept for 30 to 3650 days.' });
-      return;
-    }
-    if (!Number.isInteger(config.setupProfileVersionRetention) || config.setupProfileVersionRetention < 5 || config.setupProfileVersionRetention > 100) {
-      setActiveTab('misc');
-      notify({ status: 'error', title: 'Could not save configuration', description: 'Keep between 5 and 100 versions per profile.' });
-      return;
-    }
+  // Saves the portal configuration and the partitioning scheme, whichever has changes.
+  const save = async (): Promise<boolean> => {
+    if (blockedReason) return false;
     setSaveStatus('loading');
     const toastId = notify({ status: 'loading', title: 'Saving configuration…' });
-    try {
-      const res = await apiFetch('/api/portal-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(config),
-      });
-      if (res.ok || res.status === 204) {
-        setSavedConfig(config);
-        setSaveStatus('success');
-        update(toastId, {
-          status: 'success',
-          title: 'Configuration saved',
-          description: 'Deployment settings have been updated.',
-        });
-        setTimeout(() => setSaveStatus('idle'), 1600);
-      } else {
-        setSaveStatus('error');
-        update(toastId, {
-          status: 'error',
-          title: 'Could not save configuration',
-          description: await extractError(res, 'Failed to save configuration.'),
-        });
-        setTimeout(() => setSaveStatus('idle'), 1600);
-      }
-    } catch {
+    const fail = (description: string) => {
       setSaveStatus('error');
-      update(toastId, {
-        status: 'error',
-        title: 'Could not save configuration',
-        description: 'A network error occurred. Please try again.',
-      });
+      update(toastId, { status: 'error', title: 'Could not save configuration', description });
       setTimeout(() => setSaveStatus('idle'), 1600);
+      return false;
+    };
+    try {
+      if (isDirty) {
+        const res = await apiFetch('/api/portal-config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(config),
+        });
+        if (!res.ok && res.status !== 204) return fail(await extractError(res, 'Failed to save configuration.'));
+        setSavedConfig(config);
+      }
+      if (partitioning.isDirty) {
+        try {
+          await partitioning.save();
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : 'The partitioning scheme was not saved.');
+        }
+      }
+      setSaveStatus('success');
+      update(toastId, { status: 'success', title: 'Configuration saved', description: 'Deployment settings have been updated.' });
+      setTimeout(() => setSaveStatus('idle'), 1600);
+      return true;
+    } catch {
+      return fail('A network error occurred. Please try again.');
     }
   };
 
@@ -246,7 +259,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
   ) => (
     // `h-full` + `mt-auto` keep the inputs on one line across a row: descriptions wrap to
     // different heights, so without it each input floats at its own description's baseline.
-    <div className="flex h-full flex-col gap-2 rounded-md border border-border bg-muted/30 p-4">
+    <div className={cn('flex h-full flex-col gap-2 rounded-md border border-border bg-muted/30 p-4', unsavedRail(changed(key)))}>
       <Label htmlFor={key}>{label}</Label>
       <p className="text-sm text-muted-foreground">{description}</p>
       <div className="mt-auto flex items-center gap-2 pt-1">
@@ -271,6 +284,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
             <RotateCcw />
           </Button>
         </Tooltip>
+        {changed(key) && <UndoChangeButton label={FIELD_META[key].label} onUndo={() => undo(key)} />}
       </div>
     </div>
   );
@@ -331,6 +345,7 @@ export default function DeploymentConfigPage(): React.ReactElement {
       {activeTab === 'preflight' && (
         <PreFlightAuthorizationToggle
           settings={config}
+          saved={savedConfig}
           onChange={next => setConfig(c => ({
             ...c,
             devicePreFlightAuthorizationEnabled: next.devicePreFlightAuthorizationEnabled,
@@ -342,13 +357,19 @@ export default function DeploymentConfigPage(): React.ReactElement {
         />
       )}
 
-      {/* Autopilot: switches are PortalConfig (Save Configuration); group tags save immediately. */}
+      {/* Autopilot: switches are PortalConfig (the save bar); group tags save immediately. */}
       {activeTab === 'autopilot' && (
         <AutopilotConfigPanel
           enabled={config.autopilotRegistrationEnabled}
           groupTagRequired={config.autopilotGroupTagRequired}
           expiryDays={config.autopilotPendingExpiryDays}
           retentionDays={config.autopilotRetentionDays}
+          saved={{
+            enabled: savedConfig.autopilotRegistrationEnabled,
+            groupTagRequired: savedConfig.autopilotGroupTagRequired,
+            expiryDays: savedConfig.autopilotPendingExpiryDays,
+            retentionDays: savedConfig.autopilotRetentionDays,
+          }}
           onEnabledChange={v => setConfig(c => ({ ...c, autopilotRegistrationEnabled: v }))}
           onGroupTagRequiredChange={v => setConfig(c => ({ ...c, autopilotGroupTagRequired: v }))}
           onExpiryDaysChange={v => setConfig(c => ({ ...c, autopilotPendingExpiryDays: v }))}
@@ -356,15 +377,22 @@ export default function DeploymentConfigPage(): React.ReactElement {
         />
       )}
 
-      {/* Partitioning: self-contained, own fetch/save, independent of the Save
-          Configuration button below (which only applies to PortalConfig). */}
-      {activeTab === 'partitioning' && <PartitioningSchemePanel />}
+      {/* Partitioning: its draft is held by the page, so it survives switching tabs. */}
+      {activeTab === 'partitioning' && (
+        <PartitioningSchemePanel
+          scheme={partitioning.scheme}
+          savedScheme={partitioning.savedScheme}
+          loading={partitioning.loading}
+          onChange={partitioning.setScheme}
+        />
+      )}
 
       {/* Miscellaneous */}
       {activeTab === 'misc' && (
         <div className="space-y-6">
         <UpdateCheckPanel
           enabled={config.updateCheckEnabled}
+          savedEnabled={savedConfig.updateCheckEnabled}
           onChange={v => setConfig(c => ({ ...c, updateCheckEnabled: v }))}
         />
         <Card>
@@ -388,7 +416,13 @@ export default function DeploymentConfigPage(): React.ReactElement {
           </CardContent>
         </Card>
         <SectionCard icon={SlidersHorizontal} title="Setup profiles" description="History kept for each setup profile.">
-          <SettingRow label="Versions kept per profile" help="Older versions are deleted at the next save. A version a running deployment still uses is always kept." htmlFor="setupProfileVersionRetention">
+          <SettingRow
+            label="Versions kept per profile"
+            help="Older versions are deleted at the next save. A version a running deployment still uses is always kept."
+            htmlFor="setupProfileVersionRetention"
+            changed={changed('setupProfileVersionRetention')}
+            onUndo={() => undo('setupProfileVersionRetention')}
+          >
             <Input
               id="setupProfileVersionRetention"
               type="number"
@@ -403,25 +437,16 @@ export default function DeploymentConfigPage(): React.ReactElement {
         </div>
       )}
 
-      {/* Save controls apply to the Security/Preflight/Miscellaneous tabs; the boot
-          media certificate panel and the partitioning scheme panel have their own
-          separate actions. */}
-      {activeTab !== 'certificates' && activeTab !== 'partitioning' && (
-        <div className="flex items-center gap-3">
-          <Button
-            onClick={save}
-            status={saveStatus}
-            variant={isDirty || saveStatus !== 'idle' ? 'default' : 'secondary'}
-            disabled={saveStatus === 'loading' || (!isDirty && saveStatus === 'idle')}
-          >
-            <Save />
-            Save
-          </Button>
-          {isDirty && saveStatus === 'idle' && (
-            <p className="text-sm text-muted-foreground">You have unsaved changes.</p>
-          )}
-        </div>
-      )}
+      {/* One bar for the whole page, on every tab, so a change made on one tab is not lost from
+          view on another. The certificate panel's actions take effect immediately. */}
+      <SaveBar
+        changes={changes}
+        status={saveStatus}
+        blockedReason={blockedReason}
+        savedMessage="Configuration saved."
+        onDiscard={() => { setConfig(savedConfig); partitioning.discard(); }}
+        onSave={save}
+      />
     </div>
   );
 }

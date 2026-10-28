@@ -16,6 +16,13 @@ export interface SelectOption {
   /** Secondary line under the label. Not matched by type-ahead. */
   description?: string;
   disabled?: boolean;
+  /**
+   * Heading of the group this option belongs to. A heading row is drawn where the group changes;
+   * it is not selectable, so arrow keys and type-ahead skip it.
+   */
+  group?: string;
+  /** Right-aligned muted text, for example a size. Not matched by type-ahead. */
+  meta?: string;
 }
 
 /**
@@ -81,6 +88,58 @@ interface ListPosition {
   /** Exactly one of `top`/`bottom` is set, depending on the side the list flipped to. */
   top?: number;
   bottom?: number;
+}
+
+/** One row of the list: label, optional description and meta, and the check mark when selected. */
+function SelectOptionRow({ option, index, listId, selected, active, onHover, onChoose }: {
+  option: SelectOption;
+  index: number;
+  listId: string;
+  selected: boolean;
+  active: boolean;
+  onHover: (index: number) => void;
+  onChoose: (index: number) => void;
+}): React.ReactElement {
+  return (
+    <li
+      id={`${listId}-${index}`}
+      role="option"
+      aria-selected={selected}
+      aria-disabled={option.disabled || undefined}
+      title={option.label}
+      // Keeps focus (and therefore the keyboard contract) on the trigger while the
+      // pointer interacts with the list.
+      onMouseDown={e => e.preventDefault()}
+      onMouseEnter={() => { if (!option.disabled) onHover(index); }}
+      onClick={() => onChoose(index)}
+      className={cn(
+        'relative flex cursor-pointer select-none items-center rounded-md px-2 py-1.5 text-sm',
+        active && !option.disabled && 'bg-accent text-accent-foreground',
+        selected && 'font-medium',
+        option.disabled && 'cursor-not-allowed opacity-50',
+        option.value === '' && 'text-muted-foreground',
+      )}
+    >
+      <span className={cn('min-w-0 flex-1', selected && !option.meta && 'pr-6')}>
+        <span className="block truncate">{option.label}</span>
+        {option.description && (
+          <span className="block truncate text-xs text-muted-foreground">
+            {option.description}
+          </span>
+        )}
+      </span>
+      {option.meta && (
+        <span className={cn('ml-2 shrink-0 text-xs text-muted-foreground', selected && 'mr-6')}>{option.meta}</span>
+      )}
+      {selected && (
+        <Check
+          aria-hidden="true"
+          data-select-check=""
+          className="absolute right-2 h-4 w-4 text-primary"
+        />
+      )}
+    </li>
+  );
 }
 
 /**
@@ -193,8 +252,8 @@ export function Select({
 
   React.useEffect(() => {
     if (!open || activeIndex < 0) return;
-    listRef.current?.children[activeIndex]?.scrollIntoView({ block: 'nearest' });
-  }, [open, activeIndex]);
+    document.getElementById(`${listId}-${activeIndex}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [open, activeIndex, listId]);
 
   /** Next selectable index in the `step` direction, skipping disabled rows, stopping at the ends. */
   const nextEnabled = (from: number, step: number): number => {
@@ -224,6 +283,20 @@ export function Select({
   };
 
   const initialIndex = (): number => nextEnabled(selectedIndex >= 0 ? selectedIndex : 0, 1);
+
+  // Consecutive options of one group are drawn under its heading; options without a group are
+  // drawn as they always were.
+  const sections = React.useMemo(() => {
+    const result: { group?: string; entries: { option: SelectOption; index: number }[] }[] = [];
+    items.forEach((option, index) => {
+      const last = result[result.length - 1];
+      if (last && last.group === option.group) last.entries.push({ option, index });
+      else result.push({ group: option.group, entries: [{ option, index }] });
+    });
+    return result;
+  }, [items]);
+
+
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>): void => {
     if (disabled || items.length === 0) return;
@@ -370,47 +443,20 @@ export function Select({
               'text-popover-foreground shadow-xl ring-1 ring-black/5 animate-popover-in',
             )}
           >
-            {items.map((option, index) => {
-              const isSelected = option.value === value;
-              return (
-                <li
-                  key={option.value || '__empty__'}
-                  id={`${listId}-${index}`}
-                  role="option"
-                  aria-selected={isSelected}
-                  aria-disabled={option.disabled || undefined}
-                  title={option.label}
-                  // Keeps focus (and therefore the keyboard contract) on the trigger while the
-                  // pointer interacts with the list.
-                  onMouseDown={e => e.preventDefault()}
-                  onMouseEnter={() => !option.disabled && setActiveIndex(index)}
-                  onClick={() => commit(index)}
-                  className={cn(
-                    'relative flex cursor-pointer select-none items-center rounded-md px-2 py-1.5 text-sm',
-                    index === activeIndex && !option.disabled && 'bg-accent text-accent-foreground',
-                    isSelected && 'font-medium',
-                    option.disabled && 'cursor-not-allowed opacity-50',
-                    option.value === '' && 'text-muted-foreground',
-                  )}
-                >
-                  <span className={cn('min-w-0 flex-1', isSelected && 'pr-6')}>
-                    <span className="block truncate">{option.label}</span>
-                    {option.description && (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {option.description}
-                      </span>
-                    )}
-                  </span>
-                  {isSelected && (
-                    <Check
-                      aria-hidden="true"
-                      data-select-check=""
-                      className="absolute right-2 h-4 w-4 text-primary"
-                    />
-                  )}
+            {sections.map((section, sectionIndex) => section.group === undefined
+              ? section.entries.map(({ option, index }) => (
+                <SelectOptionRow key={option.value || '__empty__'} option={option} index={index} listId={listId} selected={option.value === value} active={index === activeIndex} onHover={setActiveIndex} onChoose={commit} />
+              ))
+              : (
+                <li key={`group-${sectionIndex}`} role="presentation">
+                  <div aria-hidden="true" className="px-2 pb-1 pt-2 text-xs font-semibold text-muted-foreground">{section.group}</div>
+                  <ul role="group" aria-label={section.group}>
+                    {section.entries.map(({ option, index }) => (
+                      <SelectOptionRow key={option.value || '__empty__'} option={option} index={index} listId={listId} selected={option.value === value} active={index === activeIndex} onHover={setActiveIndex} onChoose={commit} />
+                    ))}
+                  </ul>
                 </li>
-              );
-            })}
+              ))}
             {items.length === 0 && (
               <li className="px-2 py-1.5 text-sm text-muted-foreground">No options available</li>
             )}

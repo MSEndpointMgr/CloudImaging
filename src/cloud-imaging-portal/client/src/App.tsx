@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppShell } from './components/AppShell.tsx';
 import { AuthProvider, useAuth } from './context/authContext.tsx';
@@ -27,11 +27,14 @@ const ReportLocationStatisticsPage = lazyWithReload(() => import('./pages/Report
 const ReportImageInventoryPage = lazyWithReload(() => import('./pages/ReportImageInventoryPage.tsx'));
 const ReportFailureDetailPage = lazyWithReload(() => import('./pages/ReportFailureDetailPage.tsx'));
 const ReportAutopilotRegistrationsPage = lazyWithReload(() => import('./pages/ReportAutopilotRegistrationsPage.tsx'));
+const ReportDriverSyncPage = lazyWithReload(() => import('./pages/ReportDriverSyncPage.tsx'));
 const LocationsPage = lazyWithReload(() => import('./pages/LocationsPage.tsx'));
 const WifiNetworksPage = lazyWithReload(() => import('./pages/WifiNetworksPage.tsx'));
 const AutopilotRegistrationsPage = lazyWithReload(() => import('./pages/AutopilotRegistrationsPage.tsx'));
 const SetupProfilesPage = lazyWithReload(() => import('./pages/SetupProfilesPage.tsx'));
 const SetupProfileEditorPage = lazyWithReload(() => import('./pages/SetupProfileEditorPage.tsx'));
+const DriversPage = lazyWithReload(() => import('./pages/DriversPage.tsx'));
+const DriverModelPage = lazyWithReload(() => import('./pages/DriverModelPage.tsx'));
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 2 } },
@@ -59,6 +62,12 @@ function RequireManageLocations({ children }: { children: React.ReactElement }):
 function RequireSetupProfilesAccess({ children, manage = false }: { children: React.ReactElement; manage?: boolean }): React.ReactElement {
   const { canViewSetupProfiles, canManageSetupProfiles } = useAuth();
   return canViewSetupProfiles && (!manage || canManageSetupProfiles) ? children : <Navigate to="/" replace />;
+}
+
+/** Route guard for the Drivers pages (Administrator, Operator, read-only Technician). */
+function RequireDriversAccess({ children }: { children: React.ReactElement }): React.ReactElement {
+  const { canViewDrivers } = useAuth();
+  return canViewDrivers ? children : <Navigate to="/" replace />;
 }
 
 /** Route guard for the Reports pages (Administrator, Operator, Reader); Technician stays out. */
@@ -89,7 +98,15 @@ export default function App(): React.ReactElement {
   return (
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ThemeProvider>
+  );
+}
+
+/** Everything under the router. Kept as descendant routes so the route table reads as it always has. */
+function AppRoot(): React.ReactElement {
+  return (
           <AuthProvider>
             <BrandingProvider>
               <UserPreferencesProvider>
@@ -105,6 +122,8 @@ export default function App(): React.ReactElement {
                         <Route path="os-images"        element={<RequireImagingAccess><OsImagesPage /></RequireImagingAccess>} />
                         <Route path="boot-images"      element={<RequireImagingAccess><BootImagesPage /></RequireImagingAccess>} />
                         <Route path="recovery-images"  element={<RequireImagingAccess><RecoveryImagesPage /></RequireImagingAccess>} />
+                        <Route path="drivers"          element={<RequireDriversAccess><DriversPage /></RequireDriversAccess>} />
+                        <Route path="drivers/models/:modelId" element={<RequireDriversAccess><DriverModelPage /></RequireDriversAccess>} />
                         <Route path="setup-profiles"   element={<RequireSetupProfilesAccess><SetupProfilesPage /></RequireSetupProfilesAccess>} />
                         <Route path="setup-profiles/new" element={<RequireSetupProfilesAccess manage><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
                         <Route path="setup-profiles/:profileId" element={<RequireSetupProfilesAccess><SetupProfileEditorPage /></RequireSetupProfilesAccess>} />
@@ -120,6 +139,7 @@ export default function App(): React.ReactElement {
                         <Route path="reports/session-outcomes"    element={<Navigate to="/reports/device-outcomes" replace />} />
                         <Route path="reports/image-inventory"     element={<RequireReportsAccess><ReportImageInventoryPage /></RequireReportsAccess>} />
                         <Route path="reports/failures"            element={<RequireReportsAccess><ReportFailureDetailPage /></RequireReportsAccess>} />
+                        <Route path="reports/driver-synchronization" element={<RequireReportsAccess><ReportDriverSyncPage /></RequireReportsAccess>} />
                         <Route path="reports/autopilot-registrations" element={<RequireAutopilotReportAccess><ReportAutopilotRegistrationsPage /></RequireAutopilotReportAccess>} />
                         <Route path="*"                element={<Navigate to="/" replace />} />
                       </Route>
@@ -132,8 +152,9 @@ export default function App(): React.ReactElement {
               </UserPreferencesProvider>
             </BrandingProvider>
           </AuthProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </ThemeProvider>
   );
 }
+
+// A data router, rather than BrowserRouter, because only a data router supports useBlocker, which
+// is what stops the Back button and in-app navigation from dropping unsaved changes.
+const router = createBrowserRouter([{ path: '*', element: <AppRoot /> }]);

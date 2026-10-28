@@ -1,12 +1,13 @@
 import * as React from 'react';
-import { Check, CircleCheck, CircleMinus, CircleX, Clock, LoaderCircle, Minus, X } from 'lucide-react';
+import { Check, CircleCheck, CircleMinus, CircleX, Clock, LoaderCircle, Minus, Usb, X } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 import { Tooltip } from './ui/tooltip.tsx';
-import { cn, formatDateTime, formatDuration } from '../lib/utils.ts';
+import { cn, formatDuration, formatTimestamp } from '../lib/utils.ts';
 import {
   PIPELINE_STEPS,
   PIPELINE_STEP_SHORT_LABELS,
   type ImagingStepDetails,
+  type SessionDriverPin,
 } from '../lib/imagingProgress.ts';
 import {
   STEP_ITEM_KIND_LABELS,
@@ -28,6 +29,8 @@ interface SessionProgressDetailsProps {
   sessionId?: string;
   /** The setup profile the session pinned when imaging started. */
   setupProfile?: SetupProfilePin | null;
+  /** The driver set the session pinned when imaging started, or why none applies. */
+  driverPin?: SessionDriverPin | null;
   /** The session has ended (completed, failed or abandoned). */
   terminal?: boolean;
 }
@@ -35,6 +38,7 @@ interface SessionProgressDetailsProps {
 type StepStatus = 'Completed' | 'Warning' | 'InProgress' | 'Failed' | 'Pending' | 'NotRun';
 
 const PREPARE_SETUP = 'PrepareSetup';
+const INSTALL_DRIVERS = 'InstallDrivers';
 const NOT_RUN_TOOLTIP = "This device's boot image is older than Setup Profiles, so the profile was not applied. Update the boot image.";
 
 interface ResolvedStep {
@@ -50,6 +54,7 @@ interface ResolvedStep {
   durationMs: number | null;
   itemCounts: ImagingStepDetails['itemCounts'];
   itemsTruncated: boolean | null;
+  statusNote: string | null;
 }
 
 // A running step's elapsed time is wrong the moment it is painted. One shared ticker re-renders
@@ -230,12 +235,159 @@ function plural(count: number, one: string, many: string): string {
   return `${String(count)} ${count === 1 ? one : many}`;
 }
 
+/** "Windows11_24H2" as "Windows 11 24H2". */
+function shortRelease(release: string | null | undefined): string {
+  const match = /^Windows(\d+)_(\w+)$/.exec(release ?? '');
+  return match ? `Windows ${match[1]} ${match[2]}` : release ?? '';
+}
+
+function driverOutcomeText(item: ImagingStepItem): string {
+  switch (item.outcome) {
+    case 'Succeeded': return item.driverAction === 'OfflineAndSpecialize' ? 'Installed, app staged' : 'Installed';
+    case 'Queued': return 'Staged for Specialize';
+    case 'Skipped': return 'Skipped: no matching hardware';
+    case 'Failed': return item.reason ? `Failed: ${item.reason.replace(/\.$/, '')}` : 'Failed';
+    default: return item.outcome;
+  }
+}
+
+/** Driver rows: name with its origin or ID below, version, and outcome with where the file came from; failures first. */
+function DriverItemRows({ items }: { items: ImagingStepItem[] }): React.ReactElement {
+  const anyUsb = items.some(i => i.fromUsbCache);
+  return (
+    <div className="mt-3 rounded-md border border-border bg-background">
+      <div className="grid w-full grid-cols-[minmax(0,1fr)_120px_minmax(0,280px)] gap-3 border-b border-border px-3 py-2 text-xs font-semibold uppercase text-foreground/75">
+        <span>Driver</span>
+        <span>Version</span>
+        <span>Outcome</span>
+      </div>
+    <ul className="divide-y divide-border">
+      {items.map((item) => {
+        const tone: SummaryTone = item.outcome === 'Failed' ? 'failed' : item.outcome === 'Queued' ? 'queued' : item.outcome === 'Skipped' ? 'notRun' : 'succeeded';
+        const { icon: Icon, className } = SUMMARY_ICONS[tone];
+        const origin = item.driverOrigin === 'Custom' ? 'Custom' : item.driverOrigin === 'RolledBack' ? 'Rolled back' : item.target ?? '';
+        const outcome = driverOutcomeText(item);
+        // Where the file came from is shown once any item came from the USB drive, so the two can be told apart.
+        const source = item.fromUsbCache ? 'From the USB drive' : anyUsb && item.fromUsbCache === false ? 'Downloaded' : null;
+        return (
+          <li key={item.index} className="grid h-14 w-full grid-cols-[minmax(0,1fr)_120px_minmax(0,280px)] items-center gap-3 px-3 text-sm">
+            <span className="min-w-0">
+              <span className="block truncate" title={item.name}>{item.name}</span>
+              <span className="block truncate text-xs text-muted-foreground">{origin}</span>
+            </span>
+            <span className="truncate" title={item.componentVersion ?? undefined}>{item.componentVersion}</span>
+            <span className="flex min-w-0 items-center gap-2">
+              <Icon className={cn('h-4 w-4 shrink-0', className)} aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="block truncate" title={outcome}>{outcome}</span>
+                {source && <span className="block truncate text-xs text-muted-foreground">{source}</span>}
+              </span>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+    </div>
+  );
+}
+
+/**
+ * Install drivers card: the driver set the session pinned (or why none applied), what happened,
+ * and the items. Failed items load straight away; everything else is behind Show details.
+ */
+function InstallDriversCard({ pin, step, sessionId }: { pin: SessionDriverPin | null | undefined; step: ResolvedStep; sessionId?: string }): React.ReactElement {
+  const [showAll, setShowAll] = React.useState(false);
+  const [items, setItems] = React.useState<ImagingStepItem[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const listId = React.useId();
+  const counts = step.itemCounts ?? [];
+  const count = (outcome: string) => counts.filter((c) => c.outcome === outcome).reduce((sum, c) => sum + c.count, 0);
+  const totalCount = counts.reduce((sum, c) => sum + c.count, 0);
+  const failedCount = count('Failed');
+  const wantItems = Boolean(sessionId) && totalCount > 0 && (showAll || failedCount > 0);
+  const summary: { tone: SummaryTone; text: string }[] = [
+    failedCount > 0 ? { tone: 'failed' as const, text: `${String(failedCount)} failed` } : null,
+    count('Succeeded') > 0 ? { tone: 'succeeded' as const, text: `${String(count('Succeeded'))} installed offline` } : null,
+    count('Queued') > 0 ? { tone: 'queued' as const, text: `${String(count('Queued'))} staged for Specialize` } : null,
+    count('Skipped') > 0 ? { tone: 'notRun' as const, text: `${String(count('Skipped'))} skipped, no matching hardware` } : null,
+  ].filter((s): s is { tone: SummaryTone; text: string } => s !== null);
+  const fromUsb = counts.reduce((sum, c) => sum + (c.fromUsbCache ?? 0), 0);
+  const downloaded = totalCount - count('Skipped') - fromUsb;
+  const usbSummary = fromUsb > 0 ? `${String(fromUsb)} from the USB drive, ${String(downloaded)} downloaded` : null;
+
+  // Loaded items belong to one session and one report; another session or a new report reads them again.
+  const revision = `${sessionId ?? ''}|${step.status}|${counts.map((c) => `${c.outcome}:${String(c.count)}:${String(c.fromUsbCache ?? 0)}`).join(',')}`;
+  const [itemsFor, setItemsFor] = React.useState(revision);
+  const current = React.useRef(revision);
+  React.useEffect(() => { current.current = revision; }, [revision]);
+  if (itemsFor !== revision) {
+    setItemsFor(revision);
+    setItems(null);
+    setError(null);
+  }
+
+  const load = React.useCallback(async () => {
+    if (!sessionId) return;
+    const asked = current.current;
+    setError(null);
+    try {
+      const loaded = await fetchStepItems(sessionId, INSTALL_DRIVERS);
+      if (asked === current.current) setItems(loaded);
+    } catch (err) {
+      if (asked === current.current) setError(err instanceof Error ? err.message : 'Could not load the items.');
+    }
+  }, [sessionId]);
+
+  React.useEffect(() => {
+    if (wantItems && items === null) void load();
+  }, [wantItems, items, load]);
+
+  const sorted = items ? sortItemsFailuresFirst(items) : [];
+  const shown = showAll ? sorted : sorted.filter((i) => i.outcome === 'Failed');
+  // The pinned set names the card; the step's note replaces it only when no set applied.
+  const title = pin?.driverModelName && pin.driverSetVersion != null
+    ? `Driver set: ${pin.driverModelName}, ${shortRelease(pin.driverRelease)}, set ${String(pin.driverSetVersion)}`
+    : step.statusNote ?? 'No driver set';
+
+  return (
+    <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+      <p className="text-sm font-medium">{title}</p>
+      {pin?.driverChosenManually && pin.driverChosenBy && <p className="text-sm text-muted-foreground">{`Chosen manually by ${pin.driverChosenBy}`}</p>}
+      {(summary.length > 0 || (Boolean(sessionId) && totalCount > 0)) && (
+        <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          {summary.map(({ tone, text }) => {
+            const { icon: Icon, className } = SUMMARY_ICONS[tone];
+            return <span key={text} className="inline-flex items-center gap-2"><Icon className={cn('h-4 w-4', className)} aria-hidden="true" />{text}</span>;
+          })}
+          {usbSummary && <span className="inline-flex items-center gap-2"><Usb className="h-4 w-4" aria-hidden="true" />{usbSummary}</span>}
+          {Boolean(sessionId) && totalCount > 0 && (
+            <Button variant="link" aria-expanded={showAll} aria-controls={listId} onClick={() => setShowAll((s) => !s)}>
+              {showAll ? 'Hide details' : 'Show details'}
+            </Button>
+          )}
+        </div>
+      )}
+      <div id={listId}>
+        {wantItems && error && (
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button variant="link" onClick={() => void load()}>Try again</Button>
+          </div>
+        )}
+        {wantItems && !error && items === null && <p className="mt-2 text-sm text-muted-foreground">Loading items...</p>}
+        {wantItems && items !== null && shown.length > 0 && <DriverItemRows items={shown} />}
+      </div>
+    </div>
+  );
+}
+
 export function SessionProgressDetails({
   overallPercent,
   currentStep,
   steps = [],
   sessionId,
   setupProfile,
+  driverPin,
   terminal = false,
 }: SessionProgressDetailsProps): React.ReactElement {
   const now = React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -243,8 +395,12 @@ export function SessionProgressDetails({
   const reportedSteps = new Map(steps.map(step => [step.stepName, step]));
 
   // Optional steps only take a column when reported or expected, so other sessions keep five.
+  const driversExpected = Boolean(driverPin && (driverPin.driverSetVersion != null || driverPin.driverSkipReason));
   const shownSteps = PIPELINE_STEPS.filter(definition =>
-    !definition.optional || reportedSteps.has(definition.name) || (definition.name === PREPARE_SETUP && Boolean(setupProfile)));
+    !definition.optional
+    || reportedSteps.has(definition.name)
+    || (definition.name === PREPARE_SETUP && Boolean(setupProfile))
+    || (definition.name === INSTALL_DRIVERS && driversExpected));
 
   const resolved: ResolvedStep[] = shownSteps.map(definition => {
     const reported = reportedSteps.get(definition.name);
@@ -270,6 +426,7 @@ export function SessionProgressDetails({
       durationMs: reported ? elapsedMs(reported, now) : null,
       itemCounts: reported?.itemCounts ?? null,
       itemsTruncated: reported?.itemsTruncated ?? null,
+      statusNote: reported?.statusNote ?? null,
     };
   });
 
@@ -283,11 +440,12 @@ export function SessionProgressDetails({
   const summary = failed
     ? `Failed on ${failed.label}${failed.durationMs != null ? ` after ${formatDuration(failed.durationMs)}` : ''}`
     : running
-      ? `Step ${position} of ${resolved.length}, started ${running.startedAt ? formatDateTime(running.startedAt) : 'recently'}`
+      ? `Step ${position} of ${resolved.length}, started ${running.startedAt ? formatTimestamp(running.startedAt) : 'recently'}`
       : overallPercent >= 100
         ? (resolved.some(step => step.status === 'Warning') ? 'Completed with warnings' : 'All steps completed')
         : 'Waiting for the first progress report';
   const prepareSetup = resolved.find(step => step.name === PREPARE_SETUP);
+  const installDrivers = resolved.find(step => step.name === INSTALL_DRIVERS);
 
   return (
     <div className="px-6 py-4">
@@ -357,13 +515,14 @@ export function SessionProgressDetails({
               </Tooltip>
             ) : (
               <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                {step.durationMs != null ? formatDuration(step.durationMs) : '\u2014'}
+                {step.durationMs != null ? formatDuration(step.durationMs) : '\u00a0'}
               </p>
             )}
           </li>
         ))}
       </ol>
 
+      {installDrivers && <InstallDriversCard pin={driverPin} step={installDrivers} sessionId={sessionId} />}
       {prepareSetup && <PrepareSetupCard setupProfile={setupProfile} step={prepareSetup} sessionId={sessionId} />}
 
       {/* A failed Prepare setup already explains itself in its own card. */}
@@ -383,9 +542,9 @@ export function SessionProgressDetails({
             )}
             {focus.startedAt && (
               <p className="mt-1 text-xs text-muted-foreground">
-                Started {formatDateTime(focus.startedAt)}
-                {focus.completedAt && ` \u00b7 ${failed ? 'Failed' : 'Finished'} ${formatDateTime(focus.completedAt)}`}
-                {focus.durationMs != null && ` \u00b7 ${formatDuration(focus.durationMs)}`}
+                Started {formatTimestamp(focus.startedAt)}
+                {focus.completedAt && `, ${failed ? 'failed' : 'finished'} ${formatTimestamp(focus.completedAt)}`}
+                {focus.durationMs != null && `, ${formatDuration(focus.durationMs)}`}
               </p>
             )}
           </div>

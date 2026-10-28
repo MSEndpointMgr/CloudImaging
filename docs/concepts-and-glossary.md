@@ -4,7 +4,7 @@
 
 An X.509 certificate used for mutual TLS between the Cloud Imaging Client and Device Gateway API. Imaging Core stores the active certificate as a PKCS#12 secret in Azure Key Vault. Media Builder retrieves it through the Operator API and includes it in generated boot media; the Client loads it when calling Device Gateway.
 
-A deployment has one active boot-media certificate. Generating or rotating it activates the replacement immediately, so media containing the previous certificate must be rebuilt. See [Certificate management](operations-runbook.md#2-certificate-management).
+A deployment has one active boot-media certificate. Rotating it activates the replacement immediately and can keep the previous certificate accepted for up to 30 days, so media containing it can update itself to a boot image with the new one. Media that does not update in time must be prepared again. See [Certificate management](operations-runbook.md#2-certificate-management).
 
 ## Coupling
 

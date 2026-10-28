@@ -111,6 +111,87 @@ public sealed class UiThreadResponsivenessTests
             "Start() is fire-and-forget; async work runs on background Task");
     }
 
+    // ── Install drivers stays off the UI thread ──────────────────────────────
+
+    [Theory]
+    [InlineData(typeof(CloudImaging.Client.Services.Drivers.DriverInstallService))]
+    [InlineData(typeof(CloudImaging.Client.Services.Drivers.DriverSetLoader))]
+    public void DriverServices_ExposeOnlyAsyncEntryPoints(Type service)
+    {
+        var entryPoints = service.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
+
+        entryPoints.Should().NotBeEmpty();
+        entryPoints.Should().OnlyContain(m => typeof(Task).IsAssignableFrom(m.ReturnType), "downloads, hashing, extraction and DISM must never run on the caller's thread");
+    }
+
+    [Fact]
+    public void InstallDrivers_NeverBlocksTheDispatcher_AndStatusLinesReachTheView()
+    {
+        using var fixture = new TestDoubles.DriverStepFixture();
+        var processes = fixture.Processes;
+        fixture.ProcessesProduce();
+        var produce = processes.Respond;
+
+        // Extraction and DISM each block their thread for 300 ms, as real processes would.
+        processes.Respond = request =>
+        {
+            Thread.Sleep(300);
+            return produce(request);
+        };
+        var set = TestDoubles.DriverStepFixture.Set(fixture.Component(0, "sp200"), fixture.Component(1, "sp201"));
+        var service = fixture.Service();
+        var longestGap = TimeSpan.Zero;
+        var statuses = new List<string>();
+        Exception? failure = null;
+
+        var thread = new Thread(() =>
+        {
+            var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            var progress = new CloudImaging.Client.ViewModels.ProgressViewModel();
+            var frame = new System.Windows.Threading.DispatcherFrame();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var last = clock.Elapsed;
+
+            // A 10 ms timer on the dispatcher: the longest gap between ticks is how long the UI froze.
+            var probe = new System.Windows.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(10), System.Windows.Threading.DispatcherPriority.Normal, (_, _) =>
+            {
+                var now = clock.Elapsed;
+                longestGap = now - last > longestGap ? now - last : longestGap;
+                last = now;
+            }, dispatcher);
+            probe.Start();
+            dispatcher.InvokeAsync(async () =>
+            {
+                try
+                {
+                    await service.RunAsync(TestDoubles.DriverStepFixture.SessionId, set, fixture.Root, "HP", update => dispatcher.InvokeAsync(() =>
+                    {
+                        progress.StatusMessage = update.Status;
+                        statuses.Add(progress.StatusMessage);
+                    }));
+                    await Task.Delay(50);
+                }
+                catch (Exception ex)
+                {
+                    failure = ex;
+                }
+                finally
+                {
+                    probe.Stop();
+                    frame.Continue = false;
+                }
+            });
+            System.Windows.Threading.Dispatcher.PushFrame(frame);
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(30)).Should().BeTrue();
+
+        failure.Should().BeNull();
+        longestGap.Should().BeLessThan(TimeSpan.FromMilliseconds(100));
+        statuses.Should().Contain("Adding drivers (2 of 2)");
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static XElement LoadMainWindowXaml() =>

@@ -78,10 +78,10 @@ public sealed record DeviceSession
     public bool PasscodeConsumed { get; init; }
 
     // Device-session token
-    /// <summary>Bearer token the device uses to authenticate subsequent session calls.</summary>
-    public string? DeviceSessionToken { get; init; }
+    /// <summary>Lower-case hex SHA-256 of the bearer token the device uses for session calls; the token itself is never stored.</summary>
+    public string? DeviceSessionTokenHash { get; init; }
 
-    /// <summary>When <see cref="DeviceSessionToken"/> expires.</summary>
+    /// <summary>When the device-session token expires.</summary>
     public DateTimeOffset? DeviceSessionTokenExpiresAt { get; init; }
 
     // Assignment
@@ -109,6 +109,33 @@ public sealed record DeviceSession
 
     /// <summary>Setup profile name at assignment, kept so the timeline still names a deleted profile.</summary>
     public string? SetupProfileName { get; init; }
+
+    /// <summary>Driver model matched or chosen and pinned at assignment, or null when no set applies.</summary>
+    public Guid? DriverModelId { get; init; }
+
+    /// <summary>Driver model name at assignment, kept so the timeline still names a removed model.</summary>
+    public string? DriverModelName { get; init; }
+
+    /// <summary>Windows release of the pinned driver set.</summary>
+    public WindowsRelease? DriverRelease { get; init; }
+
+    /// <summary>Pinned driver set version. Never changes after assignment.</summary>
+    public int? DriverSetVersion { get; init; }
+
+    /// <summary>Why no driver set applies, or null when one is pinned.</summary>
+    public DriverSkipReason? DriverSkipReason { get; init; }
+
+    /// <summary>The device's HP system ID or Dell SKU used for matching, shown in the skip note.</summary>
+    public string? DriverMatchKey { get; init; }
+
+    /// <summary>True when the driver set (or No drivers) was chosen when imaging started.</summary>
+    public bool DriverChosenManually { get; init; }
+
+    /// <summary>Who chose the driver set manually, from the token.</summary>
+    public string? DriverChosenBy { get; init; }
+
+    /// <summary>JSON array of the pinned model's vendor categories that were critical at assignment.</summary>
+    public string? DriverCriticalCategories { get; init; }
 
     // Progress
     /// <summary>Overall imaging progress, 0-100.</summary>

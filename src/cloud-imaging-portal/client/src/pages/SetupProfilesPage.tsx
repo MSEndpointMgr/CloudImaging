@@ -70,7 +70,7 @@ export default function SetupProfilesPage(): React.ReactElement {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Registry values and scripts applied to devices before Windows starts, based on the location set on the USB media they started from.
+          Registry values and scripts applied to devices before Windows starts, targeted at all devices or at the location set on the USB media they started from.
         </p>
         {canManageSetupProfiles && <div className="shrink-0">{newButton}</div>}
       </div>

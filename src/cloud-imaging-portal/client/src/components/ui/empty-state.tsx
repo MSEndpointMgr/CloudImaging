@@ -15,17 +15,19 @@ interface EmptyStateProps {
    */
   action?: React.ReactNode;
   className?: string;
+  /** Colour for an icon that carries a state, such as a red failure icon; muted otherwise. */
+  iconClassName?: string;
 }
 
 /**
  * Modern empty-state placeholder for table bodies — a muted icon badge, a short title, and an
  * optional description — used in place of a bare "No X found." string spanning the table.
  */
-export function EmptyState({ icon: Icon, title, description, action, className }: EmptyStateProps): React.ReactElement {
+export function EmptyState({ icon: Icon, title, description, action, className, iconClassName }: EmptyStateProps): React.ReactElement {
   return (
     <div className={cn('flex select-none flex-col items-center justify-center gap-2 py-12 text-center', className)}>
       <div className="flex h-11 w-11 items-center justify-center rounded-full bg-muted">
-        <Icon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+        <Icon className={cn('h-5 w-5', iconClassName ?? 'text-muted-foreground')} aria-hidden="true" />
       </div>
       <p className="text-sm font-medium text-foreground">{title}</p>
       {description && <p className="max-w-sm text-sm text-muted-foreground">{description}</p>}

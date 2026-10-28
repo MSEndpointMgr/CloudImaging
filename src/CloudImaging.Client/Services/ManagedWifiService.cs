@@ -197,7 +197,7 @@ public sealed partial class ManagedWifiService
     /// <see cref="RefreshAsync"/>). The serial number and location come from the device and its USB media.
     /// </summary>
     public Task<bool> RefreshFromGatewayAsync(DeviceGatewayApiClient gateway, CancellationToken ct = default) =>
-        RefreshAsync(token => gateway.GetManagedWifiNetworksAsync(ReadSerialNumber(), ReadManifestLocation(), token), ct);
+        RefreshAsync(token => gateway.GetManagedWifiNetworksAsync(DeviceSerialNumber.Read(), ReadManifestLocation(), token), ct);
 
     private Guid? ReadManifestLocation()
     {
@@ -215,28 +215,6 @@ public sealed partial class ManagedWifiService
         {
             return null;
         }
-    }
-
-    private static string ReadSerialNumber()
-    {
-        try
-        {
-            using var searcher = new System.Management.ManagementObjectSearcher("SELECT SerialNumber FROM Win32_BIOS");
-            using var results = searcher.Get();
-            foreach (var item in results)
-            {
-                using (item)
-                {
-                    if (item["SerialNumber"]?.ToString() is { Length: > 0 } serial)
-                        return serial.Trim();
-                }
-            }
-        }
-        catch
-        {
-            // The gateway only uses the serial for its log; the signature still binds the request.
-        }
-        return "UNKNOWN";
     }
 
     private async Task<bool> WaitForAddressAsync(CancellationToken ct)

@@ -96,7 +96,10 @@ public sealed partial class UsbPreparationService
         BootImageBase BootImageBase = BootImageBase.WindowsPE,
         // Already encrypted to the boot media certificate before elevation, so the IPC file never
         // holds a plain-text Wi-Fi password. Null for Windows PE images.
-        string? ManagedWifiEnvelopeBase64 = null);
+        string? ManagedWifiEnvelopeBase64 = null,
+        // Downloaded and verified before elevation; the worker only copies them to the CACHE partition.
+        IReadOnlyList<PreloadDriverFile>? DriverFiles = null,
+        IReadOnlyList<UsbPreparationDriverSet>? DriverSets = null);
 
     /// <summary>Outcome of a successful USB preparation.</summary>
     /// <param name="BootDriveLetter">Drive letter of the deployed WinPE boot partition.</param>
@@ -155,6 +158,19 @@ public sealed partial class UsbPreparationService
             _deployer.ProgressChanged -= OnDeployProgress;
         }
 
+        // Driver files go to the CACHE partition, where the Client looks for them before downloading.
+        var driverFiles = p.DriverFiles ?? [];
+        if (driverFiles.Count > 0)
+        {
+            if (cacheDrive is null)
+            {
+                throw new InvalidOperationException("The USB drive has no CACHE partition for the driver sets. Prepare the drive again.");
+            }
+
+            ReportProgress("Copying driver sets to USB...", 98);
+            await DriverSetPreloadCopier.CopyAsync(Path.Combine(cacheDrive.TrimEnd('\\') + "\\", "CloudImagingCache"), driverFiles, (done, total) => ReportProgress($"Copying driver sets to USB ({done} of {total} files)...", 98), ct);
+        }
+
         // T071a/FR-059: persist the preparation manifest to the BOOT partition so the Client
         // can later detect a newer published boot image (T071b/FR-059a).
         var wifiIncluded = p.ManagedWifiEnvelopeBase64 is not null;
@@ -191,6 +207,7 @@ public sealed partial class UsbPreparationService
                 ["diskValidated"]  = p.DiskValidated,
             },
             AutoStartConfigured = true,
+            DriverSets = driverFiles.Count > 0 ? p.DriverSets ?? [] : [],
         };
         await _deployer.WriteUsbPreparationManifestAsync(bootDrive, manifest, ct);
 

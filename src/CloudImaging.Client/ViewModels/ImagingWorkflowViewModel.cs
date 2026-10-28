@@ -84,8 +84,12 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         // this stays null and is resolved later in RunAsync once the target Windows volume is
         // known (see the fallback there for why Path.GetTempPath() must never be the default).
         var cacheVolume = FindCacheVolumeDriveLetter();
-        _cacheRoot = cacheRoot ?? (cacheVolume is not null ? Path.Combine(cacheVolume, "CloudImagingCache") : null);
+        _usbCacheRoot = cacheVolume is not null ? Path.Combine(cacheVolume, "CloudImagingCache") : null;
+        _cacheRoot = cacheRoot ?? _usbCacheRoot;
     }
+
+    // Driver files are only cached on the USB drive's CACHE volume, never on the Windows volume fallback.
+    private readonly string? _usbCacheRoot;
 
     /// <summary>
     /// Locates the CACHE-labelled NTFS volume this Client's USB boot media was prepared with:
@@ -156,7 +160,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 return;
             }
 
-            // Install drivers (a later feature) hands Windows setup work over here; nothing yet.
+            // Install drivers hands Windows setup work (Specialize installers) over to Prepare setup.
             IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers = [];
             var runPrepareSetup = ShouldRunPrepareSetup(setupProfile.Status, specializeInstallers);
             _progress.ConfigureSteps(runPrepareSetup);
@@ -346,6 +350,19 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.Completed);
             await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.Completed, ct: ct);
             _progress.OverallPercent = 80;
+
+            // ── Install drivers ─────────────────────────────────────────────────
+            var drivers = await RunInstallDriversAsync(reporter, setupProfile, diskFormat.WindowsVolume, pipelineLoggerFactory, ct);
+            if (drivers is null)
+            {
+                return;
+            }
+
+            specializeInstallers = drivers;
+            runPrepareSetup = ShouldRunPrepareSetup(setupProfile.Status, specializeInstallers);
+
+            // Driver installers can add Prepare setup to a session without a profile, so the step list is refreshed.
+            _progress.ConfigureSteps(runPrepareSetup, includeInstallDrivers: _progress.Steps.Any(s => s.Step == ImagingStepName.InstallDrivers));
 
             // ── Prepare setup ───────────────────────────────────────────────────
             if (runPrepareSetup)
@@ -556,6 +573,89 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     }
 
     /// <summary>
+    /// Runs the Install drivers step after Apply image (contracts/client-install-drivers.md). The
+    /// step is shown only when the Device Gateway returns a driver set (with components or a skip
+    /// note). Returns the installers handed to Prepare setup, or null when the pipeline stopped: the
+    /// descriptor could not be read after 3 attempts, a critical component failed, or the session
+    /// is ending.
+    /// </summary>
+    private async Task<IReadOnlyList<Services.Setup.SpecializeInstaller>?> RunInstallDriversAsync(Services.ImagingProgressReporter reporter, Services.Setup.SetupProfileLoadResult setupProfile, string windowsVolume, ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        using var download = new HttpClient();
+        var logger = loggerFactory.CreateLogger<Services.Drivers.DriverInstallService>();
+        var loader = new Services.Drivers.DriverSetLoader(_gatewayClient, download, logger);
+        var loaded = await loader.LoadAsync(_sessionId, ct);
+        switch (loaded.Status)
+        {
+            case Services.Drivers.DriverSetLoadStatus.NotShown:
+                return [];
+            case Services.Drivers.DriverSetLoadStatus.PipelineEnding:
+                await StopForEndingSessionAsync(reporter, ct);
+                return null;
+            case Services.Drivers.DriverSetLoadStatus.Failed:
+                _progress.ConfigureSteps(ShouldRunPrepareSetup(setupProfile.Status, []), includeInstallDrivers: true);
+                await FailAsync(reporter, ImagingStepName.InstallDrivers, "DRV", Services.Drivers.DriverSetLoader.DescriptorFailedMessage, ct);
+                return null;
+        }
+
+        var descriptor = loaded.Descriptor!;
+        _progress.ConfigureSteps(ShouldRunPrepareSetup(setupProfile.Status, []), includeInstallDrivers: true);
+        _progress.ResetStepProgress();
+        _progress.StatusMessage = "Installing drivers...";
+        _progress.UpdateStep(ImagingStepName.InstallDrivers, ImagingStepStatus.InProgress);
+        await reporter.ReportAsync(ImagingStepName.InstallDrivers, ImagingStepStatus.InProgress, ct: ct);
+
+        var processes = new Services.Setup.RestrictedProcessRunner();
+        var service = new Services.Drivers.DriverInstallService(
+            loader,
+            [new Services.Drivers.HpSoftPaqExtractor(processes, logger), new Services.Drivers.DellPackageExtractor(processes, logger), new Services.Drivers.ZipPackageExtractor()],
+            new Services.Drivers.DismDriverInjector(processes, logger),
+            logger,
+            cache: new Services.Drivers.DriverFileCache(_usbCacheRoot, logger));
+        var result = await service.RunAsync(_sessionId, descriptor, windowsVolume, _gatewayClient.DeviceManufacturer, update =>
+        {
+            // Same as Apply image: progress setters are safe from a background thread, and the
+            // reporter throttles percent updates to the gateway.
+            _progress.StatusMessage = update.Status;
+            _progress.StepPercent = update.Percent;
+            _ = reporter.ReportAsync(ImagingStepName.InstallDrivers, ImagingStepStatus.InProgress, update.Percent, ct: ct);
+        }, ct);
+
+        await reporter.ReportResultAsync(ImagingStepName.InstallDrivers, result.Status, result.WarningCount, result.Items, result.ErrorDetail, result.StatusNote, ct);
+        if (result.Status == ImagingStepStatus.Failed)
+        {
+            await FailAsync(reporter, ImagingStepName.InstallDrivers, "DRV", result.ErrorDetail ?? "Critical drivers could not be installed.", ct, alreadyReported: true);
+            return null;
+        }
+
+        _progress.UpdateStep(ImagingStepName.InstallDrivers, ImagingStepStatus.Completed, result.WarningCount);
+        if (result.StatusNote is { } note)
+        {
+            _progress.AppendActivity(note);
+        }
+
+        _progress.OverallPercent = 81;
+        return result.Installers;
+    }
+
+    private async Task StopForEndingSessionAsync(Services.ImagingProgressReporter reporter, CancellationToken ct)
+    {
+        try
+        {
+            _status = await _gatewayClient.GetSessionStatusAsync(_sessionId, ct) ?? _status;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or Services.DeviceGatewayApiException)
+        {
+            // Fall through with the last known status.
+        }
+
+        if (!HandleTerminalState())
+        {
+            await FailAsync(reporter, ImagingStepName.InstallDrivers, "DRV", "The session ended while drivers were being installed.", ct);
+        }
+    }
+
+    /// <summary>
     /// Runs Prepare setup on the applied volume and reports its result with every item in one
     /// call. Returns null when the step failed and the pipeline has stopped.
     /// </summary>
@@ -636,7 +736,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             return null;
         }
 
-        await reporter.ReportResultAsync(ImagingStepName.PrepareSetup, result.Status, result.WarningCount, result.Items, result.ErrorDetail, ct);
+        await reporter.ReportResultAsync(ImagingStepName.PrepareSetup, result.Status, result.WarningCount, result.Items, result.ErrorDetail, ct: ct);
         if (result.Status == ImagingStepStatus.Failed)
         {
             await FailAsync(reporter, ImagingStepName.PrepareSetup, "PSU", result.ErrorDetail ?? "Prepare setup failed.", ct, alreadyReported: true);

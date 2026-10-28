@@ -78,4 +78,18 @@ public static class DevicePayloadSignature
 
         return Encoding.UTF8.GetBytes($"wifi\n{serialNumber}\n{locationId?.ToString("D") ?? string.Empty}\n{timestampUtc}\n{nonce}");
     }
+
+    /// <summary>
+    /// Builds the challenge for a boot image update check. It covers what is asked for, since the
+    /// answer is a download link for a boot image that carries the boot media private key.
+    /// Format: <c>bootimage \n serialNumber \n architecture \n base \n currentBootImageId (D format, empty when none) \n timestampUtc \n nonce</c>.
+    /// </summary>
+    public static byte[] BuildBootImageChallenge(string serialNumber, MachineArchitecture architecture, BootImageBase bootImageBase, Guid? currentBootImageId, string timestampUtc, string nonce)
+    {
+        ArgumentNullException.ThrowIfNull(serialNumber);
+        ArgumentNullException.ThrowIfNull(timestampUtc);
+        ArgumentNullException.ThrowIfNull(nonce);
+
+        return Encoding.UTF8.GetBytes($"bootimage\n{serialNumber}\n{MachineArchitecturePlatform.Slug(architecture)}\n{bootImageBase}\n{currentBootImageId?.ToString("D") ?? string.Empty}\n{timestampUtc}\n{nonce}");
+    }
 }

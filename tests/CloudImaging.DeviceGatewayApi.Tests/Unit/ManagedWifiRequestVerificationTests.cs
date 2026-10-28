@@ -102,4 +102,49 @@ public sealed class ManagedWifiRequestVerificationTests
         using var other = CreateCertificate();
         FluentActions.Invoking(() => ManagedWifiEnvelope.Decrypt(envelope, other)).Should().Throw<ManagedWifiEnvelopeException>();
     }
+
+    [Fact]
+    public void AnEnvelopeForTwoCertificates_OpensWithEither_AndNotWithAThird()
+    {
+        using var previous = CreateCertificate();
+        using var active = CreateCertificate();
+        using var other = CreateCertificate();
+        var set = new ManagedWifiNetworkSet { LocationId = Stockholm, Networks = [new ManagedWifiNetwork("Contoso-Imaging", false, WifiSecurityType.Wpa3Personal, "correct horse")] };
+
+        var envelope = ManagedWifiEnvelope.Encrypt(set, [previous, active]);
+
+        ManagedWifiEnvelope.Decrypt(envelope, previous).Networks.Single().Password.Should().Be("correct horse");
+        ManagedWifiEnvelope.Decrypt(envelope, active).Networks.Single().Password.Should().Be("correct horse");
+        FluentActions.Invoking(() => ManagedWifiEnvelope.Decrypt(envelope, other)).Should().Throw<ManagedWifiEnvelopeException>();
+    }
+
+    [Fact]
+    public void AnEnvelopeForOneCertificate_KeepsTheSingleRecipientFormat()
+    {
+        using var cert = CreateCertificate();
+        var set = new ManagedWifiNetworkSet { LocationId = Stockholm, Networks = [] };
+
+        var envelope = ManagedWifiEnvelope.Encrypt(set, [cert, cert]);
+
+        System.Text.Encoding.UTF8.GetString(envelope).Should().Contain("cloudimaging-wifi/1");
+        ManagedWifiEnvelope.Decrypt(envelope, cert).LocationId.Should().Be(Stockholm);
+    }
+
+    [Fact]
+    public void ARemovedRecipient_BreaksTheEnvelope()
+    {
+        using var previous = CreateCertificate();
+        using var active = CreateCertificate();
+        var set = new ManagedWifiNetworkSet { LocationId = Stockholm, Networks = [] };
+        var envelope = ManagedWifiEnvelope.Encrypt(set, [previous, active]);
+
+        // Dropping the other recipient changes the authenticated recipient list.
+        var document = System.Text.Json.Nodes.JsonNode.Parse(envelope)!.AsObject();
+        var recipients = document["recipients"]!.AsArray();
+        var keep = recipients.Single(r => string.Equals((string?)r!["thumbprint"], active.Thumbprint, StringComparison.OrdinalIgnoreCase))!.DeepClone();
+        document["recipients"] = new System.Text.Json.Nodes.JsonArray(keep);
+        var tampered = System.Text.Encoding.UTF8.GetBytes(document.ToJsonString());
+
+        FluentActions.Invoking(() => ManagedWifiEnvelope.Decrypt(tampered, active)).Should().Throw<ManagedWifiEnvelopeException>();
+    }
 }

@@ -68,6 +68,14 @@ resource containerBootImages 'Microsoft.Storage/storageAccounts/blobServices/con
   properties: { publicAccess: 'None' }
 }
 
+// Vendor catalogs, verified driver files, custom components and driver set documents. No lifecycle
+// rule: Imaging Core removes files no kept set or active session uses.
+resource containerDrivers 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobServiceCore
+  name: 'drivers'
+  properties: { publicAccess: 'None' }
+}
+
 // WinRE recovery images, uploaded from the portal's Recovery Images view. Same staged-then-
 // published layout as boot-images.
 resource containerRecoveryImages 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {

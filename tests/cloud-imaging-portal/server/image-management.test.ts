@@ -1,4 +1,55 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import express, { type NextFunction, type Response } from 'express';
+import request from 'supertest';
+import type { AuthenticatedRequest } from '@/middleware/auth.js';
+
+const operatorApi = vi.hoisted(() => ({
+  updateImage: vi.fn(),
+  getImages: vi.fn(),
+}));
+
+vi.mock('@/services/operatorApiClient.js', () => ({ operatorApiClient: operatorApi }));
+
+const { imagesRouter } = await import('@/routes/images.js');
+
+function appFor(roles: string[]) {
+  const app = express();
+  app.use(express.json());
+  app.use((req: AuthenticatedRequest, _res: Response, next: NextFunction) => { req.user = { roles, preferred_username: 'olle@contoso.com' } as AuthenticatedRequest['user']; next(); });
+  app.use('/api/images', imagesRouter);
+  return app;
+}
+
+describe('Portal backend: OS image Windows release', () => {
+  const imageId = '8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    operatorApi.updateImage.mockResolvedValue({ imageId, windowsRelease: 'Windows11_24H2' });
+    operatorApi.getImages.mockResolvedValue([{ imageId, windowsRelease: 'Windows11_24H2' }]);
+  });
+
+  it('PATCH forwards windowsRelease, and null to clear it, for an Operator', async () => {
+    const app = appFor(['CloudImaging.Operator']);
+
+    expect((await request(app).patch(`/api/images/${imageId}`).send({ windowsRelease: 'Windows11_24H2' })).status).toBe(200);
+    await request(app).patch(`/api/images/${imageId}`).send({ windowsRelease: null });
+
+    expect(operatorApi.updateImage).toHaveBeenNthCalledWith(1, imageId, { windowsRelease: 'Windows11_24H2' });
+    expect(operatorApi.updateImage).toHaveBeenNthCalledWith(2, imageId, { windowsRelease: null });
+  });
+
+  it('PATCH is refused for a Technician', async () => {
+    expect((await request(appFor(['CloudImaging.Technician'])).patch(`/api/images/${imageId}`).send({ windowsRelease: 'Windows11_24H2' })).status).toBe(403);
+    expect(operatorApi.updateImage).not.toHaveBeenCalled();
+  });
+
+  it('the image list returns windowsRelease', async () => {
+    const res = await request(appFor(['CloudImaging.Technician'])).get('/api/images');
+
+    expect(res.body[0].windowsRelease).toBe('Windows11_24H2');
+  });
+});
 
 /**
  * Portal backend image management route tests (T081, FR-036, FR-037).

@@ -290,14 +290,16 @@ export default function LocationsPage(): React.ReactElement {
         </nav>
       </div>
 
-      {activeTab === 'regions' && (
+      {/* Kept mounted while hidden, so unsaved region edits survive a switch to the Locations tab
+          and its save bar stays in view there. */}
+      <div hidden={activeTab !== 'regions'}>
         <RegionsPanel
           view={regionsView}
           loadError={regionsError}
           locations={locations}
           onSaved={async () => { await Promise.all([loadRegions(), loadLocations()]); }}
         />
-      )}
+      </div>
 
       {activeTab === 'locations' && (
       <div className="space-y-4">

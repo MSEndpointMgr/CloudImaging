@@ -98,14 +98,68 @@ router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Req
 
 // ── POST /api/sessions/:sessionId/assign: assign image (PortalAccess) ────
 
+const CHOICE_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type DriverChoice = { sessionId?: string; kind: 'Model' | 'None'; modelId?: string };
+
+/** One choice with only `kind` and `modelId` (and `sessionId` for bulk), or null when its shape is wrong. */
+function choiceFrom(value: unknown, sessionId?: string): DriverChoice | null {
+  if (!value || typeof value !== 'object') return null;
+  const source = value as Record<string, unknown>;
+  const kind = source['kind'];
+  const modelId = source['modelId'];
+  if (kind === 'None') return sessionId ? { sessionId, kind } : { kind };
+  if (kind === 'Model' && typeof modelId === 'string' && CHOICE_GUID.test(modelId)) return sessionId ? { sessionId, kind, modelId } : { kind, modelId };
+  return null;
+}
+
+/** `driverChoices` of a bulk request: each for a listed session, at most one per session. */
+function choicesFrom(value: unknown, sessionIds: unknown): DriverChoice[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || !Array.isArray(sessionIds)) return null;
+  const seen = new Set<string>();
+  const choices: DriverChoice[] = [];
+  for (const entry of value) {
+    const sessionId = entry && typeof entry === 'object' ? (entry as Record<string, unknown>)['sessionId'] : undefined;
+    if (typeof sessionId !== 'string' || !CHOICE_GUID.test(sessionId) || !sessionIds.includes(sessionId) || seen.has(sessionId)) return null;
+    const choice = choiceFrom(entry, sessionId);
+    if (!choice) return null;
+    seen.add(sessionId);
+    choices.push(choice);
+  }
+  return choices;
+}
+
+function invalidChoice(res: Response): void {
+  res.status(400).json({ type: 'https://cloudimaging.io/errors/invalid-request', title: 'Invalid driver choice.', status: 400, detail: 'A driver choice is not valid. Choose a driver set again.' });
+}
+
+function missingIdentity(res: Response): void {
+  res.status(401).json({ title: 'Unauthorized', status: 401, detail: 'Missing user identity claim.' });
+}
+
+/** The acting user sent with driver choices, from the token only. */
+function choiceActor(req: Request): { upn: string; objectId: string | null } | null {
+  const user = decidingUser(req as AuthenticatedRequest);
+  return user ? { upn: user.decidedByUpn, objectId: user.decidedByObjectId ?? null } : null;
+}
+
 router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { osImageId } = req.body as { osImageId: string };
+    const { osImageId, driverChoice } = req.body as { osImageId: string; driverChoice?: unknown };
     if (!osImageId) {
       res.status(400).json({ error: 'osImageId is required' });
       return;
     }
-    const data = await operatorApiClient.assignSession(req.params['sessionId'] as string, osImageId);
+    let extra: { driverChoice: DriverChoice; actor: { upn: string; objectId: string | null } } | undefined;
+    if (driverChoice !== undefined && driverChoice !== null) {
+      const choice = choiceFrom(driverChoice);
+      if (!choice) { invalidChoice(res); return; }
+      const actor = choiceActor(req);
+      if (!actor) { missingIdentity(res); return; }
+      extra = { driverChoice: choice, actor };
+    }
+    const data = await operatorApiClient.assignSession(req.params['sessionId'] as string, osImageId, extra);
     res.status(201).json(data);
   } catch (err) {
     next(err);
@@ -116,8 +170,16 @@ router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), requ
 
 router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { sessionIds, osImageId } = req.body as { sessionIds: string[]; osImageId: string };
-    const data = await operatorApiClient.bulkAssign(sessionIds, osImageId);
+    const { sessionIds, osImageId, driverChoices } = req.body as { sessionIds: string[]; osImageId: string; driverChoices?: unknown };
+    const choices = choicesFrom(driverChoices, sessionIds);
+    if (!choices) { invalidChoice(res); return; }
+    let extra: { driverChoices: DriverChoice[]; actor: { upn: string; objectId: string | null } } | undefined;
+    if (choices.length > 0) {
+      const actor = choiceActor(req);
+      if (!actor) { missingIdentity(res); return; }
+      extra = { driverChoices: choices, actor };
+    }
+    const data = await operatorApiClient.bulkAssign(sessionIds, osImageId, extra);
     res.status(202).json(data);
   } catch (err) {
     next(err);

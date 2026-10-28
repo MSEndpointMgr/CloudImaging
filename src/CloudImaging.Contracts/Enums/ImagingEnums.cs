@@ -27,7 +27,14 @@ public enum ImagingStepName
     /// is only reported when the device has setup work. Appended so stored values stay stable;
     /// pipeline order is defined by the progress calculator and the clients, not by position.
     /// </summary>
-    PrepareSetup
+    PrepareSetup,
+
+    /// <summary>
+    /// Optional step that downloads the pinned driver set and injects it into the applied Windows
+    /// volume. Runs after Apply image and before Prepare setup. Appended so stored values stay
+    /// stable; it has progress weight 0.
+    /// </summary>
+    InstallDrivers
 }
 
 /// <summary>Step execution states.</summary>

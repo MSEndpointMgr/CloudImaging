@@ -71,7 +71,7 @@ export function RegistryValueDialog({ value, others, onClose, onApply }: {
               </div>
             </div>
             <p id="rv-key-help" className="text-sm text-muted-foreground">
-              Relative to the hive, for example Policies\Microsoft\FVE. Under HKLM SYSTEM, CurrentControlSet is mapped to the image&apos;s current control set. 32-bit software reads WOW6432Node keys; name them explicitly.
+              Relative to the hive, for example Policies\Microsoft\FVE. Default user keys are written as they appear under HKCU, for example Control Panel\Desktop. Under HKLM SYSTEM, CurrentControlSet is mapped to the image&apos;s current control set. 32-bit software reads WOW6432Node keys; name them explicitly.
             </p>
           </div>
 

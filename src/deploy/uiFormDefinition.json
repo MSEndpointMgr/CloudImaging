@@ -145,28 +145,6 @@
               ]
             },
             {
-              "name": "tierSection",
-              "type": "Microsoft.Common.Section",
-              "label": "Deployment Tier",
-              "elements": [
-                {
-                  "name": "deployApplicationGateway",
-                  "type": "Microsoft.Common.DropDown",
-                  "label": "Deployment Tier",
-                  "defaultValue": false,
-                  "toolTip": "Standard: mTLS enforced at the Azure Functions Premium EP1 platform layer (recommended for most organizations). Enterprise: adds Azure Application Gateway WAF_v2 in front of the Device Gateway API.",
-                  "constraints": {
-                    "required": true,
-                    "allowedValues": [
-                      { "label": "Standard - mTLS at Function App layer (default)", "value": false },
-                      { "label": "Enterprise - Application Gateway WAF_v2",        "value": true }
-                    ]
-                  },
-                  "visible": true
-                }
-              ]
-            },
-            {
               "name": "computeSection",
               "type": "Microsoft.Common.Section",
               "label": "Compute (SKU Selection)",
@@ -342,7 +320,6 @@
         "mediaBuilderClientId": "[steps('configuration').entraSection.mediaBuilderClientId]",
         "operatorApiClientId": "[steps('configuration').entraSection.operatorApiClientId]",
         "tenantId": "[steps('basics').resourceScope.subscription.tenantId]",
-        "deployApplicationGateway": "[steps('configuration').tierSection.deployApplicationGateway]",
         "functionAppSku": "[steps('configuration').computeSection.functionAppSku]",
         "appServiceSku": "[steps('configuration').computeSection.appServiceSku]",
         "certValidityPeriodDays": "[int(steps('configuration').securitySection.certValidityPeriodDays)]",

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using CloudImaging.Contracts.Models.SetupProfiles;
 using CloudImaging.ImagingCoreApi.Repositories;
@@ -194,7 +195,14 @@ public sealed partial class SessionQueryFunctions
             s.TerminalAt,
             s.SetupProfileId is { } profileId && s.SetupProfileVersion is { } version
                 ? new SetupProfilePin(profileId, s.SetupProfileName ?? string.Empty, version)
-                : null);
+                : null,
+            s.DriverModelName,
+            s.DriverRelease,
+            s.DriverSetVersion,
+            s.DriverSkipReason,
+            s.DriverMatchKey,
+            s.DriverChosenManually,
+            s.DriverChosenBy);
     }
 
     /// <summary>
@@ -219,7 +227,8 @@ public sealed partial class SessionQueryFunctions
         step.ErrorDetail,
         step.WarningCount,
         step.ItemCounts,
-        step.ItemsTruncated);
+        step.ItemsTruncated,
+        step.StatusNote);
 
     /// <summary>Secret-free portal projection of a device session.</summary>
     private sealed record SessionSummary(
@@ -243,7 +252,14 @@ public sealed partial class SessionQueryFunctions
         DateTimeOffset CreatedAt,
         DateTimeOffset? LastHeartbeatAt,
         DateTimeOffset? TerminalAt,
-        SetupProfilePin? SetupProfile);
+        SetupProfilePin? SetupProfile,
+        string? DriverModelName,
+        WindowsRelease? DriverRelease,
+        int? DriverSetVersion,
+        DriverSkipReason? DriverSkipReason,
+        string? DriverMatchKey,
+        bool DriverChosenManually,
+        string? DriverChosenBy);
 
     /// <summary>The setup profile version pinned on a session.</summary>
     private sealed record SetupProfilePin(Guid ProfileId, string Name, int Version);
@@ -257,7 +273,8 @@ public sealed partial class SessionQueryFunctions
         string? ErrorDetail,
         int? WarningCount,
         IReadOnlyList<ImagingStepItemCount> ItemCounts,
-        bool ItemsTruncated);
+        bool ItemsTruncated,
+        string? StatusNote);
 
     /// <summary>
     /// Hardware inventory collected silently at session init (FR-001a). Informational only: every

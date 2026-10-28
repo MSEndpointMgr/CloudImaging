@@ -19,6 +19,14 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> CreateSessionAsync(object payload, CancellationToken ct = default) =>
         _http.PostAsJsonAsync("/api/internal/sessions", payload, JsonOptions, ct);
 
+    /// <summary>Records the hash and expiry of a newly issued device-session token on the session.</summary>
+    public Task<HttpResponseMessage> SetDeviceTokenAsync(Guid sessionId, string tokenHash, DateTimeOffset expiresAt, CancellationToken ct = default) =>
+        _http.PutAsJsonAsync($"/api/internal/sessions/{sessionId}/device-token", new { tokenHash, expiresAt }, JsonOptions, ct);
+
+    /// <summary>204 when the token hash matches the session's and has not expired, 401 otherwise.</summary>
+    public Task<HttpResponseMessage> VerifyDeviceTokenAsync(Guid sessionId, string tokenHash, CancellationToken ct = default) =>
+        _http.PostAsJsonAsync($"/api/internal/sessions/{sessionId}/device-token/verify", new { tokenHash }, JsonOptions, ct);
+
     /// <summary>Forward status poll to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> GetSessionStatusAsync(Guid sessionId, CancellationToken ct = default) =>
         _http.GetAsync($"/api/internal/sessions/{sessionId}/status", ct);
@@ -30,6 +38,14 @@ public sealed class ImagingCoreClient
     /// <summary>Returns the setup profile version pinned on a session, with a short-lived read URL.</summary>
     public Task<HttpResponseMessage> GetSessionSetupProfileAsync(Guid sessionId, CancellationToken ct = default) =>
         _http.GetAsync($"/api/internal/sessions/{sessionId}/setup-profile", ct);
+
+    /// <summary>Forward the driver set descriptor request to ImagingCoreApi.</summary>
+    public Task<HttpResponseMessage> GetSessionDriverSetAsync(Guid sessionId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/sessions/{sessionId}/driver-set", ct);
+
+    /// <summary>Forward a driver component read link refresh to ImagingCoreApi.</summary>
+    public Task<HttpResponseMessage> RefreshSessionDriverComponentLinkAsync(Guid sessionId, int index, CancellationToken ct = default) =>
+        _http.PostAsync($"/api/internal/sessions/{sessionId}/driver-set/components/{index}/link", null, ct);
 
     /// <summary>Forward SAS token refresh request to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> RefreshSasTokenAsync(Guid sessionId, CancellationToken ct = default) =>
@@ -60,14 +76,13 @@ public sealed class ImagingCoreClient
         _http.PostAsync($"/api/internal/sessions/{sessionId}/logs/upload-url", null, ct);
 
     /// <summary>
-    /// Fetch the active boot media certificate's metadata (thumbprint, validity window) from
-    /// ImagingCoreApi (FR-069). ImagingCoreApi's BootMediaCertificateRepository is the sole
-    /// owner/writer of the BootMediaCertificate table: the Device Gateway API must go through
-    /// this Private Link call rather than reading that table directly out of ImagingCoreApi's
-    /// storage account, the same way every other cross-service data need in this class does.
+    /// The boot media certificates the gateway accepts now, active first, public parts only
+    /// (FR-069). ImagingCoreApi's BootMediaCertificateRepository is the sole owner/writer of the
+    /// BootMediaCertificate table: the Device Gateway API must go through this Private Link call
+    /// rather than reading that table directly out of ImagingCoreApi's storage account.
     /// </summary>
-    public Task<HttpResponseMessage> GetActiveCertificateMetadataAsync(CancellationToken ct = default) =>
-        _http.GetAsync("/api/internal/cert/active", ct);
+    public Task<HttpResponseMessage> GetAcceptedCertificatesAsync(CancellationToken ct = default) =>
+        _http.GetAsync("/api/internal/cert/accepted", ct);
 
     /// <summary>Whether Autopilot registration is enabled in the portal.</summary>
     public Task<HttpResponseMessage> GetAutopilotAvailabilityAsync(CancellationToken ct = default) =>

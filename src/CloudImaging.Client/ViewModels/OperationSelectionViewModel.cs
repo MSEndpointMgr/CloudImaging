@@ -810,6 +810,7 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         {
             MotherboardManufacturer = GetWmiValue("Win32_BaseBoard", "Manufacturer"),
             MotherboardModel        = GetWmiValue("Win32_BaseBoard", "Product"),
+            SystemSku               = SystemSku(GetWmiValue("Win32_ComputerSystem", "SystemSKUNumber")),
             BiosVersion             = GetWmiValue("Win32_BIOS", "SMBIOSBIOSVersion"),
             NicIdentifiers          = GetNetworkAdapters(),
             StorageLayout           = GetStorageLayout(),
@@ -818,6 +819,13 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
 
     private static string GetSerialNumber() =>
         GetWmiValue("Win32_BIOS", "SerialNumber") ?? "UNKNOWN";
+
+    /// <summary>The system SKU Dell devices are matched on: trimmed, at most 64 characters, null when blank.</summary>
+    internal static string? SystemSku(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed.Length > 64 ? trimmed[..64] : trimmed;
+    }
 
     private static string GetManufacturer() =>
         GetWmiValue("Win32_ComputerSystem", "Manufacturer") ?? "UNKNOWN";

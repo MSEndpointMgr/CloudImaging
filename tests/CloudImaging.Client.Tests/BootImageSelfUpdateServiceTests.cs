@@ -20,6 +20,18 @@ public sealed class BootImageSelfUpdateServiceTests
 {
     private static readonly byte[] CurrentImage = [9, 9];
     private static readonly byte[] NewImage = [1, 2, 3, 4, 5, 6, 7, 8];
+    private static readonly System.Security.Cryptography.X509Certificates.X509Certificate2 Certificate = CreateCertificate();
+
+    private static System.Security.Cryptography.X509Certificates.X509Certificate2 CreateCertificate()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new System.Security.Cryptography.X509Certificates.CertificateRequest("CN=Cloud Imaging Boot Media Test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddDays(1));
+    }
+
+    // The update check is signed with the boot media certificate, so every gateway in these tests holds one.
+    private static DeviceGatewayApiClient Gateway(HttpMessageHandler handler) =>
+        new(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") }, Certificate);
 
     [Fact]
     public async Task CheckAndApply_CompleteWithoutThrowing_WhenNoBootVolumeIsPresent()
@@ -92,13 +104,12 @@ public sealed class BootImageSelfUpdateServiceTests
 
     private static BootImageSelfUpdateService ServiceOffering(string drive, string version, string sha256, byte[] payload)
     {
-        var gateway = new DeviceGatewayApiClient(new HttpClient(new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        var gateway = Gateway(new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent($$"""{"version":"{{version}}","sha256Hash":"{{sha256}}","sasTokenUrl":"https://sas.example.com/x"}""", System.Text.Encoding.UTF8, "application/json"),
-        }))
-        { BaseAddress = new Uri("https://gw.example.com") });
+        }));
         var download = new HttpClient(new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) }));
-        return new BootImageSelfUpdateService(gateway, download, NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive);
+        return new BootImageSelfUpdateService(gateway, download, NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive, readSerialNumber: () => "SN-1");
     }
 
     [Theory]
@@ -111,11 +122,10 @@ public sealed class BootImageSelfUpdateServiceTests
         {
             var manifest = new UsbPreparationManifest { ManifestVersion = "1.0", ToolVersion = "1", BootImageVersion = "2026.10.1", SelectedDiskId = "1" };
             await File.WriteAllTextAsync(Path.Combine(drive, UsbPreparationManifest.FileName), System.Text.Json.JsonSerializer.Serialize(manifest));
-            var gateway = new DeviceGatewayApiClient(new HttpClient(new FakeHttpMessageHandler(_ => latestVersion is null
+            var gateway = Gateway(new FakeHttpMessageHandler(_ => latestVersion is null
                 ? new HttpResponseMessage(HttpStatusCode.NoContent)
-                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($$"""{"version":"{{latestVersion}}","sha256Hash":"x","sasTokenUrl":"https://sas.example.com/x"}""", System.Text.Encoding.UTF8, "application/json") }))
-            { BaseAddress = new Uri("https://gw.example.com") });
-            var svc = new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive);
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($$"""{"version":"{{latestVersion}}","sha256Hash":"x","sasTokenUrl":"https://sas.example.com/x"}""", System.Text.Encoding.UTF8, "application/json") }));
+            var svc = new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive, readSerialNumber: () => "SN-1");
 
             (await svc.CheckAsync()).Status.Should().Be(expected);
             svc.HasPendingUpdate.Should().BeFalse("nothing is downloaded unless a newer image exists");
@@ -129,9 +139,9 @@ public sealed class BootImageSelfUpdateServiceTests
     [Fact]
     public async Task Check_ReportsNotUsbMedia_AndFailed_WithoutThrowing()
     {
-        var gateway = new DeviceGatewayApiClient(new HttpClient(new FakeHttpMessageHandler(_ => throw new HttpRequestException("No such host is known."))) { BaseAddress = new Uri("https://gw.example.com") });
+        var gateway = Gateway(new FakeHttpMessageHandler(_ => throw new HttpRequestException("No such host is known.")));
 
-        (await new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => null).CheckAsync())
+        (await new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => null, readSerialNumber: () => "SN-1").CheckAsync())
             .Status.Should().Be(BootImageUpdateStatus.NotUsbMedia);
 
         var drive = Directory.CreateTempSubdirectory("ci-selfupdate-").FullName;
@@ -139,7 +149,7 @@ public sealed class BootImageSelfUpdateServiceTests
         {
             var manifest = new UsbPreparationManifest { ManifestVersion = "1.0", ToolVersion = "1", BootImageVersion = "2026.10.1", SelectedDiskId = "1" };
             await File.WriteAllTextAsync(Path.Combine(drive, UsbPreparationManifest.FileName), System.Text.Json.JsonSerializer.Serialize(manifest));
-            (await new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive).CheckAsync())
+            (await new BootImageSelfUpdateService(gateway, new HttpClient(), NullLogger<BootImageSelfUpdateService>.Instance, findBootDrive: () => drive, readSerialNumber: () => "SN-1").CheckAsync())
                 .Status.Should().Be(BootImageUpdateStatus.Failed);
         }
         finally
