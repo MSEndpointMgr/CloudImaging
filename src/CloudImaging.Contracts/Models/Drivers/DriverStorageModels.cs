@@ -21,6 +21,9 @@ public sealed record DriverStorageSetCounts
 
     /// <summary>Roll-back sets.</summary>
     public int RollBack { get; init; }
+
+    /// <summary>Sets in testing.</summary>
+    public int Testing { get; init; }
 }
 
 /// <summary>A model row on the Storage tab.</summary>
@@ -129,6 +132,9 @@ public sealed record DriverStorageRelease
 
     /// <summary>Roll-back set.</summary>
     public DriverStorageSetRef? RollBack { get; init; }
+
+    /// <summary>Set in testing.</summary>
+    public DriverStorageSetRef? Testing { get; init; }
 
     /// <summary>Components.</summary>
     public int ComponentCount { get; init; }
@@ -263,7 +269,10 @@ public sealed record DriverComponentVersion
     /// <summary>To, null while current.</summary>
     public DateTimeOffset? To { get; init; }
 
-    /// <summary>What changed it.</summary>
+    /// <summary>What brought it into the set.</summary>
+    public DriverVersionChange Change { get; init; }
+
+    /// <summary>Who made the change; null for a sync.</summary>
     public string? ChangedBy { get; init; }
 
     /// <summary>Origin.</summary>

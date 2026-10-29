@@ -14,6 +14,9 @@ import { SyncOutcome } from './SyncOutcome.tsx';
 /** How often a running sync's progress is read again. */
 export const PROGRESS_POLL_MS = 5_000;
 
+/** A run that ends sooner than this after the card appears keeps its stages on screen until then, so they can be seen. */
+export const MIN_PROGRESS_VISIBLE_MS = 3_000;
+
 type StageState = 'done' | 'active' | 'waiting' | 'warning';
 
 const STAGE_ICONS: Record<StageState, React.ReactElement> = {
@@ -33,6 +36,13 @@ interface Stage {
 
 function StageTile({ stage }: { stage: Stage }): React.ReactElement {
   const percent = stage.total === 0 ? 0 : Math.min(100, Math.round((stage.done / stage.total) * 100));
+  // The bar starts empty and grows to its value, so a stage that finishes at once still visibly fills.
+  const [painted, setPainted] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setPainted(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const width = !painted ? 0 : stage.state === 'done' || stage.state === 'warning' ? 100 : percent;
   return (
     <div className={cn('rounded-lg border border-border bg-background px-4 py-3', stage.state === 'waiting' && 'opacity-60')}>
       <div className="flex items-center gap-2 text-sm font-medium">{STAGE_ICONS[stage.state]}{stage.title}</div>
@@ -46,7 +56,7 @@ function StageTile({ stage }: { stage: Stage }): React.ReactElement {
         aria-valuetext={stage.text}
         className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
       >
-        <div className="h-full rounded-full bg-primary" style={{ width: `${stage.state === 'done' || stage.state === 'warning' ? 100 : percent}%` }} />
+        <div className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out" style={{ width: `${width}%` }} />
       </div>
     </div>
   );
@@ -155,6 +165,8 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
   const [progress, setProgress] = useState<DriverSyncRunProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [shownAt] = useState(() => Date.now());
+  const [resultShown, setResultShown] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,8 +178,14 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
         setProgress(next);
         setError(null);
         setNow(Date.now());
-        if (next.run.result === 'Running') timer = window.setTimeout(() => void read(), PROGRESS_POLL_MS);
-        else onFinished();
+        if (next.run.result === 'Running') {
+          timer = window.setTimeout(() => void read(), PROGRESS_POLL_MS);
+          return;
+        }
+        const hold = MIN_PROGRESS_VISIBLE_MS - (Date.now() - shownAt);
+        const finish = () => { setResultShown(true); onFinished(); };
+        if (hold > 0) timer = window.setTimeout(finish, hold);
+        else finish();
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Could not load the progress of the sync.');
@@ -179,7 +197,7 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [runId, onFinished]);
+  }, [runId, onFinished, shownAt]);
 
   if (!progress) {
     return (
@@ -196,7 +214,7 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
   const { run } = progress;
   const startedAt = Date.parse(run.startedAt);
 
-  if (run.result !== 'Running') {
+  if (run.result !== 'Running' && resultShown) {
     const finishedAt = run.finishedAt ? Date.parse(run.finishedAt) : now;
     const look = FINISHED_ICON[run.result];
     return (
@@ -215,7 +233,8 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
   }
 
   const stages = syncStages(progress);
-  const finishing = stages.every(s => s.state === 'done' || s.state === 'warning');
+  // While a quick run's result is held back its stages stay on screen, filled, rather than collapsing into Finishing up.
+  const finishing = run.result === 'Running' && stages.every(s => s.state === 'done' || s.state === 'warning');
   const found = countsSummary(progress.found);
   const failedVendors = run.vendors.filter(v => !v.processed);
 

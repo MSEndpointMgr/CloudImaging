@@ -305,7 +305,7 @@ describe('Portal backend: driver routes (vendors, sync settings, run items, chec
   });
 
   it('24 and 25: reads settings as a Technician and saves only the schedule fields with the token actor', async () => {
-    const settings = { schedule: 'SelectedDays', weekdays: 31, repeatWeeks: 2, localTime: '02:00', timeZone: 'Europe/Berlin', waitForApprovalOfNewComponents: true };
+    const settings = { schedule: 'SelectedDays', weekdays: 31, repeatWeeks: 2, localTime: '02:00', timeZone: 'Europe/Berlin', waitForApprovalOfNewComponents: true, waitForTesting: true };
 
     expect((await request(appFor(technician)).get('/api/drivers/sync/settings')).status).toBe(200);
     await request(appFor(operator)).put('/api/drivers/sync/settings').send({ ...settings, lastScheduledSlotUtc: 'x', actor: { upn: 'mallory@contoso.com' } });
@@ -403,6 +403,21 @@ describe('Portal backend: driver routes (storage, downloads, roll back, removal)
     expect(operatorApi.drivers).toHaveBeenCalledWith('POST', `${pair}/rollback`, { body: { actor } });
     expect(res.status).toBe(409);
     expect(res.body.detail).toBe('No previous driver set to roll back to.');
+  });
+
+  it('releases the set in testing with the token actor, relays the 409, and refuses Technicians', async () => {
+    operatorApi.drivers.mockRejectedValueOnce(upstreamError(409, { status: 409, detail: 'No driver set in testing to release.' }));
+
+    const res = await request(appFor(operator)).post(`/api/drivers/${pair}/testing/release`).send({ actor: { upn: 'mallory@contoso.com' } });
+    const tech = await request(appFor(technician)).post(`/api/drivers/${pair}/testing/release`).send({});
+    const bad = await request(appFor(operator)).post(`/api/drivers/models/${modelId}/releases/Windows12/testing/release`).send({});
+
+    expect(operatorApi.drivers).toHaveBeenCalledWith('POST', `${pair}/testing/release`, { body: { actor } });
+    expect(operatorApi.drivers).toHaveBeenCalledTimes(1);
+    expect(res.status).toBe(409);
+    expect(res.body.detail).toBe('No driver set in testing to release.');
+    expect(tech.status).toBe(403);
+    expect(bad.status).toBe(400);
   });
 
   it('10: reads the removal impact with an optional release, and refuses an unknown release', async () => {

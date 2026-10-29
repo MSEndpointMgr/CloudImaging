@@ -532,6 +532,7 @@ public sealed class DriverModelService
             PendingVersion = pointer?.PendingVersion,
             Pending = pointer is { Dirty: true, BuildAfter: { } buildAt } ? new DriverPendingChanges { Changes = pointer.PendingChanges, BuildAt = buildAt } : null,
             Preparing = model.State == DriverModelState.Active ? await PreparingAsync(model, selected, pointer, included.Count, ct) : null,
+            Testing = pointer?.TestingVersion is { } testing ? new DriverTestingSet { SetVersion = testing, Since = pointer.TestingSince } : null,
             Notices = await NoticesAsync(model, selected, ct),
             Tiles = new DriverModelTiles
             {
@@ -723,6 +724,7 @@ public sealed class DriverModelService
         var failed = 0;
         string? failureReason = null;
         DriverProgressCount? downloading = null;
+        var inTesting = false;
         foreach (var release in model.Releases)
         {
             var resolved = await ResolveAsync(model, release, rules, ct);
@@ -742,6 +744,7 @@ public sealed class DriverModelService
             }
 
             var pointer = (await _pointers.GetAsync(model.ModelId, release, ct))?.Value;
+            inTesting |= pointer?.TestingVersion is not null;
             if (await PreparingAsync(model, release, pointer, active.Count(r => r.Decision.Action != DriverAction.Skip), ct) is { } preparing)
             {
                 downloading = new DriverProgressCount { Done = (downloading?.Done ?? 0) + preparing.Done, Total = (downloading?.Total ?? 0) + preparing.Total };
@@ -777,6 +780,7 @@ public sealed class DriverModelService
                 FailureReason = failureReason,
                 SyncOff = model.State == DriverModelState.Active && !syncOn,
                 Downloading = downloading,
+                InTesting = inTesting,
             },
         };
     }
@@ -802,7 +806,7 @@ public sealed class DriverModelService
             return new DriverPreparingSet { SetVersion = pending, Done = done, Total = document.Items.Count };
         }
 
-        return pointer?.CurrentVersion is null
+        return pointer?.CurrentVersion is null && pointer?.TestingVersion is null
             ? new DriverPreparingSet { SetVersion = (pointer?.LastVersion ?? 0) + 1, Done = 0, Total = includedCount, Queued = await _sync.IsQueuedAsync(model.ModelId, ct) }
             : null;
     }

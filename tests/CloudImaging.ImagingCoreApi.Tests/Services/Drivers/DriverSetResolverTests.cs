@@ -132,6 +132,35 @@ public sealed class DriverSetResolverTests
         pin.MatchKey.Should().Be("8C26");
     }
 
+    [Fact]
+    public async Task SetInTesting_IsNeverMatched_ButIsAnOption_AndATestingChoicePinsIt()
+    {
+        var model = await ActiveModelWithSetAsync();
+        var row = await _h.Bed.Pointers.GetOrCreateAsync(model.ModelId, DriverSyncHarness.Release);
+        var current = (await _h.Bed.SetDocuments.GetAsync(model.ModelId, DriverSyncHarness.Release, 1))!;
+        await _h.Bed.SetDocuments.SaveAsync(current with { Version = 2, Fingerprint = "two" });
+        await _h.Bed.Pointers.TryUpdateAsync(model.ModelId, DriverSyncHarness.Release, row.Value with { TestingVersion = 2, TestingFingerprint = "two", LastVersion = 2 }, row.ETag);
+        var device = Device("8C26");
+
+        (await _resolver.ResolveAsync(device, Image())).SetVersion.Should().Be(1);
+        var options = await _resolver.OptionsAsync(Image(), _h.Bed.SetDocuments);
+        options.Select(o => (o.ModelId, o.Testing)).Should().Equal((model.ModelId, false), (model.ModelId, true));
+        var (pin, reason) = await _resolver.ResolveChoiceAsync(device, Image(), new DriverChoice { Kind = DriverChoiceKind.Testing, ModelId = model.ModelId });
+        reason.Should().BeNull();
+        pin!.SetVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task TestingChoice_WithoutASetInTesting_IsRefused()
+    {
+        var model = await ActiveModelWithSetAsync();
+
+        var (pin, reason) = await _resolver.ResolveChoiceAsync(Device("8C26"), Image(), new DriverChoice { Kind = DriverChoiceKind.Testing, ModelId = model.ModelId });
+
+        pin.Should().BeNull();
+        reason.Should().Be("HP EliteBook 840 G11 has no driver set in testing for Windows 11, version 24H2.");
+    }
+
     [Theory]
     [InlineData("0cb4")]
     [InlineData("0CB2")]

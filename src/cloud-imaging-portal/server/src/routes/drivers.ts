@@ -117,6 +117,7 @@ router.put('/sync/settings', requireOperator, async (req: AuthenticatedRequest, 
       localTime: source['localTime'],
       timeZone: source['timeZone'],
       waitForApprovalOfNewComponents: source['waitForApprovalOfNewComponents'],
+      waitForTesting: source['waitForTesting'],
       actor: actorOf(req),
     };
     relay(res, await operatorApiClient.drivers('PUT', 'sync/settings', { body }));
@@ -282,6 +283,13 @@ router.post('/models/:modelId/releases/:release/build', requireOperator, ...pair
 router.post('/models/:modelId/releases/:release/rollback', requireOperator, ...pairGuards, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     relay(res, await operatorApiClient.drivers('POST', `${pairPath(req)}/rollback`, { body: { actor: actorOf(req) } }));
+  } catch (err) { next(err); }
+});
+
+// Release the set in testing: devices imaged from now on get it.
+router.post('/models/:modelId/releases/:release/testing/release', requireOperator, ...pairGuards, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('POST', `${pairPath(req)}/testing/release`, { body: { actor: actorOf(req) } }));
   } catch (err) { next(err); }
 });
 

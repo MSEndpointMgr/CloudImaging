@@ -56,6 +56,22 @@ With **Wait for approval of new components** turned on (**Sync** tab), a compone
 in the vendor's catalog for the first time is not added to the set until an Operator approves it
 on the model page. Updated versions of approved components are not held.
 
+## Testing new driver sets
+
+Set **Newer versions** on the **Sync** tab to **Wait for testing** to try new driver sets on a
+few devices first. Every new set, including a new model's first, then waits in testing once its
+files are ready: devices keep the current set, or get no drivers when the model has none yet.
+
+- Operators and Administrators pick **<model> (testing)** in the **Driver set** column of
+  **Coupled Devices** for the devices that should get it. Technicians do not see sets in testing.
+- The model page shows which set is in testing. **Release** makes it current for every device,
+  with the previous set kept for **Roll back**.
+- A newer set that arrives while one is in testing replaces it, so testing starts again.
+- Switching **Newer versions** back to **Use automatically** releases every set in testing. The
+  portal asks first and says how many sets that releases.
+- The **Models** tab shows **In testing** for such a model, and **Storage** counts and lists sets
+  in testing.
+
 ## Sync
 
 Imaging Core reads the vendor catalogs on the schedule set on the **Sync** tab, and on **Sync

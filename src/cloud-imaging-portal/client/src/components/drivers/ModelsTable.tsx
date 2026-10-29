@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, CircleAlert, CircleDashed, CircleX, Cpu, Download, Info, RefreshCw, Search } from 'lucide-react';
+import { ChevronRight, CircleAlert, CircleCheck, CircleDashed, CircleX, Cpu, Download, FlaskConical, Info, RefreshCw, Search } from 'lucide-react';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
@@ -24,8 +24,8 @@ export function SizeHead(): React.ReactElement {
   );
 }
 
-/** Icon and label for what needs attention or is in progress; nothing otherwise. */
-export function ModelStatus({ model }: { model: DriverModelRow }): React.ReactElement | null {
+/** Icon and label for what needs attention or is in progress, or Ready when devices get the current set. */
+export function ModelStatus({ model }: { model: DriverModelRow }): React.ReactElement {
   const { status } = model;
   if (model.state === 'Draft') {
     return <StatusLine icon={<CircleDashed className="h-4 w-4 text-muted-foreground" aria-hidden="true" />} label="Draft" />;
@@ -51,10 +51,13 @@ export function ModelStatus({ model }: { model: DriverModelRow }): React.ReactEl
   if (status.waitingForApproval > 0) {
     return <StatusLine icon={<CircleAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />} label={`${status.waitingForApproval} waiting for approval`} />;
   }
+  if (status.inTesting) {
+    return <StatusLine icon={<FlaskConical className="h-4 w-4 text-blue-600 dark:text-blue-400" aria-hidden="true" />} label="In testing" />;
+  }
   if (status.syncOff) {
     return <span className="text-sm text-muted-foreground">Sync off</span>;
   }
-  return null;
+  return <StatusLine icon={<CircleCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />} label="Ready" />;
 }
 
 function StatusLine({ icon, label }: { icon: React.ReactNode; label: string }): React.ReactElement {
@@ -83,18 +86,17 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
     </TableRow>
   );
   return (
-    <div>
     <div className="overflow-hidden rounded-md border border-border">
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[24%]">Model</TableHead>
+          <TableHead className="w-[34%]">Model</TableHead>
           <TableHead className="w-[7%]">Vendor</TableHead>
           <TableHead className="w-[13%]">Windows releases</TableHead>
           <TableHead className="w-[9%] text-right">Included</TableHead>
           <TableHead className="w-[9%] text-right">Skipped</TableHead>
           <TableHead className="w-[9%] text-right"><SizeHead /></TableHead>
-          <TableHead className="w-[25%]">Status</TableHead>
+          <TableHead className="w-[15%]">Status</TableHead>
           <TableHead className="w-[4%]"><span className="sr-only">Open</span></TableHead>
         </TableRow>
       </TableHeader>
@@ -140,10 +142,6 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
         })}
       </TableBody>
     </Table>
-    </div>
-    {models !== null && models.length > 0 && (
-      <p className="mt-2 text-xs text-muted-foreground">{models.length === 1 ? '1 model' : `${models.length} models`}</p>
-    )}
     </div>
   );
 }

@@ -123,6 +123,9 @@ public sealed record DriverSyncSettingsRecord
     /// <summary>Wait for approval of new components.</summary>
     public bool WaitForApprovalOfNewComponents { get; init; }
 
+    /// <summary>New driver sets wait in testing until released.</summary>
+    public bool WaitForTesting { get; init; }
+
     /// <summary>Previous versions to keep.</summary>
     public int PreviousVersionsToKeep { get; init; } = 1;
 
@@ -388,6 +391,15 @@ public sealed record DriverSetPointerRecord
 
     /// <summary>Built at.</summary>
     public DateTimeOffset? BuiltAt { get; init; }
+
+    /// <summary>A built set waiting in testing; devices only get it when chosen for it.</summary>
+    public int? TestingVersion { get; init; }
+
+    /// <summary>Fingerprint of the set in testing.</summary>
+    public string? TestingFingerprint { get; init; }
+
+    /// <summary>When the set went into testing.</summary>
+    public DateTimeOffset? TestingSince { get; init; }
 }
 
 /// <summary>Status of a stored file.</summary>

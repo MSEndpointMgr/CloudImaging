@@ -286,6 +286,17 @@ public sealed partial class DriverFunctions
             ? ForwardAsync(req, HttpMethod.Post, $"{path}/rollback", context.CancellationToken)
             : Task.FromResult(BadSegment(req));
 
+    /// <summary>POST drivers/models/{id}/releases/{release}/testing/release: Release the set in testing.</summary>
+    [Function("ReleaseDriverSetInTesting")]
+    public Task<HttpResponseData> ReleaseDriverSetInTesting(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "drivers/models/{id}/releases/{release}/testing/release")] HttpRequestData req,
+        string id,
+        string release,
+        FunctionContext context) =>
+        PairPath(id, release, null) is { } path
+            ? ForwardAsync(req, HttpMethod.Post, $"{path}/testing/release", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
     /// <summary>GET drivers/models/{id}/removal-impact?release=.</summary>
     [Function("GetDriverRemovalImpact")]
     public Task<HttpResponseData> GetDriverRemovalImpact(

@@ -48,10 +48,22 @@ public sealed record DriverRunStart(DriverRunStartStatus Status, Guid? RunId = n
 public sealed partial class DriverSyncService
 {
     /// <summary>Limit shared by Sync now and Check for updates on the Models tab.</summary>
-    public static readonly TimeSpan RunLimit = TimeSpan.FromMinutes(60);
+    public static readonly TimeSpan RunLimit = TimeSpan.FromMinutes(1);
 
     /// <summary>Limit of Check for updates on one model.</summary>
-    public static readonly TimeSpan ModelCheckLimit = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan ModelCheckLimit = TimeSpan.FromMinutes(1);
+
+    /// <summary>Stored change of a version the first set brought in, followed by who completed onboarding.</summary>
+    public const string OnboardingChangePrefix = "Onboarding by ";
+
+    /// <summary>Stored change of a version a sync brought in.</summary>
+    public const string SyncChange = "Sync";
+
+    /// <summary>Stored change of a version held by a roll back, followed by who rolled it back.</summary>
+    public const string RollBackChangePrefix = "Roll back by ";
+
+    /// <summary>Stored change of a custom component's version, followed by who uploaded it.</summary>
+    public const string CustomChangePrefix = "Custom component by ";
 
     /// <summary>A run still running after this is ended as Failed.</summary>
     public static readonly TimeSpan Watchdog = TimeSpan.FromHours(2);
@@ -178,12 +190,12 @@ public sealed partial class DriverSyncService
 
         if (trigger is DriverSyncTrigger.Manual or DriverSyncTrigger.Check && sharedAvailableAt > now)
         {
-            return new DriverRunStart(DriverRunStartStatus.TooSoon, AvailableAt: sharedAvailableAt, Detail: $"Drivers were checked less than an hour ago. Try again after {sharedAvailableAt:yyyy-MM-dd HH:mm} UTC.");
+            return new DriverRunStart(DriverRunStartStatus.TooSoon, AvailableAt: sharedAvailableAt, Detail: $"Drivers were checked less than a minute ago. Try again after {sharedAvailableAt:yyyy-MM-dd HH:mm:ss} UTC.");
         }
 
         if (trigger == DriverSyncTrigger.ModelCheck && model?.LastCheckedAt + ModelCheckLimit is { } modelAvailableAt && modelAvailableAt > now)
         {
-            return new DriverRunStart(DriverRunStartStatus.TooSoon, AvailableAt: modelAvailableAt, Detail: $"This model was checked less than 15 minutes ago. Try again after {modelAvailableAt:yyyy-MM-dd HH:mm} UTC.");
+            return new DriverRunStart(DriverRunStartStatus.TooSoon, AvailableAt: modelAvailableAt, Detail: $"This model was checked less than a minute ago. Try again after {modelAvailableAt:yyyy-MM-dd HH:mm:ss} UTC.");
         }
 
         var vendors = new List<DriverVendor>();
@@ -971,7 +983,7 @@ public sealed partial class DriverSyncService
                 return NoWork;
             }
 
-            if (!pointer.Dirty && pointer.PendingVersion is null && pointer.CurrentVersion is not null)
+            if (!pointer.Dirty && pointer.PendingVersion is null && (pointer.CurrentVersion ?? pointer.TestingVersion) is not null)
             {
                 return NoWork;
             }
@@ -1015,7 +1027,7 @@ public sealed partial class DriverSyncService
                 && history.Where(v => v.LineageKey == lineage && v.Version == rollBack.Version && v.Origin != DriverComponentOrigin.Custom).MaxBy(v => v.From) is { } held)
             {
                 var heldItem = HeldItem(model.Vendor, component, held, action) with { LineageKey = lineage };
-                rolled[lineage] = ($"Roll back by {rollBack.ChangedBy}", held.Url);
+                rolled[lineage] = ($"{RollBackChangePrefix}{rollBack.ChangedBy}", held.Url);
                 var heldStatus = await EnsureFileAsync(vendor, heldItem, held.Url, run, downloads, ct);
                 candidates.Add(new DriverSetCandidate(lineage, action, new DriverSetFileCandidate(heldItem, heldStatus), lastVerified));
                 continue;
@@ -1038,14 +1050,15 @@ public sealed partial class DriverSyncService
             if (target.RowKey == modelKey && (await _store.CustomComponents.GetAsync(DriverStore.CustomPartition, customKey, ct))?.Value is { } custom)
             {
                 var customItem = CustomItem(custom);
-                rolled[customItem.LineageKey] = ($"Custom component by {custom.UploadedBy}", null);
+                rolled[customItem.LineageKey] = ($"{CustomChangePrefix}{custom.UploadedBy}", null);
                 currentItems.TryGetValue(customItem.LineageKey, out var lastCustom);
                 candidates.Add(new DriverSetCandidate(customItem.LineageKey, customItem.Action, new DriverSetFileCandidate(customItem, DriverFileStatus.Verified), lastCustom));
             }
         }
 
         var plan = DriverSetBuilder.Plan(candidates);
-        var decision = DriverSetBuilder.Decide(pointer, plan, now);
+        var holdForTesting = (await _store.GetSyncSettingsAsync(ct)).Value.WaitForTesting;
+        var decision = DriverSetBuilder.Decide(pointer, plan, now, holdForTesting);
         var next = decision.Next with { Dirty = false, BuildAfter = null, PendingChanges = 0 };
         if (decision.Version is { } version)
         {
@@ -1068,7 +1081,7 @@ public sealed partial class DriverSyncService
 
         if (decision.Version is { } built)
         {
-            await RecordBuildAsync(model, release, built, decision.Kind, plan, currentItems, pointer.CurrentVersion is null, run is not null, now, ct);
+            await RecordBuildAsync(model, release, built, decision.Kind, plan, currentItems, pointer.CurrentVersion is null && pointer.TestingVersion is null, run is not null, now, ct);
         }
 
         if (decision.Kind == DriverSetDecisionKind.NewCurrent)
@@ -1076,8 +1089,18 @@ public sealed partial class DriverSyncService
             await RecordVersionsAsync(model, release, decision.Version!.Value, pointer.CurrentVersion, plan.Items, components.ToDictionary(c => c.RowKey, c => c.Value, StringComparer.Ordinal), rolled, now, ct);
             LogSetCurrent(_logger, decision.Version!.Value, pair);
         }
+        else if (decision.Kind == DriverSetDecisionKind.NewTesting)
+        {
+            LogSetInTesting(_logger, decision.Version!.Value, pair);
 
-        return new StepResult(downloads, NewSet: decision.Kind == DriverSetDecisionKind.NewCurrent);
+            // Wait for testing was turned off during this build, after the switch released every set in testing.
+            if (!(await _store.GetSyncSettingsAsync(ct)).Value.WaitForTesting)
+            {
+                await ReleaseTestingAsync(modelId, release, ct);
+            }
+        }
+
+        return new StepResult(downloads, NewSet: decision.Kind is DriverSetDecisionKind.NewCurrent or DriverSetDecisionKind.NewTesting);
     }
 
     // The file record is written before its download is queued, so the Downloads tab and the
@@ -1115,16 +1138,17 @@ public sealed partial class DriverSyncService
         var existing = (await _store.SetBuilds.GetAsync(pair, key, ct))?.Value;
         var reusedFiles = currentItems.Values.Select(i => i.BlobName).ToHashSet(StringComparer.Ordinal);
         var newItems = plan.Items.Where(i => !reusedFiles.Contains(i.BlobName)).ToList();
+        var ready = kind is DriverSetDecisionKind.NewCurrent or DriverSetDecisionKind.NewTesting;
         await _store.SetBuilds.UpsertAsync(pair, key, new DriverSetBuildRecord
         {
             Trigger = existing?.Trigger ?? (firstSet ? "Onboarding" : bySync ? "Sync" : "Policy"),
             BuiltAt = existing?.BuiltAt ?? now,
-            ReadyAt = kind == DriverSetDecisionKind.NewCurrent ? now : null,
+            ReadyAt = ready ? now : null,
             Components = plan.Items.Count,
             NewComponents = newItems.Count,
             ReusedComponents = plan.Items.Count - newItems.Count,
             SizeBytes = plan.Items.Sum(i => i.Size),
-            DownloadedBytes = kind == DriverSetDecisionKind.NewCurrent ? newItems.Sum(i => i.Size) : 0,
+            DownloadedBytes = ready ? newItems.Sum(i => i.Size) : 0,
             FailedComponents = plan.FellBack.Count,
         }, ct);
     }
@@ -1138,7 +1162,7 @@ public sealed partial class DriverSyncService
             .Where(r => r.Value.LastSet is null)
             .GroupBy(r => r.Value.LineageKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
-        var changedBy = previousVersion is null && model.CompletedBy is { } upn ? $"Onboarding by {upn}" : "Sync";
+        var changedBy = previousVersion is null && model.CompletedBy is { } upn ? $"{OnboardingChangePrefix}{upn}" : SyncChange;
         var inSet = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in items)
         {
@@ -1188,6 +1212,92 @@ public sealed partial class DriverSyncService
                 await _store.ComponentVersions.UpsertAsync(pair, stale.RowKey, stale.Value with { LastSet = previousVersion, To = now }, ct);
             }
         }
+    }
+
+    /// <summary>
+    /// Makes a release's set in testing current and records its versions in the component history,
+    /// as a build that becomes current does. Returns the released version, or null when no set is in testing.
+    /// </summary>
+    public async Task<int?> ReleaseTestingAsync(Guid modelId, WindowsRelease release, CancellationToken ct = default)
+    {
+        if ((await _models.GetAsync(modelId, ct))?.Value is not { } model)
+        {
+            return null;
+        }
+
+        var pair = DriverTables.Pair(modelId, release);
+        for (var attempt = 0; attempt < MaxConcurrencyRetries; attempt++)
+        {
+            var row = await _pointers.GetAsync(modelId, release, ct);
+            if (row?.Value is not { TestingVersion: { } testing } pointer || await _sets.GetAsync(modelId, release, testing, ct) is not { } document)
+            {
+                return null;
+            }
+
+            var now = _time.GetUtcNow();
+            if (!await _pointers.TryUpdateAsync(modelId, release, DriverSetBuilder.Release(pointer, now), row.ETag, ct))
+            {
+                continue;
+            }
+
+            var components = (await _store.Components.ListPartitionAsync(pair, ct)).ToDictionary(c => c.RowKey, c => c.Value, StringComparer.Ordinal);
+            await RecordVersionsAsync(model, release, testing, pointer.CurrentVersion, document.Items, components, await HeldChangesAsync(model, pair, ct), now, ct);
+            LogSetCurrent(_logger, testing, pair);
+            return testing;
+        }
+
+        throw new InvalidOperationException($"The driver set pointer of {pair} kept changing during the release.");
+    }
+
+    /// <summary>How many model and release pairs have a set in testing.</summary>
+    public async Task<int> CountTestingAsync(CancellationToken ct = default) =>
+        (await _pointers.ListAllAsync(ct)).Count(p => p.Row.Value.TestingVersion is not null);
+
+    /// <summary>Releases every set in testing, for when newer versions are used automatically again. Returns what was released.</summary>
+    public async Task<IReadOnlyList<(string ModelName, WindowsRelease Release, int Version)>> ReleaseAllTestingAsync(CancellationToken ct = default)
+    {
+        var released = new List<(string, WindowsRelease, int)>();
+        foreach (var (pair, row) in await _pointers.ListAllAsync(ct))
+        {
+            if (row.Value.TestingVersion is not null
+                && TryParsePair(pair, out var modelId, out var release)
+                && (await _models.GetAsync(modelId, ct))?.Value is { } model
+                && await ReleaseTestingAsync(modelId, release, ct) is { } version)
+            {
+                released.Add((model.DisplayName, release, version));
+            }
+        }
+
+        return released;
+    }
+
+    // Who brought in rolled back and custom versions, for the history of a released set; mirrors BuildSetAsync.
+    private async Task<Dictionary<string, (string? ChangedBy, string? Url)>> HeldChangesAsync(DriverModelRecord model, string pair, CancellationToken ct)
+    {
+        var held = new Dictionary<string, (string? ChangedBy, string? Url)>(StringComparer.Ordinal);
+        var rollBacks = await _store.RollBacks.ListPartitionAsync(pair, ct);
+        if (rollBacks.Count > 0)
+        {
+            var history = (await _store.ComponentVersions.ListPartitionAsync(pair, ct)).Select(r => r.Value).ToList();
+            foreach (var rollBack in rollBacks)
+            {
+                if (history.Where(v => v.LineageKey == rollBack.RowKey && v.Version == rollBack.Value.Version && v.Origin != DriverComponentOrigin.Custom).MaxBy(v => v.From) is { } version)
+                {
+                    held[rollBack.RowKey] = ($"{RollBackChangePrefix}{rollBack.Value.ChangedBy}", version.Url);
+                }
+            }
+        }
+
+        var modelKey = model.ModelId.ToString("D");
+        foreach (var (customKey, target) in await _store.CustomTargets.ListAllAsync(ct))
+        {
+            if (target.RowKey == modelKey && (await _store.CustomComponents.GetAsync(DriverStore.CustomPartition, customKey, ct))?.Value is { } custom)
+            {
+                held[CustomItem(custom).LineageKey] = ($"{CustomChangePrefix}{custom.UploadedBy}", null);
+            }
+        }
+
+        return held;
     }
 
     private async Task FinalizeRunAsync(Guid? runId, CancellationToken ct)
@@ -1334,7 +1444,7 @@ public sealed partial class DriverSyncService
         {
             if (TryParsePair(pair, out var modelId, out var release))
             {
-                foreach (var version in new[] { row.Value.CurrentVersion, row.Value.PreviousVersion, row.Value.PendingVersion })
+                foreach (var version in new[] { row.Value.CurrentVersion, row.Value.PreviousVersion, row.Value.PendingVersion, row.Value.TestingVersion })
                 {
                     if (version is { } v)
                     {
@@ -1497,6 +1607,9 @@ public sealed partial class DriverSyncService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Driver set {Version} of {Pair} is current.")]
     private static partial void LogSetCurrent(ILogger logger, int version, string pair);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Driver set {Version} of {Pair} is in testing.")]
+    private static partial void LogSetInTesting(ILogger logger, int version, string pair);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Onboarding of driver model {ModelId} is queued behind the running sync.")]
     private static partial void LogOnboardingQueued(ILogger logger, Guid modelId);

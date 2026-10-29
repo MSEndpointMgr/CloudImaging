@@ -46,6 +46,9 @@ public enum DriverSetDecisionKind
 
     /// <summary>A new set becomes current.</summary>
     NewCurrent,
+
+    /// <summary>A new set is built and waits in testing; the current set stays.</summary>
+    NewTesting,
 }
 
 /// <summary>The pointer after a build.</summary>
@@ -114,13 +117,22 @@ public static class DriverSetBuilder
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', lines))));
     }
 
-    /// <summary>Decides how the pointer moves for a plan.</summary>
-    public static DriverSetDecision Decide(DriverSetPointerRecord current, DriverSetBuildPlan plan, DateTimeOffset now)
+    /// <summary>
+    /// Decides how the pointer moves for a plan. With <paramref name="holdForTesting"/> a ready set
+    /// goes into testing instead of becoming current, replacing any set already in testing.
+    /// </summary>
+    public static DriverSetDecision Decide(DriverSetPointerRecord current, DriverSetBuildPlan plan, DateTimeOffset now, bool holdForTesting = false)
     {
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(plan);
 
-        if (plan.Fingerprint == current.CurrentFingerprint || plan.Fingerprint == current.RolledBackFromFingerprint)
+        // Back to the current set: whatever was in testing no longer differs from it.
+        if (plan.Fingerprint == current.CurrentFingerprint)
+        {
+            return new DriverSetDecision(DriverSetDecisionKind.NoChange, current with { PendingVersion = null, TestingVersion = null, TestingFingerprint = null, TestingSince = null }, null);
+        }
+
+        if (plan.Fingerprint == current.RolledBackFromFingerprint || (holdForTesting && plan.Fingerprint == current.TestingFingerprint))
         {
             return new DriverSetDecision(DriverSetDecisionKind.NoChange, current with { PendingVersion = null }, null);
         }
@@ -134,6 +146,21 @@ public static class DriverSetBuilder
                 version);
         }
 
+        if (holdForTesting)
+        {
+            return new DriverSetDecision(
+                DriverSetDecisionKind.NewTesting,
+                current with
+                {
+                    TestingVersion = version,
+                    TestingFingerprint = plan.Fingerprint,
+                    TestingSince = now,
+                    LastVersion = Math.Max(current.LastVersion, version),
+                    PendingVersion = null,
+                },
+                version);
+        }
+
         return new DriverSetDecision(
             DriverSetDecisionKind.NewCurrent,
             current with
@@ -144,9 +171,34 @@ public static class DriverSetBuilder
                 RolledBackFromFingerprint = null,
                 LastVersion = Math.Max(current.LastVersion, version),
                 PendingVersion = null,
+                TestingVersion = null,
+                TestingFingerprint = null,
+                TestingSince = null,
                 BuiltAt = now,
             },
             version);
+    }
+
+    /// <summary>Makes the set in testing current; the set it replaces becomes the previous one.</summary>
+    public static DriverSetPointerRecord Release(DriverSetPointerRecord current, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        if (current.TestingVersion is not { } testing)
+        {
+            throw new InvalidOperationException("There is no driver set in testing to release.");
+        }
+
+        return current with
+        {
+            PreviousVersion = current.CurrentVersion ?? current.PreviousVersion,
+            CurrentVersion = testing,
+            CurrentFingerprint = current.TestingFingerprint,
+            RolledBackFromFingerprint = null,
+            TestingVersion = null,
+            TestingFingerprint = null,
+            TestingSince = null,
+            BuiltAt = now,
+        };
     }
 
     /// <summary>

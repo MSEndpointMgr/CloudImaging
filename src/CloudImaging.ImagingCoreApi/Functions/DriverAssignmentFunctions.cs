@@ -60,6 +60,7 @@ public sealed class DriverAssignmentFunctions
             return await DriverHttp.ProblemAsync(req, HttpStatusCode.NotFound, "OS image not found.", ct);
         }
 
+        var options = await _resolver.OptionsAsync(image, _sets, ct);
         var sessions = new List<DriverAssignmentPreviewSession>();
         foreach (var sessionId in request.SessionIds.Distinct())
         {
@@ -74,6 +75,7 @@ public sealed class DriverAssignmentFunctions
             {
                 SessionId = sessionId,
                 MatchedModelId = pin.SkipReason is null ? pin.ModelId : null,
+                TestingModelId = pin.SkipReason == DriverSkipReason.NoDriverSet && options.Any(o => o.Testing && o.ModelId == pin.ModelId) ? pin.ModelId : null,
                 SkipReason = pin.SkipReason,
                 MatchKey = pin.MatchKey,
             });
@@ -83,7 +85,7 @@ public sealed class DriverAssignmentFunctions
         {
             Release = image.WindowsRelease,
             Architecture = image.Architecture,
-            Options = await _resolver.OptionsAsync(image, _sets, ct),
+            Options = options,
             Sessions = sessions,
         }, ct);
     }
