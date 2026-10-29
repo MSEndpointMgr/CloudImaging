@@ -520,6 +520,9 @@ public sealed record DriverSyncRunRecord
 /// <summary>The active-run lock row.</summary>
 public sealed record DriverActiveRunRecord(Guid RunId, DateTimeOffset StartedAt);
 
+/// <summary>An onboarding waiting for the active run to finish, started in the order it was queued.</summary>
+public sealed record DriverQueuedRunRecord(Guid ModelId, string ModelName, string QueuedBy, DateTimeOffset QueuedAt);
+
 /// <summary>A change log row (3.13).</summary>
 public sealed record DriverChangeLogRecord
 {

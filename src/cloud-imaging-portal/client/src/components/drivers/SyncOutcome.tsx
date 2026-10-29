@@ -12,10 +12,22 @@ const ICONS: Record<DriverSyncItemOutcome, { icon: typeof CircleX; className: st
   Failed: { icon: CircleX, className: 'text-destructive' },
 };
 
-/** Icon and label of a sync item's outcome; a failure reason is the icon's tooltip. */
-export function SyncOutcome({ outcome, reason }: { outcome: DriverSyncItemOutcome; reason?: string | null }): React.ReactElement {
+/**
+ * Icon and label of a sync item's outcome. A failure reason is the icon's tooltip, or follows the
+ * label when `inlineReason` is set, for a table with room for it.
+ */
+export function SyncOutcome({ outcome, reason, inlineReason = false }: { outcome: DriverSyncItemOutcome; reason?: string | null; inlineReason?: boolean }): React.ReactElement {
   const { icon: Icon, className } = ICONS[outcome];
   const label = outcomeLabel(outcome);
+  if (inlineReason) {
+    const text = reason ? `${label}: ${reason}` : label;
+    return (
+      <span className="flex min-w-0 items-center gap-2" title={text}>
+        <Icon className={`h-4 w-4 shrink-0 ${className}`} aria-hidden="true" />
+        <span className="truncate">{text}</span>
+      </span>
+    );
+  }
   return (
     <span className="flex min-w-0 items-center gap-2">
       {reason ? (

@@ -29,8 +29,10 @@ export function AppShell(): React.ReactElement {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header />
-        <div id={SAVE_BAR_SLOT_ID} className="relative z-10 shrink-0 empty:hidden" />
-        <main className="flex-1 overflow-y-auto bg-muted/30 p-6">
+        {/* Both reserve the scrollbar gutter, so the save bar taking height from main never makes
+            a scrollbar appear and shift the page, and the bar's content lines up with the page's. */}
+        <div id={SAVE_BAR_SLOT_ID} className="relative z-10 shrink-0 overflow-hidden [scrollbar-gutter:stable] empty:hidden" />
+        <main className="flex-1 overflow-y-auto bg-muted/30 p-6 [scrollbar-gutter:stable]">
           {/* 1440 rather than Tailwind's 7xl (1280). The tables here carry 6-7 columns of
               machine data; at 1280 the serial and error-detail columns were the ones giving up
               width, on displays that had hundreds of spare pixels sitting in the margins. */}

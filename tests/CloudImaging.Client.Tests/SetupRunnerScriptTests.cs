@@ -185,6 +185,24 @@ public sealed partial class SetupRunnerScriptTests : IDisposable
         File.Exists(_logPath).Should().BeTrue();
     }
 
+    [Fact]
+    public void Cleanup_RemovesWhatAnInstallerExtractedItself_AndStagingFoldersLeftEmpty_ButNotOtherContentOrWindowsFolders()
+    {
+        var driverFolder = @"CloudImaging\Drivers\000-sp1";
+        var driverFile = Stage($@"{driverFolder}\sp1.exe", "@exit /b 0");
+        Stage(@"SWSetup\SP1\setup.exe", "extracted by the SoftPaq");
+        Stage(@"SWSetup\SP9\keep.txt", "already on the image");
+        WriteManifest(new SetupRunnerManifestItem(1, SetupRunnerItemKind.DriverInstaller, "HP Hotkey Support", [driverFile],
+            new SetupRunnerManifestCommand("cmd.exe", "/c exit 0", driverFolder), 60, [0, 3010], [driverFolder, @"SWSetup\sp1"]));
+
+        Run();
+
+        Directory.Exists(Path.Combine(_root, "SWSetup", "SP1")).Should().BeFalse();
+        File.Exists(Path.Combine(_root, @"SWSetup\SP9\keep.txt")).Should().BeTrue("only the component's own folder is removed");
+        Directory.Exists(Path.Combine(_root, "CloudImaging")).Should().BeFalse("the staging folders are empty afterwards");
+        Directory.Exists(Path.Combine(_root, @"Windows\Setup")).Should().BeTrue("folders under Windows are never removed");
+    }
+
     /// <summary>A driver installer as Install drivers hands it over: a staged folder with a command script that appends to <paramref name="order"/>.</summary>
     private SpecializeInstaller DriverInstaller(string name, string folder, string order, string mark, int exitCode)
     {

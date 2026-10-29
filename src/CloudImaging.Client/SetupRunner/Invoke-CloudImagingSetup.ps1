@@ -12,8 +12,9 @@
     whole process tree. A failed item never stops the next one.
 
     One ASCII line per item is written to the log, which is never deleted. Everything that was
-    staged is removed afterwards, also after a failure. The script always exits 0, so Windows setup
-    never treats it as a failed command.
+    staged is removed afterwards, also after a failure, together with the folders a vendor
+    installer extracts itself to and staging folders left empty. The script always exits 0, so
+    Windows setup never treats it as a failed command.
 
 .PARAMETER ManifestPath
     Path of the manifest the Client wrote in WinPE.
@@ -29,10 +30,11 @@
     Author:      MSEndpointMgr
     Contact:     @MSEndpointMgr
     Created:     2026-10-23
-    Updated:     2026-10-23
+    Updated:     2026-10-29
 
     Version history:
     1.0.0 - (2026-10-23) Initial version.
+    1.1.0 - (2026-10-29) Removes staging folders left empty after cleanup, outside the Windows folder.
 #>
 [CmdletBinding()]
 param (
@@ -128,6 +130,13 @@ Begin {
             try {
                 if (Test-Path -LiteralPath $FullPath) {
                     Remove-Item -LiteralPath $FullPath -Recurse -Force -ErrorAction Stop
+                }
+
+                # Staging parents such as CloudImaging\Drivers and SWSetup go once empty; folders under Windows belong to Windows and stay.
+                $Parent = Split-Path -Path $FullPath -Parent
+                while ($Parent.Length -gt $SystemRoot.Length -and ($Parent.Substring($SystemRoot.Length) -split '\\')[0] -ine "Windows" -and (Test-Path -LiteralPath $Parent) -and $null -eq (Get-ChildItem -LiteralPath $Parent -Force | Select-Object -First 1)) {
+                    Remove-Item -LiteralPath $Parent -Force -ErrorAction Stop
+                    $Parent = Split-Path -Path $Parent -Parent
                 }
             }
             catch [System.Exception] {

@@ -2,15 +2,16 @@ import React, { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronDown, ChevronRight, History } from 'lucide-react';
 import { Badge } from '../ui/badge.tsx';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
-import { Skeleton } from '../ui/skeleton.tsx';
+import { Skeleton, TableSkeletonRows } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
-  RESULT_LABELS, fetchSyncRunItems, outcomeLabel, runSummary,
+  RESULT_LABELS, fetchSyncRunItems, runSummary,
   type DriverSyncResult, type DriverSyncRun, type DriverSyncRunItem,
 } from '../../lib/drivers.ts';
+import { DriverCard } from './DriverCard.tsx';
+import { SyncOutcome } from './SyncOutcome.tsx';
 
 const RESULT_VARIANT: Record<DriverSyncResult, 'info' | 'success' | 'warning' | 'negative'> = {
   Running: 'info',
@@ -40,13 +41,15 @@ function RunItems({ runId }: { runId: string }): React.ReactElement {
   if (error) return <p className="px-4 py-3 text-sm text-destructive">{error}</p>;
   if (!items) return <div className="px-4 py-3"><Skeleton className="h-6 w-full" /></div>;
   return (
+    <div className="px-4 py-3">
+    <div className="overflow-hidden rounded-md border border-border bg-background">
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[28%]">Model</TableHead>
-          <TableHead>Component</TableHead>
-          <TableHead className="w-[20%]">Change</TableHead>
-          <TableHead className="w-[22%]">Outcome</TableHead>
+          <TableHead className="w-[22%]">Model</TableHead>
+          <TableHead className="w-[32%]">Component</TableHead>
+          <TableHead className="w-[26%]">Change</TableHead>
+          <TableHead className="w-[20%]">Outcome</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -60,12 +63,14 @@ function RunItems({ runId }: { runId: string }): React.ReactElement {
                 <Link className="hover:underline" to={`/drivers/models/${item.modelId}${item.release ? `?release=${item.release}` : ''}#${item.lineageKey}`}>{item.componentName ?? item.lineageKey}</Link>
               ) : (item.componentName ?? item.reason)}
             </TableCell>
-            <TableCell className="truncate">{change(item)}</TableCell>
-            <TableCell className="truncate" title={item.reason ?? undefined}>{item.reason ? `${outcomeLabel(item.outcome)}: ${item.reason}` : outcomeLabel(item.outcome)}</TableCell>
+            <TableCell className="truncate tabular-nums">{change(item)}</TableCell>
+            <TableCell><SyncOutcome outcome={item.outcome} reason={item.reason} inlineReason /></TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
+    </div>
+    </div>
   );
 }
 
@@ -73,17 +78,9 @@ function RunItems({ runId }: { runId: string }): React.ReactElement {
 export function SyncHistory({ runs }: { runs: DriverSyncRun[] | null }): React.ReactElement {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">History</CardTitle>
-        <CardDescription>Every sync and check for updates in the last 90 days.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {runs === null ? (
-          <Skeleton className="h-24 w-full" />
-        ) : runs.length === 0 ? (
-          <EmptyState icon={History} title="No syncs yet" description="Runs appear here when the schedule, Sync now or Check for updates starts one." />
-        ) : (
+    <DriverCard title="History" description="Every sync and check for updates in the last 90 days.">
+      <div className="px-5 py-4">
+        <div className="overflow-hidden rounded-md border border-border">
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
@@ -94,7 +91,15 @@ export function SyncHistory({ runs }: { runs: DriverSyncRun[] | null }): React.R
               </TableRow>
             </TableHeader>
             <TableBody>
-              {runs.map(run => {
+              {runs === null ? (
+                <TableSkeletonRows columns={4} rows={3} />
+              ) : runs.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4} className="p-0">
+                    <EmptyState icon={History} title="No syncs yet" description="Runs appear here when the schedule, Sync now or Check for updates starts one." />
+                  </TableCell>
+                </TableRow>
+              ) : runs.map(run => {
                 const hasItems = Object.values(run.counts).some(n => (n ?? 0) > 0);
                 const expanded = open === run.runId;
                 const summary = runSummary(run);
@@ -128,8 +133,8 @@ export function SyncHistory({ runs }: { runs: DriverSyncRun[] | null }): React.R
               })}
             </TableBody>
           </Table>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      </div>
+    </DriverCard>
   );
 }

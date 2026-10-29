@@ -1,6 +1,9 @@
 import React from 'react';
-import { ChevronRight, CircleAlert, CircleDashed, CircleX, Download, Info } from 'lucide-react';
+import { ChevronRight, CircleAlert, CircleDashed, CircleX, Cpu, Download, Info, RefreshCw, Search } from 'lucide-react';
 import { Badge } from '../ui/badge.tsx';
+import { Button } from '../ui/button.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import { TableSkeletonRows } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { formatSize, releaseLabel, releaseVersion, vendorLabel, type DriverModelRow } from '../../lib/drivers.ts';
@@ -64,9 +67,24 @@ function StatusLine({ icon, label }: { icon: React.ReactNode; label: string }): 
 }
 
 /** The Models tab table: one line per onboarded model; a row opens the model's page. */
-export function ModelsTable({ models, onOpen }: { models: DriverModelRow[]; onOpen: (modelId: string) => void }): React.ReactElement {
+export function ModelsTable({ models, total, loadError, onRetry, emptyAction, onOpen }: {
+  /** The models after search and filters; null while loading. */
+  models: DriverModelRow[] | null;
+  /** How many models are onboarded, to tell "none yet" from "none match". */
+  total: number;
+  loadError: string | null;
+  onRetry: () => void;
+  emptyAction?: React.ReactNode;
+  onOpen: (modelId: string) => void;
+}): React.ReactElement {
+  const message = (content: React.ReactNode) => (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={8} className="p-0">{content}</TableCell>
+    </TableRow>
+  );
   return (
     <div>
+    <div className="overflow-hidden rounded-md border border-border">
     <Table className="table-fixed">
       <TableHeader>
         <TableRow>
@@ -81,12 +99,15 @@ export function ModelsTable({ models, onOpen }: { models: DriverModelRow[]; onOp
         </TableRow>
       </TableHeader>
       <TableBody>
-        {models.length === 0 && (
-          <TableRow>
-            <TableCell colSpan={8} className="h-14 text-center text-sm text-muted-foreground">No models match the search.</TableCell>
-          </TableRow>
-        )}
-        {models.map(model => {
+        {loadError ? message(
+          <EmptyState icon={RefreshCw} title="Could not load driver models" description={loadError} action={<Button variant="outline" onClick={onRetry}><RefreshCw />Try again</Button>} />,
+        ) : models === null ? (
+          <TableSkeletonRows columns={8} rows={3} />
+        ) : total === 0 ? message(
+          <EmptyState icon={Cpu} title="No models onboarded yet" action={emptyAction} />,
+        ) : models.length === 0 ? message(
+          <EmptyState icon={Search} title="No models match" description="Clear the search or choose All vendors to see every model." />,
+        ) : models.map(model => {
           const releases = model.releases.map(releaseLabel).join(', ');
           return (
             <TableRow key={model.modelId} className="h-14 cursor-pointer" onClick={() => onOpen(model.modelId)}>
@@ -119,7 +140,10 @@ export function ModelsTable({ models, onOpen }: { models: DriverModelRow[]; onOp
         })}
       </TableBody>
     </Table>
-    <p className="mt-2 text-xs text-muted-foreground">{models.length === 1 ? '1 model' : `${models.length} models`}</p>
+    </div>
+    {models !== null && models.length > 0 && (
+      <p className="mt-2 text-xs text-muted-foreground">{models.length === 1 ? '1 model' : `${models.length} models`}</p>
+    )}
     </div>
   );
 }

@@ -48,3 +48,23 @@ export function Checkbox({ checked, onCheckedChange, label, labelledBy, disabled
     </button>
   );
 }
+
+/**
+ * A checkbox with its text beside it. `Checkbox` alone has no visible text, so a list of options
+ * built from it shows only boxes. The whole row is clickable.
+ */
+export function CheckboxField({ label, checked, onCheckedChange, disabled = false, className }: {
+  label: string;
+  checked: boolean | 'mixed';
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+}): React.ReactElement {
+  const labelId = React.useId();
+  return (
+    <label className={cn('flex min-w-0 items-center gap-3 text-sm', disabled ? 'cursor-not-allowed text-muted-foreground' : 'cursor-pointer', className)}>
+      <Checkbox checked={checked} onCheckedChange={onCheckedChange} labelledBy={labelId} disabled={disabled} />
+      <span id={labelId} className="truncate" title={label}>{label}</span>
+    </label>
+  );
+}

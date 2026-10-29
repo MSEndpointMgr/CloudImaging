@@ -47,7 +47,9 @@ New service `Services/Drivers/DriverInstallService.cs` with vendor extractors be
 6. **Hand off** (Offline + Specialize, Specialize): build a `SpecializeInstaller`: `Name` the
    component name; `Files` every file under the staged folder with its SHA-256, relative to the
    volume root; `Command` from `installCommand`, working directory the staged folder; timeout 1200
-   seconds; success exit codes 0 and 3010; cleanup path the component folder. Dell 32-bit
+   seconds; success exit codes 0 and 3010; cleanup paths the component folder and, for HP,
+   `SWSetup\<componentId>` (where a SoftPaq that runs itself extracts to). The setup runner also
+   removes staging folders left empty outside `Windows`. Dell 32-bit
    Specialize stages the verified package itself with `"<file>" /s`.
 7. **Clean up**: delete the component folder unless it was handed off.
 

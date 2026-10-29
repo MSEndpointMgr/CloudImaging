@@ -1,12 +1,13 @@
-import { ArrowUp, ArrowDown, HardDrive } from 'lucide-react';
+import { ArrowUp, ArrowDown, HardDrive, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button.tsx';
 import { Input } from './ui/input.tsx';
 import { Label } from './ui/label.tsx';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card.tsx';
+import { Tooltip } from './ui/tooltip.tsx';
 import { UndoChangeButton } from './ui/unsaved-change.tsx';
 import { cn } from '../lib/utils.ts';
 import { unsavedRail } from '../lib/unsavedChanges.ts';
-import { PARTITION_LABELS, positionOf, sortedByOrder, undoPartition, type PartitionType, type PartitioningScheme } from '../lib/partitioningScheme.ts';
+import { DEFAULT_SCHEME, PARTITION_LABELS, positionOf, schemeEquals, sortedByOrder, undoPartition, type PartitionType, type PartitioningScheme } from '../lib/partitioningScheme.ts';
 
 const PARTITION_DESCRIPTIONS: Record<PartitionType, string> = {
   EfiSystem: 'Holds the UEFI boot loader (FAT32). Microsoft requires at least 200 MB, or 300 MB on 4K-native drives. 500 MB is the common enterprise default and leaves headroom for OEM firmware capsule updates and multiple boot loaders.',
@@ -66,6 +67,7 @@ export function PartitioningSchemePanel({ scheme, savedScheme, loading, onChange
   };
 
   const undo = (type: PartitionType) => onChange(undoPartition(scheme, savedScheme, type));
+  const isRecommended = schemeEquals(scheme, DEFAULT_SCHEME);
 
   if (loading) return <p className="text-muted-foreground">Loading…</p>;
 
@@ -73,9 +75,16 @@ export function PartitioningSchemePanel({ scheme, savedScheme, loading, onChange
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <HardDrive className="h-5 w-5 text-primary" aria-hidden="true" />
-            <CardTitle>Disk partitioning scheme</CardTitle>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5 text-primary" aria-hidden="true" />
+              <CardTitle>Disk partitioning scheme</CardTitle>
+            </div>
+            <Tooltip content={isRecommended ? 'The sizes and order are already the recommended ones.' : 'Sets every size and the order back to the recommended layout.'}>
+              <span>
+                <Button variant="outline" onClick={() => onChange(DEFAULT_SCHEME)} disabled={isRecommended}><RotateCcw />Use recommended</Button>
+              </span>
+            </Tooltip>
           </div>
           <CardDescription>
             Controls the size and order of partitions created on the target disk. Applies to
@@ -136,19 +145,7 @@ export function PartitioningSchemePanel({ scheme, savedScheme, loading, onChange
                       <span className="text-xs text-muted-foreground">MB</span>
                     </div>
                     {PARTITION_RECOMMENDED_MB[p.partitionType] !== null && (
-                      <p className="text-xs text-muted-foreground">
-                        Recommended: {PARTITION_RECOMMENDED_MB[p.partitionType]} MB.{' '}
-                        {p.sizeMb !== PARTITION_RECOMMENDED_MB[p.partitionType] && (
-                          <Button
-                            variant="link"
-                            type="button"
-                            className="underline underline-offset-2 hover:text-foreground"
-                            onClick={() => updateSize(p.partitionType, PARTITION_RECOMMENDED_MB[p.partitionType]!)}
-                          >
-                            Use recommended
-                          </Button>
-                        )}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Recommended: {PARTITION_RECOMMENDED_MB[p.partitionType]} MB.</p>
                     )}
                   </>
                 )}

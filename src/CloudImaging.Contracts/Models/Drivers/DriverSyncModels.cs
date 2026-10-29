@@ -178,6 +178,25 @@ public sealed record DriverSyncRunProgress
 
     /// <summary>The latest items, newest first.</summary>
     public IReadOnlyList<DriverSyncRunItem> Latest { get; init; } = [];
+
+    /// <summary>Onboardings that start when this run finishes, in order.</summary>
+    public IReadOnlyList<DriverQueuedRun> Queued { get; init; } = [];
+}
+
+/// <summary>An onboarding waiting for the running sync to finish.</summary>
+public sealed record DriverQueuedRun
+{
+    /// <summary>Model.</summary>
+    public Guid ModelId { get; init; }
+
+    /// <summary>Model name.</summary>
+    public required string ModelName { get; init; }
+
+    /// <summary>Who completed the onboarding.</summary>
+    public required string QueuedBy { get; init; }
+
+    /// <summary>When it was queued.</summary>
+    public DateTimeOffset QueuedAt { get; init; }
 }
 
 /// <summary>A run and its items, for the Driver Synchronization report.</summary>

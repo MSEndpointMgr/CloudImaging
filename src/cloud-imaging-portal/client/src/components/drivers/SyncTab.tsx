@@ -1,21 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Clock, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Input } from '../ui/input.tsx';
 import { Select } from '../ui/select.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
-import { Switch } from '../ui/switch.tsx';
+import { ToggleGroup } from '../ui/toggle-group.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { useAuth } from '../../context/authContext.tsx';
 import { useToast } from '../../context/toastContext.tsx';
-import { cn, formatTimestamp } from '../../lib/utils.ts';
+import { formatTimestamp } from '../../lib/utils.ts';
 import {
   MONDAY_TO_FRIDAY, WEEKDAYS, availableAgainText, browserTimeZone, fetchSyncRuns, fetchSyncSettings, fetchVendors, nextSyncLine, saveSyncSettings, syncNow,
   type DriverSyncRun, type DriverSyncSchedule, type DriverSyncSettings, type DriverSyncSettingsInput, type DriverVendorRow,
 } from '../../lib/drivers.ts';
 import { SyncHistory } from './SyncHistory.tsx';
+import { DriverCard, DriverCardRow, DriverCardRows } from './DriverCard.tsx';
 import { SyncProgressCard } from './SyncProgressCard.tsx';
 import { TimeZonePicker } from './TimeZonePicker.tsx';
 import { VendorsCard } from './VendorsCard.tsx';
@@ -30,21 +30,20 @@ const REPEATS = [1, 2, 3, 4].map(n => ({ value: String(n), label: n === 1 ? 'Eve
 
 const DAY_ERROR = 'Choose at least one day. The last saved days still apply.';
 
+const SYNC_DESCRIPTION = 'Copies new drivers from supported vendors for your onboarded models to your storage account, so devices never download from the vendor during a deployment.';
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+// Newer versions are always used automatically; holding them would turn every vendor refresh into a review queue.
+const NEWER_VERSION_OPTIONS = [{ value: 'auto', label: 'Use automatically' }];
+
+const NEW_COMPONENT_OPTIONS = [
+  { value: 'wait', label: 'Wait for approval' },
+  { value: 'auto', label: 'Use automatically' },
+];
+
 /** How often the history is read again while a sync runs. */
 export const SYNC_POLL_MS = 15_000;
-
-/** A setting: label and help on the left, the control vertically centred on the right. */
-function SettingRow({ label, help, children }: { label: string; help?: React.ReactNode; children: React.ReactNode }): React.ReactElement {
-  return (
-    <div className="flex items-center gap-6 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{label}</p>
-        {help && <p className="text-sm text-muted-foreground">{help}</p>}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
-    </div>
-  );
-}
 
 /** Sync tab: schedule, Sync now, approval setting, vendors and the run history. */
 export function SyncTab(): React.ReactElement {
@@ -123,7 +122,11 @@ export function SyncTab(): React.ReactElement {
   }, [shownRunId]);
 
   if (loadError) {
-    return <EmptyState icon={RefreshCw} title="Could not load the sync settings" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />;
+    return (
+      <div className="rounded-md border border-border">
+        <EmptyState icon={RefreshCw} title="Could not load the sync settings" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
+      </div>
+    );
   }
   if (!settings) {
     return <div className="space-y-4"><Skeleton className="h-64 w-full" /><Skeleton className="h-32 w-full" /></div>;
@@ -138,6 +141,7 @@ export function SyncTab(): React.ReactElement {
     waitForApprovalOfNewComponents: settings.waitForApprovalOfNewComponents,
   };
   const readOnly = !canManageDrivers || saving;
+  const manual = settings.schedule === 'Manual';
   const dayError = settings.schedule === 'SelectedDays' && days === 0;
   const nextLine = nextSyncLine(settings);
   const waiting = availableAgainText(settings.syncNowAvailableAt);
@@ -160,7 +164,7 @@ export function SyncTab(): React.ReactElement {
 
   const changeTime = (value: string) => {
     setTime(value);
-    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(value) && value !== settings.localTime) void save({ ...input, localTime: value });
+    if (TIME_PATTERN.test(value) && value !== settings.localTime) void save({ ...input, localTime: value });
   };
 
   const startSync = async () => {
@@ -180,81 +184,97 @@ export function SyncTab(): React.ReactElement {
   return (
     <div className="space-y-6">
       {shownRunId && <SyncProgressCard key={shownRunId} runId={shownRunId} onFinished={runFinished} onDismiss={dismissRun} />}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Sync</CardTitle>
-          <CardDescription>Downloads new driver versions for onboarded models from the vendors.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-0">
-          <SettingRow label="Schedule">
+      <DriverCard
+        title="Sync"
+        divided={false}
+        description={`${SYNC_DESCRIPTION}${manual ? ' Nothing runs on a schedule: new drivers wait until someone selects Sync now.' : ''}`}
+        aside={(
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Select value={settings.schedule} onValueChange={v => chooseSchedule(v as DriverSyncSchedule)} options={SCHEDULES} aria-label="Schedule" disabled={readOnly} wrapperClassName="w-[170px]" />
+              {!manual && (
+                <>
+                  <div className="relative w-24">
+                    <Clock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                    <Input
+                      value={time}
+                      onChange={e => changeTime(e.target.value)}
+                      onBlur={() => { if (!TIME_PATTERN.test(time)) setTime(settings.localTime); }}
+                      aria-label="Time"
+                      inputMode="numeric"
+                      placeholder="HH:MM"
+                      maxLength={5}
+                      disabled={readOnly}
+                      className="pl-9 tabular-nums"
+                    />
+                  </div>
+                  <TimeZonePicker zones={settings.timeZones} value={settings.timeZone} browser={browser} disabled={readOnly} onChange={zone => void save({ ...input, timeZone: zone })} />
+                </>
+              )}
+            </div>
             {settings.schedule === 'SelectedDays' && (
-              <>
+              <div className="flex items-center gap-2">
                 <Select value={String(settings.repeatWeeks)} onValueChange={v => void save({ ...input, weekdays: days || settings.weekdays, repeatWeeks: Number(v) })} options={REPEATS} aria-label="Repeat" disabled={readOnly} wrapperClassName="w-[170px]" />
-                <div className="flex gap-1" role="group" aria-label="Days">
-                  {WEEKDAYS.map(day => {
-                    const on = (days & day.bit) !== 0;
-                    return (
-                      <Button
-                        key={day.bit}
-                        variant={on ? 'secondary' : 'outline'}
-                        aria-pressed={on}
-                        aria-label={day.long}
-                        disabled={readOnly}
-                        onClick={() => toggleDay(day.bit)}
-                      >
-                        {day.short}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </>
+                <ToggleGroup
+                  aria-label="Days"
+                  items={WEEKDAYS.map(day => ({ value: day.bit, label: day.short, ariaLabel: day.long }))}
+                  isOn={bit => (days & bit) !== 0}
+                  onToggle={toggleDay}
+                  disabled={readOnly}
+                  invalid={dayError}
+                  className="flex-1"
+                />
+              </div>
             )}
-            <Select value={settings.schedule} onValueChange={v => chooseSchedule(v as DriverSyncSchedule)} options={SCHEDULES} aria-label="Schedule" disabled={readOnly} wrapperClassName="w-[170px]" />
-          </SettingRow>
-          {settings.schedule !== 'Manual' && (
-            <>
-              <SettingRow label="Time">
-                <Input type="time" value={time} onChange={e => changeTime(e.target.value)} aria-label="Time" disabled={readOnly} className="w-[120px]" />
-              </SettingRow>
-              <SettingRow label="Time zone">
-                <TimeZonePicker zones={settings.timeZones} value={settings.timeZone} browser={browser} disabled={readOnly} onChange={zone => void save({ ...input, timeZone: zone })} />
-              </SettingRow>
-            </>
-          )}
-          {/* One line of fixed height, so the day error replaces the next-sync line without moving anything. */}
-          <p className={cn('h-6 text-right text-sm', dayError ? 'text-destructive' : 'text-muted-foreground')} role={dayError ? 'alert' : undefined}>
-            {dayError ? DAY_ERROR : nextLine ?? (settings.schedule === 'Manual' ? 'Nothing runs on a schedule: new drivers wait until someone selects Sync now.' : '')}
-          </p>
-
-          <div className="mx-4 border-t border-border" />
-          <SettingRow
-            label="Sync now"
-            help={`Runs the same sync as the schedule: refreshes the model list of every enabled vendor and checks their onboarded models for component updates.${settings.lastRunStartedAt ? ` Last sync started ${formatTimestamp(settings.lastRunStartedAt)}.` : ''}`}
-          >
-            {canManageDrivers && (
-              <Tooltip content={waiting ?? 'Starts a sync now.'}>
-                <span>
-                  <Button variant="outline" onClick={() => void startSync()} disabled={waiting !== null} loading={starting}><RefreshCw />Sync</Button>
-                </span>
-              </Tooltip>
-            )}
-          </SettingRow>
-
-          <div className="-mx-6 border-t border-border" />
-          <SettingRow label="Newer versions" help="A newer version of a component already in a driver set replaces it at the next sync.">
-            <span className="text-sm">Use automatically</span>
-          </SettingRow>
-          <SettingRow label="New components" help="Components a model did not have before are held until someone approves them.">
-            <Switch
-              checked={settings.waitForApprovalOfNewComponents}
-              onCheckedChange={on => void save({ ...input, weekdays: days || settings.weekdays, waitForApprovalOfNewComponents: on })}
-              label="Wait for approval"
-              disabled={readOnly}
-            />
-            <span className="text-sm">Wait for approval</span>
-          </SettingRow>
-        </CardContent>
-      </Card>
+            {/* Aligned under the time field; the day error takes the hint's place so nothing moves. */}
+            {!manual && (dayError ? (
+              <p className="ml-[178px] text-sm text-destructive" role="alert">{DAY_ERROR}</p>
+            ) : (
+              <p className="ml-[178px] min-h-4 text-xs text-muted-foreground" aria-live="polite">{nextLine}</p>
+            ))}
+          </div>
+        )}
+      >
+        <div className="px-5">
+          <div className="border-t border-border/70">
+            <DriverCardRow
+              label="Sync now"
+              help={`Runs the same sync as the schedule: refreshes the model list of every enabled vendor and checks their onboarded models for component updates.${settings.lastRunStartedAt ? ` Last sync started ${formatTimestamp(settings.lastRunStartedAt)}.` : ''}`}
+            >
+              {canManageDrivers && (
+                <Tooltip content={waiting ?? 'Starts a sync now.'}>
+                  <span>
+                    <Button variant="outline" onClick={() => void startSync()} disabled={waiting !== null} loading={starting}><RefreshCw />Sync</Button>
+                  </span>
+                </Tooltip>
+              )}
+            </DriverCardRow>
+          </div>
+        </div>
+        <div className="border-t border-border">
+          <DriverCardRows>
+            <DriverCardRow
+              label="Newer versions"
+              help="The vendor replaces a component the model already has with a newer release, for example Intel WLAN 24.60.0.1 to 24.60.0.3. The new version keeps the same action."
+            >
+              <Select value="auto" onValueChange={() => undefined} options={NEWER_VERSION_OPTIONS} aria-label="Newer versions" disabled={readOnly} wrapperClassName="w-[240px]" />
+            </DriverCardRow>
+            <DriverCardRow
+              label="New components"
+              help="The vendor adds a component the model did not have, such as a service or an app. Rare, and the moment someone should look. Your rules still apply first."
+            >
+              <Select
+                value={settings.waitForApprovalOfNewComponents ? 'wait' : 'auto'}
+                onValueChange={v => void save({ ...input, weekdays: days || settings.weekdays, waitForApprovalOfNewComponents: v === 'wait' })}
+                options={NEW_COMPONENT_OPTIONS}
+                aria-label="New components"
+                disabled={readOnly}
+                wrapperClassName="w-[240px]"
+              />
+            </DriverCardRow>
+          </DriverCardRows>
+        </div>
+      </DriverCard>
 
       <VendorsCard
         vendors={vendors}

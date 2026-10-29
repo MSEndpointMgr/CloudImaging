@@ -91,18 +91,7 @@ export function RulesTab(): React.ReactElement {
         )}
       </div>
 
-      {loadError ? (
-        <EmptyState icon={RefreshCw} title="Could not load rules" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
-      ) : rules === null ? (
-        <Table><TableBody><TableSkeletonRows columns={6} rows={3} /></TableBody></Table>
-      ) : rules.length === 0 ? (
-        <EmptyState
-          icon={ListChecks}
-          title="No rules yet"
-          description="Every component uses its vendor default until a rule or an override changes it."
-          action={canManageDrivers ? <Button variant="outline" onClick={() => setSuggesting(true)}><Sparkles />Suggested rules</Button> : undefined}
-        />
-      ) : (
+      <div className="overflow-hidden rounded-md border border-border">
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
@@ -115,7 +104,26 @@ export function RulesTab(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rules.map(rule => (
+            {loadError ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={canManageDrivers ? 6 : 5} className="p-0">
+                  <EmptyState icon={RefreshCw} title="Could not load rules" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
+                </TableCell>
+              </TableRow>
+            ) : rules === null ? (
+              <TableSkeletonRows columns={canManageDrivers ? 6 : 5} rows={3} />
+            ) : rules.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={canManageDrivers ? 6 : 5} className="p-0">
+                  <EmptyState
+                    icon={ListChecks}
+                    title="No rules yet"
+                    description="Every component uses its vendor default until a rule or an override changes it."
+                    action={canManageDrivers ? <Button variant="outline" onClick={() => setSuggesting(true)}><Sparkles />Suggested rules</Button> : undefined}
+                  />
+                </TableCell>
+              </TableRow>
+            ) : rules.map(rule => (
               <TableRow key={rule.ruleId}>
                 <TableCell className="truncate font-medium" title={rule.name}>{rule.name}</TableCell>
                 <TableCell>{scopeLabel(rule.scope)}</TableCell>
@@ -138,7 +146,7 @@ export function RulesTab(): React.ReactElement {
             ))}
           </TableBody>
         </Table>
-      )}
+      </div>
 
       {rules !== null && (
         <DeploymentFailureCard

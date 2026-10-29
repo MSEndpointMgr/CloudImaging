@@ -1,13 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Cpu, Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { Button } from '../components/ui/button.tsx';
 import { CountPill } from '../components/ui/count-pill.tsx';
-import { EmptyState } from '../components/ui/empty-state.tsx';
 import { SearchInput } from '../components/ui/search-input.tsx';
 import { Select } from '../components/ui/select.tsx';
-import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
-import { Table, TableBody } from '../components/ui/table.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { DOWNLOADS_POLL_MS, DownloadsTab } from '../components/drivers/DownloadsTab.tsx';
 import { ModelsTable } from '../components/drivers/ModelsTable.tsx';
@@ -86,7 +83,7 @@ function ModelsTab(): React.ReactElement {
         <Select
           value={vendor}
           onValueChange={setVendor}
-          options={[{ value: ALL_VENDORS, label: 'All vendors' }, ...vendors.filter(v => v.supported).map(v => ({ value: v.vendor, label: vendorLabel(v.vendor) }))]}
+          options={[{ value: ALL_VENDORS, label: 'All vendors' }, ...vendors.filter(v => v.supported && v.syncEnabled).map(v => ({ value: v.vendor, label: vendorLabel(v.vendor) }))]}
           aria-label="Vendor"
           wrapperClassName="w-40"
         />
@@ -105,15 +102,14 @@ function ModelsTab(): React.ReactElement {
         </div>
       </div>
 
-      {loadError ? (
-        <EmptyState icon={RefreshCw} title="Could not load driver models" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
-      ) : models === null ? (
-        <Table><TableBody><TableSkeletonRows columns={8} rows={3} /></TableBody></Table>
-      ) : models.length === 0 ? (
-        <EmptyState icon={Cpu} title="No models onboarded yet" action={canManageDrivers ? onboardButton : undefined} />
-      ) : (
-        <ModelsTable models={visible} onOpen={id => navigate(`/drivers/models/${id}`)} />
-      )}
+      <ModelsTable
+        models={models === null ? null : visible}
+        total={models?.length ?? 0}
+        loadError={loadError}
+        onRetry={() => void load()}
+        emptyAction={canManageDrivers ? onboardButton : undefined}
+        onOpen={id => navigate(`/drivers/models/${id}`)}
+      />
 
       {onboarding && <OnboardModelDialog vendors={vendors} onClose={() => setOnboarding(false)} />}
     </div>

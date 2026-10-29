@@ -200,7 +200,8 @@ export interface DriverModelPage {
   previousSetVersion: number | null;
   pendingVersion: number | null;
   pending: { changes: number; buildAt: string } | null;
-  preparing: { setVersion: number; done: number; total: number } | null;
+  /** `queued`: onboarding waits for the running sync, so nothing downloads yet. */
+  preparing: { setVersion: number; done: number; total: number; queued?: boolean } | null;
   /** The vendor published a new version of a component a custom component replaces. */
   notices?: DriverCustomNotice[];
   tiles: { offline: number; offlineAndSpecialize: number; specialize: number; skip: number; downloadPerDeviceBytes: number };
@@ -210,6 +211,11 @@ export interface DriverModelPage {
 export const WINDOWS_RELEASES: readonly WindowsRelease[] = ['Windows11_25H2', 'Windows11_24H2', 'Windows11_23H2', 'Windows10_22H2'];
 
 export const DRIVER_ACTIONS: readonly DriverAction[] = ['Offline', 'OfflineAndSpecialize', 'Specialize', 'Skip'];
+
+/** Locked to Skip with nothing to approve or remove, so the row offers no choice and leaves the table. */
+export function isLockedAway(component: DriverComponentRow): boolean {
+  return component.source === 'Locked' && component.state === 'Active';
+}
 
 /** "113 MB", "2.41 GB". */
 export function formatSize(bytes: number): string {
@@ -743,7 +749,7 @@ export const setCriticalCategories = (vendor: DriverVendor, categories: string[]
 
 export type DriverSyncSchedule = 'Daily' | 'SelectedDays' | 'Manual';
 
-export type DriverSyncTrigger = 'Scheduled' | 'Manual' | 'Check' | 'ModelCheck';
+export type DriverSyncTrigger = 'Scheduled' | 'Manual' | 'Check' | 'ModelCheck' | 'Onboarding';
 
 export type DriverSyncResult = 'Running' | 'Completed' | 'PartlyFailed' | 'Failed';
 
@@ -823,6 +829,15 @@ export interface DriverSyncRunProgress {
   found: Partial<Record<DriverSyncItemOutcome, number>>;
   /** Newest first. */
   latest: DriverSyncRunItem[];
+  /** Onboardings that start when this run finishes, in order. */
+  queued?: DriverQueuedRun[];
+}
+
+export interface DriverQueuedRun {
+  modelId: string;
+  modelName: string;
+  queuedBy: string;
+  queuedAt: string;
 }
 
 export interface DriverSyncReportRun {
@@ -835,6 +850,7 @@ export const TRIGGER_LABELS: Record<DriverSyncTrigger, string> = {
   Manual: 'Sync now',
   Check: 'Check for updates',
   ModelCheck: 'Check for updates',
+  Onboarding: 'Complete onboarding',
 };
 
 /** Monday first, as the day toggles show them; bit 0 is Monday. */
@@ -909,17 +925,26 @@ export function countsSummary(counts: Partial<Record<DriverSyncItemOutcome, numb
   return parts.join(', ');
 }
 
+/** What an onboarding run did when no component changed: it downloaded the first driver set, or found every file already stored. */
+export function onboardingSummary(run: DriverSyncRun): string {
+  const downloaded = run.downloadedComponents ?? 0;
+  if (downloaded === 0) return 'every component was already stored';
+  return `${downloaded} ${downloaded === 1 ? 'component' : 'components'} downloaded${(run.downloadedBytes ?? 0) > 0 ? `, ${formatSize(run.downloadedBytes ?? 0)}` : ''}`;
+}
+
 /** The History card's one-line summary of a run. */
 export function runSummary(run: DriverSyncRun): string {
-  let summary = countsSummary(run.counts) || (run.result === 'Running' ? 'Running' : 'No changes');
-  if (run.trigger === 'ModelCheck' && run.modelName) summary = `${run.modelName}: ${summary}`;
+  let summary = countsSummary(run.counts)
+    || (run.result === 'Running' ? 'Running' : run.trigger === 'Onboarding' ? `Onboarded, ${onboardingSummary(run)}` : 'No changes');
+  if ((run.trigger === 'ModelCheck' || run.trigger === 'Onboarding') && run.modelName) summary = `${run.modelName}: ${summary}`;
   const newModels = run.vendors.filter(v => v.newModels > 0).map(v => `${vendorLabel(v.vendor)}: ${v.newModels} new ${v.newModels === 1 ? 'model' : 'models'} available`);
   return newModels.length > 0 ? `${summary}. ${newModels.join('. ')}` : summary;
 }
 
-/** "6 min", "1 h 5 min": a whole-minute duration. */
+/** "40 s", "6 min", "1 h 5 min": seconds under a minute, so a quick run does not read as "0 min". */
 export function durationLabel(ms: number): string {
-  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  if (ms < 60_000) return `${Math.max(0, Math.floor(ms / 1_000))} s`;
+  const minutes = Math.floor(ms / 60_000);
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 

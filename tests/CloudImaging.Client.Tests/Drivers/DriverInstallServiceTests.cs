@@ -197,7 +197,7 @@ public sealed class DriverInstallServiceTests : IDisposable
         installer.Command.Should().Be(new SpecializeInstallerCommand($@"{relative}\x\setup.exe", "/silent", $@"{relative}\x"));
         installer.TimeoutSeconds.Should().Be(1200);
         installer.SuccessExitCodes.Should().Equal(0, 3010);
-        installer.CleanupPaths.Should().Equal(relative);
+        installer.CleanupPaths.Should().Equal(relative, @"SWSetup\sp200");
         Directory.Exists(x).Should().BeTrue("a handed-off folder stays for the setup runner");
     }
 

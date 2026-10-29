@@ -154,7 +154,7 @@ describe('Drivers: custom components', () => {
     expect((screen.getByRole('combobox', { name: 'Action for Intel Wireless LAN Driver' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByRole('combobox', { name: 'Action for Intel Wireless LAN Driver' }).textContent).toContain('Skip');
     expect(screen.getByLabelText('Replaces Intel Wireless LAN Driver on this model until you remove it.')).toBeTruthy();
-    expect(screen.getByText('Uploaded by olle@contoso.com, Driver - Network')).toBeTruthy();
+    expect(screen.getByText('Uploaded by olle@contoso.com')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show details of Intel (pre-release)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remove custom component Intel (pre-release)' }));

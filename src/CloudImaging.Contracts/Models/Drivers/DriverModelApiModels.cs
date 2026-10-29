@@ -376,6 +376,9 @@ public sealed record DriverPreparingSet
 
     /// <summary>Files in total.</summary>
     public int Total { get; init; }
+
+    /// <summary>Onboarding is queued behind the running sync, so nothing downloads yet.</summary>
+    public bool Queued { get; init; }
 }
 
 /// <summary>A custom component banner: the vendor published a new version of what it replaces.</summary>

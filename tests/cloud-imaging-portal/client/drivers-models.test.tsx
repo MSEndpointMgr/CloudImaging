@@ -151,14 +151,20 @@ describe('Drivers: Onboard model dialog', () => {
 
   it('lists the vendor models, marks onboarded ones, and shows the list date and the Sync is off line', async () => {
     await open({ body: list });
-    const dialog = await screen.findByRole('dialog', { name: 'Onboard model' });
+    const dialog = await screen.findByRole('dialog', { name: 'Onboard models' });
 
     await within(dialog).findByRole('checkbox', { name: 'HP EliteBook 840 G11' });
+    // The name is drawn beside the box, not only announced, and clicking it selects the model.
+    fireEvent.click(within(dialog).getByText('HP EliteBook 840 G11'));
+    expect(within(dialog).getByRole('checkbox', { name: 'HP EliteBook 840 G11' }).getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(within(dialog).getByText('HP EliteBook 840 G11'));
     expect((within(dialog).getByRole('checkbox', { name: 'HP EliteBook 860 G11' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(within(dialog).getByText('Onboarded')).toBeTruthy();
-    expect(within(dialog).getByText(/0 selected\. 2 of 2 HP models, list from 2026-10-25/)).toBeTruthy();
+    expect(within(dialog).getByText(/already onboarded/)).toBeTruthy();
+    expect(within(dialog).getByText('0 selected')).toBeTruthy();
+    expect(within(dialog).getByText(/^2 of 2 HP models, list from 2026-10-25/)).toBeTruthy();
+    expect(within(dialog).getByText('Step 1 of 2')).toBeTruthy();
     expect(within(dialog).getByText('Sync is off for HP. Completing onboarding turns it on, so these models get updates.')).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('disables the search while the model list is being fetched', async () => {
@@ -167,7 +173,7 @@ describe('Drivers: Onboard model dialog', () => {
     apiFetch.mockImplementation((url: string, init?: RequestInit) => (url.startsWith('/api/drivers/catalog') ? new Promise<Response>(() => {}) : base(url, init)));
     renderAt('/drivers?tab=models');
     fireEvent.click(await screen.findByRole('button', { name: 'Onboard model' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Onboard model' });
+    const dialog = await screen.findByRole('dialog', { name: 'Onboard models' });
 
     expect((within(dialog).getByRole('searchbox', { name: 'Search models' }) as HTMLInputElement).disabled).toBe(true);
   });
@@ -178,14 +184,14 @@ describe('Drivers: Onboard model dialog', () => {
     expect(await screen.findByText("Showing the model list from 2026-10-14 02:00 UTC. Can't reach catalog at https://hpia.hpcloud.hp.com.")).toBeTruthy();
   });
 
-  it('shows the failure with Try again, and Continue stays disabled', async () => {
+  it('shows the failure with Try again, and Next stays disabled', async () => {
     await open({ status: 503, body: { detail: "Can't reach catalog at https://hpia.hpcloud.hp.com. Make sure Imaging Core can reach it, then try again." } });
-    const dialog = await screen.findByRole('dialog', { name: 'Onboard model' });
+    const dialog = await screen.findByRole('dialog', { name: 'Onboard models' });
 
     expect(await within(dialog).findByText("Couldn't get HP's model list")).toBeTruthy();
     expect(within(dialog).getByText("Can't reach catalog at https://hpia.hpcloud.hp.com. Make sure Imaging Core can reach it, then try again.")).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Continue' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(dialog).getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('previews per model, notes that nothing is downloaded, and Onboard opens the first draft', async () => {
@@ -195,13 +201,17 @@ describe('Drivers: Onboard model dialog', () => {
       'POST /api/drivers/models': init => { onboarded.push(JSON.parse(String(init?.body))); return { status: 201, body: { modelIds: [modelId] } }; },
       [`GET /api/drivers/models/${modelId}`]: { body: page({ model: row({ state: 'Draft' }), checkBlockedReason: 'Draft', setVersion: null }) },
     });
-    const dialog = await screen.findByRole('dialog', { name: 'Onboard model' });
+    const dialog = await screen.findByRole('dialog', { name: 'Onboard models' });
     fireEvent.click(await within(dialog).findByRole('checkbox', { name: 'HP EliteBook 840 G11' }));
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
 
     expect(await within(dialog).findByText('26')).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Onboard 1 model' })).toBe(dialog);
+    expect(within(dialog).getByText('Step 2 of 2')).toBeTruthy();
+    expect(within(dialog).getByRole('checkbox', { name: 'Windows 11, version 24H2' }).getAttribute('aria-checked')).toBe('true');
+    expect(within(dialog).getByText('Components per model for Windows 11, version 24H2, after your rules')).toBeTruthy();
     expect(within(dialog).getByText("Nothing is downloaded yet. Next, choose what each component does on the model's page, then complete onboarding.")).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Onboard' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Onboard 1 model' }));
 
     expect(await screen.findByText(/Onboarding is not complete/)).toBeTruthy();
     expect(onboarded).toEqual([{ vendor: 'Hp', catalogModelKeys: ['8C26_X64'], releases: ['Windows11_24H2'] }]);
@@ -209,7 +219,7 @@ describe('Drivers: Onboard model dialog', () => {
 
   it('closes on Escape and returns focus to the button that opened it', async () => {
     await open({ body: list });
-    await screen.findByRole('dialog', { name: 'Onboard model' });
+    await screen.findByRole('dialog', { name: 'Onboard models' });
 
     fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -222,7 +232,7 @@ describe('Drivers: Onboard model dialog', () => {
     const opener = await screen.findByRole('button', { name: 'Onboard model' });
     opener.focus();
     fireEvent.click(opener);
-    await screen.findByRole('dialog', { name: 'Onboard model' });
+    await screen.findByRole('dialog', { name: 'Onboard models' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
@@ -241,20 +251,34 @@ describe('Drivers: model page', () => {
     expect(screen.queryByText('HP', { exact: true })).toBeNull();
     expect(screen.queryByText(/set 7/)).toBeNull();
     expect(screen.getByText('113 MB')).toBeTruthy();
-    expect(screen.getByText('3 of 3 components')).toBeTruthy();
+    expect(screen.getByText('2 components')).toBeTruthy();
     expect(screen.getByText('New')).toBeTruthy();
     expect(screen.getByText('1 updated by today\'s sync')).toBeTruthy();
-    expect(screen.getByLabelText("The vendor's data only allows Skip for this component.")).toBeTruthy();
+  });
+
+  it('keeps components locked to Skip out of the table and lists them from the footer', async () => {
+    serve({ [`GET /api/drivers/models/${modelId}`]: { body: page() } });
+    renderAt(`/drivers/models/${modelId}`);
+    await screen.findByText('2 components');
+
+    expect(screen.queryByText('HP Services Scan')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '1 locked to Skip' }));
+
+    const flyout = screen.getByRole('dialog', { name: 'Locked to Skip' });
+    expect(within(flyout).getByText('HP Services Scan')).toBeTruthy();
+    expect(within(flyout).getByText('sp202')).toBeTruthy();
+    fireEvent.keyDown(flyout, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Locked to Skip' })).toBeNull();
   });
 
   it('filters by search and the updated-today toggle, and shows the filtered count', async () => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: page() } });
     renderAt(`/drivers/models/${modelId}`);
-    await screen.findByText('3 of 3 components');
+    await screen.findByText('2 components');
 
     fireEvent.click(screen.getByRole('button', { name: "1 updated by today's sync" }));
 
-    expect(screen.getByText('1 of 3 components')).toBeTruthy();
+    expect(screen.getByText('1 of 2 components')).toBeTruthy();
     expect(screen.queryByText('Realtek Audio Driver')).toBeNull();
   });
 
@@ -286,6 +310,19 @@ describe('Drivers: model page', () => {
     expect(screen.getByText('Devices of this model get no drivers until it is ready.')).toBeTruthy();
     expect(screen.queryByText(/Onboarding is not complete/)).toBeNull();
     expect(completed).toEqual([modelId]);
+  });
+
+  it('Complete onboarding during a sync says the model is queued behind it', async () => {
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: page({ model: row({ state: 'Draft' }), checkBlockedReason: 'Draft', setVersion: null, hasPreviousSet: false }) },
+      [`POST /api/drivers/models/${modelId}/complete`]: { body: page({ setVersion: null, preparing: { setVersion: 1, done: 0, total: 31, queued: true } }) },
+    });
+    renderAt(`/drivers/models/${modelId}`);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Complete onboarding/ }));
+
+    expect(await screen.findByText('Waiting for the running sync to finish. Driver set 1 for Windows 11, version 24H2 is prepared after it.')).toBeTruthy();
+    expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'HP EliteBook 840 G11 is queued.', description: 'Downloads start when the running sync finishes. The Sync tab shows the queue.' });
   });
 
   it('Check for updates starts a run for this model and confirms with a toast', async () => {
@@ -375,16 +412,16 @@ describe('Drivers: Dell models', () => {
     expect(document.body.textContent).not.toMatch(/\bHP\b/);
   });
 
-  it('the vendor filter lists supported vendors from the vendors response', async () => {
+  it('the vendor filter lists only the vendors whose sync is turned on', async () => {
     serve({
       'GET /api/drivers/models': { body: [row(), row({ modelId: 'd', vendor: 'Dell', displayName: 'Latitude 5450', matchKeys: ['0CB4'] })] },
-      'GET /api/drivers/vendors': { body: [vendors[0], { vendor: 'Dell', supported: true, syncEnabled: true, onboardedModels: 1, matchKeyType: 'system SKU' }, { vendor: 'Lenovo', supported: false, syncEnabled: false, onboardedModels: 0, matchKeyType: null }] },
+      'GET /api/drivers/vendors': { body: [{ ...vendors[0], syncEnabled: false }, { vendor: 'Dell', supported: true, syncEnabled: true, onboardedModels: 1, matchKeyType: 'system SKU' }, { vendor: 'Lenovo', supported: false, syncEnabled: false, onboardedModels: 0, matchKeyType: null }] },
     });
     renderAt('/drivers?tab=models');
     await screen.findByText('Latitude 5450');
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Vendor' }));
-    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['All vendors', 'HP', 'Dell']);
+    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['All vendors', 'Dell']);
     fireEvent.click(screen.getByRole('option', { name: 'Dell' }));
 
     expect(screen.queryByText('HP EliteBook 840 G11')).toBeNull();

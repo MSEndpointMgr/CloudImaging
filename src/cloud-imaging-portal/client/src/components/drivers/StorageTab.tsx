@@ -90,6 +90,7 @@ function ModelBlocks({ modelId }: { modelId: string }): React.ReactElement {
             )}
             <span className="ml-auto text-sm text-muted-foreground">{`${block.componentCount} components, ${formatSize(block.bytes)}`}</span>
           </div>
+          <div className="overflow-hidden rounded-md border border-border bg-background">
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
@@ -121,6 +122,7 @@ function ModelBlocks({ modelId }: { modelId: string }): React.ReactElement {
               ))}
             </TableBody>
           </Table>
+          </div>
         </div>
       ))}
     </div>
@@ -148,7 +150,11 @@ export function StorageTab(): React.ReactElement {
   useEffect(() => { void load(); }, [load]);
 
   if (loadError) {
-    return <EmptyState icon={RefreshCw} title="Could not load storage" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />;
+    return (
+      <div className="rounded-md border border-border">
+        <EmptyState icon={RefreshCw} title="Could not load storage" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
+      </div>
+    );
   }
   if (!storage) {
     return <div className="space-y-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-32 w-full" /></div>;
@@ -206,9 +212,7 @@ export function StorageTab(): React.ReactElement {
         </CardContent>
       </Card>
 
-      {storage.models.length === 0 ? (
-        <EmptyState icon={HardDrive} title="Nothing stored yet" description="Driver files are stored once a model's onboarding is complete." />
-      ) : (
+      <div className="overflow-hidden rounded-md border border-border">
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
@@ -221,6 +225,13 @@ export function StorageTab(): React.ReactElement {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {storage.models.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={6} className="p-0">
+                  <EmptyState icon={HardDrive} title="Nothing stored yet" description="Driver files are stored once a model's onboarding is complete." />
+                </TableCell>
+              </TableRow>
+            )}
             {storage.models.map(model => {
               const expanded = open === model.modelId;
               const releases = model.releases.map(releaseLabel).join(', ');
@@ -254,7 +265,7 @@ export function StorageTab(): React.ReactElement {
             })}
           </TableBody>
         </Table>
-      )}
+      </div>
     </div>
   );
 }

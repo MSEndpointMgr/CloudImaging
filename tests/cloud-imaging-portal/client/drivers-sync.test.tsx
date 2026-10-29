@@ -127,6 +127,7 @@ describe('Drivers: sync helpers', () => {
   it('summarises a run, naming the model first for a model check and adding new models', () => {
     expect(runSummary(runs[0] as DriverSyncRun)).toBe('4 updated, 1 failed. HP: 3 new models available');
     expect(runSummary(runs[1] as DriverSyncRun)).toBe('HP EliteBook 840 G11: No changes');
+    expect(runSummary({ ...runs[1], trigger: 'Onboarding', downloadedComponents: 19, downloadedBytes: 2_640_000_000 } as DriverSyncRun)).toBe('HP EliteBook 840 G11: Onboarded, 19 components downloaded, 2.64 GB');
   });
 });
 
@@ -166,8 +167,33 @@ describe('Drivers: Sync tab', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Monday' }));
 
     expect(screen.getByRole('alert').textContent).toBe('Choose at least one day. The last saved days still apply.');
+    expect(screen.getByRole('group', { name: 'Days' }).getAttribute('aria-invalid')).toBe('true');
     expect(screen.queryByText(/^Next sync:/)).toBeNull();
     expect(puts()).toHaveLength(0);
+  });
+
+  it('saves a typed 24-hour time, and puts back a time that is not one', async () => {
+    serve(syncRoutes());
+    renderAt('/drivers?tab=sync');
+    const time = await screen.findByRole('textbox', { name: 'Time' }) as HTMLInputElement;
+
+    fireEvent.change(time, { target: { value: '03:30' } });
+    await waitFor(() => expect(puts()[0]).toMatchObject({ localTime: '03:30' }));
+
+    fireEvent.change(time, { target: { value: '25:00' } });
+    fireEvent.blur(time);
+    expect(time.value).toBe('03:30');
+    expect(puts()).toHaveLength(1);
+  });
+
+  it('New components is a choice between waiting for approval and using them automatically', async () => {
+    serve(syncRoutes());
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'New components' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Wait for approval' }));
+
+    await waitFor(() => expect(puts()[0]).toMatchObject({ waitForApprovalOfNewComponents: true }));
   });
 
   it('lists time zones by Windows display name, the browser\'s first, and searches them', async () => {
@@ -214,7 +240,7 @@ describe('Drivers: Sync tab', () => {
     serve(syncRoutes({ 'PUT /api/drivers/vendors/Hp': { body: { ...vendors[0], syncEnabled: false } } }));
     renderAt('/drivers?tab=sync');
 
-    expect(await screen.findByText('3 models onboarded. Matched by system ID.')).toBeTruthy();
+    expect(await screen.findByText('3 onboarded models, matched on system ID.')).toBeTruthy();
     expect(screen.getByText('Not supported yet.')).toBeTruthy();
     expect((screen.getByRole('switch', { name: 'Sync Lenovo' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('switch', { name: 'Sync HP' }));
@@ -245,7 +271,8 @@ describe('Drivers: Sync tab', () => {
     renderAt('/drivers?tab=sync');
 
     expect((await screen.findByRole('combobox', { name: 'Schedule' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('switch', { name: 'Wait for approval' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('combobox', { name: 'New components' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('combobox', { name: 'Newer versions' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('switch', { name: 'Sync HP' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /^Sync$/ })).toBeNull();
   });
