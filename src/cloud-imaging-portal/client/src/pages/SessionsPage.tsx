@@ -210,7 +210,7 @@ function PasscodeCouplingCell({ onCoupled }: { onCoupled: () => void }): React.R
 
 function SessionsPageImpl(): React.ReactElement {
   const { notify } = useToast();
-  const { isAdministrator, canViewSetupProfiles, canUseImaging } = useAuth();
+  const { isAdministrator, canViewSetupProfiles, canUseImaging, canManageDrivers } = useAuth();
   const { preferredLocationId, preferredLocationName } = useUserPreferences();
   const [sessions, setSessions]         = useState<Session[]>([]);
   // Active pre-flight overrides, and whether pre-flight authorization is on at all. Both come from
@@ -413,7 +413,11 @@ function SessionsPageImpl(): React.ReactElement {
   }, [canUseImaging, driversCheck]);
   const [driverChoices, setDriverChoices] = useState<Record<string, string>>({});
   const targetIds = useMemo(() => targetSessions.map(s => s.sessionId), [targetSessions]);
-  const driverPreview = useDriverAssignmentPreview(canUseImaging && driversOnboarded ? selectedImageId : null, targetIds);
+  const rawDriverPreview = useDriverAssignmentPreview(canUseImaging && driversOnboarded ? selectedImageId : null, targetIds);
+  // Sets in testing are for Operators and Administrators; the portal server refuses them from anyone else too.
+  const driverPreview = canManageDrivers || !rawDriverPreview.preview
+    ? rawDriverPreview
+    : { ...rawDriverPreview, preview: { ...rawDriverPreview.preview, options: rawDriverPreview.preview.options.filter(o => !o.testing) } };
   const showDriverColumn = canUseImaging && driversOnboarded
     && !(driverPreview.preview && driverPreview.preview.release !== null && driverPreview.preview.options.length === 0 && driverPreview.preview.sessions.every(s => !s.matchedModelId));
   const chooseImage = (value: string): void => {

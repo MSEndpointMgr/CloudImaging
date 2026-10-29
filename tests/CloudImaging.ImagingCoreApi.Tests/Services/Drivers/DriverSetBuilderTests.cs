@@ -147,6 +147,61 @@ public sealed class DriverSetBuilderTests
     }
 
     [Fact]
+    public void Decide_HoldForTesting_PutsAReadySetInTesting_AndKeepsTheCurrentSet()
+    {
+        var pointer = new DriverSetPointerRecord { CurrentVersion = 6, PreviousVersion = 5, LastVersion = 6, CurrentFingerprint = "six" };
+
+        var decision = DriverSetBuilder.Decide(pointer, DriverSetBuilder.Plan([Verified("a", "2")]), Now, holdForTesting: true);
+
+        decision.Kind.Should().Be(DriverSetDecisionKind.NewTesting);
+        decision.Version.Should().Be(7);
+        decision.Next.TestingVersion.Should().Be(7);
+        decision.Next.TestingSince.Should().Be(Now);
+        decision.Next.CurrentVersion.Should().Be(6);
+        decision.Next.PreviousVersion.Should().Be(5);
+        decision.Next.LastVersion.Should().Be(7);
+    }
+
+    [Fact]
+    public void Decide_HoldForTesting_SameAsTheSetInTesting_CreatesNoSet_ButANewerOneReplacesIt()
+    {
+        var seven = DriverSetBuilder.Plan([Verified("a", "2")]);
+        var pointer = new DriverSetPointerRecord { CurrentVersion = 6, LastVersion = 7, CurrentFingerprint = "six", TestingVersion = 7, TestingFingerprint = seven.Fingerprint };
+
+        DriverSetBuilder.Decide(pointer, seven, Now, holdForTesting: true).Kind.Should().Be(DriverSetDecisionKind.NoChange);
+        var newer = DriverSetBuilder.Decide(pointer, DriverSetBuilder.Plan([Verified("a", "3")]), Now, holdForTesting: true);
+        newer.Kind.Should().Be(DriverSetDecisionKind.NewTesting);
+        newer.Next.TestingVersion.Should().Be(8);
+    }
+
+    [Fact]
+    public void Decide_BackToTheCurrentSet_EndsTesting()
+    {
+        var six = DriverSetBuilder.Plan([Verified("a", "1")]);
+        var pointer = new DriverSetPointerRecord { CurrentVersion = 6, LastVersion = 7, CurrentFingerprint = six.Fingerprint, TestingVersion = 7, TestingFingerprint = "seven" };
+
+        var decision = DriverSetBuilder.Decide(pointer, six, Now, holdForTesting: true);
+
+        decision.Kind.Should().Be(DriverSetDecisionKind.NoChange);
+        decision.Next.TestingVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public void Release_MakesTheSetInTestingCurrent()
+    {
+        var pointer = new DriverSetPointerRecord { CurrentVersion = 6, PreviousVersion = 5, LastVersion = 7, CurrentFingerprint = "six", RolledBackFromFingerprint = "x", TestingVersion = 7, TestingFingerprint = "seven", TestingSince = Now };
+
+        var released = DriverSetBuilder.Release(pointer, Now);
+
+        released.CurrentVersion.Should().Be(7);
+        released.CurrentFingerprint.Should().Be("seven");
+        released.PreviousVersion.Should().Be(6);
+        released.RolledBackFromFingerprint.Should().BeNull();
+        released.TestingVersion.Should().BeNull();
+        released.TestingFingerprint.Should().BeNull();
+    }
+
+    [Fact]
     public void RollBack_SwapsCurrentAndPrevious_AndRemembersTheOneRolledBackFrom()
     {
         var pointer = new DriverSetPointerRecord { CurrentVersion = 7, PreviousVersion = 6, LastVersion = 7, CurrentFingerprint = "seven" };

@@ -206,6 +206,9 @@ public sealed record DriverModelStatus
 
     /// <summary>Set while files of a new set are downloading.</summary>
     public DriverProgressCount? Downloading { get; init; }
+
+    /// <summary>True while a release of the model has a driver set in testing.</summary>
+    public bool InTesting { get; init; }
 }
 
 /// <summary>A row of the Models tab.</summary>
@@ -365,6 +368,16 @@ public sealed record DriverPendingChanges
     public DateTimeOffset BuildAt { get; init; }
 }
 
+/// <summary>A built driver set that only devices chosen for it at imaging start get, until it is released.</summary>
+public sealed record DriverTestingSet
+{
+    /// <summary>Set version.</summary>
+    public int SetVersion { get; init; }
+
+    /// <summary>When it went into testing.</summary>
+    public DateTimeOffset? Since { get; init; }
+}
+
 /// <summary>A set whose files are downloading.</summary>
 public sealed record DriverPreparingSet
 {
@@ -457,6 +470,9 @@ public sealed record DriverModelPage
 
     /// <summary>A set whose files are downloading.</summary>
     public DriverPreparingSet? Preparing { get; init; }
+
+    /// <summary>The release's driver set in testing, or null.</summary>
+    public DriverTestingSet? Testing { get; init; }
 
     /// <summary>Custom component banners.</summary>
     public IReadOnlyList<DriverCustomNotice> Notices { get; init; } = [];

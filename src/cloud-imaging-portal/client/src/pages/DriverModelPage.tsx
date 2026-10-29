@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Check, ChevronRight, CircleAlert, CircleDashed, Clock, Download, Hammer, History, Plus, RefreshCw, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, CircleAlert, CircleDashed, Clock, Download, FlaskConical, Hammer, History, Monitor, Plus, RefreshCw, Rocket, Trash2, Undo2, X } from 'lucide-react';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -9,6 +9,7 @@ import { SearchInput } from '../components/ui/search-input.tsx';
 import { Select } from '../components/ui/select.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
+import { WindowsReleasesDialog } from '../components/drivers/WindowsReleasesDialog.tsx';
 import { ComponentTable } from '../components/drivers/ComponentTable.tsx';
 import { RollBackComponentDialog } from '../components/drivers/RollBackComponentDialog.tsx';
 import { AddCustomComponentDialog } from '../components/drivers/AddCustomComponentDialog.tsx';
@@ -17,8 +18,8 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { formatTimestamp } from '../lib/utils.ts';
 import {
-  DRIVER_ACTIONS, WINDOWS_RELEASES, actionLabel, addRelease, approveComponents, buildNow, checkModel, clearOverride, completeOnboarding, fetchModelPage, fetchRemovalImpact, formatSize, isLockedAway, matchKeyLabel,
-  releaseLabel, removeModel, removeRelease, removeWithdrawnComponent, rollBackSet, setOverride, undoRollBack, vendorLabel,
+  DRIVER_ACTIONS, actionLabel, approveComponents, buildNow, checkModel, clearOverride, completeOnboarding, fetchModelPage, fetchRemovalImpact, formatSize, isLockedAway, matchKeyLabel,
+  releaseLabel, releaseTestingSet, removeModel, removeWithdrawnComponent, rollBackSet, setOverride, undoRollBack, vendorLabel,
   deleteCustomComponent, dismissCustomNotice, fetchCustomComponents, fetchModels,
   type DriverCustomComponent, type DriverModelRow,
   type DriverAction, type DriverComponentRow, type DriverModelPage as ModelPage, type DriverRemovalImpact, type WindowsRelease,
@@ -33,7 +34,6 @@ export const MODEL_POLL_MS = 15_000;
 type Pending =
   | { kind: 'rollback' }
   | { kind: 'removeModel' }
-  | { kind: 'removeRelease' }
   | { kind: 'removeComponent'; component: DriverComponentRow }
   | { kind: 'removeCustom'; customId: string; name: string }
   | { kind: 'undoRollBack'; component: DriverComponentRow };
@@ -134,7 +134,7 @@ export default function DriverModelPage(): React.ReactElement {
   const { notify } = useToast();
   const [page, setPage] = useState<ModelPage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'complete' | 'check' | 'build' | null>(null);
+  const [busy, setBusy] = useState<'complete' | 'check' | 'build' | 'release' | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [action, setAction] = useState<string>(ALL);
@@ -143,7 +143,7 @@ export default function DriverModelPage(): React.ReactElement {
   const [confirm, setConfirm] = useState<Pending | null>(null);
   const [impact, setImpact] = useState<DriverRemovalImpact | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [editingReleases, setEditingReleases] = useState(false);
   const [rollingBack, setRollingBack] = useState<DriverComponentRow | null>(null);
   const [customTargets, setCustomTargets] = useState<DriverCustomComponent['targets'] | null>(null);
   const [customTargetsFailed, setCustomTargetsFailed] = useState(false);
@@ -249,6 +249,20 @@ export default function DriverModelPage(): React.ReactElement {
     }
   };
 
+  // Releasing needs no confirmation: it is what testing is for, and the next set can be rolled back.
+  const releaseTesting = async () => {
+    const version = page.testing?.setVersion;
+    setBusy('release');
+    try {
+      setPage(await releaseTestingSet(model.modelId, page.release));
+      notify({ status: 'success', title: `Driver set ${version} released.`, description: 'Devices of this model get it from their next deployment.' });
+    } catch (err) {
+      notify({ status: 'error', title: 'Could not release the driver set', description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   // The page is read again so the tiles, Source and the waiting changes banner all follow the change.
   const change = async (component: DriverComponentRow, run: () => Promise<unknown>, failure: string) => {
     setSaving(component.lineageKey);
@@ -289,8 +303,8 @@ export default function DriverModelPage(): React.ReactElement {
     setCustomTargets(null);
     setCustomTargetsFailed(false);
     if (next.kind === 'removeCustom') loadCustomTargets(next.customId);
-    if (next.kind === 'removeModel' || next.kind === 'removeRelease') {
-      fetchRemovalImpact(model.modelId, next.kind === 'removeRelease' ? page.release : undefined)
+    if (next.kind === 'removeModel') {
+      fetchRemovalImpact(model.modelId)
         .then(setImpact)
         .catch((err: unknown) => {
           setConfirm(null);
@@ -313,14 +327,6 @@ export default function DriverModelPage(): React.ReactElement {
           notify({ status: 'success', title: `${model.displayName} removed.` });
           void navigate('/drivers?tab=models');
           return;
-        case 'removeRelease': {
-          await removeRelease(model.modelId, page.release);
-          notify({ status: 'success', title: `${releaseLabel(page.release)} removed from ${model.displayName}.` });
-          const remaining = model.releases.find(r => r !== page.release);
-          setConfirm(null);
-          if (remaining) setSearchParams({ release: remaining }, { replace: true });
-          return;
-        }
         case 'removeComponent':
           await removeWithdrawnComponent(model.modelId, page.release, confirm.component.lineageKey);
           notify({ status: 'success', title: `${confirm.component.name} removed.` });
@@ -345,17 +351,11 @@ export default function DriverModelPage(): React.ReactElement {
     }
   };
 
-  const add = async (next: string) => {
-    setAdding(true);
-    try {
-      await addRelease(model.modelId, next as WindowsRelease);
-      notify({ status: 'success', title: `${releaseLabel(next as WindowsRelease)} added to ${model.displayName}.` });
-      setSearchParams({ release: next }, { replace: true });
-    } catch (err) {
-      notify({ status: 'error', title: 'Could not add the Windows release', description: err instanceof Error ? err.message : undefined });
-    } finally {
-      setAdding(false);
-    }
+  const releasesSaved = (releases: WindowsRelease[]) => {
+    setEditingReleases(false);
+    notify({ status: 'success', title: `Windows releases of ${model.displayName} saved.` });
+    if (releases.includes(page.release)) void load();
+    else setSearchParams({ release: releases[0] }, { replace: true });
   };
 
   const openAddCustom = async () => {
@@ -386,11 +386,6 @@ export default function DriverModelPage(): React.ReactElement {
     impact: 'Devices of this model imaged from now on get no drivers from Cloud Imaging. Running deployments keep their driver set.',
     confirmLabel: 'Remove',
     destructive: true,
-  } : confirm.kind === 'removeRelease' ? {
-    confirmTitle: `Remove ${releaseLabel(page.release)} from ${model.displayName}?`,
-    impact: `Devices of this model installing ${releaseLabel(page.release)} from now on get no drivers from Cloud Imaging. Running deployments keep their driver set.`,
-    confirmLabel: 'Remove',
-    destructive: true,
   } : confirm.kind === 'removeCustom' ? {
     confirmTitle: `Remove ${confirm.name}?`,
     impact: 'Devices imaged from now on no longer get this custom component. Running deployments keep the version they started with.',
@@ -407,8 +402,7 @@ export default function DriverModelPage(): React.ReactElement {
     confirmLabel: 'Remove',
     destructive: true,
   };
-  const removal = confirm?.kind === 'removeModel' || confirm?.kind === 'removeRelease';
-  const addable = WINDOWS_RELEASES.filter(r => !model.releases.includes(r));
+  const removal = confirm?.kind === 'removeModel';
   const rollBackHint = previousSet ? `Devices get driver set ${previousSet} instead of ${page.setVersion} from their next deployment` : 'No previous driver set to roll back to';
   const history = {
     modelId: model.modelId,
@@ -434,25 +428,33 @@ export default function DriverModelPage(): React.ReactElement {
           <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
           <span className="truncate">{model.displayName}</span>
         </nav>
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+        {/* The title grows from its natural width, so the buttons wrap to their own row when both do not fit. */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex min-w-0 grow items-center gap-3">
             <h2 className="min-w-0 break-words text-xl font-semibold">{model.displayName}</h2>
             <Badge variant="outline" className="shrink-0">{matchKeyLabel(model.vendor, model.matchKeys)}</Badge>
           </div>
           {canManageDrivers && (
-            <div className="ml-auto flex flex-wrap justify-end gap-2">
+            <div className="flex flex-wrap gap-2">
               <Tooltip content={blocked ?? 'Checks this model for new component versions.'}>
                 <span>
-                  <Button variant="outline" onClick={() => void check()} disabled={blocked !== null} loading={busy === 'check'}><RefreshCw />Check for updates</Button>
+                  <Button variant="outline" onClick={() => void check()} disabled={blocked !== null} loading={busy === 'check'}><RefreshCw />Updates</Button>
                 </span>
               </Tooltip>
-              <Button variant="outline" onClick={() => void openAddCustom()}><Plus />Add custom component</Button>
+              <Tooltip content="Adds your own driver package to this model, alongside or instead of a vendor component.">
+                <Button variant="outline" onClick={() => void openAddCustom()}><Plus />Add component</Button>
+              </Tooltip>
+              <Tooltip content="Chooses the Windows releases this model gets drivers for.">
+                <Button variant="outline" onClick={() => setEditingReleases(true)}><Monitor />Windows releases</Button>
+              </Tooltip>
               <Tooltip content={rollBackHint}>
                 <span>
-                  <Button variant="outline" onClick={() => open({ kind: 'rollback' })} disabled={!previousSet}><Undo2 />Roll back driver set</Button>
+                  <Button variant="outline" onClick={() => open({ kind: 'rollback' })} disabled={!previousSet}><Undo2 />Roll back</Button>
                 </span>
               </Tooltip>
-              <Button variant="outline" onClick={() => open({ kind: 'removeModel' })}><Trash2 />Remove model</Button>
+              <Tooltip content="Removes this model and its driver sets.">
+                <Button variant="outline" onClick={() => open({ kind: 'removeModel' })}><Trash2 />Remove</Button>
+              </Tooltip>
             </div>
           )}
         </div>
@@ -493,6 +495,16 @@ export default function DriverModelPage(): React.ReactElement {
               detail={page.setVersion ? `Devices keep getting driver set ${page.setVersion} until it is ready.` : 'Devices of this model get no drivers until it is ready.'}
             />
           )}
+          {page.testing && (
+            <Banner
+              tone="info"
+              icon={<FlaskConical className="h-5 w-5" aria-hidden="true" />}
+              title={`Driver set ${page.testing.setVersion} for ${releaseLabel(page.release)} is in testing${page.testing.since ? ` since ${formatTimestamp(page.testing.since)}` : ''}.`}
+              detail={`Only devices an Operator chooses it for at imaging start get it. ${page.setVersion ? `Other devices get driver set ${page.setVersion}.` : 'Other devices of this model get no drivers.'}`}
+            >
+              {canManageDrivers && <Button onClick={() => void releaseTesting()} loading={busy === 'release'}><Rocket />Release</Button>}
+            </Banner>
+          )}
           {(page.notices ?? []).map(notice => (
             <Banner
               key={notice.customId}
@@ -526,22 +538,11 @@ export default function DriverModelPage(): React.ReactElement {
         <SearchInput value={search} onValueChange={setSearch} placeholder="Search components" aria-label="Search components" wrapperClassName="w-[260px]" />
         <Select
           value={page.release}
-          onValueChange={value => (model.releases.includes(value as WindowsRelease) ? setSearchParams({ release: value }, { replace: true }) : void add(value))}
-          options={[
-            ...model.releases.map(r => ({ value: r, label: releaseLabel(r) })),
-            ...(canManageDrivers ? addable.map(r => ({ value: r, label: releaseLabel(r), group: 'Add to this model' })) : []),
-          ]}
+          onValueChange={value => setSearchParams({ release: value }, { replace: true })}
+          options={model.releases.map(r => ({ value: r, label: releaseLabel(r) }))}
           aria-label="Windows release"
-          disabled={adding}
           wrapperClassName="w-[230px]"
         />
-        {canManageDrivers && (
-          <Tooltip content={model.releases.length > 1 ? `Remove ${releaseLabel(page.release)} from this model. Its devices stop getting drivers.` : 'Remove the model instead.'}>
-            <span>
-              <Button variant="outline" size="icon" aria-label="Remove release" onClick={() => open({ kind: 'removeRelease' })} disabled={model.releases.length < 2}><Trash2 /></Button>
-            </span>
-          </Tooltip>
-        )}
         <Select value={action} onValueChange={setAction} options={[{ value: ALL, label: 'All actions' }, ...DRIVER_ACTIONS.map((a: DriverAction) => ({ value: a, label: actionLabel(a) }))]} aria-label="Action" wrapperClassName="w-[170px]" />
         <Select value={category} onValueChange={setCategory} options={[{ value: ALL, label: 'All categories' }, ...categories.map(c => ({ value: c, label: c }))]} aria-label="Category" wrapperClassName="w-[190px]" />
         <Button variant={updatedOnly ? 'secondary' : 'outline'} aria-pressed={updatedOnly} onClick={() => setUpdatedOnly(on => !on)} className="ml-auto">
@@ -578,6 +579,8 @@ export default function DriverModelPage(): React.ReactElement {
           }}
         />
       )}
+
+      {editingReleases && <WindowsReleasesDialog model={model} onClose={() => setEditingReleases(false)} onSaved={releasesSaved} />}
 
       {confirm && copy && (
         <ConfirmImpactDialog

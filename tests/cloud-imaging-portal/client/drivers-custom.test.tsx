@@ -101,7 +101,7 @@ describe('Drivers: custom components', () => {
     });
     renderPage();
 
-    const opener = await screen.findByRole('button', { name: 'Add custom component' });
+    const opener = await screen.findByRole('button', { name: 'Add component' });
     opener.focus();
     fireEvent.click(opener);
     const dialog = await screen.findByRole('dialog', { name: 'Add custom component' });

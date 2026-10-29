@@ -16,6 +16,7 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 /// GET    internal/drivers/storage/models/{id}                           one model on the Storage tab
 /// GET    internal/drivers/downloads                                     Downloads tab
 /// POST   internal/drivers/models/{id}/releases/{release}/rollback       Roll back driver set
+/// POST   internal/drivers/models/{id}/releases/{release}/testing/release   Release the set in testing
 /// GET    internal/drivers/models/{id}/removal-impact?release=           what a removal deletes and frees
 /// DELETE internal/drivers/models/{id}?changedBy=                        Remove model
 /// DELETE internal/drivers/models/{id}/releases/{release}?changedBy=     remove a release
@@ -74,6 +75,23 @@ public sealed class DriverLifecycleFunctions
 
         var request = await DriverHttp.ReadAsync<DriverActorRequest>(req, context.CancellationToken);
         return await DriverHttp.ResultAsync(req, await _lifecycle.RollBackSetAsync(Guid.Parse(id), DriverModelService.ParseRelease(release)!.Value, request?.Actor, context.CancellationToken), context.CancellationToken);
+    }
+
+    /// <summary>POST internal/drivers/models/{id}/releases/{release}/testing/release.</summary>
+    [Function("ReleaseDriverSetInTesting")]
+    public async Task<HttpResponseData> ReleaseDriverSetInTesting(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "internal/drivers/models/{id}/releases/{release}/testing/release")] HttpRequestData req,
+        string id,
+        string release,
+        FunctionContext context)
+    {
+        if (await DriverHttp.PairAsync(req, id, release, null, context.CancellationToken) is { Problem: { } problem })
+        {
+            return problem;
+        }
+
+        var request = await DriverHttp.ReadAsync<DriverActorRequest>(req, context.CancellationToken);
+        return await DriverHttp.ResultAsync(req, await _lifecycle.ReleaseTestingAsync(Guid.Parse(id), DriverModelService.ParseRelease(release)!.Value, request?.Actor, context.CancellationToken), context.CancellationToken);
     }
 
     /// <summary>GET internal/drivers/models/{id}/removal-impact?release=.</summary>

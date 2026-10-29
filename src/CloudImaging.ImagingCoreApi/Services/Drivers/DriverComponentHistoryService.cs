@@ -73,22 +73,54 @@ public sealed class DriverComponentHistoryService
             }
         }
 
-        return DriverResult.Ok(rows.Select(r => new DriverComponentVersion
+        return DriverResult.Ok(rows.Select(r =>
         {
-            ComponentId = r.Value.ComponentId,
-            Version = r.Value.Version,
-            FirstSet = r.Value.FirstSet,
-            LastSet = r.Value.LastSet,
-            From = r.Value.From,
-            To = r.Value.To,
-            ChangedBy = r.Value.ChangedBy,
-            Origin = r.Value.Origin,
-            Status = stored[r.RowKey] ? DriverVersionStatus.Stored
-                : r.Value.Available == false || r.Value.Url is null ? DriverVersionStatus.Unavailable
-                : DriverVersionStatus.DownloadsOnRollBack,
-            SizeBytes = r.Value.Size,
+            var (change, by) = Change(r.Value);
+            return new DriverComponentVersion
+            {
+                ComponentId = r.Value.ComponentId,
+                Version = r.Value.Version,
+                FirstSet = r.Value.FirstSet,
+                LastSet = r.Value.LastSet,
+                From = r.Value.From,
+                To = r.Value.To,
+                Change = change,
+                ChangedBy = by,
+                Origin = r.Value.Origin,
+                Status = stored[r.RowKey] ? DriverVersionStatus.Stored
+                    : r.Value.Available == false || r.Value.Url is null ? DriverVersionStatus.Unavailable
+                    : DriverVersionStatus.DownloadsOnRollBack,
+                SizeBytes = r.Value.Size,
+            };
         }).ToList());
     }
+
+    // Stored as "<change> by <upn>" or "Sync"; rows written before a prefix existed fall back to their origin.
+    private static (DriverVersionChange Change, string? By) Change(DriverComponentVersionRecord row)
+    {
+        var text = row.ChangedBy ?? string.Empty;
+        foreach (var (prefix, change) in ChangePrefixes)
+        {
+            if (text.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return (change, text[prefix.Length..]);
+            }
+        }
+
+        return (row.Origin switch
+        {
+            DriverComponentOrigin.RolledBack => DriverVersionChange.RollBack,
+            DriverComponentOrigin.Custom => DriverVersionChange.Custom,
+            _ => DriverVersionChange.Sync,
+        }, null);
+    }
+
+    private static readonly (string Prefix, DriverVersionChange Change)[] ChangePrefixes =
+    [
+        (DriverSyncService.OnboardingChangePrefix, DriverVersionChange.Onboarding),
+        (DriverSyncService.RollBackChangePrefix, DriverVersionChange.RollBack),
+        (DriverSyncService.CustomChangePrefix, DriverVersionChange.Custom),
+    ];
 
     /// <summary>
     /// Holds one earlier version. A version that is not stored is downloaded again and verified

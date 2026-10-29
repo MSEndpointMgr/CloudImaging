@@ -24,22 +24,19 @@ public sealed partial class DriverSyncScheduler
 
     private readonly DriverStore _store;
     private readonly DriverSyncService _sync;
-    private readonly DriverSyncRunRepository _runs;
     private readonly IDriverWorkSender _work;
     private readonly TimeProvider _time;
     private readonly ILogger<DriverSyncScheduler> _logger;
 
     /// <param name="store">Driver tables.</param>
     /// <param name="sync">Starts runs.</param>
-    /// <param name="runs">Runs, for the active run.</param>
     /// <param name="work">Queue.</param>
     /// <param name="time">Clock.</param>
     /// <param name="logger">Logger.</param>
-    public DriverSyncScheduler(DriverStore store, DriverSyncService sync, DriverSyncRunRepository runs, IDriverWorkSender work, TimeProvider time, ILogger<DriverSyncScheduler> logger)
+    public DriverSyncScheduler(DriverStore store, DriverSyncService sync, IDriverWorkSender work, TimeProvider time, ILogger<DriverSyncScheduler> logger)
     {
         _store = store;
         _sync = sync;
-        _runs = runs;
         _work = work;
         _time = time;
         _logger = logger;
@@ -175,12 +172,8 @@ public sealed partial class DriverSyncScheduler
         var now = _time.GetUtcNow();
         var settings = (await _store.GetSyncSettingsAsync(ct)).Value;
 
-        // While a run is active, Sync now waits for it; the watchdog bounds how long that can be.
+        // A running sync blocks Sync now by itself (the portal follows it); this is only the limit after it.
         var available = settings.LastRunStartedAt + DriverSyncService.RunLimit;
-        if (await _runs.GetActiveAsync(ct) is { } active && (available is null || active.StartedAt + DriverSyncService.Watchdog > available))
-        {
-            available = active.StartedAt + DriverSyncService.Watchdog;
-        }
 
         return new DriverSyncSettings
         {
@@ -190,6 +183,8 @@ public sealed partial class DriverSyncScheduler
             LocalTime = settings.LocalTime,
             TimeZone = settings.TimeZone,
             WaitForApprovalOfNewComponents = settings.WaitForApprovalOfNewComponents,
+            WaitForTesting = settings.WaitForTesting,
+            SetsInTesting = await _sync.CountTestingAsync(ct),
             NextRunAt = NextSlot(settings, now),
             SyncNowAvailableAt = available > now ? available : null,
             LastRunStartedAt = settings.LastRunStartedAt,
@@ -229,6 +224,7 @@ public sealed partial class DriverSyncScheduler
                 LocalTime = request.LocalTime!,
                 TimeZone = request.TimeZone!,
                 WaitForApprovalOfNewComponents = request.WaitForApprovalOfNewComponents,
+                WaitForTesting = request.WaitForTesting,
                 ChangedAt = now,
                 ChangedBy = upn,
             };
@@ -249,6 +245,20 @@ public sealed partial class DriverSyncScheduler
             if (before.WaitForApprovalOfNewComponents != next.WaitForApprovalOfNewComponents)
             {
                 await _store.LogAsync(now, upn, request.Actor.ObjectId, "Sync", "New components", next.WaitForApprovalOfNewComponents ? "Wait for approval" : "Use automatically", ct);
+            }
+
+            if (before.WaitForTesting != next.WaitForTesting)
+            {
+                await _store.LogAsync(now, upn, request.Actor.ObjectId, "Sync", "Newer versions", next.WaitForTesting ? "Wait for testing" : "Use automatically", ct);
+            }
+
+            // Using newer versions automatically again means nothing waits in testing any more.
+            if (before.WaitForTesting && !next.WaitForTesting)
+            {
+                foreach (var (modelName, release, version) in await _sync.ReleaseAllTestingAsync(ct))
+                {
+                    await _store.LogAsync(_time.GetUtcNow(), upn, request.Actor.ObjectId, "Release", modelName, $"Driver set {version} for {DriverModelService.ReleaseLabel(release)}, released when newer versions were set to Use automatically", ct);
+                }
             }
 
             await EnqueueNextAsync(ct);

@@ -105,6 +105,57 @@ public sealed class DriverSyncServiceTests
     }
 
     [Fact]
+    public async Task WaitForTesting_ANewerSetWaitsInTesting_IsKept_AndReleaseMakesItCurrent()
+    {
+        await _h.EnableAsync();
+        var model = await _h.OnboardAsync("8C26", "HP EliteBook 840 G11");
+        await _h.RunAsync();
+        await _h.Bed.Store.SyncSettings.UpsertAsync(DriverStore.SettingsPartition, DriverStore.SettingsRow, (await _h.Bed.Store.GetSyncSettingsAsync()).Value with { WaitForTesting = true });
+        _h.PublishComponents(
+            "8C26",
+            DriverSyncHarness.Component("sp100", "sp300", "1.1", "Intel Wireless LAN Driver"),
+            DriverSyncHarness.Component("sp101", "sp201", "2.0", "Realtek Audio Driver", "Driver - Audio"),
+            DriverSyncHarness.Component("sp102", "sp202", "3.0", "HP Services Scan", "Software - Enabling", DriverAction.Skip));
+        _h.Bed.Time.Advance(TimeSpan.FromHours(2));
+
+        await _h.RunAsync();
+
+        var pointer = (await _h.Bed.Pointers.GetAsync(model.ModelId, DriverSyncHarness.Release))!.Value;
+        pointer.CurrentVersion.Should().Be(1, "production keeps the current set");
+        pointer.TestingVersion.Should().Be(2);
+        (await _h.Bed.SetDocuments.GetAsync(model.ModelId, DriverSyncHarness.Release, 2))!.Items.Select(i => i.ComponentId).Should().Contain("sp300");
+        (await _h.Sync.KeptSetsAsync()).Should().Contain((model.ModelId, DriverSyncHarness.Release, 2));
+        var versions = (await _h.Bed.Store.ComponentVersions.ListPartitionAsync(DriverTables.Pair(model.ModelId, DriverSyncHarness.Release))).Select(v => v.Value).ToList();
+        versions.Should().NotContain(v => v.ComponentId == "sp300", "history follows the current set");
+
+        (await _h.Sync.ReleaseTestingAsync(model.ModelId, DriverSyncHarness.Release)).Should().Be(2);
+
+        var released = (await _h.Bed.Pointers.GetAsync(model.ModelId, DriverSyncHarness.Release))!.Value;
+        released.CurrentVersion.Should().Be(2);
+        released.PreviousVersion.Should().Be(1);
+        released.TestingVersion.Should().BeNull();
+        versions = (await _h.Bed.Store.ComponentVersions.ListPartitionAsync(DriverTables.Pair(model.ModelId, DriverSyncHarness.Release))).Select(v => v.Value).ToList();
+        versions.Should().ContainSingle(v => v.ComponentId == "sp300" && v.FirstSet == 2);
+        versions.Should().ContainSingle(v => v.ComponentId == "sp200" && v.LastSet == 1);
+        (await _h.Sync.ReleaseTestingAsync(model.ModelId, DriverSyncHarness.Release)).Should().BeNull("nothing is in testing any more");
+    }
+
+    [Fact]
+    public async Task WaitForTesting_TheFirstSetOfANewModelWaitsInTesting_AndNothingIsCurrent()
+    {
+        await _h.EnableAsync();
+        await _h.Bed.Store.SyncSettings.UpsertAsync(DriverStore.SettingsPartition, DriverStore.SettingsRow, (await _h.Bed.Store.GetSyncSettingsAsync()).Value with { WaitForTesting = true });
+        var model = await _h.OnboardAsync("8C26", "HP EliteBook 840 G11");
+
+        await _h.RunAsync();
+
+        var pointer = (await _h.Bed.Pointers.GetAsync(model.ModelId, DriverSyncHarness.Release))!.Value;
+        pointer.CurrentVersion.Should().BeNull();
+        pointer.TestingVersion.Should().Be(1);
+        (await _h.Bed.Store.SetBuilds.GetAsync(DriverTables.Pair(model.ModelId, DriverSyncHarness.Release), "000001"))!.Value.Should().Match<DriverSetBuildRecord>(b => b.Trigger == "Onboarding" && b.ReadyAt != null);
+    }
+
+    [Fact]
     public async Task WithdrawnComponent_StaysAtLastVerifiedVersion_AndRepublishingClearsTheState()
     {
         await _h.EnableAsync();
@@ -391,19 +442,19 @@ public sealed class DriverSyncServiceTests
     }
 
     [Fact]
-    public async Task StartRun_RefusesWhileRunning_AndWithinTheHour()
+    public async Task StartRun_RefusesWhileRunning_AndWithinTheMinute()
     {
         await _h.EnableAsync();
         var first = await _h.Sync.StartRunAsync(DriverSyncTrigger.Manual, "operator@contoso.com");
 
         var whileRunning = await _h.Sync.StartRunAsync(DriverSyncTrigger.Check, "operator@contoso.com");
         await _h.PumpAsync();
-        _h.Bed.Time.Advance(TimeSpan.FromMinutes(30));
+        _h.Bed.Time.Advance(TimeSpan.FromSeconds(30));
         var tooSoon = await _h.Sync.StartRunAsync(DriverSyncTrigger.Manual, "operator@contoso.com");
 
         first.Status.Should().Be(DriverRunStartStatus.Started);
         whileRunning.Status.Should().Be(DriverRunStartStatus.Running);
         tooSoon.Status.Should().Be(DriverRunStartStatus.TooSoon);
-        tooSoon.AvailableAt.Should().Be(DriverTestBed.Start + TimeSpan.FromMinutes(60));
+        tooSoon.AvailableAt.Should().Be(DriverTestBed.Start + DriverSyncService.RunLimit);
     }
 }

@@ -114,11 +114,11 @@ public static class DriverChoices
         }
 
         Guid? modelId = element.TryGetProperty("modelId", out var model) && model.ValueKind == JsonValueKind.String && Guid.TryParse(model.GetString(), out var parsed) ? parsed : null;
-        if (kind == DriverChoiceKind.Model && modelId is null)
+        if (kind != DriverChoiceKind.None && modelId is null)
         {
             return null;
         }
 
-        return new DriverChoice { SessionId = sessionId, Kind = kind, ModelId = kind == DriverChoiceKind.Model ? modelId : null };
+        return new DriverChoice { SessionId = sessionId, Kind = kind, ModelId = kind == DriverChoiceKind.None ? null : modelId };
     }
 }

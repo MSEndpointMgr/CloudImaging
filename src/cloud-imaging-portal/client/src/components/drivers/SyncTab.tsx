@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Clock, RefreshCw } from 'lucide-react';
+import { Clock, Rocket, RefreshCw } from 'lucide-react';
+import { ConfirmImpactDialog } from '../ConfirmImpactDialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Input } from '../ui/input.tsx';
@@ -9,6 +10,7 @@ import { ToggleGroup } from '../ui/toggle-group.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { useAuth } from '../../context/authContext.tsx';
 import { useToast } from '../../context/toastContext.tsx';
+import { useRerenderAt } from '../../hooks/useRerenderAt.ts';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
   MONDAY_TO_FRIDAY, WEEKDAYS, availableAgainText, browserTimeZone, fetchSyncRuns, fetchSyncSettings, fetchVendors, nextSyncLine, saveSyncSettings, syncNow,
@@ -34,12 +36,14 @@ const SYNC_DESCRIPTION = 'Copies new drivers from supported vendors for your onb
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-// Newer versions are always used automatically; holding them would turn every vendor refresh into a review queue.
-const NEWER_VERSION_OPTIONS = [{ value: 'auto', label: 'Use automatically' }];
-
 const NEW_COMPONENT_OPTIONS = [
   { value: 'wait', label: 'Wait for approval' },
   { value: 'auto', label: 'Use automatically' },
+];
+
+const NEWER_VERSION_OPTIONS = [
+  { value: 'auto', label: 'Use automatically' },
+  { value: 'testing', label: 'Wait for testing' },
 ];
 
 /** How often the history is read again while a sync runs. */
@@ -57,6 +61,7 @@ export function SyncTab(): React.ReactElement {
   const [time, setTime] = useState('02:00');
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [confirmingRelease, setConfirmingRelease] = useState(false);
 
   const applyLoaded = useCallback((loaded: DriverSyncSettings) => {
     setSettings(current => ({ ...loaded, timeZones: loaded.timeZones.length > 0 ? loaded.timeZones : current?.timeZones ?? [] }));
@@ -64,11 +69,11 @@ export function SyncTab(): React.ReactElement {
     setTime(loaded.localTime);
   }, []);
 
-  const save = useCallback(async (next: DriverSyncSettingsInput, quiet = false) => {
+  const save = useCallback(async (next: DriverSyncSettingsInput, quiet = false, description?: string) => {
     setSaving(true);
     try {
       applyLoaded(await saveSyncSettings(next));
-      if (!quiet) notify({ status: 'success', title: 'Sync settings saved.' });
+      if (!quiet) notify(description ? { status: 'success', title: 'Sync settings saved.', description } : { status: 'success', title: 'Sync settings saved.' });
     } catch (err) {
       notify({ status: 'error', title: 'Could not save the sync settings', description: err instanceof Error ? err.message : undefined });
     } finally {
@@ -115,11 +120,16 @@ export function SyncTab(): React.ReactElement {
   }
   const runFinished = useCallback(() => {
     fetchSyncRuns().then(setRuns).catch(() => undefined);
+    // When Sync now is available again counts from the run's start, so it is read again once the run ends.
+    fetchSyncSettings()
+      .then(loaded => setSettings(current => (current ? { ...current, syncNowAvailableAt: loaded.syncNowAvailableAt, lastRunStartedAt: loaded.lastRunStartedAt, nextRunAt: loaded.nextRunAt } : current)))
+      .catch(() => undefined);
   }, []);
   const dismissRun = useCallback(() => {
     setDismissedRunId(shownRunId);
     setShownRunId(null);
   }, [shownRunId]);
+  useRerenderAt(settings?.syncNowAvailableAt);
 
   if (loadError) {
     return (
@@ -139,6 +149,7 @@ export function SyncTab(): React.ReactElement {
     localTime: settings.localTime,
     timeZone: settings.timeZone,
     waitForApprovalOfNewComponents: settings.waitForApprovalOfNewComponents,
+    waitForTesting: settings.waitForTesting,
   };
   const readOnly = !canManageDrivers || saving;
   const manual = settings.schedule === 'Manual';
@@ -165,6 +176,27 @@ export function SyncTab(): React.ReactElement {
   const changeTime = (value: string) => {
     setTime(value);
     if (TIME_PATTERN.test(value) && value !== settings.localTime) void save({ ...input, localTime: value });
+  };
+
+  // Using newer versions automatically again releases every set in testing, so that is confirmed first.
+  const inTesting = settings.setsInTesting ?? 0;
+  const chooseNewerVersions = async (value: string) => {
+    const waitForTesting = value === 'testing';
+    if (!waitForTesting && settings.waitForTesting) {
+      // Sets go into testing and are released in the background, so the count is read again.
+      const fresh = await fetchSyncSettings().then(s => s.setsInTesting ?? 0, () => inTesting);
+      setSettings(current => (current ? { ...current, setsInTesting: fresh } : current));
+      if (fresh > 0) {
+        setConfirmingRelease(true);
+        return;
+      }
+    }
+    void save({ ...input, weekdays: days || settings.weekdays, waitForTesting });
+  };
+
+  const releaseAndUseAutomatically = async () => {
+    await save({ ...input, weekdays: days || settings.weekdays, waitForTesting: false }, false, `${inTesting === 1 ? '1 driver set' : `${inTesting} driver sets`} released from testing.`);
+    setConfirmingRelease(false);
   };
 
   const startSync = async () => {
@@ -242,9 +274,9 @@ export function SyncTab(): React.ReactElement {
               help={`Runs the same sync as the schedule: refreshes the model list of every enabled vendor and checks their onboarded models for component updates.${settings.lastRunStartedAt ? ` Last sync started ${formatTimestamp(settings.lastRunStartedAt)}.` : ''}`}
             >
               {canManageDrivers && (
-                <Tooltip content={waiting ?? 'Starts a sync now.'}>
+                <Tooltip content={running ? 'A sync is running.' : waiting ?? 'Starts a sync now.'}>
                   <span>
-                    <Button variant="outline" onClick={() => void startSync()} disabled={waiting !== null} loading={starting}><RefreshCw />Sync</Button>
+                    <Button variant="outline" onClick={() => void startSync()} disabled={running || waiting !== null} loading={starting}><RefreshCw />Sync</Button>
                   </span>
                 </Tooltip>
               )}
@@ -255,9 +287,16 @@ export function SyncTab(): React.ReactElement {
           <DriverCardRows>
             <DriverCardRow
               label="Newer versions"
-              help="The vendor replaces a component the model already has with a newer release, for example Intel WLAN 24.60.0.1 to 24.60.0.3. The new version keeps the same action."
+              help="The vendor replaces a component the model already has with a newer release, for example Intel WLAN 24.60.0.1 to 24.60.0.3. The new version keeps the same action. Wait for testing holds every new driver set, including a new model's first, until an Operator releases it on the model page. Until then only devices an Operator chooses it for at imaging start get it. Switching back to Use automatically releases every set in testing."
             >
-              <Select value="auto" onValueChange={() => undefined} options={NEWER_VERSION_OPTIONS} aria-label="Newer versions" disabled={readOnly} wrapperClassName="w-[240px]" />
+              <Select
+                value={settings.waitForTesting ? 'testing' : 'auto'}
+                onValueChange={v => void chooseNewerVersions(v)}
+                options={NEWER_VERSION_OPTIONS}
+                aria-label="Newer versions"
+                disabled={readOnly}
+                wrapperClassName="w-[240px]"
+              />
             </DriverCardRow>
             <DriverCardRow
               label="New components"
@@ -284,6 +323,22 @@ export function SyncTab(): React.ReactElement {
       />
 
       <SyncHistory runs={runs} />
+
+      {confirmingRelease && (
+        <ConfirmImpactDialog
+          icon={Rocket}
+          titleId="release-testing-title"
+          copy={{
+            confirmTitle: 'Use newer versions automatically?',
+            impact: `${inTesting === 1 ? 'The driver set in testing is released' : `All ${inTesting} driver sets in testing are released`}: devices imaged from now on get ${inTesting === 1 ? 'it' : 'them'} instead of the current set. New driver sets no longer wait in testing.`,
+            confirmLabel: 'Release and use automatically',
+            destructive: false,
+          }}
+          busy={saving}
+          onCancel={() => setConfirmingRelease(false)}
+          onConfirm={() => void releaseAndUseAutomatically()}
+        />
+      )}
     </div>
   );
 }

@@ -111,4 +111,31 @@ describe('Portal backend: bulk assign route', () => {
     expect(bad.status).toBe(400);
     expect(operatorApi.assignSession).toHaveBeenNthCalledWith(2, sessionA, imageId, undefined);
   });
+
+  it('403 without an upstream call when a Technician chooses a set in testing', async () => {
+    const app = appFor(technician);
+
+    const bulk = await request(app).post('/api/sessions/bulk-assign').send({ sessionIds: [sessionA, sessionB], osImageId: imageId, driverChoices: [{ sessionId: sessionA, kind: 'Model', modelId }, { sessionId: sessionB, kind: 'Testing', modelId }] });
+    const single = await request(app).post(`/api/sessions/${sessionA}/assign`).send({ osImageId: imageId, driverChoice: { kind: 'Testing', modelId } });
+
+    expect(bulk.status).toBe(403);
+    expect(bulk.body.detail).toBe('Only Operators and Administrators can choose a driver set in testing.');
+    expect(single.status).toBe(403);
+    expect(operatorApi.bulkAssign).not.toHaveBeenCalled();
+    expect(operatorApi.assignSession).not.toHaveBeenCalled();
+  });
+
+  it.each([['an Operator', 'CloudImaging.Operator'], ['an Administrator', 'CloudImaging.Administrator']])('forwards a set in testing chosen by %s', async (_name, role) => {
+    const res = await request(appFor({ ...technician, roles: [role] })).post('/api/sessions/bulk-assign').send({ sessionIds: [sessionA], osImageId: imageId, driverChoices: [{ sessionId: sessionA, kind: 'Testing', modelId }] });
+
+    expect(res.status).toBe(202);
+    expect(operatorApi.bulkAssign).toHaveBeenCalledWith([sessionA], imageId, { driverChoices: [{ sessionId: sessionA, kind: 'Testing', modelId }], actor });
+  });
+
+  it('400 for a Testing choice without a modelId', async () => {
+    const res = await request(appFor({ ...technician, roles: ['CloudImaging.Operator'] })).post('/api/sessions/bulk-assign').send({ sessionIds: [sessionA], osImageId: imageId, driverChoices: [{ sessionId: sessionA, kind: 'Testing' }] });
+
+    expect(res.status).toBe(400);
+    expect(operatorApi.bulkAssign).not.toHaveBeenCalled();
+  });
 });

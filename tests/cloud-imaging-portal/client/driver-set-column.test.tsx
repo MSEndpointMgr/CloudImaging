@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router-dom';
 const { apiFetch, notify, auth } = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   notify: vi.fn(() => 'toast'),
-  auth: { isAdministrator: false, canViewSetupProfiles: false, canUseImaging: true },
+  auth: { isAdministrator: false, canViewSetupProfiles: false, canUseImaging: true, canManageDrivers: false },
 }));
 
 vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => ({
@@ -89,6 +89,70 @@ afterEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
   auth.canUseImaging = true;
+  auth.canManageDrivers = false;
+});
+
+describe('Devices page: Driver set column, sets in testing', () => {
+  const withTesting = { ...preview, options: [...preview.options, { modelId: elite, vendor: 'Hp', displayName: 'HP EliteBook 840 G11', maxDownloadBytes: 2_500_000_000, testing: true }] };
+
+  it('Operators get the set in testing after the match, and choosing it sends a Testing choice', async () => {
+    auth.canManageDrivers = true;
+    serve(base({
+      'POST /api/drivers/assignment-preview': { body: withTesting },
+      'POST /api/sessions/bulk-assign': { body: { assigned: 2, skipped: 0, assignedIds: [], skippedIds: [] } },
+    }));
+    renderPage();
+    await chooseImage();
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Driver set for 5CG1111' }));
+    expect(screen.getAllByRole('option').map(o => o.getAttribute('title'))).toEqual(['HP EliteBook 840 G11', 'HP EliteBook 840 G11 (testing)', 'HP ZBook Firefly 14', 'No drivers']);
+    fireEvent.click(screen.getByRole('option', { name: /^HP EliteBook 840 G11 \(testing\)/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Start Imaging \(2\)/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getAllByRole('listitem').map(li => li.textContent)).toContain('1 device: HP EliteBook 840 G11 (testing) (chosen manually)');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Start Imaging' }));
+
+    await waitFor(() => expect(calls.some(c => c.key === 'POST /api/sessions/bulk-assign')).toBe(true));
+    expect(calls.find(c => c.key === 'POST /api/sessions/bulk-assign')?.body).toEqual({
+      sessionIds: [matched.sessionId, unmatched.sessionId],
+      osImageId: 'img-1',
+      driverChoices: [{ sessionId: matched.sessionId, kind: 'Testing', modelId: elite }],
+    });
+  });
+
+  it('Technicians do not get sets in testing', async () => {
+    serve(base({ 'POST /api/drivers/assignment-preview': { body: withTesting } }));
+    renderPage();
+    await chooseImage();
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Driver set for 5CG1111' }));
+    expect(screen.getAllByRole('option').map(o => o.getAttribute('title'))).toEqual(['HP EliteBook 840 G11', 'HP ZBook Firefly 14', 'No drivers']);
+  });
+
+  it('a device whose model only has a set in testing points Operators at it, and Technicians at the plain reason', async () => {
+    const onlyTesting = {
+      ...preview,
+      options: [preview.options[1], { modelId: zbook, vendor: 'Hp', displayName: 'HP ZBook Firefly 14', maxDownloadBytes: 1_000_000_000, testing: true }],
+      sessions: [preview.sessions[0], { sessionId: unmatched.sessionId, matchedModelId: null, testingModelId: zbook, skipReason: 'NoDriverSet', matchKey: '8A3B' }],
+    };
+    auth.canManageDrivers = true;
+    serve(base({ 'POST /api/drivers/assignment-preview': { body: onlyTesting } }));
+    renderPage();
+    await chooseImage();
+
+    expect(await screen.findByLabelText('The driver set of HP ZBook Firefly 14 for Windows 11, version 24H2 is in testing. Choose HP ZBook Firefly 14 (testing) to use it.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Driver set for 5CG2222' }));
+    expect(screen.getAllByRole('option').map(o => o.getAttribute('title'))[0]).toBe('HP ZBook Firefly 14 (testing)');
+    cleanup();
+
+    auth.canManageDrivers = false;
+    serve(base({ 'POST /api/drivers/assignment-preview': { body: onlyTesting } }));
+    renderPage();
+    await chooseImage();
+
+    expect(await screen.findByLabelText('This model has no driver set for Windows 11, version 24H2 yet.')).toBeTruthy();
+  });
 });
 
 describe('Devices page: Driver set column', () => {

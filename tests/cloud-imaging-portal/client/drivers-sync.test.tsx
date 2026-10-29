@@ -52,7 +52,7 @@ const zones = [
 
 function settings(overrides: Record<string, unknown> = {}) {
   return {
-    schedule: 'Daily', weekdays: 31, repeatWeeks: 1, localTime: '02:00', timeZone: 'Europe/Berlin', waitForApprovalOfNewComponents: false,
+    schedule: 'Daily', weekdays: 31, repeatWeeks: 1, localTime: '02:00', timeZone: 'Europe/Berlin', waitForApprovalOfNewComponents: false, waitForTesting: false,
     nextRunAt: '2026-10-26T01:00:00Z', syncNowAvailableAt: null, lastRunStartedAt: '2026-10-25T01:00:00Z', changedAt: '2026-10-20T08:00:00Z',
     timeZones: zones, ...overrides,
   };
@@ -196,6 +196,58 @@ describe('Drivers: Sync tab', () => {
     await waitFor(() => expect(puts()[0]).toMatchObject({ waitForApprovalOfNewComponents: true }));
   });
 
+  it('Newer versions is a choice between using them automatically and waiting for testing', async () => {
+    serve(syncRoutes());
+    renderAt('/drivers?tab=sync');
+
+    const select = await screen.findByRole('combobox', { name: 'Newer versions' });
+    expect(select.textContent).toContain('Use automatically');
+    fireEvent.click(select);
+    fireEvent.click(screen.getByRole('option', { name: 'Wait for testing' }));
+
+    await waitFor(() => expect(puts()[0]).toMatchObject({ waitForTesting: true, waitForApprovalOfNewComponents: false }));
+  });
+
+  it('switching back to Use automatically with sets in testing asks first, then releases them', async () => {
+    serve(syncRoutes({}, settings({ waitForTesting: true, setsInTesting: 2 })));
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Newer versions' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Use automatically' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('All 2 driver sets in testing are released: devices imaged from now on get them instead of the current set. New driver sets no longer wait in testing.')).toBeTruthy();
+    expect(puts()).toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Release and use automatically' }));
+
+    await waitFor(() => expect(puts()[0]).toMatchObject({ waitForTesting: false }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Sync settings saved.', description: '2 driver sets released from testing.' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('switching back without sets in testing saves at once, and Cancel keeps waiting for testing', async () => {
+    serve(syncRoutes({}, settings({ waitForTesting: true, setsInTesting: 0 })));
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Newer versions' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Use automatically' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(puts()[0]).toMatchObject({ waitForTesting: false }));
+    cleanup();
+    calls.length = 0;
+
+    serve(syncRoutes({}, settings({ waitForTesting: true, setsInTesting: 1 })));
+    renderAt('/drivers?tab=sync');
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Newer versions' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Use automatically' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(puts()).toHaveLength(0);
+    expect(screen.getByRole('combobox', { name: 'Newer versions' }).textContent).toContain('Wait for testing');
+  });
+
   it('lists time zones by Windows display name, the browser\'s first, and searches them', async () => {
     serve(syncRoutes({}, settings({ timeZone: 'Etc/UTC' })));
     renderAt('/drivers?tab=sync');
@@ -233,7 +285,7 @@ describe('Drivers: Sync tab', () => {
     const button = await screen.findByRole('button', { name: /^Sync$/ });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.focus(button.parentElement!);
-    expect(await screen.findByText(/^Available again at \d\d:\d\d$/)).toBeTruthy();
+    expect(await screen.findByText(/^Available again at \d\d:\d\d:\d\d$/)).toBeTruthy();
   });
 
   it('the Vendors card has a switch per vendor, Lenovo disabled, and a switch change calls route 2', async () => {
@@ -314,16 +366,65 @@ describe('Drivers: checks on the Models tab and the model page', () => {
   it.each([
     ['SyncOff', 'Sync is off for HP.'],
     ['Running', 'A sync is running.'],
-  ])('the model page disables Check for updates when %s, saying why', async (reason, text) => {
+  ])('the model page disables Check when %s, saying why', async (reason, text) => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: {
       model: row(), release: 'Windows11_24H2', checkAvailableAt: null, checkBlockedReason: reason, setVersion: 1, builtAt: null, hasPreviousSet: false, pendingVersion: null, pending: null, preparing: null,
       tiles: { offline: 0, offlineAndSpecialize: 0, specialize: 0, skip: 0, downloadPerDeviceBytes: 0 }, components: [],
     } } });
     renderAt(`/drivers/models/${modelId}`);
 
-    const button = await screen.findByRole('button', { name: /Check for updates/ });
+    const button = await screen.findByRole('button', { name: /^Updates$/ });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.focus(button.parentElement!);
     expect(await screen.findByText(text)).toBeTruthy();
+  });
+});
+
+describe('Drivers: a driver set in testing', () => {
+  function row(inTesting: boolean) {
+    return { modelId, vendor: 'Hp', displayName: 'HP EliteBook 840 G11', matchKeys: ['8C26'], architecture: 'X64', releases: ['Windows11_24H2'], state: 'Active', included: 3, skipped: 1, maxDownloadBytes: 30, status: { waitingForApproval: 0, failedItems: 0, syncOff: false, downloading: null, inTesting } };
+  }
+
+  function page(testing: { setVersion: number; since: string | null } | null, setVersion: number | null = 3) {
+    return {
+      model: row(testing !== null), release: 'Windows11_24H2', checkAvailableAt: null, checkBlockedReason: null, setVersion, builtAt: null, hasPreviousSet: false, previousSetVersion: null, pendingVersion: null, pending: null, preparing: null, testing,
+      tiles: { offline: 0, offlineAndSpecialize: 0, specialize: 0, skip: 0, downloadPerDeviceBytes: 0 }, components: [],
+    };
+  }
+
+  it('the Models tab shows In testing', async () => {
+    serve({
+      'GET /api/drivers/models': { body: [row(true)] },
+      'GET /api/drivers/vendors': { body: vendors },
+      'GET /api/drivers/sync/settings': { body: settings() },
+    });
+    renderAt('/drivers?tab=models');
+
+    expect(await screen.findByText('In testing')).toBeTruthy();
+  });
+
+  it('the model page says which set is in testing and Release makes it current without a confirmation', async () => {
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: page({ setVersion: 4, since: '2026-10-25T08:00:00Z' }) },
+      [`POST /api/drivers/models/${modelId}/releases/Windows11_24H2/testing/release`]: { body: page(null, 4) },
+    });
+    renderAt(`/drivers/models/${modelId}`);
+
+    expect(await screen.findByText(/^Driver set 4 for Windows 11, version 24H2 is in testing since 2026-10-25/)).toBeTruthy();
+    expect(screen.getByText('Only devices an Operator chooses it for at imaging start get it. Other devices get driver set 3.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Release' }));
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Driver set 4 released.', description: 'Devices of this model get it from their next deployment.' }));
+    expect(screen.queryByText(/is in testing/)).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('a first set in testing says other devices get no drivers, and read-only users get no Release', async () => {
+    auth.canManageDrivers = false;
+    serve({ [`GET /api/drivers/models/${modelId}`]: { body: page({ setVersion: 1, since: null }, null) } });
+    renderAt(`/drivers/models/${modelId}`);
+
+    expect(await screen.findByText('Only devices an Operator chooses it for at imaging start get it. Other devices of this model get no drivers.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Release' })).toBeNull();
   });
 });

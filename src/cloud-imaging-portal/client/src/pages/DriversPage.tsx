@@ -14,6 +14,7 @@ import { StorageTab } from '../components/drivers/StorageTab.tsx';
 import { SyncTab } from '../components/drivers/SyncTab.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
+import { useRerenderAt } from '../hooks/useRerenderAt.ts';
 import {
   DRIVERS_TABS, availableAgainText, checkAllModels, fetchDownloads, fetchModels, fetchSyncSettings, fetchVendors, parseDriversTab, vendorLabel,
   type DriverModelRow, type DriverSyncSettings, type DriverVendorRow, type DriversTab,
@@ -50,6 +51,7 @@ function ModelsTab(): React.ReactElement {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+  useRerenderAt(sync?.syncNowAvailableAt);
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();

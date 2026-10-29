@@ -158,6 +158,8 @@ export interface DriverModelRow {
     failureReason?: string | null;
     syncOff: boolean;
     downloading: { done: number; total: number } | null;
+    /** A driver set waits in testing for at least one Windows release. */
+    inTesting?: boolean;
   };
 }
 
@@ -202,6 +204,8 @@ export interface DriverModelPage {
   pending: { changes: number; buildAt: string } | null;
   /** `queued`: onboarding waits for the running sync, so nothing downloads yet. */
   preparing: { setVersion: number; done: number; total: number; queued?: boolean } | null;
+  /** A newer set that waits in testing: only devices an Operator chooses it for get it. */
+  testing?: { setVersion: number; since: string | null } | null;
   /** The vendor published a new version of a component a custom component replaces. */
   notices?: DriverCustomNotice[];
   tiles: { offline: number; offlineAndSpecialize: number; specialize: number; skip: number; downloadPerDeviceBytes: number };
@@ -270,6 +274,10 @@ export const removeWithdrawnComponent = (modelId: string, release: WindowsReleas
 export const rollBackSet = (modelId: string, release: WindowsRelease): Promise<DriverModelPage> =>
   driversSend('POST', `models/${encodeURIComponent(modelId)}/releases/${release}/rollback`, {}, 'Could not roll back the driver set.');
 
+/** Makes the set in testing the current set for every device. */
+export const releaseTestingSet = (modelId: string, release: WindowsRelease): Promise<DriverModelPage> =>
+  driversSend('POST', `models/${encodeURIComponent(modelId)}/releases/${release}/testing/release`, {}, 'Could not release the driver set.');
+
 /** What removing a model, or one of its releases, deletes and frees. */
 export interface DriverRemovalImpact {
   freedBytes: number;
@@ -287,7 +295,7 @@ export interface DriverStorageModelRow {
   vendor: DriverVendor;
   releases: WindowsRelease[];
   sizeBytes: number;
-  sets: { current: number; rollBack: number };
+  sets: { current: number; rollBack: number; testing?: number };
 }
 
 export interface DriverStorage {
@@ -318,6 +326,7 @@ export interface DriverStorageRelease {
   release: WindowsRelease;
   current: { version: number; builtAt: string | null } | null;
   rollBack: { version: number; builtAt: string | null } | null;
+  testing?: { version: number; builtAt: string | null } | null;
   componentCount: number;
   bytes: number;
   components: DriverStorageComponent[];
@@ -335,9 +344,9 @@ export const PREVIOUS_VERSION_OPTIONS: readonly { value: string; label: string }
   { value: '3', label: 'Keep 3 previous versions' },
 ];
 
-/** "2 current, 2 roll-back". */
-export function setCountsLabel(sets: { current: number; rollBack: number }): string {
-  return `${sets.current} current, ${sets.rollBack} roll-back`;
+/** "2 current, 2 roll-back", with ", 1 in testing" when any set waits in testing. */
+export function setCountsLabel(sets: { current: number; rollBack: number; testing?: number }): string {
+  return `${sets.current} current, ${sets.rollBack} roll-back${sets.testing ? `, ${sets.testing} in testing` : ''}`;
 }
 
 /** "This model only" or "3 models" (this model and the others sharing the file). */
@@ -414,11 +423,22 @@ export interface DriverComponentVersion {
   lastSet: number | null;
   from: string;
   to: string | null;
+  change: DriverVersionChange;
+  /** Who made the change; null for a sync. */
   changedBy: string | null;
   origin: 'Vendor' | 'Custom' | 'RolledBack';
   status: DriverVersionStatus;
   sizeBytes: number;
 }
+
+export type DriverVersionChange = 'Onboarding' | 'Sync' | 'RollBack' | 'Custom';
+
+export const VERSION_CHANGE_LABELS: Record<DriverVersionChange, string> = {
+  Onboarding: 'Onboard',
+  Sync: 'Sync',
+  RollBack: 'Roll back',
+  Custom: 'Custom component',
+};
 
 /** "52 to 53", or "52" when one set used it. */
 export function setRangeLabel(version: Pick<DriverComponentVersion, 'firstSet' | 'lastSet'>, currentSet: number | null): string {
@@ -537,39 +557,56 @@ export interface DriverAssignmentOption {
   vendor: DriverVendor;
   displayName: string;
   maxDownloadBytes: number;
+  /** The model's set in testing rather than its current set; offered to Operators only. */
+  testing?: boolean;
 }
 
 export interface DriverAssignmentPreview {
   release: WindowsRelease | null;
   architecture: MachineArchitecture;
   options: DriverAssignmentOption[];
-  sessions: { sessionId: string; matchedModelId: string | null; skipReason: DriverSkipReason | null; matchKey: string | null }[];
+  sessions: { sessionId: string; matchedModelId: string | null; testingModelId?: string | null; skipReason: DriverSkipReason | null; matchKey: string | null }[];
 }
 
-/** A manual choice in the Driver set column: a model's id, or no drivers. */
+/** A manual choice in the Driver set column: a model's id, `testing:` and a model's id for its set in testing, or no drivers. */
 export const NO_DRIVERS = 'none';
+
+const TESTING_PREFIX = 'testing:';
+
+/** The column value of an option. */
+export function optionValue(option: DriverAssignmentOption): string {
+  return option.testing ? `${TESTING_PREFIX}${option.modelId}` : option.modelId;
+}
+
+/** "HP EliteBook 840 G11", or "HP EliteBook 840 G11 (testing)" for its set in testing. */
+export function optionLabel(option: DriverAssignmentOption): string {
+  return option.testing ? `${option.displayName} (testing)` : option.displayName;
+}
 
 /** A choice as Start imaging sends it. */
 export interface DriverChoice {
   sessionId: string;
-  kind: 'Model' | 'None';
+  kind: 'Model' | 'Testing' | 'None';
   modelId?: string;
 }
 
 /** Turns a column value into the choice Start imaging sends. */
 export function choiceFor(sessionId: string, value: string): DriverChoice {
-  return value === NO_DRIVERS ? { sessionId, kind: 'None' } : { sessionId, kind: 'Model', modelId: value };
+  if (value === NO_DRIVERS) return { sessionId, kind: 'None' };
+  return value.startsWith(TESTING_PREFIX) ? { sessionId, kind: 'Testing', modelId: value.slice(TESTING_PREFIX.length) } : { sessionId, kind: 'Model', modelId: value };
 }
 
 /**
  * Why a coupled device has no matched set, with its match key: "System ID 8D41 is not onboarded
- * for Windows 11, version 24H2." Dell devices are named by system SKU.
+ * for Windows 11, version 24H2." Dell devices are named by system SKU. `testingName` is the
+ * matched model when its only set is in testing and the user may choose it.
  */
 export function noMatchText(
   session: { skipReason: DriverSkipReason | null; matchKey: string | null },
   manufacturer: string,
   release: WindowsRelease,
   imageArchitecture: MachineArchitecture,
+  testingName?: string,
 ): string {
   const keyName = /dell/i.test(manufacturer) ? 'System SKU' : 'System ID';
   switch (session.skipReason) {
@@ -580,7 +617,9 @@ export function noMatchText(
     }
     case 'ReleaseNotOnboarded':
     case 'NoDriverSet':
-      return `This model has no driver set for ${releaseLabel(release)} yet.`;
+      return testingName
+        ? `The driver set of ${testingName} for ${releaseLabel(release)} is in testing. Choose ${testingName} (testing) to use it.`
+        : `This model has no driver set for ${releaseLabel(release)} yet.`;
     default:
       return session.matchKey
         ? `${keyName} ${session.matchKey} is not onboarded for ${releaseLabel(release)}.`
@@ -768,9 +807,13 @@ export interface DriverSyncSettingsInput {
   localTime: string;
   timeZone: string;
   waitForApprovalOfNewComponents: boolean;
+  /** Newer driver sets wait in testing until an Operator releases them. */
+  waitForTesting: boolean;
 }
 
 export interface DriverSyncSettings extends DriverSyncSettingsInput {
+  /** Model and release pairs with a set in testing; switching to Use automatically releases them. */
+  setsInTesting?: number;
   nextRunAt: string | null;
   syncNowAvailableAt: string | null;
   lastRunStartedAt: string | null;
@@ -948,11 +991,11 @@ export function durationLabel(ms: number): string {
   return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
-/** "Available again at 03:00" while Sync now and Check for updates wait; null when they can run. */
+/** "Available again at 03:00:15" while Sync now and Check for updates wait; null when they can run. */
 export function availableAgainText(availableAt: string | null): string | null {
   if (!availableAt || new Date(availableAt).getTime() <= Date.now()) return null;
   const at = new Date(availableAt);
-  return `Available again at ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return `Available again at ${[at.getHours(), at.getMinutes(), at.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')}`;
 }
 
 /** The time zone entry whose `covers` includes the browser's zone, otherwise UTC. */

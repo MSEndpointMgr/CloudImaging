@@ -99,7 +99,8 @@ describe('Drivers: Models tab', () => {
     const headers = screen.getAllByRole('columnheader').map(h => h.textContent);
     expect(headers.slice(0, 7)).toEqual(['Model', 'Vendor', 'Windows releases', 'Included', 'Skipped', 'Size', 'Status']);
     const status = screen.getAllByRole('columnheader')[6];
-    expect(status.className).toContain('w-[25%]');
+    expect(status.className).toContain('w-[15%]');
+    expect(screen.getByText('Ready')).toBeTruthy();
     expect(screen.getByText('Drivers installed during deployment, per device model and Windows release.')).toBeTruthy();
     expect(screen.getAllByText('8C26').length).toBeGreaterThan(0);
     expect(screen.getByText('Draft')).toBeTruthy();
@@ -303,7 +304,7 @@ describe('Drivers: model page', () => {
     renderAt(`/drivers/models/${modelId}`);
 
     expect(await screen.findByText('Onboarding is not complete. Nothing is downloaded and devices of this model get no drivers until you complete it.')).toBeTruthy();
-    expect((screen.getByRole('button', { name: /Check for updates/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /^Updates$/ }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: /Complete onboarding/ }));
 
     expect(await screen.findByText('Preparing driver set 1 for Windows 11, version 24H2: 0 of 31 components downloaded.')).toBeTruthy();
@@ -332,7 +333,7 @@ describe('Drivers: model page', () => {
     });
     renderAt(`/drivers/models/${modelId}`);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Check for updates/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Updates$/ }));
 
     await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Checking HP EliteBook 840 G11 for updates.' }));
   });
@@ -406,7 +407,7 @@ describe('Drivers: Dell models', () => {
     for (const field of ['Installer', 'Hardware match', 'Package type', 'Criticality', 'Released by Dell']) {
       expect(screen.getByText(field)).toBeTruthy();
     }
-    const check = screen.getByRole('button', { name: /Check for updates/ });
+    const check = screen.getByRole('button', { name: /^Updates$/ });
     fireEvent.focus(check.parentElement!);
     expect(await screen.findByText('Sync is off for Dell.')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/\bHP\b/);

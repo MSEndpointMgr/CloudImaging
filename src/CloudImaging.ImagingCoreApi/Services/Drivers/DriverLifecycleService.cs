@@ -85,6 +85,29 @@ public sealed class DriverLifecycleService
         return DriverResult.Conflict("The driver set changed while it was being rolled back. Try again.");
     }
 
+    /// <summary>Releases the set in testing: devices imaged from now on get it. 409 without a set in testing.</summary>
+    public async Task<DriverResult> ReleaseTestingAsync(Guid modelId, WindowsRelease release, DriverActor? actor, CancellationToken ct = default)
+    {
+        if (actor?.Upn is not { Length: > 0 } upn)
+        {
+            return DriverResult.BadRequest(DriverHttpText.MissingActor);
+        }
+
+        var model = (await _models.GetAsync(modelId, ct))?.Value;
+        if (model is null || !model.Releases.Contains(release))
+        {
+            return DriverResult.NotFound("Driver model not found.");
+        }
+
+        if (await _sync.ReleaseTestingAsync(modelId, release, ct) is not { } released)
+        {
+            return DriverResult.Conflict("No driver set in testing to release.");
+        }
+
+        await _store.LogAsync(_time.GetUtcNow(), upn, actor.ObjectId, "Release", model.DisplayName, $"Driver set {released} for {DriverModelService.ReleaseLabel(release)}", ct);
+        return await _modelService.GetModelPageAsync(modelId, release, ct);
+    }
+
     /// <summary>What removing a model, or one of its releases, deletes and frees.</summary>
     public async Task<DriverResult> RemovalImpactAsync(Guid modelId, WindowsRelease? release, CancellationToken ct = default)
     {
@@ -106,7 +129,7 @@ public sealed class DriverLifecycleService
         foreach (var rel in releases)
         {
             var pointer = (await _pointers.GetAsync(modelId, rel, ct))?.Value;
-            sets += new[] { pointer?.CurrentVersion, pointer?.PreviousVersion, pointer?.PendingVersion }.Count(v => v is not null);
+            sets += new[] { pointer?.CurrentVersion, pointer?.PreviousVersion, pointer?.PendingVersion, pointer?.TestingVersion }.Count(v => v is not null);
             overrides += (await _store.Overrides.ListPartitionAsync(DriverTables.Pair(modelId, rel), ct)).Count;
         }
 
@@ -235,11 +258,13 @@ public sealed class DriverLifecycleService
             var blobs = refs.ByPair.Where(p => p.Key.ModelId == model.ModelId).SelectMany(p => p.Value).Concat(refs.PreviousByModel.GetValueOrDefault(model.ModelId) ?? []).ToHashSet(StringComparer.Ordinal);
             var current = 0;
             var rollBack = 0;
+            var testing = 0;
             foreach (var release in model.Releases)
             {
                 var pointer = (await _pointers.GetAsync(model.ModelId, release, ct))?.Value;
                 current += pointer?.CurrentVersion is null ? 0 : 1;
                 rollBack += pointer?.PreviousVersion is null ? 0 : 1;
+                testing += pointer?.TestingVersion is null ? 0 : 1;
             }
 
             rows.Add(new DriverStorageModelRow
@@ -249,7 +274,7 @@ public sealed class DriverLifecycleService
                 Vendor = model.Vendor,
                 Releases = model.Releases,
                 SizeBytes = blobs.Where(files.ContainsKey).Sum(b => files[b].Value.Size) + blobs.Where(custom.ContainsKey).Sum(b => custom[b]),
-                Sets = new DriverStorageSetCounts { Current = current, RollBack = rollBack },
+                Sets = new DriverStorageSetCounts { Current = current, RollBack = rollBack, Testing = testing },
             });
         }
 
@@ -326,7 +351,7 @@ public sealed class DriverLifecycleService
             var pair = DriverTables.Pair(modelId, release);
             var pointer = (await _pointers.GetAsync(modelId, release, ct))?.Value;
             var components = new Dictionary<string, (DriverSetItem Item, List<string> Sets)>(StringComparer.Ordinal);
-            foreach (var (version, label) in new[] { (pointer?.CurrentVersion, (string?)null), (pointer?.PreviousVersion, null), (pointer?.PendingVersion, "next") })
+            foreach (var (version, label) in new[] { (pointer?.CurrentVersion, (string?)null), (pointer?.PreviousVersion, null), (pointer?.TestingVersion, null), (pointer?.PendingVersion, "next") })
             {
                 if (version is not { } v || await _sets.GetAsync(modelId, release, v, ct) is not { } document)
                 {
@@ -356,6 +381,7 @@ public sealed class DriverLifecycleService
                 Release = release,
                 Current = pointer?.CurrentVersion is { } cv ? new DriverStorageSetRef { Version = cv, BuiltAt = await BuiltAtAsync(pair, cv, ct) ?? pointer.BuiltAt } : null,
                 RollBack = pointer?.PreviousVersion is { } pv ? new DriverStorageSetRef { Version = pv, BuiltAt = await BuiltAtAsync(pair, pv, ct) } : null,
+                Testing = pointer?.TestingVersion is { } tv ? new DriverStorageSetRef { Version = tv, BuiltAt = await BuiltAtAsync(pair, tv, ct) } : null,
                 ComponentCount = current?.Items.Count ?? 0,
                 Bytes = current?.Items.Sum(i => i.Size) ?? 0,
                 Components = components
@@ -555,7 +581,7 @@ public sealed class DriverLifecycleService
             }
 
             var blobs = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var version in new[] { row.Value.CurrentVersion, row.Value.PreviousVersion, row.Value.PendingVersion })
+            foreach (var version in new[] { row.Value.CurrentVersion, row.Value.PreviousVersion, row.Value.PendingVersion, row.Value.TestingVersion })
             {
                 if (version is { } v && await _sets.GetAsync(modelId, release, v, ct) is { } document)
                 {

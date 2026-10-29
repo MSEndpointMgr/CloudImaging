@@ -1,5 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import { requireRole } from '../middleware/roleGuard.js';
+import { getUserRoles, requireRole } from '../middleware/roleGuard.js';
 import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 import { decidingUser } from './autopilot.js';
@@ -100,7 +100,7 @@ router.post('/couple', requireRole('CloudImaging.PortalAccess'), async (req: Req
 
 const CHOICE_GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type DriverChoice = { sessionId?: string; kind: 'Model' | 'None'; modelId?: string };
+type DriverChoice = { sessionId?: string; kind: 'Model' | 'Testing' | 'None'; modelId?: string };
 
 /** One choice with only `kind` and `modelId` (and `sessionId` for bulk), or null when its shape is wrong. */
 function choiceFrom(value: unknown, sessionId?: string): DriverChoice | null {
@@ -109,8 +109,17 @@ function choiceFrom(value: unknown, sessionId?: string): DriverChoice | null {
   const kind = source['kind'];
   const modelId = source['modelId'];
   if (kind === 'None') return sessionId ? { sessionId, kind } : { kind };
-  if (kind === 'Model' && typeof modelId === 'string' && CHOICE_GUID.test(modelId)) return sessionId ? { sessionId, kind, modelId } : { kind, modelId };
+  if ((kind === 'Model' || kind === 'Testing') && typeof modelId === 'string' && CHOICE_GUID.test(modelId)) return sessionId ? { sessionId, kind, modelId } : { kind, modelId };
   return null;
+}
+
+/** A set in testing may only be chosen by Operators and Administrators; Core trusts the portal for this. */
+function mayChoose(req: Request, choices: DriverChoice[]): boolean {
+  return !choices.some(c => c.kind === 'Testing') || getUserRoles(req as AuthenticatedRequest).has('CloudImaging.Operator');
+}
+
+function testingNotAllowed(res: Response): void {
+  res.status(403).json({ title: 'Forbidden', status: 403, detail: 'Only Operators and Administrators can choose a driver set in testing.' });
 }
 
 /** `driverChoices` of a bulk request: each for a listed session, at most one per session. */
@@ -155,6 +164,7 @@ router.post('/:sessionId/assign', requireRole('CloudImaging.PortalAccess'), requ
     if (driverChoice !== undefined && driverChoice !== null) {
       const choice = choiceFrom(driverChoice);
       if (!choice) { invalidChoice(res); return; }
+      if (!mayChoose(req, [choice])) { testingNotAllowed(res); return; }
       const actor = choiceActor(req);
       if (!actor) { missingIdentity(res); return; }
       extra = { driverChoice: choice, actor };
@@ -173,6 +183,7 @@ router.post('/bulk-assign', requireRole('CloudImaging.PortalAccess'), async (req
     const { sessionIds, osImageId, driverChoices } = req.body as { sessionIds: string[]; osImageId: string; driverChoices?: unknown };
     const choices = choicesFrom(driverChoices, sessionIds);
     if (!choices) { invalidChoice(res); return; }
+    if (!mayChoose(req, choices)) { testingNotAllowed(res); return; }
     let extra: { driverChoices: DriverChoice[]; actor: { upn: string; objectId: string | null } } | undefined;
     if (choices.length > 0) {
       const actor = choiceActor(req);

@@ -31,6 +31,7 @@ Operator only.
 | 14 | `POST /models/:modelId/releases/:release/approvals` `{ lineageKeys[] }` | Operator | `POST .../approvals` | 200 |
 | 15 | `DELETE /models/:modelId/releases/:release/components/:lineageKey` | Operator | `DELETE .../components/{key}?changedBy=` | 204 (withdrawn components only, else 409) |
 | 16 | `POST /models/:modelId/releases/:release/rollback` | Operator | `POST .../rollback` | 200 (409 without a previous set) |
+| 16a | `POST /models/:modelId/releases/:release/testing/release` | Operator | `POST .../testing/release` | 200 model page (409 without a set in testing) |
 | 17 | `GET /rules` | Technician | `GET /api/drivers/rules` | 200 rules with hits |
 | 18 | `GET /rules/suggestions` | Operator | `GET /api/drivers/rules/suggestions` | 200 |
 | 19 | `POST /rules` | Operator | `POST /api/drivers/rules` | 201 |
@@ -79,8 +80,11 @@ Existing route changed: `PATCH /api/images/:imageId` and the OS image upload sta
 Existing routes changed: `POST /api/sessions/bulk-assign` accepts optional `driverChoices: [{
 sessionId, kind, modelId }]` and `POST /api/sessions/:sessionId/assign` an optional
 `driverChoice: { kind, modelId }`. The guards stay as they are (Start imaging permission). The
-server validates the shape (`kind` is `Model` or `None`, `modelId` a GUID when `Model`, session
-IDs GUIDs, at most one choice per session; 400 without an upstream call), forwards only
+server validates the shape (`kind` is `Model`, `Testing` or `None`, `modelId` a GUID when `Model` or `Testing`, session
+IDs GUIDs, at most one choice per session; 400 without an upstream call), refuses a `Testing`
+choice from a user without the Operator or Administrator role (403 "Only Operators and
+Administrators can choose a driver set in testing.", without an upstream call, because Core is
+called with the portal's identity), forwards only
 `sessionId`, `kind` and `modelId`, and adds `actor` from the token through `decidingUser(req)`
 when a choice is present (401 without an identity). The 409 with `errors` is relayed unchanged.
 The session list and session detail return `driverModelName`, `driverSetVersion`,

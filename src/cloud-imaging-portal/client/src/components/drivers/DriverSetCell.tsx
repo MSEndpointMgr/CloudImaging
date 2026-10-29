@@ -4,15 +4,15 @@ import { Button } from '../ui/button.tsx';
 import { Select, type SelectOption } from '../ui/select.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { cn } from '../../lib/utils.ts';
-import { NO_DRIVERS, formatBytes, noMatchText, vendorLabel, type DriverAssignmentPreview } from '../../lib/drivers.ts';
+import { NO_DRIVERS, formatBytes, noMatchText, optionLabel, optionValue, vendorLabel, type DriverAssignmentPreview } from '../../lib/drivers.ts';
 
-/** The options of one row: per vendor, the matched model first in its group, then No drivers. */
+/** The options of one row: per vendor, the matched model first in its group (its set in testing after it), then No drivers. */
 function driverSetOptions(preview: DriverAssignmentPreview, matchedModelId: string | null): SelectOption[] {
   const vendors = [...new Set(preview.options.map(o => o.vendor))];
   const grouped = vendors.flatMap(vendor => preview.options
     .filter(o => o.vendor === vendor)
-    .sort((a, b) => (a.modelId === matchedModelId ? -1 : b.modelId === matchedModelId ? 1 : 0))
-    .map(o => ({ value: o.modelId, label: o.displayName, group: vendorLabel(o.vendor), meta: formatBytes(o.maxDownloadBytes) })));
+    .sort((a, b) => (a.modelId === matchedModelId ? -1 : 0) - (b.modelId === matchedModelId ? -1 : 0))
+    .map(o => ({ value: optionValue(o), label: optionLabel(o), group: vendorLabel(o.vendor), meta: formatBytes(o.maxDownloadBytes) })));
   return [...grouped, { value: NO_DRIVERS, label: 'No drivers' }];
 }
 
@@ -25,7 +25,7 @@ export function StartImagingDriverLines({ sessionIds, preview, choices }: {
   preview: DriverAssignmentPreview;
   choices: Readonly<Record<string, string>>;
 }): React.ReactElement | null {
-  const names = new Map(preview.options.map(o => [o.modelId, o.displayName]));
+  const names = new Map(preview.options.map(o => [optionValue(o), optionLabel(o)]));
   const lines: { label: string; manual: boolean; count: number }[] = [];
   for (const sessionId of sessionIds) {
     const choice = choices[sessionId];
@@ -72,14 +72,16 @@ export function DriverSetCell({ sessionId, serial, manufacturer, preview, choice
   const session = preview.sessions.find(s => s.sessionId === sessionId);
   const matched = session?.matchedModelId ?? '';
   const value = choice ?? matched;
-  const reason = !matched && session ? noMatchText(session, manufacturer, preview.release, preview.architecture) : null;
+  // Only Operators get testing options, so only they are pointed at a set in testing.
+  const testingName = preview.options.find(o => o.testing && o.modelId === session?.testingModelId)?.displayName;
+  const reason = !matched && session ? noMatchText(session, manufacturer, preview.release, preview.architecture, testingName) : null;
   const changed = choice !== undefined && choice !== matched;
   return (
     <div className="flex min-w-0 items-center gap-2">
       <Select
         value={value}
         onValueChange={next => onChoose(next === matched ? undefined : next)}
-        options={driverSetOptions(preview, session?.matchedModelId ?? null)}
+        options={driverSetOptions(preview, session?.matchedModelId ?? session?.testingModelId ?? null)}
         placeholder="No match, choose a set"
         aria-label={`Driver set for ${serial}`}
         className={cn(!value && 'border-amber-500 dark:border-amber-400')}
