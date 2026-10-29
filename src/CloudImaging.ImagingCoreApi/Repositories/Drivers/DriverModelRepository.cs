@@ -150,9 +150,11 @@ public sealed class DriverSyncRunRepository
 {
     private const string RunPartition = "run";
     private const string IndexPartition = "runid";
+    private const string QueuePartition = "queue";
     private const string ActiveRow = "active";
     private readonly DriverJsonTable<DriverSyncRunRecord> _runs;
     private readonly DriverJsonTable<DriverActiveRunRecord> _active;
+    private readonly DriverJsonTable<DriverQueuedRunRecord> _queue;
     private readonly DriverJsonTable<Contracts.Models.Drivers.DriverSyncRunItem> _items;
     private readonly DriverJsonTable<DriverRunStepRecord> _steps;
 
@@ -161,6 +163,7 @@ public sealed class DriverSyncRunRepository
     {
         _runs = new(tables, DriverTables.SyncRuns);
         _active = new(tables, DriverTables.SyncRuns);
+        _queue = new(tables, DriverTables.SyncRuns);
         _items = new(tables, DriverTables.SyncRunItems);
         _steps = new(tables, DriverTables.SyncRunItems);
     }
@@ -265,6 +268,21 @@ public sealed class DriverSyncRunRepository
             await _runs.DeleteAsync(RunPartition, row.RowKey, ct: ct);
         }
     }
+
+    /// <summary>Queues an onboarding behind the active run; false when it is already queued.</summary>
+    public Task<bool> TryQueueAsync(DriverQueuedRunRecord queued, CancellationToken ct = default) =>
+        _queue.TryAddAsync(QueuePartition, QueueKey(queued), queued, ct);
+
+    /// <summary>Queued onboardings, oldest first.</summary>
+    public async Task<List<DriverQueuedRunRecord>> ListQueuedAsync(CancellationToken ct = default) =>
+        (await _queue.ListPartitionAsync(QueuePartition, ct)).OrderBy(row => row.RowKey, StringComparer.Ordinal).Select(row => row.Value).ToList();
+
+    /// <summary>Takes an onboarding off the queue; false when another caller already took it.</summary>
+    public Task<bool> TryDequeueAsync(DriverQueuedRunRecord queued, CancellationToken ct = default) =>
+        _queue.DeleteAsync(QueuePartition, QueueKey(queued), ct: ct);
+
+    // Time first, so the partition lists in the order the onboardings were queued.
+    private static string QueueKey(DriverQueuedRunRecord queued) => $"{queued.QueuedAt.UtcTicks:D19}_{queued.ModelId:N}";
 
     private static string StepPartition(Guid runId) => $"steps_{runId:N}";
 

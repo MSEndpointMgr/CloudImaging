@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, CircleAlert, CircleX, Info, Loader, Plus, RefreshCw, X } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
-import { Checkbox } from '../ui/checkbox.tsx';
+import { Checkbox, CheckboxField } from '../ui/checkbox.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { SearchInput } from '../ui/search-input.tsx';
 import { Select } from '../ui/select.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
-import { formatTimestamp } from '../../lib/utils.ts';
+import { cn, formatTimestamp } from '../../lib/utils.ts';
 import {
   WINDOWS_RELEASES, fetchCatalogModels, formatSize, onboardModels, previewModels, releaseLabel, vendorLabel,
   type DriverCatalogModelList, type DriverPreviewResult, type DriverVendor, type DriverVendorRow, type WindowsRelease,
@@ -117,18 +117,21 @@ export function OnboardModelDialog({ vendors, onClose }: OnboardModelDialogProps
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="onboard-model-title" className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-lg border border-border bg-background shadow-xl">
-        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-4">
-          <div className="min-w-0">
-            <h2 id="onboard-model-title" className="text-base font-semibold">Onboard model</h2>
-            <p className="text-sm text-muted-foreground">{`Step ${step} of 2: ${step === 1 ? 'Choose models' : 'Choose Windows releases'}`}</p>
-            {step === 1 && (
-              <p className="text-sm text-muted-foreground">{`Models come from ${name}'s catalog. A device matches by its ${vendorRow?.matchKeyType ?? 'model key'}.`}</p>
-            )}
+        <div className="flex items-start justify-between gap-3 border-b border-border p-5">
+          <div className="min-w-0 space-y-1">
+            <h2 id="onboard-model-title" className="text-base font-semibold">
+              {step === 1 ? 'Onboard models' : `Onboard ${selected.length} ${selected.length === 1 ? 'model' : 'models'}`}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {step === 1
+                ? `Models come from ${name}'s driver catalog. Devices are matched on their ${vendorRow?.matchKeyType ?? 'model key'}.`
+                : `Choose the Windows releases you deploy to ${selected.length === 1 ? 'this model' : 'these models'}.`}
+            </p>
           </div>
           <Button variant="ghost" size="icon" aria-label="Close" onClick={onClose} disabled={onboarding}><X /></Button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
           {step === 1 ? (
             <>
               <div className="flex items-center gap-2">
@@ -166,23 +169,36 @@ export function OnboardModelDialog({ vendors, onClose }: OnboardModelDialogProps
                 </div>
               )}
               {listState.kind === 'ready' && (
-                <ul className="max-h-80 divide-y divide-border overflow-y-auto rounded-md border border-border" aria-label={`${name} models`}>
-                  {visible.map(model => (
-                    <li key={model.catalogModelKey} className="flex h-10 items-center justify-between gap-4 px-3">
-                      <Checkbox
-                        checked={model.onboardedModelId !== null || selected.includes(model.catalogModelKey)}
-                        disabled={model.onboardedModelId !== null}
-                        onCheckedChange={on => toggle(model.catalogModelKey, on)}
-                        label={model.displayName}
-                        className="min-w-0"
-                      />
-                      <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                        {model.onboardedModelId !== null && <span>Onboarded</span>}
-                        <span>{model.matchKeys.join(', ')}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="overflow-hidden rounded-md border border-border">
+                  <ul className="max-h-80 divide-y divide-border/70 overflow-y-auto" aria-label={`${name} models`}>
+                    {visible.map(model => {
+                      const onboarded = model.onboardedModelId !== null;
+                      const on = onboarded || selected.includes(model.catalogModelKey);
+                      const nameId = `onboard-${model.catalogModelKey}`;
+                      return (
+                        <li key={model.catalogModelKey}>
+                          <label className={cn('flex items-center gap-3 px-3 py-2', onboarded ? 'cursor-not-allowed' : 'cursor-pointer', on && !onboarded && 'bg-primary/5')}>
+                            <Checkbox checked={on} disabled={onboarded} onCheckedChange={next => toggle(model.catalogModelKey, next)} labelledBy={nameId} />
+                            <span className="min-w-0 flex-1">
+                              <span id={nameId} className={cn('block truncate text-sm font-medium', onboarded && 'text-muted-foreground')} title={model.displayName}>{model.displayName}</span>
+                              <span className="block truncate text-xs text-muted-foreground">
+                                <span className="font-mono">{model.matchKeys.join(', ')}</span>
+                                {onboarded && ', already onboarded'}
+                              </span>
+                            </span>
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="flex items-center justify-between gap-4 border-t border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                    <span>{`${selected.length} selected`}</span>
+                    <span className="truncate">
+                      {`${visible.length.toLocaleString('en-US')} of ${models.length.toLocaleString('en-US')} ${name} models`}
+                      {listState.list.fetchedAt ? `, list from ${formatTimestamp(listState.list.fetchedAt)}` : ''}
+                    </span>
+                  </div>
+                </div>
               )}
 
               {vendorRow && !vendorRow.syncEnabled && (
@@ -194,24 +210,26 @@ export function OnboardModelDialog({ vendors, onClose }: OnboardModelDialogProps
             </>
           ) : (
             <>
-              <fieldset>
-                <legend className="mb-2 text-sm font-medium">Windows releases</legend>
-                <div className="grid grid-cols-3 gap-2">
-                  {shared.map(release => (
-                    <Checkbox
-                      key={release}
-                      checked={releases.includes(release)}
-                      onCheckedChange={on => setReleases(current => (on ? [...current, release] : current.filter(r => r !== release)))}
-                      label={releaseLabel(release)}
-                    />
-                  ))}
-                </div>
-              </fieldset>
+              <div role="group" aria-label="Windows releases" className="grid grid-cols-3 gap-2">
+                {shared.map(release => (
+                  <CheckboxField
+                    key={release}
+                    checked={releases.includes(release)}
+                    onCheckedChange={on => setReleases(current => (on ? [...current, release] : current.filter(r => r !== release)))}
+                    label={releaseLabel(release)}
+                    className="gap-2 rounded-md border border-border px-3 py-2"
+                  />
+                ))}
+              </div>
 
-              {releases.length > 0 && (
-                <p className="text-sm text-muted-foreground">{`Components per model for ${releases.map(releaseLabel).join(' and ')}, after your rules.`}</p>
-              )}
+              <div>
+              <p className="text-sm font-medium">
+                {releases.length > 0
+                  ? `Components per model for ${releases.map(releaseLabel).join(' and ')}, after your rules`
+                  : 'Components per model, after your rules'}
+              </p>
 
+              <div className="mt-2 overflow-hidden rounded-md border border-border">
               <Table className="table-fixed">
                 <TableHeader>
                   <TableRow>
@@ -229,14 +247,14 @@ export function OnboardModelDialog({ vendors, onClose }: OnboardModelDialogProps
                     const failure = preview?.errors.find(e => e.catalogModelKey === model.catalogModelKey);
                     return (
                       <TableRow key={model.catalogModelKey}>
-                        <TableCell className="truncate" title={model.displayName}>{model.displayName}</TableCell>
+                        <TableCell className="truncate font-medium" title={model.displayName}>{model.displayName}</TableCell>
                         {row ? (
                           <>
-                            <TableCell className="text-right">{row.offline}</TableCell>
-                            <TableCell className="text-right">{row.offlineAndSpecialize}</TableCell>
-                            <TableCell className="text-right">{row.specialize}</TableCell>
-                            <TableCell className="text-right">{row.skip}</TableCell>
-                            <TableCell className="text-right">{formatSize(row.sizeBytes)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{row.offline}</TableCell>
+                            <TableCell className="text-right tabular-nums">{row.offlineAndSpecialize}</TableCell>
+                            <TableCell className="text-right tabular-nums">{row.specialize}</TableCell>
+                            <TableCell className="text-right tabular-nums">{row.skip}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatSize(row.sizeBytes)}</TableCell>
                           </>
                         ) : (
                           <TableCell colSpan={5} className="truncate text-muted-foreground">
@@ -248,35 +266,31 @@ export function OnboardModelDialog({ vendors, onClose }: OnboardModelDialogProps
                   })}
                 </TableBody>
               </Table>
+              </div>
 
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <p className="mt-3 text-sm text-muted-foreground">
                 Nothing is downloaded yet. Next, choose what each component does on the model&apos;s page, then complete onboarding.
               </p>
+              </div>
             </>
           )}
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-between gap-4 border-t border-border px-6 py-4">
-          <div className="min-w-0 text-sm text-muted-foreground">
-            {step === 1 && listState.kind === 'ready' && (
-              <span className="truncate">
-                {`${selected.length} selected. ${visible.length.toLocaleString('en-US')} of ${models.length.toLocaleString('en-US')} ${name} models`}
-                {listState.list.fetchedAt ? `, list from ${formatTimestamp(listState.list.fetchedAt)}` : ''}
-              </span>
-            )}
-          </div>
+        <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-3">
+          <span className="text-xs text-muted-foreground">{`Step ${step} of 2`}</span>
           <div className="flex shrink-0 gap-2">
             {step === 1 ? (
               <>
                 <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button onClick={goToReleases} disabled={listState.kind !== 'ready' || selected.length === 0 || shared.length === 0}><ChevronRight />Continue</Button>
+                <Button onClick={goToReleases} disabled={listState.kind !== 'ready' || selected.length === 0 || shared.length === 0}>Next<ChevronRight /></Button>
               </>
             ) : (
               <>
                 <Button variant="secondary" onClick={() => setStep(1)} disabled={onboarding}>Back</Button>
-                <Button onClick={() => void onboard()} loading={onboarding} disabled={releases.length === 0 || previewing}><Plus />Onboard</Button>
+                <Button onClick={() => void onboard()} loading={onboarding} disabled={releases.length === 0 || previewing}>
+                  <Plus />{`Onboard ${selected.length} ${selected.length === 1 ? 'model' : 'models'}`}
+                </Button>
               </>
             )}
           </div>

@@ -179,6 +179,9 @@ public enum DriverSyncTrigger
 
     /// <summary>Check for updates on one model's page.</summary>
     ModelCheck,
+
+    /// <summary>Complete onboarding: one model's components, downloads and first driver set.</summary>
+    Onboarding,
 }
 
 /// <summary>Result of a run.</summary>

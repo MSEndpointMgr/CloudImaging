@@ -134,7 +134,8 @@ public sealed partial class DriverSyncService
 
     /// <summary>
     /// Starts a run. <c>Manual</c> and <c>Check</c> share the 60-minute limit with <c>Scheduled</c>;
-    /// <c>ModelCheck</c> has its own 15-minute limit per model. Only one run is ever active.
+    /// <c>ModelCheck</c> has its own 15-minute limit per model; <c>Onboarding</c> has no limit.
+    /// Only one run is ever active.
     /// </summary>
     public async Task<DriverRunStart> StartRunAsync(DriverSyncTrigger trigger, string? startedBy, Guid? modelId = null, CancellationToken ct = default)
     {
@@ -142,7 +143,7 @@ public sealed partial class DriverSyncService
         var settings = await _store.GetSyncSettingsAsync(ct);
         var sharedAvailableAt = settings.Value.LastRunStartedAt + RunLimit;
         DriverModelRecord? model = null;
-        if (trigger == DriverSyncTrigger.ModelCheck)
+        if (trigger is DriverSyncTrigger.ModelCheck or DriverSyncTrigger.Onboarding)
         {
             model = modelId is { } id ? (await _models.GetAsync(id, ct))?.Value : null;
             if (model is null)
@@ -180,7 +181,7 @@ public sealed partial class DriverSyncService
             return new DriverRunStart(DriverRunStartStatus.TooSoon, AvailableAt: sharedAvailableAt, Detail: $"Drivers were checked less than an hour ago. Try again after {sharedAvailableAt:yyyy-MM-dd HH:mm} UTC.");
         }
 
-        if (model?.LastCheckedAt + ModelCheckLimit is { } modelAvailableAt && modelAvailableAt > now)
+        if (trigger == DriverSyncTrigger.ModelCheck && model?.LastCheckedAt + ModelCheckLimit is { } modelAvailableAt && modelAvailableAt > now)
         {
             return new DriverRunStart(DriverRunStartStatus.TooSoon, AvailableAt: modelAvailableAt, Detail: $"This model was checked less than 15 minutes ago. Try again after {modelAvailableAt:yyyy-MM-dd HH:mm} UTC.");
         }
@@ -242,6 +243,54 @@ public sealed partial class DriverSyncService
         return new DriverRunStart(DriverRunStartStatus.Started, runId);
     }
 
+    /// <summary>
+    /// Queues an onboarding behind the active run, so it starts as its own run when that one
+    /// finishes. It starts at once when the active run ended in the meantime.
+    /// </summary>
+    public async Task QueueOnboardingAsync(DriverModelRecord model, string queuedBy, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        await _runs.TryQueueAsync(new DriverQueuedRunRecord(model.ModelId, model.DisplayName, queuedBy, _time.GetUtcNow()), ct);
+        LogOnboardingQueued(_logger, model.ModelId);
+        await StartQueuedAsync(ct);
+    }
+
+    /// <summary>True while the model's onboarding waits for the active run.</summary>
+    public async Task<bool> IsQueuedAsync(Guid modelId, CancellationToken ct = default) =>
+        (await _runs.ListQueuedAsync(ct)).Any(q => q.ModelId == modelId);
+
+    // Starts the oldest queued onboarding once no run holds the lock. One taken off the queue while
+    // another run won the lock goes back in its place; one that can no longer start is dropped.
+    private async Task StartQueuedAsync(CancellationToken ct)
+    {
+        foreach (var queued in await _runs.ListQueuedAsync(ct))
+        {
+            if (await _runs.GetActiveAsync(ct) is not null)
+            {
+                return;
+            }
+
+            if (!await _runs.TryDequeueAsync(queued, ct))
+            {
+                continue;
+            }
+
+            var start = await StartRunAsync(DriverSyncTrigger.Onboarding, queued.QueuedBy, queued.ModelId, ct);
+            if (start.Status == DriverRunStartStatus.Started)
+            {
+                return;
+            }
+
+            if (start.Status == DriverRunStartStatus.Running)
+            {
+                await _runs.TryQueueAsync(queued, ct);
+                return;
+            }
+
+            LogQueuedOnboardingDropped(_logger, queued.ModelId, start.Status);
+        }
+    }
+
     /// <summary>The run as the portal sees it.</summary>
     public static DriverSyncRun ToContract(DriverSyncRunRecord run)
     {
@@ -289,6 +338,9 @@ public sealed partial class DriverSyncService
             // The running totals; once the run ends its counts are recounted from the stored items.
             Found = run.Result == DriverSyncResult.Running ? run.Found : run.Counts,
             Latest = run.Latest,
+            Queued = run.Result == DriverSyncResult.Running
+                ? (await _runs.ListQueuedAsync(ct)).Select(q => new DriverQueuedRun { ModelId = q.ModelId, ModelName = q.ModelName, QueuedBy = q.QueuedBy, QueuedAt = q.QueuedAt }).ToList()
+                : [],
         };
     }
 
@@ -765,7 +817,9 @@ public sealed partial class DriverSyncService
         }
 
         var settings = await _store.GetSyncSettingsAsync(ct);
-        var waitForApproval = settings.Value.WaitForApprovalOfNewComponents && message.RunId is not null && model.State == DriverModelState.Active;
+        // Components found since the draft was reviewed are not held for approval when onboarding completes.
+        var waitForApproval = settings.Value.WaitForApprovalOfNewComponents && model.State == DriverModelState.Active
+            && message.RunId is { } approvalRun && (await _runs.GetAsync(approvalRun, ct))?.Value.Trigger != DriverSyncTrigger.Onboarding;
         var items = await MergeComponentsAsync(model, release, catalog, waitForApproval, ct);
         var recorded = new List<DriverSyncRunItem>();
         if (message.RunId is { } runId)
@@ -1171,10 +1225,13 @@ public sealed partial class DriverSyncService
 
         var items = await _runs.ListItemsAsync(runId, ct);
         var counts = items.GroupBy(i => i.Outcome).ToDictionary(g => g.Key, g => g.Count());
-        var ended = await UpdateRunAsync(runId, r => r.Result != DriverSyncResult.Running ? r : r with { Result = result, FinishedAt = now, Counts = counts }, ct);
         await _runs.ReleaseAsync(runId, ct);
         await _runs.DeleteStepsAsync(runId, ct);
-        if (ended is { Trigger: not DriverSyncTrigger.ModelCheck })
+
+        // The next queued onboarding starts before this run reads as finished, so the Sync tab moves straight on to it.
+        await StartQueuedAsync(ct);
+        var ended = await UpdateRunAsync(runId, r => r.Result != DriverSyncResult.Running ? r : r with { Result = result, FinishedAt = now, Counts = counts }, ct);
+        if (ended is { Trigger: not (DriverSyncTrigger.ModelCheck or DriverSyncTrigger.Onboarding) })
         {
             await CleanUpAsync(ct);
         }
@@ -1440,4 +1497,10 @@ public sealed partial class DriverSyncService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Driver set {Version} of {Pair} is current.")]
     private static partial void LogSetCurrent(ILogger logger, int version, string pair);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Onboarding of driver model {ModelId} is queued behind the running sync.")]
+    private static partial void LogOnboardingQueued(ILogger logger, Guid modelId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Queued onboarding of driver model {ModelId} could not start ({Status}) and was dropped.")]
+    private static partial void LogQueuedOnboardingDropped(ILogger logger, Guid modelId, DriverRunStartStatus status);
 }

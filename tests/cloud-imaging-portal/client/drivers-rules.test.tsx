@@ -64,7 +64,7 @@ function page(overrides: Record<string, unknown> = {}) {
       component('sp100', 'Intel Wireless LAN Driver'),
       component('sp101', 'Realtek Audio Driver', { source: 'Override', action: 'Skip' }),
       component('sp102', 'HP Services Scan', { source: 'Rule', ruleName: 'Skip HP Services Scan', action: 'Skip' }),
-      component('sp103', 'HP Hotkey Service', { source: 'Locked', action: 'Skip', allowedActions: ['Skip'] }),
+      component('sp103', 'HP Hotkey Service', { source: 'Locked', action: 'Skip', allowedActions: ['Skip'], state: 'Withdrawn' }),
     ],
     ...overrides,
   };
@@ -131,6 +131,17 @@ describe('Drivers: component actions on the model page', () => {
     expect(within(sourceOf('Realtek Audio Driver')).getByRole('button', { name: 'Undo override of Realtek Audio Driver' })).toBeTruthy();
     expect(sourceOf('HP Services Scan').textContent).toBe('Skip HP Services ScanRule');
     expect(sourceOf('HP Hotkey Service').textContent).toBe('Locked');
+  });
+
+  it('a locked component with nothing to approve or remove leaves the table for the footer list', async () => {
+    const body = page();
+    body.components[3] = component('sp103', 'HP Hotkey Service', { source: 'Locked', action: 'Skip', allowedActions: ['Skip'] });
+    serve({ [`GET /api/drivers/models/${modelId}`]: { body } });
+    renderAt(`/drivers/models/${modelId}`);
+
+    await screen.findByText('3 components');
+    expect(screen.queryByRole('combobox', { name: 'Action for HP Hotkey Service' })).toBeNull();
+    expect(screen.getByRole('button', { name: '1 locked to Skip' })).toBeTruthy();
   });
 
   it('choosing an action sets an override and Undo override removes it, reloading the page each time', async () => {

@@ -398,9 +398,19 @@ public sealed class DriverModelService
             await _store.LogAsync(now, upn, actor.ObjectId, "Vendor", DriverSyncService.VendorName(model.Vendor), "Sync turned on by onboarding", ct);
         }
 
-        foreach (var release in model.Releases)
+        // Tracked as a run so the Sync tab shows its progress and a catalog failure lands in History.
+        // While another run holds the lock, it waits in the queue the Sync tab shows and starts after it.
+        var run = await _sync.StartRunAsync(DriverSyncTrigger.Onboarding, upn, modelId, ct);
+        if (run.Status == DriverRunStartStatus.Running)
         {
-            await _work.EnqueueAsync(new DriverWorkMessage { Kind = DriverWorkKind.ResolveModel, ModelId = modelId, Release = release }, TimeSpan.Zero, ct);
+            await _sync.QueueOnboardingAsync(model, upn, ct);
+        }
+        else if (run.Status != DriverRunStartStatus.Started)
+        {
+            foreach (var release in model.Releases)
+            {
+                await _work.EnqueueAsync(new DriverWorkMessage { Kind = DriverWorkKind.ResolveModel, ModelId = modelId, Release = release }, TimeSpan.Zero, ct);
+            }
         }
 
         await _store.LogAsync(now, upn, actor.ObjectId, "Model", model.DisplayName, "Onboarding completed", ct);
@@ -793,7 +803,7 @@ public sealed class DriverModelService
         }
 
         return pointer?.CurrentVersion is null
-            ? new DriverPreparingSet { SetVersion = (pointer?.LastVersion ?? 0) + 1, Done = 0, Total = includedCount }
+            ? new DriverPreparingSet { SetVersion = (pointer?.LastVersion ?? 0) + 1, Done = 0, Total = includedCount, Queued = await _sync.IsQueuedAsync(model.ModelId, ct) }
             : null;
     }
 

@@ -34,6 +34,9 @@ public sealed partial class DriverInstallService
     /// <summary>Folder on the Windows volume, relative to its root.</summary>
     public const string StagingFolder = @"CloudImaging\Drivers";
 
+    /// <summary>Where an HP SoftPaq extracts itself when run without a target folder, relative to the system drive.</summary>
+    public const string HpExtractFolder = "SWSetup";
+
     /// <summary>Extraction failed or produced nothing usable.</summary>
     public const string ExtractFailedMessage = "The package could not be extracted.";
 
@@ -325,8 +328,12 @@ public sealed partial class DriverInstallService
             new SpecializeInstallerCommand(Path.GetRelativePath(root, command.Executable), command.Arguments, Path.GetRelativePath(root, command.WorkingDirectory)),
             InstallerTimeoutSeconds,
             InstallerSuccessExitCodes,
-            [relativeFolder]);
+            CleanupPaths(component, relativeFolder));
     }
+
+    // An HP SoftPaq that runs itself during specialize extracts to SWSetup\<id> on the system drive first, so that goes too.
+    private static IReadOnlyList<string> CleanupPaths(SessionDriverComponent component, string relativeFolder) =>
+        component.Extract == DriverExtractKind.Hp ? [relativeFolder, Path.Combine(HpExtractFolder, SafeName(component.ComponentId))] : [relativeFolder];
 
     private (StepItemOutcome, string?, SpecializeInstaller?) Fail(SessionDriverComponent component, string reason)
     {

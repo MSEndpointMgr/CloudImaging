@@ -258,8 +258,8 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Add Windows release' }));
-    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['Windows 11, version 23H2', 'Windows 10, version 22H2']);
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Windows release' }));
+    expect(within(screen.getByRole('group', { name: 'Add to this model' })).getAllByRole('option').map(o => o.textContent)).toEqual(['Windows 11, version 23H2', 'Windows 10, version 22H2']);
     fireEvent.click(screen.getByRole('option', { name: 'Windows 11, version 23H2' }));
     await waitFor(() => expect(added).toEqual([{ release: 'Windows11_23H2' }]));
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith(`/api/drivers/models/${modelId}?release=Windows11_23H2`));
@@ -311,7 +311,9 @@ describe('Drivers: model page roll back and removal', () => {
     await screen.findByText('Withdrawn');
     expect(screen.queryByRole('button', { name: 'Roll back driver set' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Remove model' })).toBeNull();
-    expect(screen.queryByRole('combobox', { name: 'Add Windows release' })).toBeNull();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Windows release' }));
+    expect(screen.queryByRole('group', { name: 'Add to this model' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Remove release' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Show details of Realtek Audio Driver' }));
     expect(screen.queryByRole('button', { name: 'Remove Realtek Audio Driver' })).toBeNull();
   });

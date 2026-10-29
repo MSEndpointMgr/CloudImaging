@@ -73,7 +73,7 @@ function changesText({ run, items }: DriverSyncReportRun): string {
       ?? (failedCatalogs.length > 0 ? `${failedCatalogs.join(' and ')} catalog failed`
         : unread.length > 0 ? `${unread.join(' and ')} catalog not read` : 'No changes');
   }
-  return run.trigger === 'ModelCheck' && run.modelName ? `${run.modelName}: ${text}` : text;
+  return (run.trigger === 'ModelCheck' || run.trigger === 'Onboarding') && run.modelName ? `${run.modelName}: ${text}` : text;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }): React.ReactElement {

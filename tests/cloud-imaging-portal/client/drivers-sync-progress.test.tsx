@@ -134,11 +134,31 @@ describe('Drivers: the Sync running card', () => {
     renderSyncTab();
 
     expect(await screen.findByRole('heading', { name: 'Sync finished' }, { timeout: 5_000 })).toBeTruthy();
-    expect(screen.getByText(/^Partly failed at 2026-10-26 \d\d:19, after 17 min: 9 updated, 2 new, 1 failed\.$/)).toBeTruthy();
+    expect(screen.getByText(/^Partly failed at 2026-10-26 \d\d:19, after 17 min: 9 updated, 2 new, 1 failed\. 14 components downloaded, 1\.20 GB\.$/)).toBeTruthy();
     await waitFor(() => expect(calls.filter(c => c === 'GET /api/drivers/sync/runs').length).toBeGreaterThan(1));
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
 
     expect(screen.queryByRole('heading', { name: 'Sync finished' })).toBeNull();
+  });
+
+  it('says what a sync with nothing new checked, in seconds', async () => {
+    const finished = progress({ models: { done: 1, total: 1 }, components: { done: 0, total: 0 }, driverSets: { done: 1, total: 1 }, found: {}, latest: [] }, {
+      result: 'Completed', startedAt: '2026-10-26T14:02:00Z', finishedAt: '2026-10-26T14:02:02Z', counts: {}, downloadedComponents: 0, downloadedBytes: 0, newSets: 0,
+    });
+    serve(routes([run()], { body: finished }));
+    renderSyncTab();
+
+    expect(await screen.findByRole('heading', { name: 'Sync finished' }, { timeout: 5_000 })).toBeTruthy();
+    expect(screen.getByText(/^Completed at 2026-10-26 \d\d:02, after 2 s: 1 model checked, no newer versions, nothing downloaded\.$/)).toBeTruthy();
+  });
+
+  it('lists the onboardings queued behind the running sync', async () => {
+    serve(routes([run()], { body: progress({ queued: [{ modelId, modelName: 'HP EliteBook 840 G11', queuedBy: 'olle@contoso.com', queuedAt: '2026-10-26T14:05:00Z' }] }) }));
+    renderSyncTab();
+
+    expect(await screen.findByText('Up next', {}, { timeout: 5_000 })).toBeTruthy();
+    expect(screen.getByText('Onboarding HP EliteBook 840 G11')).toBeTruthy();
+    expect(screen.getByText(/^Queued by olle@contoso\.com at \d\d:05$/)).toBeTruthy();
   });
 
   it('reads the progress again every 5 seconds while the sync runs', async () => {

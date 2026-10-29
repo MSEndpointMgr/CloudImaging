@@ -52,7 +52,9 @@ export function SuggestedRulesDialog({ onClose, onAdded }: { onClose: () => void
           {suggestions === null ? (
             <><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></>
           ) : suggestions.length === 0 && !error ? (
-            <EmptyState icon={Lightbulb} title="Every suggested rule is added" />
+            <div className="rounded-lg border border-border">
+              <EmptyState icon={Lightbulb} title="Every suggested rule is added" />
+            </div>
           ) : (
             <ul className="divide-y divide-border rounded-lg border border-border">
               {suggestions.map(s => (

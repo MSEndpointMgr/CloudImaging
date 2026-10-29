@@ -96,7 +96,9 @@ describe('Drivers: Downloads tab', () => {
 
     expect(await screen.findByText('No downloads in progress')).toBeTruthy();
     expect(screen.getByText('Every driver set is ready. Downloads start after completing onboarding, an action change or a sync.')).toBeTruthy();
-    expect(screen.getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Model', 'Windows', 'Driver set', 'Progress', 'Size', 'Status', 'Started']);
+    const inProgressSection = within(screen.getByRole('region', { name: 'In progress' }));
+    expect(inProgressSection.getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Model', 'Windows', 'Driver set', 'Progress', 'Size', 'Status', 'Started']);
+    expect(within(screen.getByRole('region', { name: 'Finished in the last 7 days' })).getByText('No driver sets finished')).toBeTruthy();
     expect(within(screen.getByRole('tab', { name: /Downloads/ })).queryByText('0')).toBeNull();
   });
 

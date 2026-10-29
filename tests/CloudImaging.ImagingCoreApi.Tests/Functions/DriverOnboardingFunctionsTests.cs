@@ -194,7 +194,7 @@ public sealed class DriverOnboardingFunctionsTests
     }
 
     [Fact]
-    public async Task Complete_ActivatesTheDraft_TurnsSyncOn_AndEnqueuesResolvePerRelease()
+    public async Task Complete_ActivatesTheDraft_TurnsSyncOn_AndStartsAnOnboardingRunForTheModel()
     {
         await LoadModelListAsync();
         var id = await OnboardOneAsync("8C26_X64");
@@ -206,12 +206,49 @@ public sealed class DriverOnboardingFunctionsTests
         model.State.Should().Be(DriverModelState.Active);
         model.CompletedBy.Should().Be("operator@contoso.com");
         (await _h.Bed.Store.IsSyncEnabledAsync(DriverVendor.Hp)).Should().BeTrue();
-        _h.Bed.Queues.Sent.Should().ContainSingle(m => m.Work.Kind == DriverWorkKind.ResolveModel && m.Work.ModelId == id && m.Work.Release == DriverSyncHarness.Release);
+        var fetch = _h.Bed.Queues.Sent.Should().ContainSingle(m => m.Work.Kind == DriverWorkKind.FetchVendorCatalog).Subject.Work;
+        fetch.ModelId.Should().Be(id);
+        var runId = fetch.RunId!.Value;
 
-        // Downloads start at once and build the first set.
+        // Downloads start at once and build the first set, all within the run the Sync tab shows.
         await _h.PumpAsync();
         (await _h.CurrentSetAsync(id))!.Version.Should().Be(1);
         (await _h.Bed.Store.SetBuilds.GetAsync(DriverTables.Pair(id, DriverSyncHarness.Release), "000001"))!.Value.Trigger.Should().Be("Onboarding");
+        var run = (await _h.Bed.Runs.GetAsync(runId))!.Value;
+        run.Trigger.Should().Be(DriverSyncTrigger.Onboarding);
+        run.ModelName.Should().Be("HP EliteBook 840 G11");
+        run.StartedBy.Should().Be("operator@contoso.com");
+        run.Result.Should().Be(DriverSyncResult.Completed);
+        run.DownloadedComponents.Should().BeGreaterThan(0);
+        (await _h.Bed.Runs.GetActiveAsync()).Should().BeNull("the lock is released");
+    }
+
+    [Fact]
+    public async Task Complete_WhileASyncRuns_QueuesTheOnboarding_AndStartsItWhenTheSyncFinishes()
+    {
+        await LoadModelListAsync();
+        var id = await OnboardOneAsync("8C26_X64");
+        await _h.EnableAsync();
+        var sync = await _h.Sync.StartRunAsync(DriverSyncTrigger.Manual, "operator@contoso.com");
+        sync.Status.Should().Be(DriverRunStartStatus.Started);
+
+        var response = await _functions.CompleteDriverModelOnboarding(FunctionTestHost.Request("POST", $"{Base}/models/{id}/complete", new { actor = Actor }), id.ToString(), FunctionTestHost.Context);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.ReadJsonAsync()).GetProperty("preparing").GetProperty("queued").GetBoolean().Should().BeTrue();
+        var progress = (await _h.Sync.GetProgressAsync(sync.RunId!.Value))!;
+        progress.Queued.Should().ContainSingle(q => q.ModelId == id && q.ModelName == "HP EliteBook 840 G11" && q.QueuedBy == "operator@contoso.com");
+
+        // The sync finishes, the onboarding run takes over and prepares the first set.
+        await _h.PumpAsync();
+        (await _h.Bed.Runs.GetAsync(sync.RunId!.Value))!.Value.Result.Should().NotBe(DriverSyncResult.Running);
+        (await _h.Sync.IsQueuedAsync(id)).Should().BeFalse();
+        var onboarding = (await _h.Bed.Runs.ListAsync()).Should().ContainSingle(r => r.Trigger == DriverSyncTrigger.Onboarding).Subject;
+        onboarding.ModelId.Should().Be(id);
+        onboarding.StartedBy.Should().Be("operator@contoso.com");
+        onboarding.Result.Should().Be(DriverSyncResult.Completed);
+        (await _h.CurrentSetAsync(id))!.Version.Should().Be(1);
+        (await _h.Bed.Runs.GetActiveAsync()).Should().BeNull();
     }
 
     [Fact]

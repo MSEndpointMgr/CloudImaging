@@ -70,6 +70,7 @@ function VersionHistory({ component, history }: { component: DriverComponentRow;
       ) : !versions ? (
         <Skeleton className="h-16 w-full" />
       ) : (
+        <div className="overflow-hidden rounded-md border border-border bg-background">
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
@@ -98,6 +99,7 @@ function VersionHistory({ component, history }: { component: DriverComponentRow;
             ))}
           </TableBody>
         </Table>
+        </div>
       )}
     </div>
   );

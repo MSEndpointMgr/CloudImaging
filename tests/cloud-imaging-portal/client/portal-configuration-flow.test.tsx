@@ -33,6 +33,29 @@ describe('Portal frontend: setup profile version retention', () => {
     return screen.getByLabelText('Versions kept per profile') as HTMLInputElement;
   }
 
+  it('Use recommended puts every partition size and the order back to the recommended layout', async () => {
+    apiFetchWithRetry.mockImplementation(async () => new Response('{}', { status: 404 }));
+    apiFetch.mockImplementation(async (url: string) => (url === '/api/partitioning-scheme'
+      ? new Response(JSON.stringify({ partitions: [
+        { partitionType: 'Msr', sizeMb: 32, order: 0 },
+        { partitionType: 'EfiSystem', sizeMb: 260, order: 1 },
+        { partitionType: 'Windows', sizeMb: 0, order: 2 },
+        { partitionType: 'Recovery', sizeMb: 990, order: 3 },
+      ] }), { status: 200 })
+      : new Response(null, { status: 404 })));
+    render(<DeploymentConfigPage />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Partitioning' }));
+
+    const recommended = await screen.findByRole('button', { name: 'Use recommended' }) as HTMLButtonElement;
+    expect(recommended.disabled).toBe(false);
+    fireEvent.click(recommended);
+
+    const sizes = screen.getAllByRole('spinbutton').map((input) => (input as HTMLInputElement).value);
+    expect(sizes).toEqual(['500', '16', '990']);
+    expect(recommended.disabled).toBe(true);
+    expect(screen.getByText('3 unsaved changes on Partitioning.')).toBeTruthy();
+  });
+
   it('defaults to 25 versions kept per profile', async () => {
     const input = await openMiscellaneous();
 

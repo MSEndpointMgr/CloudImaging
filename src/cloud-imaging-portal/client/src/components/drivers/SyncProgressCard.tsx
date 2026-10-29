@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { CircleCheck, CircleDashed, CircleX, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react';
+import { CircleCheck, CircleDashed, CircleX, Clock, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent } from '../ui/card.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableRow } from '../ui/table.tsx';
 import { cn, formatTimestamp } from '../../lib/utils.ts';
 import {
-  RESULT_LABELS, TRIGGER_LABELS, countsSummary, durationLabel, fetchSyncRunProgress, formatSize, vendorLabel,
+  RESULT_LABELS, TRIGGER_LABELS, countsSummary, durationLabel, fetchSyncRunProgress, formatSize, onboardingSummary, vendorLabel,
   type DriverSyncRun, type DriverSyncRunItem, type DriverSyncRunProgress,
 } from '../../lib/drivers.ts';
 import { SyncOutcome } from './SyncOutcome.tsx';
@@ -81,7 +81,7 @@ function syncStages(progress: DriverSyncRunProgress): Stage[] {
   const downloaded = run.downloadedComponents ?? 0;
   const bytes = run.downloadedBytes ?? 0;
   stages.push(components.total === 0
-    ? { title: 'Components', state: setsDone ? 'done' : 'waiting', text: setsDone ? 'Nothing to download' : 'Waiting for the driver sets', ...components }
+    ? { title: 'Components', state: setsDone ? 'done' : 'waiting', text: setsDone ? 'Nothing new to download' : 'Waiting for the driver sets', ...components }
     : {
       title: 'Components',
       state: setsDone && components.done >= components.total ? 'done' : 'active',
@@ -96,11 +96,25 @@ function syncStages(progress: DriverSyncRunProgress): Stage[] {
   return stages;
 }
 
-function isCheck(run: DriverSyncRun): boolean {
-  return run.trigger === 'Check' || run.trigger === 'ModelCheck';
+function finishedTitle(run: DriverSyncRun): string {
+  if (run.trigger === 'Onboarding') return run.modelName ? `${run.modelName} onboarded` : 'Onboarding finished';
+  return run.trigger === 'Check' || run.trigger === 'ModelCheck' ? 'Check finished' : 'Sync finished';
+}
+
+/** What a finished run changed and downloaded; a run with nothing new says what it checked, so it does not look like it skipped the work. */
+function finishedSummary({ run, models }: DriverSyncRunProgress): string {
+  const changes = countsSummary(run.counts);
+  if (!changes && run.trigger === 'Onboarding') return onboardingSummary(run);
+  const downloaded = run.downloadedComponents ?? 0;
+  const bytes = run.downloadedBytes ?? 0;
+  const download = downloaded > 0 ? `${plural(downloaded, 'component', 'components')} downloaded${bytes > 0 ? `, ${formatSize(bytes)}` : ''}` : 'nothing downloaded';
+  return changes
+    ? `${changes}. ${download.charAt(0).toUpperCase()}${download.slice(1)}`
+    : `${plural(models.done, 'model', 'models')} checked, no newer versions, ${download}`;
 }
 
 function runningTitle(run: DriverSyncRun): string {
+  if (run.trigger === 'Onboarding') return run.modelName ? `Onboarding ${run.modelName}` : 'Onboarding';
   if (run.trigger === 'ModelCheck') return run.modelName ? `Checking ${run.modelName}` : 'Checking for updates';
   return run.trigger === 'Check' ? 'Checking for updates' : 'Sync running';
 }
@@ -191,8 +205,8 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
           <Header
             icon={look.icon}
             iconClassName={look.className}
-            title={isCheck(run) ? 'Check finished' : 'Sync finished'}
-            meta={`${RESULT_LABELS[run.result]} at ${formatTimestamp(run.finishedAt ?? run.startedAt)}, after ${durationLabel(finishedAt - startedAt)}: ${countsSummary(run.counts) || 'no changes'}.`}
+            title={finishedTitle(run)}
+            meta={`${RESULT_LABELS[run.result]} at ${formatTimestamp(run.finishedAt ?? run.startedAt)}, after ${durationLabel(finishedAt - startedAt)}: ${finishedSummary(progress)}.`}
             action={<Button variant="ghost" size="icon" aria-label="Dismiss" onClick={onDismiss}><X /></Button>}
           />
         </CardContent>
@@ -253,6 +267,20 @@ export function SyncProgressCard({ runId, onFinished, onDismiss }: { runId: stri
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+        {(progress.queued ?? []).length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Up next</p>
+            <ul className="divide-y divide-border overflow-hidden rounded-md border border-border">
+              {(progress.queued ?? []).map(queued => (
+                <li key={queued.modelId} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  <Clock className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate" title={queued.modelName}>{`Onboarding ${queued.modelName}`}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{`Queued by ${queued.queuedBy} at ${formatTimestamp(queued.queuedAt).slice(11)}`}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {error && <p role="alert" className="text-sm text-destructive">{`${error} Trying again.`}</p>}

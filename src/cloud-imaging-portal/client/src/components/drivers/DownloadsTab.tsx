@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CircleCheck, CircleX, Clock, Download, RefreshCw } from 'lucide-react';
+import { CircleCheck, CircleX, Clock, Download, History, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
@@ -88,7 +88,11 @@ export function DownloadsTab({ onCount }: { onCount?: (inProgress: number) => vo
   }, [busy, load]);
 
   if (loadError && !downloads) {
-    return <EmptyState icon={RefreshCw} title="Could not load downloads" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />;
+    return (
+      <div className="rounded-md border border-border">
+        <EmptyState icon={RefreshCw} title="Could not load downloads" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
+      </div>
+    );
   }
   if (!downloads) {
     return <div className="space-y-4"><Skeleton className="h-6 w-48" /><Skeleton className="h-32 w-full" /></div>;
@@ -108,6 +112,7 @@ export function DownloadsTab({ onCount }: { onCount?: (inProgress: number) => vo
           <h3 id="downloads-in-progress" className="text-base font-semibold">In progress</h3>
           <p className="text-sm text-muted-foreground">Files queued by completing onboarding, an action change, a sync or a check for updates. A new driver set reaches devices only when all its components are downloaded.</p>
         </div>
+        <div className="overflow-hidden rounded-md border border-border">
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
@@ -121,6 +126,13 @@ export function DownloadsTab({ onCount }: { onCount?: (inProgress: number) => vo
             </TableRow>
           </TableHeader>
           <TableBody>
+            {downloads.inProgress.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={7} className="p-0">
+                  <EmptyState icon={CircleCheck} title="No downloads in progress" description="Every driver set is ready. Downloads start after completing onboarding, an action change or a sync." />
+                </TableCell>
+              </TableRow>
+            )}
             {downloads.inProgress.map(row => (
               <TableRow key={`${row.modelId}-${row.release}-${row.setVersion}`}>
                 <TableCell className="truncate font-medium" title={row.modelName}>{row.modelName}</TableCell>
@@ -134,16 +146,12 @@ export function DownloadsTab({ onCount }: { onCount?: (inProgress: number) => vo
             ))}
           </TableBody>
         </Table>
-        {downloads.inProgress.length === 0 && (
-          <EmptyState icon={CircleCheck} title="No downloads in progress" description="Every driver set is ready. Downloads start after completing onboarding, an action change or a sync." />
-        )}
+        </div>
       </section>
 
       <section className="space-y-4" aria-labelledby="downloads-finished">
         <h3 id="downloads-finished" className="text-base font-semibold">Finished in the last 7 days</h3>
-        {downloads.finished.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No driver set became ready in the last 7 days.</p>
-        ) : (
+        <div className="overflow-hidden rounded-md border border-border">
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
@@ -157,6 +165,13 @@ export function DownloadsTab({ onCount }: { onCount?: (inProgress: number) => vo
               </TableRow>
             </TableHeader>
             <TableBody>
+              {downloads.finished.length === 0 && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={7} className="p-0">
+                    <EmptyState icon={History} title="No driver sets finished" description="Nothing became ready in the last 7 days." />
+                  </TableCell>
+                </TableRow>
+              )}
               {downloads.finished.map(row => (
                 <TableRow key={`${row.modelId}-${row.release}-${row.setVersion}`}>
                   <TableCell className="truncate font-medium" title={row.modelName}>{row.modelName}</TableCell>
@@ -170,7 +185,7 @@ export function DownloadsTab({ onCount }: { onCount?: (inProgress: number) => vo
               ))}
             </TableBody>
           </Table>
-        )}
+        </div>
       </section>
     </div>
   );

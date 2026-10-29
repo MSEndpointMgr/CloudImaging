@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Tooltip } from '../ui/tooltip.tsx';
 import { actionLabel, rollBackText, vendorLabel, type DriverAction, type DriverComponentRow, type DriverVendor } from '../../lib/drivers.ts';
 import { ComponentDetails, type ComponentHistoryContext } from './ComponentDetails.tsx';
+import { LockedComponentsFlyout } from './LockedComponentsFlyout.tsx';
 
 const LOCKED_HINT = "The vendor's data only allows Skip for this component.";
 
@@ -131,15 +132,18 @@ function ActionCell({ component, editing }: { component: DriverComponentRow; edi
 /**
  * Components of a model and release, every one listed (no paging), one line each with a chevron
  * for the details. With `editing`, the Action column is a dropdown of the allowed actions and an
- * override can be undone from the Source column.
+ * override can be undone from the Source column. `locked` components have no choice to make, so
+ * they are listed from the footer instead of as rows.
  */
-export function ComponentTable({ components, total, editing, history }: { components: DriverComponentRow[]; total: number; editing?: ComponentTableEditing; history?: ComponentHistoryContext }): React.ReactElement {
+export function ComponentTable({ components, total, locked = [], editing, history }: { components: DriverComponentRow[]; total: number; locked?: DriverComponentRow[]; editing?: ComponentTableEditing; history?: ComponentHistoryContext }): React.ReactElement {
   // A link from the sync history (#lineageKey) opens its row; otherwise the first component waiting for approval.
   const [open, setOpen] = useState<string | null>(() => {
     const linked = decodeURIComponent(window.location.hash.slice(1));
     return (linked && components.some(c => c.lineageKey === linked) ? linked : null)
       ?? components.find(c => c.state === 'WaitingForApproval')?.lineageKey ?? null;
   });
+  // A link to a locked component opens the list it is in instead.
+  const [lockedLinked] = useState(() => locked.some(c => c.lineageKey === decodeURIComponent(window.location.hash.slice(1))));
 
   useEffect(() => {
     const linked = decodeURIComponent(window.location.hash.slice(1));
@@ -147,15 +151,15 @@ export function ComponentTable({ components, total, editing, history }: { compon
   }, []);
 
   return (
-    <div className="space-y-2">
+    <div className="overflow-hidden rounded-md border border-border">
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>
             <TableHead>Component</TableHead>
-            <TableHead className="w-[120px]">Version</TableHead>
-            <TableHead className="w-[110px]">Last updated</TableHead>
-            <TableHead className="w-[232px]">
+            <TableHead className="w-[128px]">Version</TableHead>
+            <TableHead className="w-[132px] whitespace-nowrap">Last updated</TableHead>
+            <TableHead className="w-[224px]">
               <span className="inline-flex items-center gap-1">
                 Action
                 <Tooltip content={ACTION_HINT}>
@@ -165,7 +169,7 @@ export function ComponentTable({ components, total, editing, history }: { compon
                 </Tooltip>
               </span>
             </TableHead>
-            <TableHead className="w-[190px]">Source</TableHead>
+            <TableHead className="w-[160px]">Source</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -194,10 +198,11 @@ export function ComponentTable({ components, total, editing, history }: { compon
                       {component.state === 'WaitingForApproval' && <Badge variant="warning">New</Badge>}
                       {component.state === 'Withdrawn' && <Badge variant="muted" title="The vendor no longer publishes this component.">Withdrawn</Badge>}
                     </div>
-                    <div className="truncate text-xs text-muted-foreground">
+                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                       {component.custom
-                        ? [`Uploaded by ${component.custom.uploadedBy ?? 'unknown'}`, component.category].filter(Boolean).join(', ')
-                        : [component.componentId, component.category].filter(Boolean).join(', ')}
+                        ? <span className="truncate">{`Uploaded by ${component.custom.uploadedBy ?? 'unknown'}`}</span>
+                        : <span className="shrink-0 font-mono">{component.componentId}</span>}
+                      {component.category && <span className="truncate">{component.category}</span>}
                     </div>
                   </TableCell>
                   <TableCell className="truncate" title={component.version ?? undefined}>{component.version}</TableCell>
@@ -230,7 +235,10 @@ export function ComponentTable({ components, total, editing, history }: { compon
           })}
         </TableBody>
       </Table>
-      <p className="text-sm text-muted-foreground">{`${components.length} of ${total} components`}</p>
+      <div className="flex items-center justify-between gap-4 border-t border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <span>{components.length === total ? `${total} ${total === 1 ? 'component' : 'components'}` : `${components.length} of ${total} components`}</span>
+        {locked.length > 0 && <LockedComponentsFlyout components={locked} initiallyOpen={lockedLinked} />}
+      </div>
     </div>
   );
 }

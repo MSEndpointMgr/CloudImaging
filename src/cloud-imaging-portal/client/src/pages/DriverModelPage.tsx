@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowRight, Check, ChevronRight, CircleAlert, CircleDashed, Download, Hammer, History, Plus, RefreshCw, Trash2, Undo2, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronRight, CircleAlert, CircleDashed, Clock, Download, Hammer, History, Plus, RefreshCw, Trash2, Undo2, X } from 'lucide-react';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -17,7 +17,7 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { formatTimestamp } from '../lib/utils.ts';
 import {
-  DRIVER_ACTIONS, WINDOWS_RELEASES, actionLabel, addRelease, approveComponents, buildNow, checkModel, clearOverride, completeOnboarding, fetchModelPage, fetchRemovalImpact, formatSize, matchKeyLabel,
+  DRIVER_ACTIONS, WINDOWS_RELEASES, actionLabel, addRelease, approveComponents, buildNow, checkModel, clearOverride, completeOnboarding, fetchModelPage, fetchRemovalImpact, formatSize, isLockedAway, matchKeyLabel,
   releaseLabel, removeModel, removeRelease, removeWithdrawnComponent, rollBackSet, setOverride, undoRollBack, vendorLabel,
   deleteCustomComponent, dismissCustomNotice, fetchCustomComponents, fetchModels,
   type DriverCustomComponent, type DriverModelRow,
@@ -104,11 +104,22 @@ function Banner({ icon, title, detail, tone = 'neutral', children }: { icon: Rea
   );
 }
 
-function Tile({ label, value }: { label: React.ReactNode; value: string }): React.ReactElement {
+/** The colour each action's tile carries, so the tiles read as a key for the Action column. */
+const ACTION_DOT: Record<DriverAction, string> = {
+  Offline: 'bg-blue-400',
+  OfflineAndSpecialize: 'bg-violet-400',
+  Specialize: 'bg-teal-400',
+  Skip: 'bg-slate-500',
+};
+
+function Tile({ label, value, action }: { label: React.ReactNode; value: string; action?: DriverAction }): React.ReactElement {
   return (
     <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-semibold">{value}</div>
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        {action && <span className={`h-2 w-2 shrink-0 rounded-full ${ACTION_DOT[action]}`} aria-hidden="true" />}
+        {label}
+      </div>
+      <div className="mt-0.5 text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -183,7 +194,11 @@ export default function DriverModelPage(): React.ReactElement {
   }, [page, search, action, category, updatedOnly]);
 
   if (loadError) {
-    return <EmptyState icon={RefreshCw} title="Could not load the model" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />;
+    return (
+      <div className="rounded-md border border-border">
+        <EmptyState icon={RefreshCw} title="Could not load the model" description={loadError} action={<Button variant="outline" onClick={() => void load()}><RefreshCw />Try again</Button>} />
+      </div>
+    );
   }
   if (!page) {
     return <div className="space-y-4"><Skeleton className="h-8 w-80" /><Skeleton className="h-24 w-full" /><Skeleton className="h-64 w-full" /></div>;
@@ -197,7 +212,11 @@ export default function DriverModelPage(): React.ReactElement {
   const complete = async () => {
     setBusy('complete');
     try {
-      setPage(await completeOnboarding(model.modelId));
+      const completed = await completeOnboarding(model.modelId);
+      setPage(completed);
+      notify(completed.preparing?.queued
+        ? { status: 'success', title: `${model.displayName} is queued.`, description: 'Downloads start when the running sync finishes. The Sync tab shows the queue.' }
+        : { status: 'success', title: `Onboarding ${model.displayName}.`, description: 'Downloads have started. The Sync tab shows their progress.' });
     } catch (err) {
       notify({ status: 'error', title: 'Could not complete onboarding', description: err instanceof Error ? err.message : undefined });
     } finally {
@@ -409,32 +428,34 @@ export default function DriverModelPage(): React.ReactElement {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-xs text-muted-foreground">
+      <div>
+        <nav aria-label="Breadcrumb" className="mb-2 flex items-center gap-1 text-xs text-muted-foreground">
           <Link to="/drivers?tab=models" className="hover:text-foreground hover:underline">Models</Link>
           <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
           <span className="truncate">{model.displayName}</span>
         </nav>
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-xl font-semibold" title={model.displayName}>{model.displayName}</h2>
-          <Badge variant="outline" className="shrink-0">{matchKeyLabel(model.vendor, model.matchKeys)}</Badge>
-        </div>
-        {canManageDrivers && (
-          <div className="flex justify-end gap-2">
-            <Tooltip content={blocked ?? 'Checks this model for new component versions.'}>
-              <span>
-                <Button variant="outline" onClick={() => void check()} disabled={blocked !== null} loading={busy === 'check'}><RefreshCw />Check for updates</Button>
-              </span>
-            </Tooltip>
-            <Button variant="outline" onClick={() => void openAddCustom()}><Plus />Add custom component</Button>
-            <Tooltip content={rollBackHint}>
-              <span>
-                <Button variant="outline" onClick={() => open({ kind: 'rollback' })} disabled={!previousSet}><Undo2 />Roll back driver set</Button>
-              </span>
-            </Tooltip>
-            <Button variant="outline" onClick={() => open({ kind: 'removeModel' })}><Trash2 />Remove model</Button>
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 className="min-w-0 break-words text-xl font-semibold">{model.displayName}</h2>
+            <Badge variant="outline" className="shrink-0">{matchKeyLabel(model.vendor, model.matchKeys)}</Badge>
           </div>
-        )}
+          {canManageDrivers && (
+            <div className="ml-auto flex flex-wrap justify-end gap-2">
+              <Tooltip content={blocked ?? 'Checks this model for new component versions.'}>
+                <span>
+                  <Button variant="outline" onClick={() => void check()} disabled={blocked !== null} loading={busy === 'check'}><RefreshCw />Check for updates</Button>
+                </span>
+              </Tooltip>
+              <Button variant="outline" onClick={() => void openAddCustom()}><Plus />Add custom component</Button>
+              <Tooltip content={rollBackHint}>
+                <span>
+                  <Button variant="outline" onClick={() => open({ kind: 'rollback' })} disabled={!previousSet}><Undo2 />Roll back driver set</Button>
+                </span>
+              </Tooltip>
+              <Button variant="outline" onClick={() => open({ kind: 'removeModel' })}><Trash2 />Remove model</Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {model.state === 'Draft' ? (
@@ -465,8 +486,10 @@ export default function DriverModelPage(): React.ReactElement {
           )}
           {page.preparing && (
             <Banner
-              icon={<Download className="h-5 w-5" aria-hidden="true" />}
-              title={`Preparing driver set ${page.preparing.setVersion} for ${releaseLabel(page.release)}: ${page.preparing.done} of ${page.preparing.total} components downloaded.`}
+              icon={page.preparing.queued ? <Clock className="h-5 w-5" aria-hidden="true" /> : <Download className="h-5 w-5" aria-hidden="true" />}
+              title={page.preparing.queued
+                ? `Waiting for the running sync to finish. Driver set ${page.preparing.setVersion} for ${releaseLabel(page.release)} is prepared after it.`
+                : `Preparing driver set ${page.preparing.setVersion} for ${releaseLabel(page.release)}: ${page.preparing.done} of ${page.preparing.total} components downloaded.`}
               detail={page.setVersion ? `Devices keep getting driver set ${page.setVersion} until it is ready.` : 'Devices of this model get no drivers until it is ready.'}
             />
           )}
@@ -491,11 +514,11 @@ export default function DriverModelPage(): React.ReactElement {
         </>
       )}
 
-      <div className="grid grid-cols-5 gap-4">
-        <Tile label={actionLabel('Offline')} value={String(tiles.offline)} />
-        <Tile label={actionLabel('OfflineAndSpecialize')} value={String(tiles.offlineAndSpecialize)} />
-        <Tile label={actionLabel('Specialize')} value={String(tiles.specialize)} />
-        <Tile label={actionLabel('Skip')} value={String(tiles.skip)} />
+      <div className="grid grid-cols-5 gap-3">
+        <Tile action="Offline" label={actionLabel('Offline')} value={String(tiles.offline)} />
+        <Tile action="OfflineAndSpecialize" label={actionLabel('OfflineAndSpecialize')} value={String(tiles.offlineAndSpecialize)} />
+        <Tile action="Specialize" label={actionLabel('Specialize')} value={String(tiles.specialize)} />
+        <Tile action="Skip" label={actionLabel('Skip')} value={String(tiles.skip)} />
         <Tile label={<SizeHead />} value={formatSize(tiles.downloadPerDeviceBytes)} />
       </div>
 
@@ -503,39 +526,30 @@ export default function DriverModelPage(): React.ReactElement {
         <SearchInput value={search} onValueChange={setSearch} placeholder="Search components" aria-label="Search components" wrapperClassName="w-[260px]" />
         <Select
           value={page.release}
-          onValueChange={value => setSearchParams({ release: value }, { replace: true })}
-          options={model.releases.map(r => ({ value: r, label: releaseLabel(r) }))}
+          onValueChange={value => (model.releases.includes(value as WindowsRelease) ? setSearchParams({ release: value }, { replace: true }) : void add(value))}
+          options={[
+            ...model.releases.map(r => ({ value: r, label: releaseLabel(r) })),
+            ...(canManageDrivers ? addable.map(r => ({ value: r, label: releaseLabel(r), group: 'Add to this model' })) : []),
+          ]}
           aria-label="Windows release"
+          disabled={adding}
           wrapperClassName="w-[230px]"
         />
         {canManageDrivers && (
-          <>
-            {addable.length > 0 && (
-              <Select
-                value=""
-                onValueChange={value => void add(value)}
-                options={addable.map(r => ({ value: r, label: releaseLabel(r) }))}
-                placeholder="Add Windows release"
-                aria-label="Add Windows release"
-                disabled={adding}
-                wrapperClassName="w-[230px]"
-              />
-            )}
-            <Tooltip content={model.releases.length > 1 ? `Stops installing drivers for ${releaseLabel(page.release)} on this model.` : 'Remove the model instead.'}>
-              <span>
-                <Button variant="outline" onClick={() => open({ kind: 'removeRelease' })} disabled={model.releases.length < 2}><X />Remove release</Button>
-              </span>
-            </Tooltip>
-          </>
+          <Tooltip content={model.releases.length > 1 ? `Remove ${releaseLabel(page.release)} from this model. Its devices stop getting drivers.` : 'Remove the model instead.'}>
+            <span>
+              <Button variant="outline" size="icon" aria-label="Remove release" onClick={() => open({ kind: 'removeRelease' })} disabled={model.releases.length < 2}><Trash2 /></Button>
+            </span>
+          </Tooltip>
         )}
         <Select value={action} onValueChange={setAction} options={[{ value: ALL, label: 'All actions' }, ...DRIVER_ACTIONS.map((a: DriverAction) => ({ value: a, label: actionLabel(a) }))]} aria-label="Action" wrapperClassName="w-[170px]" />
         <Select value={category} onValueChange={setCategory} options={[{ value: ALL, label: 'All categories' }, ...categories.map(c => ({ value: c, label: c }))]} aria-label="Category" wrapperClassName="w-[190px]" />
-        <Button variant={updatedOnly ? 'secondary' : 'outline'} aria-pressed={updatedOnly} onClick={() => setUpdatedOnly(on => !on)}>
+        <Button variant={updatedOnly ? 'secondary' : 'outline'} aria-pressed={updatedOnly} onClick={() => setUpdatedOnly(on => !on)} className="ml-auto">
           {`${updatedCount} updated by today's sync`}
         </Button>
       </div>
 
-      <ComponentTable components={components} total={page.components.length} editing={editing} history={history} />
+      <ComponentTable components={components.filter(c => !isLockedAway(c))} total={page.components.filter(c => !isLockedAway(c)).length} locked={components.filter(isLockedAway)} editing={editing} history={history} />
 
       {customModels && (
         <AddCustomComponentDialog

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card.tsx';
-import { Checkbox } from '../ui/checkbox.tsx';
+import { CheckboxField } from '../ui/checkbox.tsx';
 import { setCriticalCategories, vendorLabel, type DriverCategory, type DriverVendor } from '../../lib/drivers.ts';
 
 /** One vendor's categories as a collapsible checkbox group; each change is saved at once. */
@@ -52,7 +52,7 @@ function CategoryPicker({ vendor, categories, readOnly, onSaved, onError }: {
       {open && (
         <div id={groupId} role="group" aria-label={`${name} categories`} className="ml-36 grid grid-cols-2 gap-2 rounded-md border border-border p-3">
           {categories.map(c => (
-            <Checkbox
+            <CheckboxField
               key={c.category}
               checked={c.critical}
               onCheckedChange={on => void toggle(c.category, on)}
