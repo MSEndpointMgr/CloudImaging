@@ -60,7 +60,7 @@ router.get('/:sessionId/logs/:fileName/download-url', requireRole('CloudImaging.
 // ── GET /api/sessions/:id/steps/:stepName/items: per-item results of one step ──
 
 /** Pipeline step names; anything else is refused before it reaches an upstream path. */
-const STEP_NAMES = new Set(['FormatDisk', 'DownloadImage', 'ApplyImage', 'ApplyRecoveryImage', 'PrepareSetup', 'ConfigureBoot']);
+const STEP_NAMES = new Set(['FormatDisk', 'DownloadImage', 'ApplyImage', 'InstallDrivers', 'PrepareSetup', 'ConfigureBoot', 'UpdateFirmware', 'ApplyRecoveryImage']);
 
 router.get('/:sessionId/steps/:stepName/items', requireRole('CloudImaging.PortalAccess'), requireGuidParams('sessionId'), async (req: Request, res: Response, next: NextFunction) => {
   const stepName = req.params['stepName'] as string;

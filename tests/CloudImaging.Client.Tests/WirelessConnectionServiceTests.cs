@@ -82,13 +82,11 @@ public sealed class WirelessConnectionServiceTests
     [Fact]
     public void ParseNetworks_MarksEnterpriseNetworks_NotSupported_ButStillReturnsThem()
     {
-        // Decision from planning: Enterprise/802.1X networks are shown (greyed-out with a "Not
-        // supported" note), never hidden entirely.
+        // The parser keeps them; the Wi-Fi window leaves them out and says how many.
         var networks = WirelessConnectionService.ParseNetworks(ScanFixture);
 
         var enterprise = networks.Single(n => n.Ssid == "CorpWifi");
         enterprise.IsSupported.Should().BeFalse();
-        enterprise.NotSupportedLabel.Should().NotBeNullOrEmpty();
     }
 
     [Fact]

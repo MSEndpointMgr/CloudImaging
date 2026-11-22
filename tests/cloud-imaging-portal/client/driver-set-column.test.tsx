@@ -168,7 +168,11 @@ describe('Devices page: Driver set column', () => {
     serve(base());
     renderPage();
 
-    expect(await screen.findByRole('columnheader', { name: 'Driver set' })).toBeTruthy();
+    const header = await screen.findByRole('columnheader', { name: /^Driver set/ });
+    // Percent columns leave room for the fixed Actions column, so the table never scrolls sideways.
+    const percents = within(header.closest('tr')!).getAllByRole('columnheader').map(h => h.style.width).filter(w => w.endsWith('%')).map(w => Number.parseFloat(w));
+    expect(percents).toHaveLength(6);
+    expect(percents.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(95);
     expect(screen.getAllByText('Choose an OS image first').length).toBe(2);
     await chooseImage();
 

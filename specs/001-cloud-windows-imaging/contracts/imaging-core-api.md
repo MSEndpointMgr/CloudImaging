@@ -32,7 +32,7 @@ Private source-of-truth API for lifecycle orchestration, SAS token URL issuance,
 - `GET /api/internal/sessions/{sessionId}/status`
   - Return state, assignment, SAS token URL context for polling, and overall imaging progress data.
 - `POST /api/internal/sessions/{sessionId}/progress`
-  - Record step status and progression.
+  - Record step status and progression. A start or percent report for a step that has already ended is ignored, and a step is only written while it is unchanged since it was read.
 - `POST /api/internal/sessions/{sessionId}/sas/refresh`
   - Issue refreshed SAS token URL for active download session.
 

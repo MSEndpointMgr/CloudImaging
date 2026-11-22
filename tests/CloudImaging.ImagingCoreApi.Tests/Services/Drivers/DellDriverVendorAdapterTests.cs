@@ -114,13 +114,21 @@ public sealed class DellDriverVendorAdapterTests
     }
 
     [Fact]
-    public void FirmwareAndBios_AreNeverStored()
+    public void FirmwareAndBios_AreListed_AndTheStartingRulesSkipThem_ButNotDriversNamingFirmware()
     {
         var components = Parse("Latitude_0CB4.cab");
+        var rules = DriverPolicyService.StartingRules(DateTimeOffset.UnixEpoch);
+        DriverPolicyDecision Decide(DriverComponentRecord c) =>
+            DriverPolicyResolver.Resolve(new DriverPolicyInput(DriverVendor.Dell, c.ComponentId, c.Name, c.Category, c.AllowedActions, c.DefaultAction), null, rules);
 
-        components.Should().NotBeEmpty();
-        components.Should().NotContain(c => c.Component.Name.Contains("Firmware", StringComparison.OrdinalIgnoreCase));
-        components.Should().NotContain(c => c.Component.Name.Contains("BIOS", StringComparison.Ordinal) && c.Component.Category!.StartsWith("BIOS", StringComparison.Ordinal));
+        var firmware = components.Select(c => c.Component).Where(c => c.Category!.StartsWith("Firmware", StringComparison.Ordinal) || c.Category!.StartsWith("BIOS", StringComparison.Ordinal)).Select(Decide).ToList();
+        firmware.Should().NotBeEmpty();
+        firmware.Should().OnlyContain(d => d.Action == DriverAction.Skip && d.Source == DriverActionSource.Rule);
+
+        // Drivers whose name mentions firmware, such as WWAN drivers, are drivers and no rule skips them.
+        var drivers = components.Select(c => c.Component).Where(c => c.Category!.StartsWith("Driver", StringComparison.Ordinal) && c.Name.Contains("Firmware", StringComparison.OrdinalIgnoreCase)).Select(Decide).ToList();
+        drivers.Should().NotBeEmpty();
+        drivers.Should().OnlyContain(d => d.Source != DriverActionSource.Rule);
     }
 
     [Fact]
@@ -139,6 +147,9 @@ public sealed class DellDriverVendorAdapterTests
     [InlineData("DRVR", "LWXP", false, DriverAction.Specialize, new[] { DriverAction.Specialize, DriverAction.Skip })]
     [InlineData("DRVR", "LWXP", true, DriverAction.Specialize, new[] { DriverAction.Specialize, DriverAction.Skip })]
     [InlineData("APAC", "LW64", false, DriverAction.Skip, new[] { DriverAction.Skip, DriverAction.Specialize })]
+    [InlineData("FRMW", "LW64", false, DriverAction.Skip, new[] { DriverAction.Skip, DriverAction.Specialize })]
+    [InlineData("BIOS", "LW64", false, DriverAction.Skip, new[] { DriverAction.Skip, DriverAction.Specialize })]
+    [InlineData("UTIL", "LW64", false, DriverAction.Skip, new[] { DriverAction.Skip })]
     public void Classification_FollowsTheDellTable(string type, string package, bool app, DriverAction expectedDefault, DriverAction[] allowed)
     {
         var (defaultAction, allowedActions) = DellDriverVendorAdapter.Classify(type, package, app);

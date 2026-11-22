@@ -17,7 +17,11 @@ namespace CloudImaging.MediaBuilder;
 /// </summary>
 internal sealed class FatalErrorWindow : Window
 {
-    public FatalErrorWindow(Exception? ex)
+    /// <summary>Dialog heading: a startup failure, or an error while the app was running.</summary>
+    public static string Heading(bool atStartup) =>
+        atStartup ? "Cloud Imaging Media Builder failed to start" : "Cloud Imaging Media Builder stopped unexpectedly";
+
+    public FatalErrorWindow(Exception? ex, bool atStartup)
     {
         Title = "Cloud Imaging Media Builder";
         Width = 560;
@@ -40,7 +44,7 @@ internal sealed class FatalErrorWindow : Window
         var titlePanel = new StackPanel { Margin = new Thickness(24, 20, 24, 12) };
         titlePanel.Children.Add(new TextBlock
         {
-            Text = "Cloud Imaging Media Builder failed to start",
+            Text = Heading(atStartup),
             FontSize = 16,
             FontWeight = FontWeights.Bold,
             Foreground = Brushes.White,

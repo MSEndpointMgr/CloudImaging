@@ -20,7 +20,7 @@ public sealed class SessionHeartbeatCoordinatorTests
     [Fact]
     public void HeartbeatInterval_FitsSessionRateLimitBudget()
     {
-        // Device Gateway allows 10 calls / 30s per session, shared across every endpoint. The
+        // Device Gateway allows 30 calls / 30s per session, shared across every endpoint. The
         // heartbeat must cost at most one of those, leaving room for throttled progress reports
         // and step transitions.
         var callsPerWindow = TimeSpan.FromSeconds(30).TotalSeconds

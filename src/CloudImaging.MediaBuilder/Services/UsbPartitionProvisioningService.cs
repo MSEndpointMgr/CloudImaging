@@ -33,11 +33,22 @@ public sealed partial class UsbPartitionProvisioningService
     /// <summary>Size left for the cache partition on a disk of <paramref name="diskSizeBytes"/>.</summary>
     public static long CachePartitionBytes(long diskSizeBytes) => diskSizeBytes - BootPartitionSizeMb * 1024L * 1024L;
 
+    /// <summary>A volume on a disk.</summary>
+    /// <param name="DriveLetter">Drive letter with its colon, for example <c>E:</c>.</param>
+    /// <param name="Label">Volume label; null when it has none.</param>
+    public sealed record DiskVolume(string DriveLetter, string? Label);
+
     private readonly ILogger<UsbPartitionProvisioningService> _logger;
+    private readonly Func<uint, IReadOnlyList<DiskVolume>> _volumesOnDisk;
 
     /// <summary>Builds the service over the given logger.</summary>
-    public UsbPartitionProvisioningService(ILogger<UsbPartitionProvisioningService> logger)
-        => _logger = logger;
+    /// <param name="logger">Logger.</param>
+    /// <param name="volumesOnDiskOverride">Test seam. Defaults to the volumes Windows reports on the disk.</param>
+    public UsbPartitionProvisioningService(ILogger<UsbPartitionProvisioningService> logger, Func<uint, IReadOnlyList<DiskVolume>>? volumesOnDiskOverride = null)
+    {
+        _logger = logger;
+        _volumesOnDisk = volumesOnDiskOverride ?? VolumesOnDisk;
+    }
 
     /// <summary>
     /// Provisions the USB disk at <paramref name="diskNumber"/> with the WinPE partition layout.
@@ -107,39 +118,57 @@ public sealed partial class UsbPartitionProvisioningService
     }
 
     /// <summary>
-    /// Returns the drive letter (e.g. <c>"E:"</c>) of the FAT32 volume labelled <c>BOOT</c>
-    /// created by <see cref="ProvisionAsync"/>, or <c>null</c> if it cannot be located.
-    /// Used to hand the boot partition off to the deployment step.
+    /// Returns the drive letter (e.g. <c>"E:"</c>) of the FAT32 volume labelled <c>BOOT</c> that
+    /// <see cref="ProvisionAsync"/> created on disk <paramref name="diskNumber"/>, or <c>null</c> if
+    /// it cannot be located. Used to hand the boot partition off to the deployment step. Only that
+    /// disk is searched: any other prepared USB device plugged in has a BOOT volume of its own.
     /// </summary>
-    public string? FindBootVolumeDriveLetter() => FindVolumeDriveLetterByLabel("BOOT");
+    public string? FindBootVolumeDriveLetter(uint diskNumber) => FindVolumeDriveLetter(diskNumber, "BOOT");
 
     /// <summary>
-    /// Returns the drive letter of the NTFS volume labelled <c>CACHE</c> created by
-    /// <see cref="ProvisionAsync"/>, or <c>null</c> if it cannot be located. Used only to
-    /// record the partition layout in <c>UsbPreparationManifest.PartitionSchema</c> (T071a,
-    /// FR-059) — the manifest itself is written to the BOOT partition, not here.
+    /// Returns the drive letter of the NTFS volume labelled <c>CACHE</c> that
+    /// <see cref="ProvisionAsync"/> created on disk <paramref name="diskNumber"/>, or <c>null</c> if
+    /// it cannot be located. Preloaded driver files are copied there, and the letter is recorded in
+    /// <c>UsbPreparationManifest.PartitionSchema</c> (T071a, FR-059). Only that disk is searched.
     /// </summary>
-    public string? FindCacheVolumeDriveLetter() => FindVolumeDriveLetterByLabel("CACHE");
+    public string? FindCacheVolumeDriveLetter(uint diskNumber) => FindVolumeDriveLetter(diskNumber, "CACHE");
 
-    private string? FindVolumeDriveLetterByLabel(string label)
+    private string? FindVolumeDriveLetter(uint diskNumber, string label) =>
+        _volumesOnDisk(diskNumber).FirstOrDefault(volume => string.Equals(volume.Label, label, StringComparison.OrdinalIgnoreCase))?.DriveLetter;
+
+    /// <summary>
+    /// The lettered volumes on disk <paramref name="diskNumber"/>, partition to volume: the reverse
+    /// of the trace <c>UsbSafetyValidationService</c> uses to find the system disk. Empty when the
+    /// lookup fails.
+    /// </summary>
+    internal IReadOnlyList<DiskVolume> VolumesOnDisk(uint diskNumber)
     {
+        var volumes = new List<DiskVolume>();
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT DriveLetter, Label FROM Win32_Volume WHERE Label='{label}'");
-            using var results = searcher.Get();
-            foreach (ManagementObject volume in results)
+            using var partitionSearcher = new ManagementObjectSearcher(
+                $"SELECT DeviceID FROM Win32_DiskPartition WHERE DiskIndex = {diskNumber}");
+            using var partitions = partitionSearcher.Get();
+            foreach (ManagementObject partition in partitions)
             {
-                var letter = volume["DriveLetter"]?.ToString();
-                if (!string.IsNullOrWhiteSpace(letter))
-                    return letter;   // e.g. "E:"
+                using var volumeSearcher = new ManagementObjectSearcher(
+                    $"ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition["DeviceID"]}'}} WHERE AssocClass = Win32_LogicalDiskToPartition");
+                using var logicalDisks = volumeSearcher.Get();
+                foreach (ManagementObject logicalDisk in logicalDisks)
+                {
+                    if (logicalDisk["DeviceID"]?.ToString() is { Length: > 0 } letter)
+                    {
+                        volumes.Add(new DiskVolume(letter, logicalDisk["VolumeName"]?.ToString()));
+                    }
+                }
             }
         }
         catch (ManagementException ex)
         {
-            LogBootVolumeLookupFailed(_logger, ex);
+            LogVolumeLookupFailed(_logger, ex, diskNumber);
         }
-        return null;
+
+        return volumes;
     }
 
     /// <summary>Stage 1: wipe any existing partition table and lay down a fresh MBR.</summary>
@@ -204,6 +233,6 @@ public sealed partial class UsbPartitionProvisioningService
     [LoggerMessage(Level = LogLevel.Information, Message = "USB disk {DiskNumber} partitioned successfully.")]
     private static partial void LogComplete(ILogger logger, uint diskNumber);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not locate the BOOT volume drive letter after provisioning.")]
-    private static partial void LogBootVolumeLookupFailed(ILogger logger, Exception ex);
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read the volumes on disk {DiskNumber} after provisioning.")]
+    private static partial void LogVolumeLookupFailed(ILogger logger, Exception ex, uint diskNumber);
 }

@@ -57,6 +57,49 @@ public sealed class DriverFileCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task AnEntryInTheMediaBuilderFormat_IsAHit()
+    {
+        // Shared with the Media Builder tests, which check that its preload copier writes this shape.
+        var fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "driver-cache-entry.json"))).RootElement;
+        var metadata = fixture.GetProperty("metadata");
+        var sha = metadata.GetProperty("sha256").GetString()!;
+        Directory.CreateDirectory(Entry(sha));
+        File.WriteAllText(Path.Combine(Entry(sha), metadata.GetProperty("fileName").GetString()!), fixture.GetProperty("fileContent").GetString());
+        File.WriteAllText(Path.Combine(Entry(sha), "metadata.json"), metadata.GetRawText());
+        var destination = Path.Combine(_root, "W", "sp200.exe");
+
+        (await Cache().TryCopyAsync(sha, destination, metadata.GetProperty("sizeBytes").GetInt64())).Should().BeTrue();
+
+        File.ReadAllText(destination).Should().Be("softpaq");
+    }
+
+    [Fact]
+    public async Task TheClientWritesTheSameMetadataFields_AsMediaBuilder()
+    {
+        var fixture = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "driver-cache-entry.json"))).RootElement.GetProperty("metadata");
+        var (sha, path) = Source();
+
+        await Cache().AddAsync(sha, path);
+
+        var written = JsonDocument.Parse(File.ReadAllText(Path.Combine(Entry(sha), "metadata.json"))).RootElement;
+        written.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(fixture.EnumerateObject().Select(p => p.Name));
+    }
+
+    [Fact]
+    public async Task AFileOfTheWrongSize_IsRejectedBeforeItIsCopied()
+    {
+        var (sha, path) = Source();
+        var cache = Cache();
+        await cache.AddAsync(sha, path);
+        var destination = Path.Combine(_root, "W", "sp200.exe");
+
+        (await cache.TryCopyAsync(sha, destination, sizeBytes: 8)).Should().BeFalse();
+
+        File.Exists(destination).Should().BeFalse("nothing is copied");
+        Directory.Exists(Entry(sha)).Should().BeFalse("the entry is removed, so the verified download replaces it");
+    }
+
+    [Fact]
     public async Task AHit_IsCopiedToTheComponentFolder_AndHashedThere()
     {
         var (sha, path) = Source();
@@ -82,6 +125,21 @@ public sealed class DriverFileCacheTests : IDisposable
 
         Directory.Exists(Entry(sha)).Should().BeFalse();
         File.Exists(destination).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UnreadableMetadata_DeletesTheEntry_SoTheNextDownloadIsWrittenBack()
+    {
+        var (sha, path) = Source();
+        var cache = Cache();
+        await cache.AddAsync(sha, path);
+        File.WriteAllText(Path.Combine(Entry(sha), "metadata.json"), "{ not json");
+
+        (await cache.TryCopyAsync(sha, Path.Combine(_root, "W", "sp200.exe"))).Should().BeFalse();
+        Directory.Exists(Entry(sha)).Should().BeFalse();
+
+        await cache.AddAsync(sha, path);
+        (await cache.TryCopyAsync(sha, Path.Combine(_root, "W2", "sp200.exe"))).Should().BeTrue();
     }
 
     [Fact]

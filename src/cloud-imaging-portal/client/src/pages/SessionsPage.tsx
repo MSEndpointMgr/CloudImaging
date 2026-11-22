@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff, Play } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff, Play, PlugZap } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -266,6 +266,8 @@ function SessionsPageImpl(): React.ReactElement {
 
   const availableCols = useColumnWidths({ serial: 18, device: 24, location: 16, state: 12, passcode: 13, registered: 13 });
   const coupledCols = useColumnWidths({ serial: 20, device: 28, architecture: 12, location: 16, registered: 16 });
+  // With the Driver set column the percentages still leave room for the fixed Actions column, so nothing scrolls.
+  const coupledDriverCols = useColumnWidths({ serial: 13, device: 21, architecture: 11, location: 11, driverSet: 26, registered: 11 });
   const monitorCols = useColumnWidths({ serial: 14, device: 17, location: 10, registered: 15, state: 9, progress: 15, step: 16 });
   const successCols = useColumnWidths({ serial: 15, device: 25, location: 15, progress: 20, finished: 20 });
   const failedCols = useColumnWidths({ serial: 12, device: 17, location: 11, state: 10, step: 14, registered: 11, actions: 20 });
@@ -420,6 +422,7 @@ function SessionsPageImpl(): React.ReactElement {
     : { ...rawDriverPreview, preview: { ...rawDriverPreview.preview, options: rawDriverPreview.preview.options.filter(o => !o.testing) } };
   const showDriverColumn = canUseImaging && driversOnboarded
     && !(driverPreview.preview && driverPreview.preview.release !== null && driverPreview.preview.options.length === 0 && driverPreview.preview.sessions.every(s => !s.matchedModelId));
+  const coupledWidths = showDriverColumn ? coupledDriverCols : coupledCols;
   const chooseImage = (value: string): void => {
     setSelectedImageId(value || null);
     setDriverChoices({});
@@ -645,6 +648,7 @@ function SessionsPageImpl(): React.ReactElement {
   };
 
   const selectedImageLabel = images.find(i => i.imageId === selectedImageId);
+  const biosUpdates = targetSessions.filter(s => s.firmwareVersion).length;
   const excludedCount = coupled.length - targetSessions.length;
   const excludedNote = selectedImageLabel && excludedCount > 0
     ? ` ${excludedCount} ${architectureLabel(selectedImageLabel.architecture) === 'x64' ? 'ARM64' : 'x64'} device${excludedCount !== 1 ? 's' : ''} stay coupled until an image of that architecture is assigned.`
@@ -874,12 +878,12 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('serial')}>{coupledCols.handle('serial', 'Serial')}</SortableHead>
-                  <SortableHead label="Model" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('device')}>{coupledCols.handle('device', 'Model')}</SortableHead>
-                  <SortableHead label="Architecture" sortKey="architecture" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('architecture')}>{coupledCols.handle('architecture', 'Architecture')}</SortableHead>
-                  <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledCols.style('location')}>{coupledCols.handle('location', 'Location')}</SortableHead>
-                  {showDriverColumn && <TableHead className="w-[300px]">Driver set</TableHead>}
-                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} style={coupledCols.style('registered')} />
+                  <SortableHead label="Serial" sortKey="serial" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledWidths.style('serial')}>{coupledWidths.handle('serial', 'Serial')}</SortableHead>
+                  <SortableHead label="Model" sortKey="device" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledWidths.style('device')}>{coupledWidths.handle('device', 'Model')}</SortableHead>
+                  <SortableHead label="Architecture" sortKey="architecture" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledWidths.style('architecture')}>{coupledWidths.handle('architecture', 'Architecture')}</SortableHead>
+                  <SortableHead label="Location" sortKey="location" sort={coupledSort} onSort={toggleCoupledSort} className="relative" style={coupledWidths.style('location')}>{coupledWidths.handle('location', 'Location')}</SortableHead>
+                  {showDriverColumn && <TableHead className="relative" style={coupledDriverCols.style('driverSet')}>Driver set{coupledDriverCols.handle('driverSet', 'Driver set')}</TableHead>}
+                  <SortableHead label="Registered" sortKey="registered" sort={coupledSort} onSort={toggleCoupledSort} style={coupledWidths.style('registered')} />
                   {/* Fixed pixel width so the remove-icon button never gets squeezed as the table shrinks.
                       The other columns above intentionally leave headroom (don't sum to 100%) so this
                       fixed column doesn't push the table wider than its container. */}
@@ -1442,10 +1446,17 @@ function SessionsPageImpl(): React.ReactElement {
           onCancel={() => setPendingBulkAssign(false)}
           onConfirm={() => { void handleStartImaging(); }}
           titleId="bulk-assign-confirm-title"
-          details={(canViewSetupProfiles || (showDriverColumn && driverPreview.preview)) ? (
+          details={(canViewSetupProfiles || (showDriverColumn && driverPreview.preview) || biosUpdates > 0) ? (
             <div className="space-y-3">
               {canViewSetupProfiles && <StartImagingProfileLines sessions={targetSessions} />}
               {showDriverColumn && driverPreview.preview && <StartImagingDriverLines sessionIds={targetIds} preview={driverPreview.preview} choices={driverChoices} />}
+              {/* The last moment before the operator walks away, so the one firmware fact that matters goes here. */}
+              {biosUpdates > 0 && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900 dark:bg-amber-950/40">
+                  <PlugZap className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                  <span>{`${biosUpdates === 1 ? '1 device updates its' : `${biosUpdates} devices update their`} BIOS at restart. Keep ${biosUpdates === 1 ? 'it' : 'them'} on AC power until Windows setup starts.`}</span>
+                </div>
+              )}
             </div>
           ) : undefined}
         />

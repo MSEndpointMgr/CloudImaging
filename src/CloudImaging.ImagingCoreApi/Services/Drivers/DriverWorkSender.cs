@@ -25,6 +25,9 @@ public enum DriverWorkKind
 
     /// <summary>Finishes a run: result, clean-up, lock release.</summary>
     FinalizeRun,
+
+    /// <summary>Reads the BIOS catalogs of one HP model and queues the files devices may be given.</summary>
+    ResolveFirmware,
 }
 
 /// <summary>One message on the <c>driver-work</c> queue.</summary>

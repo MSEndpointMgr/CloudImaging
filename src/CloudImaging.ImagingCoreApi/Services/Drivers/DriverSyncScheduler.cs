@@ -185,6 +185,9 @@ public sealed partial class DriverSyncScheduler
             WaitForApprovalOfNewComponents = settings.WaitForApprovalOfNewComponents,
             WaitForTesting = settings.WaitForTesting,
             SetsInTesting = await _sync.CountTestingAsync(ct),
+            FirmwareNewVersions = settings.FirmwareNewVersions,
+            FirmwarePreProductionLocationId = settings.FirmwarePreProductionLocationId,
+            FirmwareInPreProduction = await DriverFirmwareService.CountPreProductionAsync(_store, ct),
             NextRunAt = NextSlot(settings, now),
             SyncNowAvailableAt = available > now ? available : null,
             LastRunStartedAt = settings.LastRunStartedAt,
@@ -225,6 +228,8 @@ public sealed partial class DriverSyncScheduler
                 TimeZone = request.TimeZone!,
                 WaitForApprovalOfNewComponents = request.WaitForApprovalOfNewComponents,
                 WaitForTesting = request.WaitForTesting,
+                FirmwareNewVersions = request.FirmwareNewVersions,
+                FirmwarePreProductionLocationId = request.FirmwarePreProductionLocationId,
                 ChangedAt = now,
                 ChangedBy = upn,
             };
@@ -261,6 +266,20 @@ public sealed partial class DriverSyncScheduler
                 }
             }
 
+            if (before.FirmwareNewVersions != next.FirmwareNewVersions || before.FirmwarePreProductionLocationId != next.FirmwarePreProductionLocationId)
+            {
+                await _store.LogAsync(now, upn, request.Actor.ObjectId, "Sync", "Newer BIOS versions", next.FirmwareNewVersions == DriverFirmwareNewVersions.PreProductionFirst ? "Pre-production first" : "Available immediately", ct);
+            }
+
+            // Like testing: a BIOS no longer goes to pre-production first, so none waits there any more.
+            if (next.FirmwareNewVersions == DriverFirmwareNewVersions.AvailableImmediately)
+            {
+                foreach (var (_, platform, version) in await DriverFirmwareService.ReleaseAllPreProductionAsync(_store, upn, _time.GetUtcNow(), ct))
+                {
+                    await _store.LogAsync(_time.GetUtcNow(), upn, request.Actor.ObjectId, DriverFirmwareService.LogArea, $"{DriverFirmwareService.ComponentName} ({platform})", $"Released {version} when newer BIOS versions were set to Available immediately", ct);
+                }
+            }
+
             await EnqueueNextAsync(ct);
             return DriverResult.Ok(await GetSettingsAsync(false, ct));
         }
@@ -294,6 +313,15 @@ public sealed partial class DriverSyncScheduler
         if (request.RepeatWeeks is < 1 or > 4)
         {
             errors.Add(("repeatWeeks", "Choose a repeat from the list."));
+        }
+
+        if (!Enum.IsDefined(request.FirmwareNewVersions))
+        {
+            errors.Add(("firmwareNewVersions", "Choose who gets newer BIOS versions from the list."));
+        }
+        else if (request.FirmwareNewVersions == DriverFirmwareNewVersions.PreProductionFirst && request.FirmwarePreProductionLocationId is null)
+        {
+            errors.Add(("firmwarePreProductionLocationId", "Choose the pre-production location."));
         }
 
         return errors.Count == 0

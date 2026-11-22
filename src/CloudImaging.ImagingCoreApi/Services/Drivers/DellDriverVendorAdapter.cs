@@ -108,7 +108,7 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
         {
             var name = Display(Child(entry, "Name")) ?? string.Empty;
             var type = (string?)Child(entry, "ComponentType")?.Attribute("value") ?? string.Empty;
-            if (IsExcluded(name, type) || !SupportsWindows(entry, windows, architecture))
+            if (!SupportsWindows(entry, windows, architecture))
             {
                 continue;
             }
@@ -173,12 +173,6 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
         return [.. newest.Values];
     }
 
-    /// <summary>Firmware and BIOS are never stored (FR-003).</summary>
-    public static bool IsExcluded(string name, string componentType) =>
-        componentType.Equals("FRMW", StringComparison.OrdinalIgnoreCase)
-        || componentType.Equals("BIOS", StringComparison.OrdinalIgnoreCase)
-        || name.Contains("Firmware", StringComparison.OrdinalIgnoreCase);
-
     /// <summary>The Dell classification table of FR-017.</summary>
     public static (DriverAction Default, IReadOnlyList<DriverAction> Allowed) Classify(string componentType, string packageType, bool bundlesApp)
     {
@@ -202,7 +196,8 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
             return (DriverAction.Specialize, [DriverAction.Specialize, DriverAction.Skip]);
         }
 
-        return componentType.Equals("APAC", StringComparison.OrdinalIgnoreCase)
+        // Applications, firmware and BIOS can run during specialize; the starting rules skip firmware and BIOS.
+        return componentType.ToUpperInvariant() is "APAC" or "FRMW" or "BIOS"
             ? (DriverAction.Skip, [DriverAction.Skip, DriverAction.Specialize])
             : (DriverAction.Skip, [DriverAction.Skip]);
     }

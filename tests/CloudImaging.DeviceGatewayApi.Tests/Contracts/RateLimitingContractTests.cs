@@ -25,12 +25,12 @@ public sealed class RateLimitingContractTests
     }
 
     [Fact]
-    public void RateLimiting_WindowIs30Seconds_With10Calls()
+    public void RateLimiting_WindowIs30Seconds_With30Calls()
     {
         int maxCalls      = RateLimitingMiddleware.MaxCallsPerWindow;
         var windowSeconds = (int)RateLimitingMiddleware.WindowDuration.TotalSeconds;
 
-        maxCalls.Should().Be(10,     "rate limit is 10 calls per window");
+        maxCalls.Should().Be(30,     "the step reports at the end of imaging need room beyond the original 10");
         windowSeconds.Should().Be(30,"rate limit window is 30 seconds");
     }
 

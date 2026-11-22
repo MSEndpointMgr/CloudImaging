@@ -48,4 +48,15 @@ public sealed class DeviceGatewayApiExceptionTests
 
         ex.Message.Should().Be("Device Gateway API returned HTTP 502.");
     }
+
+    [Fact]
+    public async Task RateLimit_CarriesTheRetryAfter()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("""{"detail":"Rate limit of 30 calls per 30 seconds exceeded."}""", Encoding.UTF8, "application/problem+json") };
+        response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(12));
+
+        var ex = await DeviceGatewayApiException.FromResponseAsync(response, CancellationToken.None);
+
+        ex.RetryAfter.Should().Be(TimeSpan.FromSeconds(12));
+    }
 }

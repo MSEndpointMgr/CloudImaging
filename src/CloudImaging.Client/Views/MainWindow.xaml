@@ -66,19 +66,22 @@
                 </StackPanel>
             </ui:TitleBar.Header>
             <ui:TitleBar.TrailingContent>
-                <Grid>
+                <!-- Sized and top-aligned like the caption buttons next to it (WPF-UI TitleBarButton: 44 x 30). -->
+                <Grid VerticalAlignment="Top">
                     <ui:Button x:Name="InfoButton"
                                Appearance="Transparent" BorderThickness="0" Padding="0"
-                               Width="46" Height="32" CornerRadius="0"
-                               Icon="{ui:SymbolIcon Info24}"
+                               Width="44" Height="30" CornerRadius="0"
+                               HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                                ToolTip="About this boot image"
                                AutomationProperties.Name="About this boot image"
                                WindowChrome.IsHitTestVisibleInChrome="True"
-                               Click="InfoButton_Click" />
+                               Click="InfoButton_Click">
+                        <ui:SymbolIcon Symbol="Info24" FontSize="14" />
+                    </ui:Button>
                     <!-- Right-aligned under the button: HorizontalOffset = button width - panel width. -->
                     <Popup x:Name="InfoPopup"
                            PlacementTarget="{Binding ElementName=InfoButton}"
-                           Placement="Bottom" HorizontalOffset="-254" VerticalOffset="4"
+                           Placement="Bottom" HorizontalOffset="-256" VerticalOffset="4"
                            StaysOpen="False" AllowsTransparency="True">
                         <Border Width="300" Padding="16,12,16,14" CornerRadius="8"
                                 Background="{DynamicResource SolidBackgroundFillColorTertiaryBrush}"

@@ -51,6 +51,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     private string _toolsRootPath = string.Empty;
     private bool _enableCommandPromptAccess;
     private bool _includeAutopilotTooling = true;
+    private bool _includeHpFirmwareTools;
+    private bool _acceptHpLicence;
+    private static readonly System.Net.Http.HttpClient GalleryClient = new() { Timeout = TimeSpan.FromMinutes(5) };
     private string? _autopilotToolingUnavailableReason;
     private readonly Func<MachineArchitecture, string?> _autopilotToolingCheck;
     private bool _isArm64Selected;
@@ -135,6 +138,16 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         CopyResultPathCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ResultFilePath), _ => HasResultFilePath);
         CopyErrorDetailsCommand = new RelayCommand(_ => OperationResultText.TryCopyToClipboard(ErrorDetails), _ => HasError);
         DismissResultCommand = new RelayCommand(_ => IsResultDialogOpen = false);
+        OpenHpLicenceCommand = new RelayCommand(_ => OpenHpLicence());
+    }
+
+    private static void OpenHpLicence()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(HpFirmwareTools.LicenceUrl) { UseShellExecute = true });
+        }
+        catch { /* best-effort: nothing is downloaded until the licence is accepted */ }
     }
 
     /// <summary>True when the client binaries are downloaded from the latest GitHub release (mutually exclusive with <see cref="UseLocalSource"/>).</summary>
@@ -242,6 +255,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsArm64Selected));
             OnPropertyChanged(nameof(SelectedArchitecture));
+            OnPropertyChanged(nameof(IncludeHpFirmwareTools));
+            OnPropertyChanged(nameof(CanGenerate));
             RefreshAutopilotToolingAvailability();
             _ = CheckWindowsSourceAsync();
         }
@@ -257,6 +272,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsX64Selected));
             OnPropertyChanged(nameof(SelectedArchitecture));
+            OnPropertyChanged(nameof(IncludeHpFirmwareTools));
+            OnPropertyChanged(nameof(CanGenerate));
             RefreshAutopilotToolingAvailability();
             _ = CheckWindowsSourceAsync();
         }
@@ -292,7 +309,19 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     public bool IsCheckingSource
     {
         get => _isCheckingSource;
-        private set { _isCheckingSource = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsSourceEditable)); OnPropertyChanged(nameof(CanGenerate)); OnPropertyChanged(nameof(SourceCheckPassed)); OnPropertyChanged(nameof(SourceCheckFailed)); }
+        private set
+        {
+            _isCheckingSource = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSourceEditable));
+            OnPropertyChanged(nameof(CanGenerate));
+            OnPropertyChanged(nameof(SourceCheckPassed));
+            OnPropertyChanged(nameof(SourceCheckFailed));
+
+            // The check ends from an async continuation, not user input, so WPF would otherwise keep
+            // Browse and Generate disabled until the next mouse or keyboard event.
+            CommandManager.InvalidateRequerySuggested();
+        }
     }
 
     /// <summary>False while the source is being checked, so the base and path cannot change mid-check.</summary>
@@ -463,20 +492,12 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             _resultFilePath = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasResultFilePath));
-            OnPropertyChanged(nameof(ResultFileName));
-            OnPropertyChanged(nameof(ResultFolder));
             CommandManager.InvalidateRequerySuggested();
         }
     }
 
     /// <summary>Whether a finished WIM path is available to display/reveal (i.e. generation completed successfully).</summary>
     public bool HasResultFilePath => ResultFilePath is not null;
-
-    /// <summary>File name part of <see cref="ResultFilePath"/>.</summary>
-    public string? ResultFileName => ResultFilePath is null ? null : Path.GetFileName(ResultFilePath);
-
-    /// <summary>Folder part of <see cref="ResultFilePath"/>.</summary>
-    public string? ResultFolder => ResultFilePath is null ? null : Path.GetDirectoryName(ResultFilePath);
 
     /// <summary>Icon for the output file row in the result dialog.</summary>
     public Wpf.Ui.Controls.SymbolRegular ResultFileSymbol { get; } = Wpf.Ui.Controls.SymbolRegular.Archive24;
@@ -617,7 +638,39 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         && (!UseLocalSource || Directory.Exists(LocalSourcePath))
         && (string.IsNullOrWhiteSpace(DriverRootPath) || Directory.Exists(DriverRootPath))
         && (string.IsNullOrWhiteSpace(ToolsRootPath) || Directory.Exists(ToolsRootPath))
-        && (!IsWindowsReSelected || SourceCheckPassed);
+        && (!IsWindowsReSelected || SourceCheckPassed)
+        && (!IncludeHpFirmwareTools || AcceptHpLicence);
+
+    /// <summary>
+    /// Adds HP's Client Management Script Library, so HP devices can get a BIOS update at the end of
+    /// imaging. Off by default: HP's licence must be accepted, and the tools are downloaded from the
+    /// PowerShell Gallery on this machine. x64 only.
+    /// </summary>
+    public bool IncludeHpFirmwareTools
+    {
+        get => _includeHpFirmwareTools && IsX64Selected;
+        set
+        {
+            _includeHpFirmwareTools = value;
+            if (!value)
+            {
+                AcceptHpLicence = false;
+            }
+
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanGenerate));
+        }
+    }
+
+    /// <summary>The operator accepts HP's licence; nothing of HP's is downloaded without it.</summary>
+    public bool AcceptHpLicence
+    {
+        get => _acceptHpLicence;
+        set { _acceptHpLicence = value; OnPropertyChanged(); OnPropertyChanged(nameof(CanGenerate)); }
+    }
+
+    /// <summary>Opens HP's licence in the browser.</summary>
+    public ICommand OpenHpLicenceCommand { get; }
 
     /// <summary>Starts boot image generation.</summary>
     public ICommand GenerateCommand { get; }
@@ -695,6 +748,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _elapsedTimer.Start();
 
         _cts = new CancellationTokenSource();
+        string? hpToolsPath = null;
         try
         {
             // Set (or refresh) the Operator API bearer token used for boot media certificate
@@ -708,6 +762,15 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             string clientBinariesPath = UseGitHubSource
                 ? await DownloadLatestClientAsync()
                 : LocalSourcePath;
+
+            // Downloaded here, before elevation: the elevated worker only copies the checked folder in.
+            if (IncludeHpFirmwareTools && AcceptHpLicence)
+            {
+                _currentStage = "HPT";
+                ProgressMessage = "Downloading HP firmware tools";
+                hpToolsPath = Path.Combine(Path.GetTempPath(), $"ci-hp-tools-{Guid.NewGuid():N}");
+                await HpFirmwareTools.DownloadAsync(GalleryClient, hpToolsPath, line => OnUi(() => AppendLogLine(line)), _cts.Token);
+            }
 
             // GenerateElevatedAsync resolves the boot media certificate, branding logo, and
             // Device Gateway URL internally from the Operator API before transparently
@@ -724,6 +787,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 architecture: SelectedArchitecture,
                 includeAutopilotTooling: IncludeAutopilotTooling,
                 windowsSourcePath: IsWindowsReSelected ? WindowsSourcePath : null,
+                hpFirmwareToolsPath: hpToolsPath,
                 ct: _cts.Token);
 
             ResultFilePath = result.WimPath;
@@ -765,6 +829,28 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             UpdateElapsedTimeText(); // one final tick so the frozen caption reflects the exact stop time
             _cts.Dispose();
             _cts = null;
+            DeleteHpTools(hpToolsPath);
+        }
+    }
+
+    // The boot image holds its own copy; HP's licence is about distribution, so no copy is kept.
+    private static void DeleteHpTools(string? path)
+    {
+        if (path is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort: a leftover folder in %TEMP% is harmless.
         }
     }
 

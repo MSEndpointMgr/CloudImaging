@@ -34,7 +34,13 @@ public enum ImagingStepName
     /// volume. Runs after Apply image and before Prepare setup. Appended so stored values stay
     /// stable; it has progress weight 0.
     /// </summary>
-    InstallDrivers
+    InstallDrivers,
+
+    /// <summary>
+    /// Optional last step that stages the model's BIOS so it flashes at the restart that ends
+    /// imaging. Only reported when the session has a BIOS update; progress weight 0.
+    /// </summary>
+    UpdateFirmware,
 }
 
 /// <summary>Step execution states.</summary>

@@ -25,6 +25,7 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     private bool _hasSucceeded;
     private bool _hasConnected;
     private bool _managedPasswordRejected;
+    private int _enterpriseCount;
 
     /// <summary>Builds the view model and starts an initial network scan.</summary>
     /// <param name="wifiService">Defaults to a real netsh-based service.</param>
@@ -136,6 +137,14 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
     /// <summary>True when <see cref="InfoMessage"/> is set.</summary>
     public bool HasInfo => !string.IsNullOrEmpty(InfoMessage);
 
+    /// <summary>Says how many Enterprise (802.1X) networks the last scan left out of the list.</summary>
+    public string EnterpriseNote => _enterpriseCount == 1
+        ? "1 network that needs Enterprise (802.1X) sign-in is not shown. It is not supported."
+        : $"{_enterpriseCount} networks that need Enterprise (802.1X) sign-in are not shown. They are not supported.";
+
+    /// <summary>True when the last scan left Enterprise networks out.</summary>
+    public bool HasEnterpriseNote => _enterpriseCount > 0;
+
     /// <summary>Re-scans for nearby networks.</summary>
     public ICommand RefreshCommand { get; }
 
@@ -157,9 +166,13 @@ public sealed class WifiConnectionViewModel : INotifyPropertyChanged
         try
         {
             var result = await _wifiService.ScanAsync();
+            var merged = Merge(result.Networks, _managedWifi?.Networks ?? []).ToList();
             Networks.Clear();
-            foreach (var network in Merge(result.Networks, _managedWifi?.Networks ?? []))
+            foreach (var network in merged.Where(n => n.IsSupported))
                 Networks.Add(network);
+            _enterpriseCount = merged.Count(n => !n.IsSupported);
+            OnPropertyChanged(nameof(EnterpriseNote));
+            OnPropertyChanged(nameof(HasEnterpriseNote));
 
             if (result.Status == WifiScanStatus.Ok)
                 InfoMessage = Networks.Count == 0 ? "No networks found. The first scan can take a few seconds; select Refresh to scan again." : null;

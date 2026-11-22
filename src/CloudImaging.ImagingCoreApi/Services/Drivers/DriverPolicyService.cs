@@ -28,6 +28,19 @@ public sealed class DriverPolicyService
         ("HP App", "HP App"),
     ];
 
+    // Firmware is listed like any component and kept out by these editable rules. Fixed ids stop two
+    // instances starting at once from adding a rule twice.
+    private static readonly (Guid RuleId, string Name, DriverRuleScope Scope, DriverRuleMatch Match, string Value)[] Starting =
+    [
+        (new Guid("0b5a3f2e-6c1d-4f7a-9e21-2a7c41d0b101"), "BIOS", DriverRuleScope.AllVendors, DriverRuleMatch.Category, "BIOS*"),
+        (new Guid("0b5a3f2e-6c1d-4f7a-9e21-2a7c41d0b102"), "Firmware", DriverRuleScope.AllVendors, DriverRuleMatch.Category, "Firmware*"),
+        (new Guid("0b5a3f2e-6c1d-4f7a-9e21-2a7c41d0b103"), "Dock firmware", DriverRuleScope.Hp, DriverRuleMatch.Category, "Dock - Firmware*"),
+        (new Guid("0b5a3f2e-6c1d-4f7a-9e21-2a7c41d0b104"), "TPM firmware", DriverRuleScope.Hp, DriverRuleMatch.NamePattern, "*Trusted Platform Module*Firmware*"),
+    ];
+
+    /// <summary>Who the change log names for the starting rules.</summary>
+    public const string StartingRulesActor = "Cloud Imaging";
+
     private readonly DriverStore _store;
     private readonly DriverModelRepository _models;
     private readonly DriverSetPointerRepository _pointers;
@@ -49,6 +62,65 @@ public sealed class DriverPolicyService
         _modelService = modelService;
         _work = work;
         _time = time;
+    }
+
+    /// <summary>The rules every installation starts with, all Skip.</summary>
+    public static IReadOnlyList<DriverRuleRecord> StartingRules(DateTimeOffset at) =>
+        Starting.Select(s => new DriverRuleRecord
+        {
+            RuleId = s.RuleId,
+            Name = s.Name,
+            Scope = s.Scope,
+            Match = s.Match,
+            Value = s.Value,
+            Action = DriverAction.Skip,
+            ChangedAt = at,
+            ChangedBy = StartingRulesActor,
+        }).ToList();
+
+    /// <summary>
+    /// Adds the starting rules once, on a new installation and on the first start after an upgrade.
+    /// A rule with the same name is left as it is, and a starting rule someone deletes stays deleted.
+    /// </summary>
+    public async Task EnsureStartingRulesAsync(CancellationToken ct = default)
+    {
+        if ((await _store.GetSyncSettingsAsync(ct)).Value.StartingRulesAdded)
+        {
+            return;
+        }
+
+        var now = _time.GetUtcNow();
+        var rules = await _modelService.RulesAsync(ct);
+        foreach (var rule in StartingRules(now))
+        {
+            if (rules.Any(r => r.RuleId == rule.RuleId || string.Equals(r.Name, rule.Name, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            await _store.Rules.UpsertAsync(DriverStore.RulePartition, rule.RuleId.ToString("D"), rule, ct);
+            await _store.LogAsync(now, StartingRulesActor, null, "Rule", rule.Name, $"Added: {Describe(rule)}", ct);
+        }
+
+        for (var attempt = 0; attempt < MaxConcurrencyRetries; attempt++)
+        {
+            var row = await _store.GetSyncSettingsAsync(ct);
+            if (row.Value.StartingRulesAdded)
+            {
+                return;
+            }
+
+            var next = row.Value with { StartingRulesAdded = true };
+            var saved = row.ETag == default
+                ? await _store.SyncSettings.TryAddAsync(DriverStore.SettingsPartition, DriverStore.SettingsRow, next, ct)
+                : await _store.SyncSettings.TryUpdateAsync(DriverStore.SettingsPartition, DriverStore.SettingsRow, next, row.ETag, ct);
+            if (saved)
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException("The driver sync settings kept changing during an update.");
     }
 
     /// <summary>Every rule by name, with the number of components it decides.</summary>

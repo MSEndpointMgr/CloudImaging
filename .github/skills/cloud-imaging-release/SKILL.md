@@ -1,7 +1,7 @@
 ---
 name: cloud-imaging-release
-description: 'Release a new version of Cloud Imaging: Backend/IaC, Client and Media Builder release streams. Use when asked to "release", "cut a release", "ship v1.x", "tag a release", "publish a new version", "prepare release notes", or "trigger the release workflows". Confirms versions with the user, inventories what changed since the last tag, writes release notes, checks documentation coverage, runs pre-release gates, pushes tags in dependency order and verifies the GitHub Releases.'
-argument-hint: 'Optional: version (e.g. 1.2.0) and streams (backend, client, mediabuilder)'
+description: 'The one way to release a new version of Cloud Imaging (Backend/IaC, Media Builder and Client). Use when asked to "release", "cut a release", "ship v1.x", "new version", "tag a release", "check release readiness", "are the versions right", "prepare release notes" or "trigger the release workflows". Checks that versions line up across all components, confirms the versions with the user, writes release notes and docs, runs pre-release gates, pushes tags in dependency order and verifies the GitHub Releases.'
+argument-hint: 'Optional: versions per stream, e.g. backend 1.1.0, mediabuilder 1.1.0, client 1.1.0'
 ---
 
 # Cloud Imaging Release
@@ -21,13 +21,43 @@ documentation that match what actually ships.
 contract in scope.
 
 Facts the workflows enforce:
-- Versions come from the tag only. Nothing in the repo needs a version bump.
 - The notes file must exist, be non-empty and be on `origin/main` **before** the tag is pushed,
   otherwise the run fails before building.
 - A version with a `-` suffix is a prerelease and does not move the alias. This skill only
   cuts stable releases.
 - Each workflow runs a High/Critical dependency vulnerability gate and fails on a hit.
 - There is no `needs` between streams; the order below is this skill's job.
+
+## How versions work
+
+Every version comes from the tag at build time, so **no product version is bumped in the repo**:
+
+| Artifact | Stamped by | Where it shows |
+|---|---|---|
+| Client exe | `-p:Version` in `release-client.yml` | Boot image manifest, Autopilot records |
+| Media Builder exe | `-p:Version` in `release-mediabuilder.yml` | Tool version recorded on every USB it prepares |
+| Media Builder MSI | `MsiProductVersion` in `release-mediabuilder.yml` | Installed programs, in-place upgrade |
+| Portal backend | `DEPLOYED_VERSION` written to `src/version.ts` | Portal update check |
+| Backend bundle | `version.txt` | `install.ps1`, `upgrade.ps1`, `publish-template-spec.ps1` |
+
+Placeholders that are not release versions and must stay as they are: `"version": "0.0.1"` in both
+portal `package.json` files, the `MsiProductVersion` default `0.0.1` in the `.wixproj`, and
+`contentVersion` in ARM files.
+
+What drifts is every **reference** to a version, and that is what this skill keeps consistent:
+- each stream's notes file, its minimum versions of the other streams and its `compare/` link
+- `docs/upgrade-instructions.md`: *Release-Specific Steps* (the version that introduces each step)
+  and *Version Compatibility* (minimum Media Builder and Client per backend version)
+- any doc or `README.md` sentence that names a tag
+
+The [check script](./scripts/Get-ReleaseReadiness.ps1) correlates all of this. It only reads the
+repo and the tags on origin; it never changes, commits or pushes anything:
+```powershell
+& .github/skills/cloud-imaging-release/scripts/Get-ReleaseReadiness.ps1 [-BackendVersion x.y.z] [-MediaBuilderVersion x.y.z] [-ClientVersion x.y.z]
+```
+It prints one row per stream (last released tag, target version, commits since, unreleased notes
+drafts) and a list of findings marked `Fail` (blocks the release) or `Warning` (fix or accept).
+Without versions, each stream targets the next notes draft above its last released tag.
 
 ## Hard rules
 
@@ -38,27 +68,35 @@ Facts the workflows enforce:
 - Release notes and docs: no spec, requirement or task identifiers (`FR-`, `SC-`, `T0`, `US`,
   "spec 005"), no em dash characters. Grep every file you touched for both before committing.
 - Tags are created from `origin/main`, not local `HEAD`.
+- When asking the user anything, use the ask-questions tool, explain any output or term they have
+  not seen yet, and always leave the free-text answer enabled so they can answer "Other".
 
 ## Procedure
 
-### 1. Establish the baseline
-1. `git fetch origin main --tags`, then `git status --short`. Note uncommitted work and ask whether
-   it belongs in this release.
-2. Latest tag per stream (exclude the `-latest` aliases):
-   `git tag --list "mse-ci-v*" --sort=-v:refname`, same for `mse-ci-client-v*` and
-   `mse-ci-mediabuilder-v*`.
-3. Changes per stream since its last tag:
+### 1. Check where each stream stands
+1. `git status --short`. Note uncommitted work and ask whether it belongs in this release.
+2. Run the check script without versions (it fetches `origin main --tags` itself).
+3. Show the user the stream table in plain words: what was last released, what would be
+   released, how many changes there are, and which notes drafts exist.
+4. Changes per stream since its last tag:
    `git log --oneline <lastTag>..origin/main -- <stream paths>`.
-   A stream with no changes is not released unless the user asks.
-4. Existing notes already drafted for the next version: list `.github/release-notes/<stream>/`.
+   A stream with no changes is not released unless the user asks. Commits in
+   `src/CloudImaging.Contracts` put every stream that uses the changed contract in scope.
 
 ### 2. Confirm versions (always ask)
-Streams are versioned independently: each bumps from its own last tag based on its own changes.
-Propose a version per in-scope stream and ask the user to confirm or change it, using the
-ask-questions tool. Suggest: major for breaking upgrades (data or contract changes that need
-manual migration), minor for new features, patch for fixes only. Show the last tag, the commit
-count and whether a notes file already exists. Then verify the tag is free:
-`git ls-remote --tags origin "<tag>"` must return nothing.
+Propose a version per in-scope stream and ask the user to confirm or change it. Streams are
+versioned independently, each from its own last tag. Suggest major for breaking upgrades (data
+or contract changes that need manual migration), minor for new features, patch for fixes only.
+Show the last tag, the commit count and whether a notes file already exists.
+
+If notes exist for more than one unreleased version (for example v1.1.0 and v1.2.0 drafts while
+only v1.0.0 is tagged), always ask which version is next; the default is the lowest. A tag is cut
+from `origin/main`, so everything merged ships in it, including work drafted under a later
+version. Fold those later drafts into the target notes, delete them and replace their version in
+every reference. Never release two versions of one stream at once.
+
+Re-run the check script with the confirmed versions. It also fails if a target tag already
+exists or is not higher than the last release.
 
 ### 3. Inventory what ships
 For each in-scope stream:
@@ -109,7 +147,31 @@ For every confirmed feature, find where it is documented and update or add it:
 Every link in the release notes must resolve to an existing heading. Report features with no
 documentation and fix them before tagging.
 
-### 6. Pre-release gates
+### 6. Make the versions line up
+Re-run the check script with the confirmed versions and fix every `Fail`, then every `Warning`
+(or get the user to accept it). Edits to notes and docs are local: make them, but do not commit.
+
+| Finding | Fix |
+|---|---|
+| Notes missing, or not on origin/main | Write them (step 4); they are merged with the release pull request. |
+| Compare link missing or wrong | `**Full changes**: https://github.com/MSEndpointMgr/CloudImaging/compare/<released>...<target>` |
+| Another unreleased draft (above or below the target) | Fold it into the target notes (step 2). |
+| Notes or docs reference a tag that is neither released nor planned | Point it at the planned target of that stream, or the released tag that already has the capability. |
+| No Version Compatibility section or row | Add it under *Before You Start*: one row per backend version with the minimum Media Builder and Client. |
+| Template Spec notice missing | Add the Template Spec section to the backend notes. |
+| `main.json` not rebuilt | `az bicep build --file src/deploy/bicep/main.bicep --outfile src/deploy/bicep/main.json` |
+| Version stamping or release contract `Fail` | A workflow or a consumer of the release assets changed. Report it; fixing it is a code change the user approves. |
+
+Then read the target notes of all in-scope streams side by side; the script cannot check these:
+1. Minimum versions agree in both directions and match the Version Compatibility row.
+2. Every note gives the same upgrade order (Backend/IaC, Media Builder, Client) with the same tags.
+3. Each contract change since the last tags names the backend version the consuming stream needs.
+4. If the Client changed how it talks to the backend, the notes and *Release-Specific Steps* say
+   to regenerate boot images and from which version.
+5. If the Client needs a newer backend, its notes say to release and deploy the backend first,
+   because a stable Client tag reaches Media Builder's *Automatic download* immediately.
+
+### 7. Pre-release gates
 Run and report each; stop on failure:
 1. VS Code task **Release: Verify no secrets/config committed**.
 2. If `src/deploy/bicep/**` changed: `az bicep build --file src/deploy/bicep/main.bicep --outfile src/deploy/bicep/main.json`.
@@ -120,10 +182,12 @@ Run and report each; stop on failure:
    - Client: `-Project 'src/CloudImaging.Client/CloudImaging.Client.csproj'`
    - Media Builder: `-Project 'src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj'`
 4. Grep changed notes and docs for em dashes and spec identifiers.
+5. The check script with the confirmed versions reports no `Fail`, and every `Warning` is fixed
+   or accepted by the user.
 
-CI is checked after the merge in step 7, because that is the commit that gets tagged.
+CI is checked after the merge in step 8, because that is the commit that gets tagged.
 
-### 7. Pull request, merge, CI
+### 8. Pull request, merge, CI
 1. Ask the user, then open a pull request with only the release files using the
    `git-commit-pr` skill (branch e.g. `release/<stream>-v<ver>`).
 2. Tags are pushed only after the PR is merged. Wait for the user to confirm the merge, then
@@ -132,7 +196,7 @@ CI is checked after the merge in step 7, because that is the commit that gets ta
 3. CI on the merged commit: `gh run list --workflow ci.yml --branch main --limit 5` must show
    success for `origin/main`'s head. CI does not gate tags on its own.
 
-### 8. Push tags in dependency order
+### 9. Push tags in dependency order
 Order: **Backend/IaC, then Media Builder, then Client.** The backend must exist before tools that
 call it; the Client goes last because a stable Client tag moves `mse-ci-client-latest`, which
 Media Builder's *Automatic download* picks up immediately.
@@ -148,13 +212,13 @@ On failure: `gh run view <id> --log-failed`. Missing notes or a vulnerability hi
 builds **the tag's commit**. If the fix must be in the build, moving the tag is destructive: ask
 before deleting and re-creating it.
 
-### 9. Verify the releases
+### 10. Verify the releases
 - `gh release view <tag>`: assets match the notes' artifact table, `SHA256SUMS` present, not
   marked as prerelease.
 - The alias release (`mse-ci-iac-latest`, `mse-ci-client-latest`) points at the new commit
   (`git ls-remote --tags origin <alias>`).
 
-### 10. After release
+### 11. After release
 - Update repository memory (`/memories/repo/releases.md`): released version per stream, date,
   and any release gotcha met on the way (failed gate, missing note, re-run).
 - Summarise: tags pushed, release URLs, notes files, docs changed, and any manual steps

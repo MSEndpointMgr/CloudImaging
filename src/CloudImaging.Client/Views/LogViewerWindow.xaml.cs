@@ -125,8 +125,8 @@ public partial class LogViewerWindow : FluentWindow
     {
         var path = LoggingConfiguration.CurrentLogFilePath;
 
-        // Day-rollover or the file not existing yet when the window was first opened — reload
-        // from scratch so the viewer picks up the newly-active file.
+        // Day-rollover, a size rollover to the next _NNN file, or the file not existing yet when the
+        // window was first opened: reload from scratch so the viewer picks up the newly-active file.
         if (path != _loadedPath || !File.Exists(path))
         {
             LoadLog();
@@ -137,8 +137,8 @@ public partial class LogViewerWindow : FluentWindow
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
-            // File shrank (rolled over to a new sequence file, or was cleared) — the byte offset
-            // we were tailing from no longer means anything, so reload the tail from scratch.
+            // File shrank (cleared): the byte offset we were tailing from no longer means anything,
+            // so reload the tail from scratch.
             if (stream.Length < _readPosition)
             {
                 LoadLog();

@@ -22,7 +22,7 @@
 
 Both endpoints sit behind the existing device middleware: mTLS boot media certificate,
 `DeviceSessionTokenValidationMiddleware` (Bearer device session token; the session id in the route
-must match the token's, else 403) and `RateLimitingMiddleware` (10 calls per 30 seconds per token,
+must match the token's, else 403) and `RateLimitingMiddleware` (30 calls per 30 seconds per token,
 shared with every session call). Both get entries in `DeviceGatewayApi/OpenApi/OpenApiConfig.cs`
 and contract tests in `tests/CloudImaging.DeviceGatewayApi.Tests/Contracts/`.
 
@@ -110,6 +110,7 @@ Implemented in `Client/Services/DeviceGatewayApiClient.cs` (`GetSetupProfileAsyn
 | Content download | Before Format disk | Blob storage, not the Gateway; not rate limited |
 | Prepare setup progress | During the step | 2 plus at most one per 10 seconds |
 
-The existing budget note in `ImagingProgressReporter` (about 7 of 10 calls per window) holds: the
+The budget note in `ImagingProgressReporter` holds within 30 calls per window (10 until
+2026-11-14, which the step reports at the end of imaging exceeded): the
 descriptor call happens during the assignment wait's quiet period, and the step's reports replace,
 not add to, the throttled percent reports of the previous step.

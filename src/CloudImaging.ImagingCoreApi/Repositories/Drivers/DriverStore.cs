@@ -54,7 +54,15 @@ public sealed class DriverStore
         CustomTargets = new(tables, DriverTables.CustomTargets);
         Replacements = new(tables, DriverTables.Replacements);
         CustomUploads = new(tables, DriverTables.CustomUploads);
+        Firmware = new(tables, DriverTables.Firmware);
+        FirmwareVersions = new(tables, DriverTables.FirmwareVersions);
     }
+
+    /// <summary>BIOS per model and platform (PK model id, RK platform id).</summary>
+    public DriverJsonTable<DriverFirmwareRecord> Firmware { get; }
+
+    /// <summary>BIOS versions devices got (PK model and platform, RK inverted ticks).</summary>
+    public DriverJsonTable<DriverFirmwareVersionRecord> FirmwareVersions { get; }
 
     /// <summary>Custom components (PK <c>custom</c>, RK custom id).</summary>
     public DriverJsonTable<DriverCustomComponentRecord> CustomComponents { get; }
@@ -126,6 +134,8 @@ public sealed class DriverStore
         await CustomTargets.EnsureExistsAsync(ct);
         await Replacements.EnsureExistsAsync(ct);
         await CustomUploads.EnsureExistsAsync(ct);
+        await Firmware.EnsureExistsAsync(ct);
+        await FirmwareVersions.EnsureExistsAsync(ct);
     }
 
     /// <summary>Reads the settings row, or the defaults when it does not exist yet.</summary>

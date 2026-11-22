@@ -159,6 +159,19 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(StepSubtitle));
     }
 
+    /// <summary>Shows Update Firmware before Apply Recovery Image, once the session turns out to have a BIOS update.</summary>
+    public void ShowUpdateFirmware()
+    {
+        if (Steps.Any(s => s.Step == ImagingStepName.UpdateFirmware))
+        {
+            return;
+        }
+
+        var recovery = Steps.ToList().FindIndex(s => s.Step == ImagingStepName.ApplyRecoveryImage);
+        Steps.Insert(recovery < 0 ? Steps.Count : recovery, new ProgressStepItem(ImagingStepName.UpdateFirmware, "Update Firmware"));
+        OnPropertyChanged(nameof(StepSubtitle));
+    }
+
     /// <summary>Overall pipeline progress, 0-100, shown over the progress ring.</summary>
     public int OverallPercent
     {
@@ -201,6 +214,8 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
 
             _stepPercent = clamped;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(StepPercentText));
+            OnPropertyChanged(nameof(HasStepPercentText));
         }
     }
 
@@ -222,11 +237,22 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
             _transferDetail = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasTransferDetail));
+            OnPropertyChanged(nameof(StepPercentText));
+            OnPropertyChanged(nameof(HasStepPercentText));
         }
     }
 
     /// <summary>True when <see cref="TransferDetail"/> has a value, controlling whether the caption is shown.</summary>
     public bool HasTransferDetail => !string.IsNullOrEmpty(TransferDetail);
+
+    /// <summary>
+    /// The step's own percentage, right-aligned under the step bar: the same number the portal shows
+    /// on the step. Null until the step reports progress or starts a transfer.
+    /// </summary>
+    public string? StepPercentText => StepPercent > 0 || TransferDetail is not null ? $"{StepPercent}%" : null;
+
+    /// <summary>True when <see cref="StepPercentText"/> has a value.</summary>
+    public bool HasStepPercentText => StepPercentText is not null;
 
     /// <summary>Current headline status text, appended to <see cref="LogText"/> on every change.</summary>
     public string StatusMessage
@@ -261,7 +287,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
         ?? Steps.LastOrDefault(s => s.State is ProgressStepState.Done or ProgressStepState.Warning)?.Label
         ?? Steps[0].Label;
 
-    /// <summary>"Step X of 5, elapsed mm:ss" shown under the title.</summary>
+    /// <summary>"Step X of 6, elapsed mm:ss" shown under the title.</summary>
     public string StepSubtitle => $"Step {CurrentStepNumber} of {Steps.Count}, elapsed {ElapsedText}";
 
     /// <summary>Wall-clock time since this view model was created (i.e. since imaging started),

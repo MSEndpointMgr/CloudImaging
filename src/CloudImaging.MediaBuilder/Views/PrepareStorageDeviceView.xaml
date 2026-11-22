@@ -237,12 +237,7 @@
                                   Visibility="{Binding DriverSets.HasSets, Converter={StaticResource BoolToVisibility}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,4,0,0">
-                                    <TextBlock Text="{Binding VendorName}"
-                                               Style="{StaticResource CaptionTextBlockStyle}"
-                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                               Margin="0,4,0,2" />
-                                    <ItemsControl ItemsSource="{Binding Rows}">
+                                <ItemsControl ItemsSource="{Binding Rows}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid Margin="0,2">
@@ -264,26 +259,28 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock Text="{Binding DriverSets.Summary}"
                                Style="{StaticResource CaptionTextBlockStyle}"
                                Margin="0,12,0,0"
-                               TextWrapping="Wrap" />
+                               TextWrapping="Wrap"
+                               Visibility="{Binding DriverSets.HasSummary, Converter={StaticResource BoolToVisibility}}" />
                     <ui:InfoBar Title="Less space for OS images"
                                 Message="Less than 20 GB stays free for OS images. Larger images are then downloaded every time instead of cached."
                                 Severity="Warning"
                                 IsOpen="{Binding DriverSets.ShowLowSpaceWarning}"
                                 IsClosable="False"
-                                Margin="0,12,0,0" />
+                                Margin="0,12,0,0"
+                                Visibility="{Binding DriverSets.ShowLowSpaceWarning, Converter={StaticResource BoolToVisibility}}" />
                     <ui:InfoBar Title="Driver sets do not fit"
                                 Message="{Binding DriverSetsDoNotFitMessage}"
                                 Severity="Error"
                                 IsOpen="{Binding DriverSets.DoesNotFit}"
                                 IsClosable="False"
-                                Margin="0,12,0,0" />
+                                Margin="0,12,0,0"
+                                Visibility="{Binding DriverSets.DoesNotFit, Converter={StaticResource BoolToVisibility}}" />
                 </StackPanel>
             </ui:Card>
 

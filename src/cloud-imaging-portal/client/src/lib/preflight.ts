@@ -1,11 +1,11 @@
-import { CircuitBoard, Cpu, Fingerprint, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { CircuitBoard, Cpu, Fingerprint, PlugZap, ShieldCheck, type LucideIcon } from 'lucide-react';
 
 /**
  * Pre-flight check display text. Mirrors `PreFlightCheckText` in CloudImaging.Contracts, which the
  * device shows and logs; change both together so the portal and the device read the same.
  */
 
-export type PreFlightCheckName = 'AutopilotPresence' | 'FirmwareMode' | 'SecureBoot' | 'TpmVersion';
+export type PreFlightCheckName = 'AutopilotPresence' | 'FirmwareMode' | 'SecureBoot' | 'TpmVersion' | 'AcPower';
 export type PreFlightCheckOutcome = 'Passed' | 'Failed' | 'NotRequired' | 'Approved';
 
 export interface PreFlightCheckResult {
@@ -53,7 +53,7 @@ export function isPreFlightSettingsValid(s: PreFlightSettings): boolean {
 }
 
 /** Display order everywhere: chip strips, tiles, the device screen. */
-export const PRE_FLIGHT_CHECKS: readonly PreFlightCheckName[] = ['AutopilotPresence', 'FirmwareMode', 'SecureBoot', 'TpmVersion'];
+export const PRE_FLIGHT_CHECKS: readonly PreFlightCheckName[] = ['AutopilotPresence', 'FirmwareMode', 'SecureBoot', 'TpmVersion', 'AcPower'];
 
 /**
  * Sessions for the Blocked tab. A blocked session leaves it once an administrator approves it:
@@ -69,6 +69,7 @@ const NAMES: Record<PreFlightCheckName, string> = {
   FirmwareMode: 'Firmware mode',
   SecureBoot: 'Secure Boot',
   TpmVersion: 'TPM version',
+  AcPower: 'AC power',
 };
 
 export const PRE_FLIGHT_ICONS: Record<PreFlightCheckName, LucideIcon> = {
@@ -76,6 +77,7 @@ export const PRE_FLIGHT_ICONS: Record<PreFlightCheckName, LucideIcon> = {
   FirmwareMode: CircuitBoard,
   SecureBoot: ShieldCheck,
   TpmVersion: Cpu,
+  AcPower: PlugZap,
 };
 
 const VALUES: Record<string, string> = {
@@ -92,6 +94,8 @@ const VALUES: Record<string, string> = {
   Tpm20: 'Version 2.0 or above',
   Tpm12: 'Version 1.2',
   NotDetected: 'Not detected',
+  Ac: 'Connected',
+  Battery: 'On battery',
   Unknown: 'Could not be detected',
 };
 
@@ -100,6 +104,7 @@ const FIXES: Record<PreFlightCheckName, string> = {
   FirmwareMode: 'Switch to UEFI in firmware settings.',
   SecureBoot: 'Enable Secure Boot in firmware settings.',
   TpmVersion: 'Enable the TPM in firmware settings.',
+  AcPower: 'Connect the AC adapter. The device gets a BIOS update at the end of imaging.',
 };
 
 export function preFlightCheckName(check: PreFlightCheckName): string {
@@ -117,12 +122,15 @@ export function preFlightFixHint(check: PreFlightCheckName, observed: string): s
   return FIXES[check] ?? '';
 }
 
-/** The session's results in display order, with any check the backend did not report left out. */
+/**
+ * The session's results in display order, with any check the backend did not report left out.
+ * AC power only matters for a device that gets a BIOS update, so it shows only when it was required.
+ */
 export function orderedChecks(checks: readonly PreFlightCheckResult[] | null | undefined): PreFlightCheckResult[] {
   if (!checks) return [];
   return PRE_FLIGHT_CHECKS
     .map(name => checks.find(c => c.check === name))
-    .filter((c): c is PreFlightCheckResult => c !== undefined);
+    .filter((c): c is PreFlightCheckResult => c !== undefined && !(c.check === 'AcPower' && c.outcome === 'NotRequired'));
 }
 
 /** "Name: value" for a chip's tooltip and accessible name. */

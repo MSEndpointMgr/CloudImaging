@@ -5,10 +5,13 @@ import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/Confi
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { MoreMenu, type MoreMenuItem } from '../components/ui/more-menu.tsx';
 import { SearchInput } from '../components/ui/search-input.tsx';
 import { Select } from '../components/ui/select.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
+import { Banner } from '../components/drivers/Banner.tsx';
+import { FirmwareTab } from '../components/drivers/FirmwareTab.tsx';
 import { WindowsReleasesDialog } from '../components/drivers/WindowsReleasesDialog.tsx';
 import { ComponentTable } from '../components/drivers/ComponentTable.tsx';
 import { RollBackComponentDialog } from '../components/drivers/RollBackComponentDialog.tsx';
@@ -26,6 +29,14 @@ import {
 } from '../lib/drivers.ts';
 
 const ALL = 'all';
+
+/** The tabs of a model page, kept in `?view=` so a link or a reload opens the same tab. */
+type ModelView = 'drivers' | 'firmware';
+
+const MODEL_VIEWS: readonly { key: ModelView; label: string }[] = [
+  { key: 'drivers', label: 'Drivers' },
+  { key: 'firmware', label: 'Firmware' },
+];
 
 /** How often the page is read again while a build, download or check is under way. */
 export const MODEL_POLL_MS = 15_000;
@@ -82,28 +93,6 @@ function checkBlockedText(page: ModelPage, now: number): string | null {
   }
 }
 
-type BannerTone = 'neutral' | 'warning' | 'info';
-
-const BANNER_TONES: Record<BannerTone, { box: string; icon: string }> = {
-  neutral: { box: 'border-border bg-muted/30', icon: 'text-muted-foreground' },
-  warning: { box: 'border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40', icon: 'text-amber-600 dark:text-amber-400' },
-  info: { box: 'border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40', icon: 'text-blue-600 dark:text-blue-400' },
-};
-
-/** A banner under the header: icon centred on its text, actions on the right. */
-function Banner({ icon, title, detail, tone = 'neutral', children }: { icon: React.ReactNode; title: string; detail: string; tone?: BannerTone; children?: React.ReactNode }): React.ReactElement {
-  return (
-    <div role="status" className={`flex items-center gap-4 rounded-lg border px-4 py-3 ${BANNER_TONES[tone].box}`}>
-      <span className={`shrink-0 ${BANNER_TONES[tone].icon}`}>{icon}</span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{title}</p>
-        <p className="text-sm text-muted-foreground">{detail}</p>
-      </div>
-      {children}
-    </div>
-  );
-}
-
 /** The colour each action's tile carries, so the tiles read as a key for the Action column. */
 const ACTION_DOT: Record<DriverAction, string> = {
   Offline: 'bg-blue-400',
@@ -130,6 +119,7 @@ export default function DriverModelPage(): React.ReactElement {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const release = (searchParams.get('release') ?? undefined) as WindowsRelease | undefined;
+  const view: ModelView = searchParams.get('view') === 'firmware' ? 'firmware' : 'drivers';
   const { canManageDrivers } = useAuth();
   const { notify } = useToast();
   const [page, setPage] = useState<ModelPage | null>(null);
@@ -150,6 +140,13 @@ export default function DriverModelPage(): React.ReactElement {
   const [customModels, setCustomModels] = useState<DriverModelRow[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const request = useRef(0);
+
+  // The tab and the release are both in the address; changing one keeps the other.
+  const setParam = (key: 'release' | 'view', value: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set(key, value);
+    setSearchParams(next, { replace: true });
+  };
 
   // Only the latest read is applied, so a slow answer for another release never replaces the current one.
   const load = useCallback(async () => {
@@ -355,7 +352,7 @@ export default function DriverModelPage(): React.ReactElement {
     setEditingReleases(false);
     notify({ status: 'success', title: `Windows releases of ${model.displayName} saved.` });
     if (releases.includes(page.release)) void load();
-    else setSearchParams({ release: releases[0] }, { replace: true });
+    else setParam('release', releases[0]);
   };
 
   const openAddCustom = async () => {
@@ -420,6 +417,16 @@ export default function DriverModelPage(): React.ReactElement {
   const nextSet = page.pendingVersion ?? (page.setVersion ?? 0) + 1;
   const waitingApproval = page.components.filter(c => c.state === 'WaitingForApproval').length;
 
+  // Everyday work is Check for updates; the rest of the model's actions wait in the More menu. The
+  // Firmware tab has no release or driver set, so its menu holds only Remove model.
+  const removeItem: MoreMenuItem = { label: 'Remove model', icon: Trash2, onSelect: () => open({ kind: 'removeModel' }), destructive: true };
+  const menuItems: MoreMenuItem[] = view === 'firmware' ? [removeItem] : [
+    { label: 'Add custom component', icon: Plus, onSelect: () => void openAddCustom() },
+    { label: 'Windows releases', icon: Monitor, onSelect: () => setEditingReleases(true) },
+    { label: 'Roll back driver set', icon: Undo2, onSelect: () => open({ kind: 'rollback' }), disabled: !previousSet, hint: rollBackHint },
+    removeItem,
+  ];
+
   return (
     <div className="space-y-6">
       <div>
@@ -428,43 +435,55 @@ export default function DriverModelPage(): React.ReactElement {
           <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
           <span className="truncate">{model.displayName}</span>
         </nav>
-        {/* The title grows from its natural width, so the buttons wrap to their own row when both do not fit. */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex min-w-0 grow items-center gap-3">
-            <h2 className="min-w-0 break-words text-xl font-semibold">{model.displayName}</h2>
-            <Badge variant="outline" className="shrink-0">{matchKeyLabel(model.vendor, model.matchKeys)}</Badge>
-          </div>
+        {/* One row: a long model name is cut off, never pushed onto a second line by the actions. */}
+        <div className="flex items-center gap-3">
+          <h2 className="min-w-0 truncate text-xl font-semibold" title={model.displayName}>{model.displayName}</h2>
+          <Badge variant="outline" className="shrink-0">{matchKeyLabel(model.vendor, model.matchKeys)}</Badge>
           {canManageDrivers && (
-            <div className="flex flex-wrap gap-2">
-              <Tooltip content={blocked ?? 'Checks this model for new component versions.'}>
+            <div className="ml-auto flex shrink-0 gap-2">
+              <Tooltip content={blocked ?? 'Checks this model for new component and BIOS versions.'}>
                 <span>
-                  <Button variant="outline" onClick={() => void check()} disabled={blocked !== null} loading={busy === 'check'}><RefreshCw />Updates</Button>
+                  <Button variant="outline" onClick={() => void check()} disabled={blocked !== null} loading={busy === 'check'}><RefreshCw />Check for updates</Button>
                 </span>
               </Tooltip>
-              <Tooltip content="Adds your own driver package to this model, alongside or instead of a vendor component.">
-                <Button variant="outline" onClick={() => void openAddCustom()}><Plus />Add component</Button>
-              </Tooltip>
-              <Tooltip content="Chooses the Windows releases this model gets drivers for.">
-                <Button variant="outline" onClick={() => setEditingReleases(true)}><Monitor />Windows releases</Button>
-              </Tooltip>
-              <Tooltip content={rollBackHint}>
-                <span>
-                  <Button variant="outline" onClick={() => open({ kind: 'rollback' })} disabled={!previousSet}><Undo2 />Roll back</Button>
-                </span>
-              </Tooltip>
-              <Tooltip content="Removes this model and its driver sets.">
-                <Button variant="outline" onClick={() => open({ kind: 'removeModel' })}><Trash2 />Remove</Button>
-              </Tooltip>
+              <MoreMenu items={menuItems} />
             </div>
           )}
         </div>
       </div>
 
-      {model.state === 'Draft' ? (
-        <Banner tone="warning" icon={<CircleDashed className="h-5 w-5" aria-hidden="true" />} title="Onboarding is not complete. Nothing is downloaded and devices of this model get no drivers until you complete it." detail="Choose what each component does below. Downloading starts when you complete onboarding.">
+      <div className="border-b border-border">
+        <nav className="flex gap-1" role="tablist" aria-label="Model areas">
+          {MODEL_VIEWS.map(tab => (
+            <button
+              key={tab.key}
+              id={`model-tab-${tab.key}`}
+              type="button"
+              role="tab"
+              aria-selected={view === tab.key}
+              aria-controls={`model-panel-${tab.key}`}
+              onClick={() => setParam('view', tab.key)}
+              className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${view === tab.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {model.state === 'Draft' && (
+        <Banner tone="warning" icon={<CircleDashed className="h-5 w-5" aria-hidden="true" />} title="Onboarding is not complete. Nothing is downloaded and devices of this model get no drivers or BIOS updates until you complete it." detail="Choose what each component does. Downloading starts when you complete onboarding.">
           {canManageDrivers && <Button onClick={() => void complete()} loading={busy === 'complete'}><Check />Complete onboarding</Button>}
         </Banner>
+      )}
+
+      {view === 'firmware' ? (
+        <div id="model-panel-firmware" role="tabpanel" aria-labelledby="model-tab-firmware">
+          <FirmwareTab modelId={model.modelId} vendor={model.vendor} canManage={canManageDrivers} />
+        </div>
       ) : (
+      <div id="model-panel-drivers" role="tabpanel" aria-labelledby="model-tab-drivers" className="space-y-6">
+      {model.state === 'Draft' ? null : (
         <>
           {waitingApproval > 0 && (
             <Banner
@@ -538,7 +557,7 @@ export default function DriverModelPage(): React.ReactElement {
         <SearchInput value={search} onValueChange={setSearch} placeholder="Search components" aria-label="Search components" wrapperClassName="w-[260px]" />
         <Select
           value={page.release}
-          onValueChange={value => setSearchParams({ release: value }, { replace: true })}
+          onValueChange={value => setParam('release', value)}
           options={model.releases.map(r => ({ value: r, label: releaseLabel(r) }))}
           aria-label="Windows release"
           wrapperClassName="w-[230px]"
@@ -551,6 +570,8 @@ export default function DriverModelPage(): React.ReactElement {
       </div>
 
       <ComponentTable components={components.filter(c => !isLockedAway(c))} total={page.components.filter(c => !isLockedAway(c)).length} locked={components.filter(isLockedAway)} editing={editing} history={history} />
+      </div>
+      )}
 
       {customModels && (
         <AddCustomComponentDialog

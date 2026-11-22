@@ -17,6 +17,9 @@ public partial class App : System.Windows.Application
     /// <summary>True in a headless elevated-worker process, where a fatal-error dialog would be orphaned.</summary>
     private bool _isElevatedWorkerMode;
 
+    /// <summary>Set once the app is exiting; errors raised by runtime teardown after that are logged, never shown.</summary>
+    private bool _isShuttingDown;
+
     /// <inheritdoc/>
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -34,6 +37,9 @@ public partial class App : System.Windows.Application
             ReportFatal(args.Exception, "UnobservedTaskException");
             args.SetObserved();
         };
+
+        // Disposed at process exit rather than in OnExit, so errors raised while the runtime tears down still reach the log.
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => _logger?.Dispose();
 
         try
         {
@@ -168,10 +174,12 @@ public partial class App : System.Windows.Application
     /// </summary>
     private void ReportFatal(Exception? ex, string source)
     {
+        var duringShutdown = _isShuttingDown || Dispatcher.HasShutdownStarted;
         try
         {
-            Serilog.Log.Logger?.Fatal(ex, "Unhandled exception ({Source}).", source);
-            _logger?.Dispose();
+            Serilog.Log.Logger?.Fatal(ex, "Unhandled exception ({Source}{Phase}).", source, duringShutdown ? ", during shutdown" : string.Empty);
+            if (!duringShutdown)
+                _logger?.Dispose();
         }
         catch
         {
@@ -179,22 +187,24 @@ public partial class App : System.Windows.Application
         }
 
         // The parent window reports a dead worker itself (stalled-worker detection); log only.
-        if (_isElevatedWorkerMode)
+        // After the window has closed there is nothing left to interrupt, so a dialog would only confuse.
+        if (_isElevatedWorkerMode || duringShutdown)
             return;
 
+        var atStartup = source == "OnStartup";
         try
         {
             // Marshal onto the UI thread: this can be invoked from AppDomain.UnhandledException
             // or TaskScheduler.UnobservedTaskException, neither of which guarantee the calling
             // thread is the UI thread ShowDialog() requires.
-            Dispatcher.Invoke(() => new FatalErrorWindow(ex).ShowDialog());
+            Dispatcher.Invoke(() => new FatalErrorWindow(ex, atStartup).ShowDialog());
         }
         catch
         {
             // Last-resort fallback if the custom window itself couldn't be shown — a native
             // MessageBox needs nothing but Win32 to render, so the failure is never silent.
             System.Windows.MessageBox.Show(
-                $"Cloud Imaging Media Builder failed to start.\n\n{ex?.Message}\n\n{ex}",
+                $"{FatalErrorWindow.Heading(atStartup)}.\n\n{ex?.Message}\n\n{ex}",
                 "Cloud Imaging Media Builder",
                 System.Windows.MessageBoxButton.OK,
                 System.Windows.MessageBoxImage.Error);
@@ -204,7 +214,7 @@ public partial class App : System.Windows.Application
     /// <inheritdoc/>
     protected override void OnExit(ExitEventArgs e)
     {
-        _logger?.Dispose();
+        _isShuttingDown = true;
         base.OnExit(e);
     }
 

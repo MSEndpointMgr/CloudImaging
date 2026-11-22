@@ -40,6 +40,7 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     private readonly string? _errorDetail;
     private readonly Action _navigateToStart;
     private readonly Action? _restartSystem;
+    private readonly Func<bool>? _holdRestart;
     private readonly DispatcherTimer? _restartTimer;
     private int _restartCountdownSecondsRemaining = RestartCountdownDurationSeconds;
 
@@ -54,13 +55,15 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
         Guid? sessionId = null,
         IReadOnlyList<PreFlightCheckResult>? preFlightChecks = null,
         Action? tryAgain = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        Func<bool>? holdRestart = null)
     {
         _outcome = outcome;
         _deviceSerialNumber = deviceSerialNumber;
         _errorDetail = errorDetail;
         _navigateToStart = navigateToStart;
         _restartSystem = restartSystem;
+        _holdRestart = holdRestart;
         SessionId = sessionId;
 
         // Only requirements that were switched on are shown; a switched-off check blocks nothing.
@@ -152,6 +155,12 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
     public static string WarningsMessage(int failedItems) =>
         $"Imaging completed with warnings. {failedItems} setup item{(failedItems == 1 ? "" : "s")} failed; see the deployment timeline in the portal.";
 
+    /// <summary>The success note when the BIOS flashes at the coming restart.</summary>
+    public const string FirmwareStagedMessage = "The BIOS updates during the restart. Keep the device on AC power and don't turn it off.";
+
+    /// <summary>The success note when the BIOS was skipped or could not be staged.</summary>
+    public const string FirmwareNotUpdatedMessage = "The BIOS was not updated; see the deployment timeline in the portal.";
+
     /// <summary>Identifier of the session this outcome is for.</summary>
     public Guid? SessionId { get; }
 
@@ -194,6 +203,13 @@ public sealed partial class ResultsViewModel : INotifyPropertyChanged
 
     private void OnRestartTimerTick(object? sender, EventArgs e)
     {
+        // A window over this screen (the log viewer) hides the countdown, so it starts over once that window closes.
+        if (_holdRestart?.Invoke() == true)
+        {
+            RestartCountdownSecondsRemaining = RestartCountdownDurationSeconds;
+            return;
+        }
+
         RestartCountdownSecondsRemaining--;
         if (RestartCountdownSecondsRemaining > 0)
         {

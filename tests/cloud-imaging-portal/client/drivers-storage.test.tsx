@@ -196,6 +196,12 @@ function renderModel(path = `/drivers/models/${modelId}`): void {
   );
 }
 
+/** Opens the model page's More menu and returns one of its entries. */
+async function menuItem(name: string): Promise<HTMLButtonElement> {
+  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }));
+  return screen.getByRole('menuitem', { name }) as HTMLButtonElement;
+}
+
 describe('Drivers: model page roll back and removal', () => {
   it('rolls back the driver set through an overlay that names both sets, and returns focus on cancel', async () => {
     const calls: string[] = [];
@@ -205,12 +211,9 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    const button = await screen.findByRole('button', { name: 'Roll back' });
-    fireEvent.focus(button.parentElement!);
-    expect(await screen.findByText('Devices get driver set 6 instead of 7 from their next deployment')).toBeTruthy();
-    fireEvent.blur(button.parentElement!);
-    button.focus();
-    fireEvent.click(button);
+    const item = await menuItem('Roll back driver set');
+    expect(screen.getByText('Devices get driver set 6 instead of 7 from their next deployment')).toBeTruthy();
+    fireEvent.click(item);
     const dialog = screen.getByRole('dialog', { name: 'Roll back to driver set 6?' });
     expect(within(dialog).getByText('Devices imaged from now on get driver set 6. Running deployments keep the set they started with. The next sync does not reinstate set 7.')).toBeTruthy();
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -218,9 +221,9 @@ describe('Drivers: model page roll back and removal', () => {
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Roll back' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(document.activeElement).toBe(button);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'More actions' }));
 
-    fireEvent.click(button);
+    fireEvent.click(await menuItem('Roll back driver set'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Roll back' }));
 
     await waitFor(() => expect(calls).toEqual(['rollback']));
@@ -232,10 +235,9 @@ describe('Drivers: model page roll back and removal', () => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: page({ hasPreviousSet: false, previousSetVersion: null }) } });
     renderModel();
 
-    const button = await screen.findByRole('button', { name: 'Roll back' }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    fireEvent.focus(button.parentElement!);
-    expect(await screen.findByText('No previous driver set to roll back to')).toBeTruthy();
+    const item = await menuItem('Roll back driver set');
+    expect(item.disabled).toBe(true);
+    expect(screen.getByText('No previous driver set to roll back to')).toBeTruthy();
   });
 
   it('removes a model after showing what is deleted, freed and kept', async () => {
@@ -247,7 +249,7 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    fireEvent.click(await menuItem('Remove model'));
     const dialog = screen.getByRole('dialog', { name: 'Remove HP EliteBook 840 G11?' });
     expect(within(dialog).getByText('Devices of this model imaged from now on get no drivers from Cloud Imaging. Running deployments keep their driver set.')).toBeTruthy();
     expect(await within(dialog).findByText('Deleted: 2 driver sets, 3 overrides')).toBeTruthy();
@@ -281,7 +283,7 @@ describe('Drivers: model page roll back and removal', () => {
     expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['Windows 11, version 24H2', 'Windows 11, version 25H2']);
     fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Windows releases' }));
+    fireEvent.click(await menuItem('Windows releases'));
     const dialog = await screen.findByRole('dialog', { name: 'Windows releases' });
     const list = await within(dialog).findByRole('list', { name: 'Windows releases' });
     expect(within(list).getAllByRole('checkbox').length).toBe(3);
@@ -311,11 +313,11 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Windows releases' }));
+    fireEvent.click(await menuItem('Windows releases'));
     const dialog = await screen.findByRole('dialog', { name: 'Windows releases' });
     const only = await within(dialog).findByRole('checkbox', { name: 'Windows 11, version 24H2' }) as HTMLButtonElement;
     expect(only.disabled).toBe(true);
-    expect(within(dialog).getByText('The last release stays. Use Remove to remove the model.')).toBeTruthy();
+    expect(within(dialog).getByText('The last release stays. Use Remove model to remove the model.')).toBeTruthy();
   });
 
   it('removing a model removes the whole model', async () => {
@@ -325,7 +327,7 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    fireEvent.click(await menuItem('Remove model'));
     expect(await screen.findByRole('dialog', { name: 'Remove HP EliteBook 840 G11?' })).toBeTruthy();
     expect(screen.queryByRole('group', { name: 'What to remove' })).toBeNull();
   });
@@ -355,8 +357,7 @@ describe('Drivers: model page roll back and removal', () => {
     renderModel();
 
     await screen.findByText('Withdrawn');
-    expect(screen.queryByRole('button', { name: 'Roll back' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull();
     fireEvent.click(screen.getByRole('combobox', { name: 'Windows release' }));
     expect(screen.queryByRole('group', { name: 'Add to this model' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Remove release' })).toBeNull();

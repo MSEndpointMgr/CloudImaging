@@ -470,20 +470,12 @@ public sealed class PrepareStorageDeviceViewModel : INotifyPropertyChanged, IDis
             _resultFilePath = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasResultFilePath));
-            OnPropertyChanged(nameof(ResultFileName));
-            OnPropertyChanged(nameof(ResultFolder));
             CommandManager.InvalidateRequerySuggested();
         }
     }
 
     /// <summary>True when <see cref="ResultFilePath"/> has a value.</summary>
     public bool HasResultFilePath => ResultFilePath is not null;
-
-    /// <summary>File name part of <see cref="ResultFilePath"/>.</summary>
-    public string? ResultFileName => ResultFilePath is null ? null : Path.GetFileName(ResultFilePath);
-
-    /// <summary>Folder part of <see cref="ResultFilePath"/>.</summary>
-    public string? ResultFolder => ResultFilePath is null ? null : Path.GetDirectoryName(ResultFilePath);
 
     /// <summary>Icon for the output file row in the result dialog.</summary>
     public Wpf.Ui.Controls.SymbolRegular ResultFileSymbol { get; } = Wpf.Ui.Controls.SymbolRegular.Cd16;

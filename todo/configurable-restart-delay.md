@@ -17,10 +17,6 @@ situations that matter more:
 - **A deployment that succeeded but logged warnings**, where the detail disappears before anyone
   can act on it.
 
-Foundry OSD makes both the delay and the automatic restart itself configurable, and its own quick
-start tells first-time users to raise or disable it. That is a reasonable signal that the fixed
-value is wrong.
-
 ## What to build
 
 Two fields in **Configuration → Miscellaneous**, beside the existing numeric settings there:

@@ -300,7 +300,7 @@ A technician images twenty EliteBook 840 G11 devices at a branch office with a s
 
 - **FR-001**: The system MUST support HP and Dell business client catalogs as driver sources. Catalog reading, device match key, component classification, version lineage and where unpacking happens MUST be isolated per vendor, so that adding a vendor later (Lenovo) does not change policy, sync, storage, matching or the Client phases.
 - **FR-002**: Lenovo MUST be shown as an unsupported vendor (listed with a disabled Sync switch) and MUST NOT be onboardable. Microsoft Surface and any vendor without a machine-readable catalog MUST NOT be supported; the system MUST NOT scrape vendor web sites.
-- **FR-003**: BIOS, system firmware, TPM firmware, dock firmware and SSD firmware MUST be excluded entirely: never downloaded, never listed, never matched by rules. Exclusion MUST use the vendor's category or type (HP `BIOS*`, `Firmware`, dock firmware; Dell `FRMW`, `BIOS`) and MUST also exclude any component whose name contains "Firmware".
+- **FR-003**: BIOS, system firmware, TPM firmware, dock firmware and SSD firmware MUST be listed like any other component and MUST NOT be excluded by hardcoded category or name checks. Imaging Core MUST add four starting rules, all Skip: "BIOS" (all vendors, category `BIOS*`), "Firmware" (all vendors, category `Firmware*`), "Dock firmware" (HP, category `Dock - Firmware*`) and "TPM firmware" (HP, name `*Trusted Platform Module*Firmware*`). They MUST be added once, on a new install and on upgrade, recorded in the rule history as added by Cloud Imaging, and be editable like any rule; a deleted starting rule MUST NOT be added again, and a rule with the same name MUST be kept as it is. Category rules MUST accept `*` as a wildcard.
 - **FR-004**: OS images MUST remain unchanged by this feature; drivers MUST NOT be added to the stored OS image.
 
 #### Model catalog and onboarding
@@ -337,12 +337,13 @@ A technician images twenty EliteBook 840 G11 devices at a branch office with a s
   | `DPBCompliant = true`, `ContentTypes = Uwp`, not installable | Offline (drivers only, the app is not installed) | Skip |
   | `Software - *`, `DPBCompliant = false`, installable | Skip | Specialize |
   | `Driver - *`, `DPBCompliant = false`, installable | Specialize | Skip |
+  | `BIOS*`, `Firmware*`, `Dock - *`, `DPBCompliant = false`, installable | Skip | Specialize |
   | Not installable | Skip (locked) | |
   | `Diagnostic`, `Manageability*`, `OS`, `Utility` with `DPBCompliant = false` | Skip (locked) | |
 
   On HP ARM64 models Offline and Offline + Specialize MUST NOT be allowed, because HP's packages are x64 programs that the ARM64 boot environment cannot run. Defaults that would be either become Specialize, and Specialize runs the vendor package during the specialize pass.
 
-- **FR-017**: Dell defaults MUST be: 64-bit driver package (`DRVR`, `LW64`, including ARM64 packages) Offline; driver that bundles an app ("Driver and Application" in the name, or an app-type device entry) Offline + Specialize; 32-bit driver package (`LWXP`) Specialize; application (`APAC`) Skip, changeable to Specialize. 32-bit packages MUST NOT be offered Offline or Offline + Specialize.
+- **FR-017**: Dell defaults MUST be: 64-bit driver package (`DRVR`, `LW64`, including ARM64 packages) Offline; driver that bundles an app ("Driver and Application" in the name, or an app-type device entry) Offline + Specialize; 32-bit driver package (`LWXP`) Specialize; application (`APAC`), firmware (`FRMW`) and BIOS (`BIOS`) Skip, changeable to Specialize; any other type Skip (locked). 32-bit packages MUST NOT be offered Offline or Offline + Specialize.
 - **FR-018**: Version lineage MUST be vendor-specific: HP via the `Supersedes` attribute; Dell via the hardware component ID, falling back to the component name when absent. For Dell, only the newest package per lineage is used, and components that do not list the target Windows version (for example Windows 10 only) MUST be dropped.
 
 #### Policy: rules and overrides
@@ -396,7 +397,7 @@ A technician images twenty EliteBook 840 G11 devices at a branch office with a s
 - **FR-044**: Administrators MUST enter the Windows release of each OS image when uploading or editing it on the OS Images page, chosen from a list that names the Windows version too (for example "Windows 11, version 24H2"). The release is not read from the image. When the image has no release, or the matched model has no onboarded set for that release, the Install drivers step MUST be skipped with a warning; there is no fallback to another release.
 - **FR-045**: When a session is assigned an OS image, Imaging Core MUST match the device to an active onboarded model of the image's architecture (HP: any ID in the model's system ID list; Dell: system SKU), or take the model chosen for it (FR-080), select that model's current set for the image's release, and pin it on the session. The Device Gateway MUST only relay the pinned set to the Client. Later syncs, policy edits, roll backs and removals MUST NOT change a pinned set.
 - **FR-046**: Files of a pinned set MUST remain available until the session reaches a terminal state.
-- **FR-047**: The device MUST receive one time-limited, read-only link per component of its pinned set, issued with the pinned set and scoped to that component's file only. A retry of one component MUST NOT depend on another component's link. When a link expires before the component finishes, the Client MUST be able to request a new link for that component alone. Per-component progress MUST be aggregated by the Client so the step stays within the existing progress-report budget (10 calls per 30 seconds per session).
+- **FR-047**: The device MUST receive one time-limited, read-only link per component of its pinned set, issued with the pinned set and scoped to that component's file only. A retry of one component MUST NOT depend on another component's link. When a link expires before the component finishes, the Client MUST be able to request a new link for that component alone. Per-component progress MUST be aggregated by the Client so the step stays within the existing progress-report budget (30 calls per 30 seconds per session).
 
 #### Driver set choice when imaging starts
 

@@ -400,6 +400,9 @@ public sealed partial class DriverSyncService
             case DriverWorkKind.FinalizeRun:
                 await FinalizeRunAsync(message.RunId, ct);
                 break;
+            case DriverWorkKind.ResolveFirmware:
+                await RunStepAsync(message, () => ResolveFirmwareAsync(message, ct), ct);
+                break;
             default:
                 LogNoHandler(_logger, message.Kind);
                 break;
@@ -794,6 +797,7 @@ public sealed partial class DriverSyncService
         }, ct);
         return models
             .SelectMany(m => m.Releases.Select(release => new DriverWorkMessage { Kind = DriverWorkKind.ResolveModel, ModelId = m.ModelId, Release = release }))
+            .Concat(models.Where(DriverFirmwareService.Supports).Select(m => new DriverWorkMessage { Kind = DriverWorkKind.ResolveFirmware, ModelId = m.ModelId }))
             .ToList();
     }
 
@@ -872,6 +876,9 @@ public sealed partial class DriverSyncService
                 VerifiedAt = outcome.Succeeded ? _time.GetUtcNow() : null,
                 FailureReason = outcome.Reason,
                 AttemptedAt = now,
+
+                // BIOS catalogs publish no size; the stored file's size is what the portal shows.
+                Size = outcome.Succeeded && file.Size == 0 ? outcome.Size : file.Size,
             };
             await _store.Files.UpsertAsync(vendor.ToString(), fileKey, file, ct);
             if (outcome.Succeeded)
@@ -1387,6 +1394,8 @@ public sealed partial class DriverSyncService
         {
             referenced.UnionWith(blobs);
         }
+
+        referenced.UnionWith(await DriverFirmwareService.KeptBlobsAsync(_store, _sessions, settings.PreviousVersionsToKeep, ct));
 
         // A component roll back keeps its held version until it ends.
         var vendors = (await _models.ListAsync(ct)).ToDictionary(m => m.ModelId, m => m.Vendor);

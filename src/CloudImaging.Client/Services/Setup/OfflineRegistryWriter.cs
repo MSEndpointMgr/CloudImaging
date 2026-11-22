@@ -8,14 +8,13 @@ namespace CloudImaging.Client.Services.Setup;
 /// <summary>What happened to one registry value of the profile.</summary>
 public sealed record RegistryValueOutcome(int ProfileIndex, SetupRegistryValue Value, StepItemOutcome Outcome, string? Reason);
 
-/// <summary>Every value's outcome, plus what the SYSTEM hive said about the image.</summary>
-public sealed record OfflineRegistryWriteResult(IReadOnlyList<RegistryValueOutcome> Values, int? GeneralizationState);
+/// <summary>Every value's outcome.</summary>
+public sealed record OfflineRegistryWriteResult(IReadOnlyList<RegistryValueOutcome> Values);
 
 /// <summary>
 /// Writes a profile's registry values to the applied image. Each hive is loaded only when it has
-/// values (SYSTEM always, to clear <c>Setup\UnattendFile</c> and read the generalization state),
-/// written with every handle closed, and unloaded before the next one, so nothing is left mounted
-/// when the step moves on.
+/// values (SYSTEM always, to clear <c>Setup\UnattendFile</c>), written with every handle closed,
+/// and unloaded before the next one, so nothing is left mounted when the step moves on.
 /// </summary>
 public sealed partial class OfflineRegistryWriter(IOfflineRegistryHive hive, ILogger logger)
 {
@@ -31,7 +30,6 @@ public sealed partial class OfflineRegistryWriter(IOfflineRegistryHive hive, ILo
     public OfflineRegistryWriteResult Write(IReadOnlyList<SetupRegistryValue> values, string volumeRoot, bool stopAtFirstFailure, Action? onValueDone = null)
     {
         var outcomes = new List<RegistryValueOutcome>(values.Count);
-        int? generalizationState = null;
         var stopped = false;
 
         foreach (var current in HiveOrder)
@@ -79,7 +77,6 @@ public sealed partial class OfflineRegistryWriter(IOfflineRegistryHive hive, ILo
                     try
                     {
                         currentControlSet = hive.GetValue(current, "Select", "Current") is int selected and > 0 ? selected : 1;
-                        generalizationState = hive.GetValue(current, @"Setup\Status\SysprepStatus", "GeneralizationState") as int?;
 
                         // Windows setup prefers this value over Panther, so an image that carries
                         // one would ignore the answer file this step writes.
@@ -115,7 +112,7 @@ public sealed partial class OfflineRegistryWriter(IOfflineRegistryHive hive, ILo
             }
         }
 
-        return new OfflineRegistryWriteResult(outcomes.OrderBy(o => o.ProfileIndex).ToList(), generalizationState);
+        return new OfflineRegistryWriteResult(outcomes.OrderBy(o => o.ProfileIndex).ToList());
 
         void Skip(List<(SetupRegistryValue value, int index)> skipped)
         {
@@ -157,7 +154,7 @@ public sealed partial class OfflineRegistryWriter(IOfflineRegistryHive hive, ILo
     [LoggerMessage(Level = LogLevel.Warning, Message = "The hive {MountRoot} could not be loaded: {Reason}")]
     private static partial void LogHiveNotLoaded(ILogger logger, string mountRoot, string reason);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "The SYSTEM hive's control set, generalization state or UnattendFile value could not be read or cleared: {Reason}")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The SYSTEM hive's control set or UnattendFile value could not be read or cleared: {Reason}")]
     private static partial void LogSystemHiveNotRead(ILogger logger, string reason);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The hive {MountRoot} could not be unloaded. The values are already written; the restart releases it.")]

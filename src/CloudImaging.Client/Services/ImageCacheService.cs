@@ -11,6 +11,7 @@ namespace CloudImaging.Client.Services;
 /// Cache storage layout (on the cache partition, configurable via env var):
 ///   {CacheRoot}\images\{imageId}\image.wim      — the cached WIM blob
 ///   {CacheRoot}\images\{imageId}\metadata.json  — JSON with hash, cachedAt, sizeBytes
+///   {CacheRoot}\ci-{kind}-{sessionId}.wim        — a download staged until it is verified and moved in
 ///
 /// Only valid, hash-verified WIM files are persisted in the cache.
 /// Cache entries idle for 30 days (no cache hit) are eligible for auto-purge (T056d); a hit
@@ -21,6 +22,7 @@ public sealed partial class ImageCacheService
     private const string ImagesDirName   = "images";
     private const string WimFileName     = "image.wim";
     private const string MetaFileName    = "metadata.json";
+    private const string StagingPattern  = "ci-*.wim";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromDays(30);
 
     private readonly string _cacheRoot;
@@ -37,6 +39,14 @@ public sealed partial class ImageCacheService
 
     /// <summary>The cache partition root.</summary>
     public string CacheRoot => _cacheRoot;
+
+    /// <summary>
+    /// File name a session's download is staged under at the cache root until it is verified and
+    /// moved into the cache, for example <c>ci-image-&lt;sessionId&gt;.wim</c>.
+    /// </summary>
+    /// <param name="kind">What is downloaded, for example <c>image</c> or <c>recovery</c>.</param>
+    /// <param name="sessionId">The session downloading it.</param>
+    public static string StagingFileName(string kind, Guid sessionId) => $"ci-{kind}-{sessionId:N}.wim";
 
     // ── Cache entry metadata ──────────────────────────────────────────────────
 
@@ -93,7 +103,8 @@ public sealed partial class ImageCacheService
 
     /// <summary>
     /// Moves a downloaded WIM into the cache and writes the metadata record.
-    /// Verifies the actual SHA-256 before writing the metadata.
+    /// Verifies the actual SHA-256 before writing the metadata. A download that fails the check is
+    /// deleted, since no session can use it, and <see cref="InvalidDataException"/> is thrown.
     /// </summary>
     public async Task<string> WriteAsync(
         string imageId,
@@ -102,15 +113,18 @@ public sealed partial class ImageCacheService
         CancellationToken ct = default)
     {
         var dir     = ImageDir(imageId);
-        Directory.CreateDirectory(dir);
 
         // Compute actual hash of the downloaded file
         var actualHash = await ComputeSha256Async(sourcePath, ct);
         if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+        {
+            SafeDelete(sourcePath);
             throw new InvalidDataException(
                 $"Cache write aborted: hash mismatch for image {imageId}. " +
                 $"Expected={expectedHash}, Actual={actualHash}");
+        }
 
+        Directory.CreateDirectory(dir);
         var wimDest  = Path.Combine(dir, WimFileName);
         var metaPath = Path.Combine(dir, MetaFileName);
         var sizeBytes = new FileInfo(sourcePath).Length;
@@ -166,6 +180,50 @@ public sealed partial class ImageCacheService
         }
     }
 
+    /// <summary>
+    /// Removes what a session cut off by a restart, power loss or crash left behind: downloads
+    /// staged at the cache root that were never moved into the cache, and entry folders without
+    /// readable metadata. Never throws. Call it before a session starts downloading, so none of its
+    /// own files are in progress. Returns how many were removed.
+    /// </summary>
+    public async Task<int> RemoveIncompleteAsync(CancellationToken ct = default)
+    {
+        var removed = 0;
+        try
+        {
+            if (Directory.Exists(_cacheRoot))
+            {
+                foreach (var staged in Directory.GetFiles(_cacheRoot, StagingPattern, SearchOption.TopDirectoryOnly))
+                {
+                    if (TryDeleteFile(staged))
+                    {
+                        removed++;
+                        LogStagedDownloadRemoved(_logger, staged);
+                    }
+                }
+            }
+
+            var imagesDir = Path.Combine(_cacheRoot, ImagesDirName);
+            if (Directory.Exists(imagesDir))
+            {
+                foreach (var dir in Directory.GetDirectories(imagesDir))
+                {
+                    if (await ReadMetaAsync(Path.Combine(dir, MetaFileName), ct) is null && TryDeleteDirectory(dir))
+                    {
+                        removed++;
+                        LogIncompleteEntryRemoved(_logger, dir);
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogRemoveIncompleteFailed(_logger, _cacheRoot, ex.Message);
+        }
+
+        return removed;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private string ImageDir(string imageId) =>
@@ -196,6 +254,34 @@ public sealed partial class ImageCacheService
         try { File.Delete(path); } catch { /* best-effort */ }
     }
 
+    private bool TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogRemoveIncompleteFailed(_logger, path, ex.Message);
+            return false;
+        }
+    }
+
+    private bool TryDeleteDirectory(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            LogRemoveIncompleteFailed(_logger, path, ex.Message);
+            return false;
+        }
+    }
+
     /// <summary>Computes the lowercase hex SHA-256 hash of a file.</summary>
     public static Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
         => ImageHasher.ComputeAsync(filePath, onProgress: null, ct);
@@ -216,4 +302,13 @@ public sealed partial class ImageCacheService
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Cache entry evicted for image {ImageId}.")]
     private static partial void LogEvicted(ILogger logger, string imageId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Removed {Path}, a download an interrupted session left on the cache partition.")]
+    private static partial void LogStagedDownloadRemoved(ILogger logger, string path);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Removed {Path}: the cache entry has no readable metadata, so it was never completed.")]
+    private static partial void LogIncompleteEntryRemoved(ILogger logger, string path);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Could not remove {Path} from the cache partition: {Reason}")]
+    private static partial void LogRemoveIncompleteFailed(ILogger logger, string path, string reason);
 }

@@ -43,13 +43,6 @@ Update / PnP at OOBE. This is fine for common/in-box hardware but is a gap for:
 
 ## How others do it (research, 2026-10-20)
 
-- **Foundry OSD**: per pack, a strategy resolver picks *offline INF* (DISM into the applied volume
-  in WinPE, and into WinRE) or *deferred* (installer staged on disk, run from a `specialize`
-  `RunSynchronous` hook before OOBE). Deferred exists only for packs WinPE cannot unpack
-  (Lenovo `.exe`, Surface `.msi`).
-- **OSDCloud**: same split. Deferred packs are installed in `specialize` by pointing
-  `HKLM\...\UnattendSettings\PnPUnattend\DriverPaths` at the folder and running
-  `pnpunattend.exe AuditSystem /L`.
 - **Driver Automation Tool (10.x)**: two build types, the vendor's monthly "SCCM driver pack" or
   "Latest Drivers" built from individual components (HP SoftPaqs, Dell Command | Update catalog,
   Lenovo per-model catalog), leaving out components that are applications. Rebuilds only when the

@@ -63,18 +63,22 @@ public sealed record NetworkSnapshot(IReadOnlyList<NetworkAdapterInfo> Adapters)
 /// <summary>Reads the device's network adapters, including network devices whose driver is missing from the boot image.</summary>
 public static partial class NetworkStatus
 {
-    /// <summary>Reads every adapter, including devices without a driver. Never throws; unreadable parts are left out.</summary>
+    /// <summary>Reads every physical adapter, including devices without a driver. Never throws; unreadable parts are left out.</summary>
     public static NetworkSnapshot Read() =>
-        new([.. ReadAdapters(), .. FindDevicesWithoutDriver().Select(name => new NetworkAdapterInfo(name, NetworkAdapterKind.Ethernet, NetworkAdapterState.NoDriver))]);
+        new([.. ReadAdapters(FindPhysicalAdapterIds()), .. FindNetworkDevicesWithoutDriver()]);
 
-    /// <summary>Adapters that have a driver. Cheap enough to poll: no WMI.</summary>
-    public static IReadOnlyList<NetworkAdapterInfo> ReadAdapters()
+    /// <summary>Adapters that have a driver, without virtual ones. Cheap enough to poll when <paramref name="physicalIds"/> is null: no WMI.</summary>
+    /// <param name="physicalIds">Interface GUIDs of physical adapters; null when unknown, which leaves only the name filter.</param>
+    public static IReadOnlyList<NetworkAdapterInfo> ReadAdapters(IReadOnlySet<string>? physicalIds = null)
     {
         var adapters = new List<NetworkAdapterInfo>();
         try
         {
             foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
+                if (IsVirtualAdapter(adapter.Description) || (physicalIds is not null && !physicalIds.Contains(adapter.Id)))
+                    continue;
+
                 var routable = adapter.OperationalStatus == OperationalStatus.Up
                     ? adapter.GetIPProperties().UnicastAddresses.Select(a => a.Address).FirstOrDefault(IsRoutableIPv4)
                     : null;
@@ -89,6 +93,37 @@ public static partial class NetworkStatus
 
         return adapters;
     }
+
+    /// <summary>
+    /// Interface GUIDs of the adapters Windows counts as physical, which leaves out Wi-Fi Direct and
+    /// other virtual adapters a single wireless card brings along. Null when WMI cannot say.
+    /// </summary>
+    private static HashSet<string>? FindPhysicalAdapterIds()
+    {
+        try
+        {
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using var searcher = new ManagementObjectSearcher("SELECT GUID FROM Win32_NetworkAdapter WHERE PhysicalAdapter = TRUE");
+            using var results = searcher.Get();
+            foreach (ManagementObject adapter in results)
+            {
+                using (adapter)
+                {
+                    if (adapter["GUID"] is string guid)
+                        ids.Add(guid);
+                }
+            }
+            return ids.Count > 0 ? ids : null;
+        }
+        catch (Exception ex) when (ex is ManagementException or System.Runtime.InteropServices.COMException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Adapters that never carry the device's traffic: Wi-Fi Direct, the kernel debugger, Bluetooth, tunnels and virtual switches.</summary>
+    /// <remarks>"Hyper-V" alone is not excluded: a Hyper-V guest's own adapter is "Microsoft Hyper-V Network Adapter".</remarks>
+    internal static bool IsVirtualAdapter(string description) => VirtualAdapterPattern().IsMatch(description);
 
     /// <summary>"Adapter (address)" for the first wired adapter with a routable address, or null.</summary>
     public static string? FindRoutableEthernet() =>
@@ -123,9 +158,11 @@ public static partial class NetworkStatus
     }
 
     /// <summary>Names of devices Windows found without a driver (Device Manager code 28) that look like network adapters.</summary>
-    public static IReadOnlyList<string> FindDevicesWithoutDriver()
+    public static IReadOnlyList<string> FindDevicesWithoutDriver() => [.. FindNetworkDevicesWithoutDriver().Select(d => d.Name)];
+
+    private static List<NetworkAdapterInfo> FindNetworkDevicesWithoutDriver()
     {
-        var names = new List<string>();
+        var devices = new List<NetworkAdapterInfo>();
         try
         {
             using var searcher = new ManagementObjectSearcher("SELECT Name, PNPDeviceID, HardwareID, CompatibleID FROM Win32_PnPEntity WHERE ConfigManagerErrorCode = 28");
@@ -137,7 +174,10 @@ public static partial class NetworkStatus
                     var name = device["Name"] as string;
                     var ids = (device["HardwareID"] as string[] ?? []).Concat(device["CompatibleID"] as string[] ?? []).ToList();
                     if (IsNetworkDevice(name, ids))
-                        names.Add(string.IsNullOrWhiteSpace(name) ? device["PNPDeviceID"] as string ?? "Unknown network adapter" : name);
+                    {
+                        var label = string.IsNullOrWhiteSpace(name) ? device["PNPDeviceID"] as string ?? "Unknown network adapter" : name;
+                        devices.Add(new NetworkAdapterInfo(label, IsWirelessDevice(name, ids) ? NetworkAdapterKind.WiFi : NetworkAdapterKind.Ethernet, NetworkAdapterState.NoDriver));
+                    }
                 }
             }
         }
@@ -146,20 +186,40 @@ public static partial class NetworkStatus
             // A boot image without WMI simply cannot name the device.
         }
 
-        return names;
+        return devices;
     }
 
     /// <summary>
-    /// True for a PCI network controller (class 02), a USB communications or wireless controller
-    /// (classes 02 and E0), or a device whose reported name says it is a network adapter: USB
-    /// Ethernet adapters often use a vendor class, so the name is the only clue.
+    /// True for a PCI network controller (class 02), a USB Ethernet device (CDC ECM, EEM or NCM, or
+    /// RNDIS), or a device whose reported name says it is a network adapter: USB Ethernet adapters
+    /// often use a vendor class, so the name is the only clue. Bluetooth is never a network adapter here.
     /// </summary>
-    internal static bool IsNetworkDevice(string? name, IEnumerable<string> ids) =>
-        ids.Any(id => NetworkDeviceIdPattern().IsMatch(id)) || (name is not null && NetworkDeviceNamePattern().IsMatch(name));
+    internal static bool IsNetworkDevice(string? name, IReadOnlyCollection<string> ids) =>
+        !(ids.Any(id => BluetoothIdPattern().IsMatch(id)) || (name is not null && BluetoothNamePattern().IsMatch(name)))
+        && (ids.Any(id => NetworkDeviceIdPattern().IsMatch(id)) || (name is not null && NetworkDeviceNamePattern().IsMatch(name)));
 
-    [GeneratedRegex(@"^PCI\\.*CC_02|^USB\\CLASS_(02|E0)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    /// <summary>True for a wireless network controller (PCI class 0280) or a device named as one.</summary>
+    internal static bool IsWirelessDevice(string? name, IEnumerable<string> ids) =>
+        ids.Any(id => WirelessDeviceIdPattern().IsMatch(id)) || (name is not null && WirelessDeviceNamePattern().IsMatch(name));
+
+    [GeneratedRegex(@"^PCI\\.*CC_02|^USB\\CLASS_02&SUBCLASS_(06|0C|0D)|^USB\\CLASS_E0&SUBCLASS_01&PROT_03|^USB\\CLASS_EF&SUBCLASS_04&PROT_01", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NetworkDeviceIdPattern();
 
     [GeneratedRegex(@"\b(ethernet|lan|wlan|gbe|gigabit|network|wi-?fi|wireless|802\.11)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex NetworkDeviceNamePattern();
+
+    [GeneratedRegex(@"^PCI\\.*CC_0280", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WirelessDeviceIdPattern();
+
+    [GeneratedRegex(@"\b(wlan|wi-?fi|wireless|802\.11)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex WirelessDeviceNamePattern();
+
+    [GeneratedRegex(@"^(BTH|BTHENUM|BTHLE|BTHLEDEVICE)\\|^USB\\CLASS_E0&SUBCLASS_01&PROT_01", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BluetoothIdPattern();
+
+    [GeneratedRegex(@"bluetooth|^BT[_ ]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BluetoothNamePattern();
+
+    [GeneratedRegex(@"wi-?fi direct|kernel debug|bluetooth|virtual|loopback|teredo|isatap|6to4|wan miniport|vpn|tap-windows|wintun", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex VirtualAdapterPattern();
 }

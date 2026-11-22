@@ -41,15 +41,21 @@ public sealed class HpDriverVendorAdapterTests
     }
 
     [Fact]
-    public void ParseComponents_ReferenceFile_ExcludesFirmwareBiosAndDocks()
+    public void ParseComponents_ReferenceFile_ListsFirmware_AndTheStartingRulesSkipIt()
     {
         var components = ParseX64();
+        var rules = DriverPolicyService.StartingRules(Seen);
+        var firmware = components.Where(c => c.Component.Category!.StartsWith("BIOS", StringComparison.OrdinalIgnoreCase)
+            || c.Component.Category!.StartsWith("Firmware", StringComparison.OrdinalIgnoreCase)
+            || c.Component.Category!.StartsWith("Dock - Firmware", StringComparison.OrdinalIgnoreCase)).ToList();
 
-        components.Should().NotBeEmpty();
-        components.Should().NotContain(c => c.Component.Category!.StartsWith("BIOS", StringComparison.OrdinalIgnoreCase));
-        components.Should().NotContain(c => c.Component.Category == "Firmware");
-        components.Should().NotContain(c => c.Component.Category!.StartsWith("Dock - Firmware", StringComparison.OrdinalIgnoreCase));
-        components.Should().NotContain(c => c.Component.Name.Contains("Firmware", StringComparison.OrdinalIgnoreCase));
+        firmware.Should().NotBeEmpty();
+        foreach (var (_, component) in firmware)
+        {
+            var decision = DriverPolicyResolver.Resolve(new DriverPolicyInput(DriverVendor.Hp, component.ComponentId, component.Name, component.Category, component.AllowedActions, component.DefaultAction), null, rules);
+            decision.Action.Should().Be(DriverAction.Skip);
+            decision.Source.Should().BeOneOf(DriverActionSource.Rule, DriverActionSource.Locked);
+        }
     }
 
     [Fact]
@@ -97,6 +103,10 @@ public sealed class HpDriverVendorAdapterTests
     [InlineData(false, false, true, "Diagnostic", DriverAction.Skip, new[] { DriverAction.Skip })]
     [InlineData(false, false, true, "Manageability - Driver Pack", DriverAction.Skip, new[] { DriverAction.Skip })]
     [InlineData(false, false, true, "Utility - Tools", DriverAction.Skip, new[] { DriverAction.Skip })]
+    [InlineData(false, false, true, "BIOS - System Firmware", DriverAction.Skip, new[] { DriverAction.Skip, DriverAction.Specialize })]
+    [InlineData(false, false, true, "Firmware", DriverAction.Skip, new[] { DriverAction.Skip, DriverAction.Specialize })]
+    [InlineData(false, false, true, "Dock - Firmware and Driver", DriverAction.Skip, new[] { DriverAction.Skip, DriverAction.Specialize })]
+    [InlineData(false, false, false, "Firmware", DriverAction.Skip, new[] { DriverAction.Skip })]
     public void Classify_X64_FollowsTheHpTable(bool dpb, bool app, bool installable, string category, DriverAction expectedDefault, DriverAction[] expectedAllowed)
     {
         var (defaultAction, allowed) = HpDriverVendorAdapter.Classify(dpb, app, installable, category, arm64: false);

@@ -55,6 +55,18 @@ export function requireLineageKeyParam(req: Request, res: Response, next: NextFu
   next();
 }
 
+const PLATFORM_PATTERN = /^[A-Za-z0-9]{1,16}$/;
+
+/** 400 unless `:platform` is an HP platform ID: 1 to 16 letters or digits. */
+export function requirePlatformParam(req: Request, res: Response, next: NextFunction): void {
+  const platform = req.params['platform'];
+  if (typeof platform !== 'string' || !PLATFORM_PATTERN.test(platform)) {
+    badParameter(res, 'platform', "Route parameter 'platform' must be 1 to 16 letters or digits.");
+    return;
+  }
+  next();
+}
+
 const router = Router();
 
 type DriverResult = { status: number; data: unknown };
@@ -118,6 +130,8 @@ router.put('/sync/settings', requireOperator, async (req: AuthenticatedRequest, 
       timeZone: source['timeZone'],
       waitForApprovalOfNewComponents: source['waitForApprovalOfNewComponents'],
       waitForTesting: source['waitForTesting'],
+      firmwareNewVersions: source['firmwareNewVersions'],
+      firmwarePreProductionLocationId: source['firmwarePreProductionLocationId'],
       actor: actorOf(req),
     };
     relay(res, await operatorApiClient.drivers('PUT', 'sync/settings', { body }));
@@ -346,6 +360,54 @@ router.get('/models/:modelId/removal-impact', requireOperator, requireGuidParams
 router.delete('/models/:modelId', requireOperator, requireGuidParams('modelId'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     relay(res, await operatorApiClient.drivers('DELETE', `models/${req.params['modelId'] as string}`, { query: changedBy(req) }));
+  } catch (err) { next(err); }
+});
+
+/** `models/<id>/firmware/<platform>` from validated path parameters. */
+function firmwarePath(req: Request): string {
+  return `models/${req.params['modelId'] as string}/firmware/${req.params['platform'] as string}`;
+}
+
+const firmwareGuards = [requireGuidParams('modelId'), requirePlatformParam];
+
+// The Firmware tab of a model: one BIOS row per platform.
+router.get('/models/:modelId/firmware', requireTechnician, requireGuidParams('modelId'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('GET', `models/${req.params['modelId'] as string}/firmware`));
+  } catch (err) { next(err); }
+});
+
+// Update at restart or Skip for one platform.
+router.put('/models/:modelId/firmware/:platform/action', requireOperator, ...firmwareGuards, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const action = (req.body as Record<string, unknown> | undefined)?.['action'];
+    relay(res, await operatorApiClient.drivers('PUT', `${firmwarePath(req)}/action`, { body: { action, actor: actorOf(req) } }));
+  } catch (err) { next(err); }
+});
+
+// The BIOS in pre-production goes to every location.
+router.post('/models/:modelId/firmware/:platform/release', requireOperator, ...firmwareGuards, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('POST', `${firmwarePath(req)}/release`, { body: { actor: actorOf(req) } }));
+  } catch (err) { next(err); }
+});
+
+router.get('/models/:modelId/firmware/:platform/versions', requireTechnician, ...firmwareGuards, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('GET', `${firmwarePath(req)}/versions`));
+  } catch (err) { next(err); }
+});
+
+router.put('/models/:modelId/firmware/:platform/rollback', requireOperator, ...firmwareGuards, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const source = req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>) : {};
+    relay(res, await operatorApiClient.drivers('PUT', `${firmwarePath(req)}/rollback`, { body: { version: source['version'], until: source['until'], actor: actorOf(req) } }));
+  } catch (err) { next(err); }
+});
+
+router.delete('/models/:modelId/firmware/:platform/rollback', requireOperator, ...firmwareGuards, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('DELETE', `${firmwarePath(req)}/rollback`, { query: changedBy(req) }));
   } catch (err) { next(err); }
 });
 

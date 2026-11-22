@@ -237,6 +237,12 @@ const ROUTES: Row[] = [
   ['delete', '/api/drivers/models/:modelId/releases/:release', OPS, OPS_USERS, null],
   ['get', '/api/drivers/models/:modelId/removal-impact', OPS, OPS_USERS, null],
   ['delete', '/api/drivers/models/:modelId', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/models/:modelId/firmware', TECH, PA_USERS, null],
+  ['put', '/api/drivers/models/:modelId/firmware/:platform/action', OPS, OPS_USERS, null],
+  ['post', '/api/drivers/models/:modelId/firmware/:platform/release', OPS, OPS_USERS, null],
+  ['get', '/api/drivers/models/:modelId/firmware/:platform/versions', TECH, PA_USERS, null],
+  ['put', '/api/drivers/models/:modelId/firmware/:platform/rollback', OPS, OPS_USERS, null],
+  ['delete', '/api/drivers/models/:modelId/firmware/:platform/rollback', OPS, OPS_USERS, null],
   ['delete', '/api/drivers/models/:modelId/releases/:release/components/:lineageKey', OPS, OPS_USERS, null],
   ['post', '/api/drivers/models/:modelId/releases/:release/rollback', OPS, OPS_USERS, null],
   ['post', '/api/drivers/models/:modelId/releases/:release/testing/release', OPS, OPS_USERS, null],
@@ -404,7 +410,7 @@ describe('Portal backend: route-by-role matrix', () => {
   it('lists every route the 19 routers register exactly once', () => {
     const table = ROUTES.map(([method, path]) => `${method.toUpperCase()} ${path}`);
     expect(MOUNTS).toHaveLength(19);
-    expect(ROUTES).toHaveLength(137);
+    expect(ROUTES).toHaveLength(143);
     expect(new Set(table).size).toBe(table.length);
     expect([...registeredRoutes()].sort()).toEqual([...table].sort());
   });
@@ -434,6 +440,13 @@ describe('Portal backend: route-by-role matrix', () => {
 
     expect(res.status).toBe(400);
     for (const mock of backendMocks()) expect(mock).not.toHaveBeenCalled();
+  });
+
+  it.each(['InstallDrivers', 'PrepareSetup'])('forwards the items of %s', async (step) => {
+    const res = await request(appFor(['Tech'])).get(`/api/sessions/8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10/steps/${step}/items`);
+
+    expect(res.status).toBe(200);
+    expect(operatorApi.getSessionStepItems).toHaveBeenCalledWith('8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10', step);
   });
 
   describe('existing roles keep their access', () => {

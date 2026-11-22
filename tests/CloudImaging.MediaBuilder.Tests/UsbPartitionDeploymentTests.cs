@@ -96,6 +96,37 @@ public sealed class UsbPartitionDeploymentTests
             .Which.Message.Should().NotMatchRegex(@"\b(FR|T)-?\d{2,}");
     }
 
+    // ── Locating the new partitions ───────────────────────────────────────────
+
+    [Fact]
+    public void NewPartitions_AreLookedUpOnTheProvisionedDiskOnly()
+    {
+        // Another prepared USB device still plugged in has BOOT and CACHE volumes of its own.
+        var volumes = new Dictionary<uint, UsbPartitionProvisioningService.DiskVolume[]>
+        {
+            [1] = [new("E:", "BOOT"), new("F:", "CACHE")],
+            [2] = [new("G:", "BOOT"), new("H:", "CACHE")],
+        };
+        var svc = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance, disk => volumes.GetValueOrDefault(disk, []));
+
+        svc.FindBootVolumeDriveLetter(2).Should().Be("G:");
+        svc.FindCacheVolumeDriveLetter(2).Should().Be("H:");
+        svc.FindBootVolumeDriveLetter(3).Should().BeNull("a disk without a BOOT volume never borrows another disk's");
+    }
+
+    [Fact]
+    public void VolumesOnDisk_FindsTheSystemDriveOnTheSystemDiskOnly()
+    {
+        // Read-only check of the real lookup against this machine's own disks.
+        var systemDrive = Path.GetPathRoot(Environment.SystemDirectory)!.TrimEnd('\\');
+        var svc = new UsbPartitionProvisioningService(NullLogger<UsbPartitionProvisioningService>.Instance);
+        var disks = new UsbSafetyValidationService(NullLogger<UsbSafetyValidationService>.Instance).EnumerateDisks();
+
+        var holding = disks.Where(d => svc.VolumesOnDisk(d.DiskNumber).Any(v => string.Equals(v.DriveLetter, systemDrive, StringComparison.OrdinalIgnoreCase))).ToList();
+
+        holding.Should().ContainSingle("a volume lives on one disk").Which.IsSystemDisk.Should().BeTrue();
+    }
+
     // ── Boot image deployment service ─────────────────────────────────────────
 
     [Fact]

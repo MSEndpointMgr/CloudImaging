@@ -111,6 +111,7 @@ var host = new HostBuilder()
         services.AddSingleton<DriverSyncScheduler>();
         services.AddSingleton<DriverLifecycleService>();
         services.AddSingleton<DriverComponentHistoryService>();
+        services.AddSingleton<DriverFirmwareService>();
         services.AddSingleton<DriverCustomComponentService>();
         services.AddSingleton<DriverSetResolver>();
         services.AddSingleton(TimeProvider.System);
@@ -211,6 +212,9 @@ await using (var scope = host.Services.CreateAsyncScope())
     await sp.GetRequiredService<DriverSetPointerRepository>().EnsureTableExistsAsync(ct);
     await sp.GetRequiredService<DriverSyncRunRepository>().EnsureTablesExistAsync(ct);
     await sp.GetRequiredService<DriverWorkSender>().EnsureQueuesExistAsync(ct);
+
+    // Before any sync lists firmware, so new installations and upgrades keep it out by rule.
+    await sp.GetRequiredService<DriverPolicyService>().EnsureStartingRulesAsync(ct);
 
     // A lost ScheduledSync message never stops the schedule: every start enqueues the next slot,
     // and the copies that lose the slot claim are dropped.

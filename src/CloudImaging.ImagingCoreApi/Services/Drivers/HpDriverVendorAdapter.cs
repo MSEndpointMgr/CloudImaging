@@ -122,11 +122,6 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
         {
             var name = Text(entry, "Name") ?? string.Empty;
             var category = Text(entry, "Category") ?? string.Empty;
-            if (IsExcluded(name, category))
-            {
-                continue;
-            }
-
             var id = Text(entry, "Id")!;
             var silentInstall = Text(entry, "SilentInstall");
             var dpb = IsTrue(Text(entry, "DPBCompliant"));
@@ -172,13 +167,6 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
         return components;
     }
 
-    /// <summary>Firmware, BIOS and dock firmware are never stored (FR-003).</summary>
-    public static bool IsExcluded(string name, string category) =>
-        category.StartsWith("BIOS", StringComparison.OrdinalIgnoreCase)
-        || category.Equals("Firmware", StringComparison.OrdinalIgnoreCase)
-        || category.StartsWith("Dock - Firmware", StringComparison.OrdinalIgnoreCase)
-        || name.Contains("Firmware", StringComparison.OrdinalIgnoreCase);
-
     /// <summary>FR-015: SSM compliant and a silent install command that is not a placeholder.</summary>
     public static bool IsInstallable(bool ssmCompliant, string? silentInstall) =>
         ssmCompliant
@@ -211,6 +199,13 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
         else if (installable && category.StartsWith("Driver - ", StringComparison.OrdinalIgnoreCase))
         {
             row = (DriverAction.Specialize, [DriverAction.Specialize, DriverAction.Skip]);
+        }
+        else if (installable && (category.StartsWith("BIOS", StringComparison.OrdinalIgnoreCase)
+            || category.StartsWith("Firmware", StringComparison.OrdinalIgnoreCase)
+            || category.StartsWith("Dock - ", StringComparison.OrdinalIgnoreCase)))
+        {
+            // Can run during specialize; the starting rules skip it, and an administrator can change that.
+            row = (DriverAction.Skip, [DriverAction.Skip, DriverAction.Specialize]);
         }
         else
         {

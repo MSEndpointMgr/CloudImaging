@@ -101,9 +101,9 @@ describe('Drivers: custom components', () => {
     });
     renderPage();
 
-    const opener = await screen.findByRole('button', { name: 'Add component' });
-    opener.focus();
+    const opener = await screen.findByRole('button', { name: 'More actions' });
     fireEvent.click(opener);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Add custom component' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add custom component' });
     expect(within(dialog).getByText('Use a driver the vendor has not published yet. It is checked and stored like a vendor component.')).toBeTruthy();
     expect(within(dialog).getByText("For Offline, a ZIP with the driver's INF files. For Specialize, an installer. Drivers must be signed; unsigned drivers fail on the device.")).toBeTruthy();

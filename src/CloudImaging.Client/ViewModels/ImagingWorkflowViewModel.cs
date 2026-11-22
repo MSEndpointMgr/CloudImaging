@@ -30,6 +30,8 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 {
     private static readonly TimeSpan AssignmentWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan AssignmentPollInterval = TimeSpan.FromSeconds(5);
+    private const int FirmwareFetchAttempts = 3;
+    private static readonly TimeSpan FirmwareFetchRetryDelay = TimeSpan.FromSeconds(5);
     private static readonly JsonSerializerOptions SchemeJsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly Services.DeviceGatewayApiClient _gatewayClient;
@@ -165,6 +167,8 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             var runPrepareSetup = ShouldRunPrepareSetup(setupProfile.Status, specializeInstallers);
             _progress.ConfigureSteps(runPrepareSetup);
             var setupWarnings = 0;
+            var firmwareWarnings = 0;
+            var firmwareStaged = false;
 
             _sasCoordinator = new Services.SasRefreshCoordinator(
                 _gatewayClient,
@@ -291,7 +295,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 wimPath = await DownloadWimAsync(
                     hash,
                     () => _sasCoordinator.CurrentSasUrl ?? _status.SasTokenUrl!,
-                    $"ci-image-{_sessionId:N}.wim",
+                    Services.ImageCacheService.StagingFileName("image", _sessionId),
                     pct =>
                     {
                         _progress.OverallPercent = 8 + (int)(pct * 0.47); // 8-55%
@@ -404,12 +408,34 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.Completed, ct: ct);
             _progress.OverallPercent = 85;
 
+            // ── Update firmware ─────────────────────────────────────────────────
+            // After Configure boot, so bcdboot cannot touch what HP's tool puts on the EFI system
+            // partition; before recovery, so the session cannot complete while it runs.
+            var (continuePipeline, firmware) = await RunUpdateFirmwareAsync(reporter, diskFormat.WindowsVolume, pipelineLoggerFactory, ct);
+            if (!continuePipeline)
+            {
+                return;
+            }
+
+            firmwareWarnings = firmware?.WarningCount ?? 0;
+            firmwareStaged = firmware?.Staged == true;
+
             // ── Download + apply recovery image ─────────────────────────────────
             _progress.StatusMessage = "Downloading recovery image…";
             _progress.UpdateStep(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress);
             await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, ct: ct);
 
-            var recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(deviceArchitecture, ct);
+            LatestRecoveryImageInfo? recoveryInfo;
+            try
+            {
+                recoveryInfo = await _gatewayClient.GetLatestRecoveryImageAsync(deviceArchitecture, ct);
+            }
+            catch (Exception ex) when (ex is Services.DeviceGatewayApiException or HttpRequestException)
+            {
+                await FailAsync(reporter, ImagingStepName.ApplyRecoveryImage, "REC", $"Could not check for a published recovery image: {ex.Message}", ct);
+                return;
+            }
+
             // A mismatched WinRE would leave the OS unrecoverable; the OS image's own embedded WinRE always matches.
             if (recoveryInfo is not null && !Services.ArchitecturePreflight.IsRecoveryImageCompatible(deviceArchitecture, recoveryInfo.Architecture))
             {
@@ -447,7 +473,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 _progress.OverallPercent = 100;
                 _progress.StatusMessage = "Imaging complete.";
 
-                _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, SuccessNote(setupWarnings), null);
+                _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, SuccessNote(setupWarnings, firmwareWarnings, firmwareStaged), null);
                 return;
             }
 
@@ -457,7 +483,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                 recoveryWimPath = await DownloadWimAsync(
                     recoveryInfo.Sha256Hash,
                     () => recoveryInfo.SasTokenUrl,
-                    $"ci-recovery-{_sessionId:N}.wim",
+                    Services.ImageCacheService.StagingFileName("recovery", _sessionId),
                     pct =>
                     {
                         _progress.OverallPercent = 85 + (int)(pct * 0.10); // 85-95%
@@ -495,7 +521,7 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
             _progress.OverallPercent = 100;
             _progress.StatusMessage = "Imaging complete.";
 
-            _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, SuccessNote(setupWarnings), null);
+            _navigateToResults(ResultsViewModel.Outcome.Success, _deviceSerialNumber, SuccessNote(setupWarnings, firmwareWarnings, firmwareStaged), null);
         }
         catch (Exception ex)
         {
@@ -509,8 +535,120 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         }
     }
 
-    private static string? SuccessNote(int setupWarnings) =>
-        setupWarnings > 0 ? ResultsViewModel.WarningsMessage(setupWarnings) : null;
+    /// <summary>The success screen's note: the AC power reminder when the BIOS flashes at the restart, and any warnings.</summary>
+    internal static string? SuccessNote(int setupWarnings, int firmwareWarnings, bool firmwareStaged)
+    {
+        var notes = new List<string>();
+        if (firmwareStaged)
+        {
+            notes.Add(ResultsViewModel.FirmwareStagedMessage);
+        }
+
+        if (setupWarnings > 0)
+        {
+            notes.Add(ResultsViewModel.WarningsMessage(setupWarnings));
+        }
+
+        if (firmwareWarnings > 0)
+        {
+            notes.Add(ResultsViewModel.FirmwareNotUpdatedMessage);
+        }
+
+        return notes.Count == 0 ? null : string.Join(" ", notes);
+    }
+
+    /// <summary>
+    /// Runs Update firmware when the session has a BIOS pinned. Returns false when the pipeline
+    /// must stop because the session is ending; the result is null when the step is not shown.
+    /// Any other problem completes the step with a warning: Windows is already applied.
+    /// </summary>
+    private async Task<(bool Continue, Services.Firmware.FirmwareUpdateResult? Result)> RunUpdateFirmwareAsync(Services.ImagingProgressReporter reporter, string windowsVolume, ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        var logger = loggerFactory.CreateLogger<Services.Firmware.FirmwareUpdateService>();
+        var fetch = new Services.FirmwareFetch(Services.FirmwareFetchStatus.Failed, null);
+        for (var attempt = 1; attempt <= FirmwareFetchAttempts && fetch.Status == Services.FirmwareFetchStatus.Failed; attempt++)
+        {
+            if (attempt > 1)
+            {
+                await Task.Delay(FirmwareFetchRetryDelay, ct);
+            }
+
+            try
+            {
+                fetch = await _gatewayClient.GetFirmwareAsync(_sessionId, ct);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException or NotSupportedException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+            {
+                LogFirmwareFetchFailed(logger, ex.Message);
+            }
+        }
+
+        switch (fetch.Status)
+        {
+            case Services.FirmwareFetchStatus.None:
+                return (true, null);
+            case Services.FirmwareFetchStatus.PipelineEnding:
+                try
+                {
+                    _status = await _gatewayClient.GetSessionStatusAsync(_sessionId, ct) ?? _status;
+                }
+                catch (Exception ex) when (ex is HttpRequestException or Services.DeviceGatewayApiException)
+                {
+                    // Fall through with the last known status.
+                }
+
+                if (!HandleTerminalState())
+                {
+                    await FailAsync(reporter, ImagingStepName.UpdateFirmware, "FWU", "The session ended while the BIOS was being staged.", ct);
+                }
+
+                return (false, null);
+        }
+
+        _progress.ShowUpdateFirmware();
+        _progress.ResetStepProgress();
+        _progress.StatusMessage = "Updating firmware...";
+        _progress.UpdateStep(ImagingStepName.UpdateFirmware, ImagingStepStatus.InProgress);
+        await reporter.ReportAsync(ImagingStepName.UpdateFirmware, ImagingStepStatus.InProgress, ct: ct);
+
+        Services.Firmware.FirmwareUpdateResult result;
+        if (fetch.Status == Services.FirmwareFetchStatus.Unavailable)
+        {
+            result = new Services.Firmware.FirmwareUpdateResult(false, 1, Services.Firmware.FirmwareUpdateService.UnavailableNote);
+        }
+        else if (fetch.Descriptor is not { } descriptor)
+        {
+            result = new Services.Firmware.FirmwareUpdateResult(false, 1, "Not updated: the BIOS details could not be read from Cloud Imaging.");
+        }
+        else
+        {
+            try
+            {
+                // Read again now, not at registration: the AC adapter can be pulled during imaging.
+                var tools = Services.Firmware.FirmwareUpdateService.HpToolsFolder();
+                var device = new Services.Firmware.FirmwareDeviceState(
+                    new Services.DevicePostureDetector(_loggerFactory.CreateLogger<Services.DevicePostureDetector>()).DetectPowerSource(),
+                    Services.Firmware.FirmwareUpdateService.ReadSmbiosBiosVersion(),
+                    Services.BootImageCapabilities.SupportsPowerShell(),
+                    Directory.Exists(tools) ? tools : null);
+                using var download = new HttpClient();
+                var service = new Services.Firmware.FirmwareUpdateService(new Services.Setup.RestrictedProcessRunner(), download, logger);
+                var stagingFolder = Path.Combine($"{windowsVolume.TrimEnd('\\')}\\", Services.Setup.WinPeScriptRunner.WorkFolder, "Firmware");
+                result = await service.RunAsync(descriptor, device, stagingFolder, status => _progress.StatusMessage = status, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // Windows is already applied: nothing in this step may fail the deployment.
+                LogFirmwareStepFailed(logger, ex);
+                result = new Services.Firmware.FirmwareUpdateResult(false, 1, $"Not updated: {ex.Message}");
+            }
+        }
+
+        await reporter.ReportResultAsync(ImagingStepName.UpdateFirmware, ImagingStepStatus.Completed, result.WarningCount, [], statusNote: result.StatusNote, ct: ct);
+        _progress.UpdateStep(ImagingStepName.UpdateFirmware, ImagingStepStatus.Completed, result.WarningCount);
+        _progress.AppendActivity(result.StatusNote);
+        return (true, result);
+    }
 
     /// <summary>Prepare setup runs for a pinned profile, or for Windows setup work Install drivers handed over.</summary>
     internal static bool ShouldRunPrepareSetup(Services.Setup.SetupProfileLoadStatus profileStatus, IReadOnlyList<Services.Setup.SpecializeInstaller> specializeInstallers) =>
@@ -938,6 +1076,12 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         _sasCoordinator?.Dispose();
         _heartbeatCoordinator?.Dispose();
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The BIOS details could not be read: {Reason}")]
+    private static partial void LogFirmwareFetchFailed(ILogger logger, string reason);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The BIOS was not updated because of an unexpected error.")]
+    private static partial void LogFirmwareStepFailed(ILogger logger, Exception ex);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "==== Starting imaging pipeline for session {SessionId} ====")]
     private static partial void LogPipelineStarting(ILogger logger, Guid sessionId);

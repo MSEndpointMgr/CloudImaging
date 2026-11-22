@@ -144,7 +144,7 @@ public sealed partial class BootImageGenerationService
     public sealed record GenerationResult(string WimPath, string Sha256Hash);
 
     private sealed record ElevatedGenerationParams(
-        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? ToolsRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess, MachineArchitecture Architecture, bool IncludeAutopilotTooling = false, string? WindowsSourcePath = null);
+        string ClientBinariesPath, string OutputDirectory, string? DriverRootPath, string? ToolsRootPath, string? PfxFilePath, string? LogoFilePath, string? DeviceGatewayBaseUrl, bool EnableCommandPromptAccess, MachineArchitecture Architecture, bool IncludeAutopilotTooling = false, string? WindowsSourcePath = null, string? HpFirmwareToolsPath = null);
 
     private sealed record ElevatedGenerationResult(
         bool Success, string? WimPath, string? Sha256Hash, string? Error);
@@ -173,6 +173,7 @@ public sealed partial class BootImageGenerationService
         MachineArchitecture architecture = MachineArchitecture.X64,
         bool includeAutopilotTooling = false,
         string? windowsSourcePath = null,
+        string? hpFirmwareToolsPath = null,
         CancellationToken ct = default)
     {
         // Resolve the boot media certificate, branding logo, and Device Gateway URL HERE, in
@@ -198,10 +199,10 @@ public sealed partial class BootImageGenerationService
 
         if (_isElevated())
         {
-            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
+            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, hpFirmwareToolsPath, ct);
         }
 
-        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
+        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, hpFirmwareToolsPath, ct);
     }
 
     /// <summary>
@@ -271,7 +272,7 @@ public sealed partial class BootImageGenerationService
     }
 
     private async Task<GenerationResult> RunElevatedChildProcessAsync(
-        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, bool includeAutopilotTooling, string? windowsSourcePath, CancellationToken ct)
+        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, bool includeAutopilotTooling, string? windowsSourcePath, string? hpFirmwareToolsPath, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
@@ -304,7 +305,7 @@ public sealed partial class BootImageGenerationService
                 await File.WriteAllBytesAsync(logoFilePath, logoBytes, ct);
             }
 
-            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, toolsRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath);
+            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, toolsRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, hpFirmwareToolsPath);
             await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
@@ -508,7 +509,7 @@ public sealed partial class BootImageGenerationService
             // "K" lines are never displayed; they only prove to the parent that this worker is alive.
             _ = KeepAliveAsync(() => Append("K"), cts.Token);
 
-            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, p.ToolsRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, p.Architecture, p.IncludeAutopilotTooling, p.WindowsSourcePath, cts.Token);
+            var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, p.ToolsRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, p.Architecture, p.IncludeAutopilotTooling, p.WindowsSourcePath, p.HpFirmwareToolsPath, cts.Token);
 
             await WriteResultAsync(resultFile, new ElevatedGenerationResult(true, result.WimPath, result.Sha256Hash, null));
         }
@@ -606,6 +607,10 @@ public sealed partial class BootImageGenerationService
     /// Optional Windows ISO or install.wim. When set, the boot image is built on that source's
     /// Windows RE instead of the ADK's Windows PE, which adds Wi-Fi (see <see cref="WindowsRecoverySource"/>).
     /// </param>
+    /// <param name="hpFirmwareToolsPath">
+    /// HP's firmware tools, already downloaded and checked (see <see cref="HpFirmwareTools"/>). When
+    /// set, they are copied into the image with the optional components they need. x64 only.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     public async Task<GenerationResult> GenerateAsync(
         string clientBinariesPath,
@@ -619,6 +624,7 @@ public sealed partial class BootImageGenerationService
         MachineArchitecture architecture = MachineArchitecture.X64,
         bool includeAutopilotTooling = false,
         string? windowsSourcePath = null,
+        string? hpFirmwareToolsPath = null,
         CancellationToken ct = default)
     {
         // Sweep up whatever a previous run left behind if the process was killed/crashed
@@ -733,6 +739,19 @@ public sealed partial class BootImageGenerationService
                 foreach (var component in WinPeOptionalComponents.PowerShell)
                 {
                     await InjectOptionalComponentAsync(adkPath, mountDir, architecture, component, ct);
+                }
+
+                // HP's tools ship x64 libraries only, so an ARM64 image never gets them.
+                if (hpFirmwareToolsPath is not null && architecture == MachineArchitecture.X64)
+                {
+                    ReportProgress(HpFirmwareTools.ProgressText, 39);
+                    foreach (var component in HpFirmwareTools.OptionalComponents)
+                    {
+                        await InjectOptionalComponentAsync(adkPath, mountDir, architecture, component, ct, languagePackOptional: true);
+                    }
+
+                    CopyDirectory(hpFirmwareToolsPath, Path.Combine(mountDir, HpFirmwareTools.ImageModulesPath), ct);
+                    RaiseLog($"HP firmware tools {HpFirmwareTools.Version} added to X:\\{HpFirmwareTools.ImageModulesPath}.");
                 }
 
                 // Windows RE ships the WLAN service but not these two DLLs from the full OS; without them wlansvc cannot start.
@@ -1120,12 +1139,13 @@ public sealed partial class BootImageGenerationService
 
     /// <summary>
     /// Services one optional component (base cab plus its en-us language cab) into the mounted
-    /// WIM, the same way as WinPE-WMI and WinPE-NetFx.
+    /// WIM, the same way as WinPE-WMI and WinPE-NetFx. Some components (WinPE-SecureBootCmdlets)
+    /// have no language cab; <paramref name="languagePackOptional"/> allows that.
     /// </summary>
-    private async Task InjectOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, string component, CancellationToken ct)
+    private async Task InjectOptionalComponentAsync(string adkPath, string mountDir, MachineArchitecture architecture, string component, CancellationToken ct, bool languagePackOptional = false)
     {
         var (baseCab, langCab) = WinPeOptionalComponents.PackagePaths(adkPath, architecture, component);
-        if (!File.Exists(baseCab) || !File.Exists(langCab))
+        if (!File.Exists(baseCab) || (!languagePackOptional && !File.Exists(langCab)))
         {
             var directory = WinPeOptionalComponents.Directory(adkPath, architecture);
             RaiseLog($"FAILED: WinPE optional component package(s) not found under \"{directory}\".");
@@ -1133,7 +1153,10 @@ public sealed partial class BootImageGenerationService
         }
 
         await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{baseCab}\"", ct);
-        await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+        if (File.Exists(langCab))
+        {
+            await RunDismAsync($"/Image:\"{mountDir}\" /Add-Package /PackagePath:\"{langCab}\"", ct);
+        }
     }
 
     /// <summary>

@@ -134,6 +134,9 @@ public sealed class DriverSetSelection : INotifyPropertyChanged
         }
     }
 
+    /// <summary>True when <see cref="Summary"/> has a value, so the card adds no empty line otherwise.</summary>
+    public bool HasSummary => Summary is not null;
+
     /// <summary>True when less than 20 GB would stay free for OS images.</summary>
     public bool ShowLowSpaceWarning => Selected.Count > 0 && CacheBytes is { } cache && !DoesNotFit && cache - SelectedBytes < OsImageReserveBytes;
 
@@ -198,6 +201,7 @@ public sealed class DriverSetSelection : INotifyPropertyChanged
         Changed(nameof(Selected));
         Changed(nameof(SelectedBytes));
         Changed(nameof(Summary));
+        Changed(nameof(HasSummary));
         Changed(nameof(ShowLowSpaceWarning));
         Changed(nameof(DoesNotFit));
         Changed(nameof(CacheBytes));

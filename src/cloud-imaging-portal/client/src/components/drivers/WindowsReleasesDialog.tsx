@@ -98,7 +98,7 @@ export function WindowsReleasesDialog({ model, onClose, onSaved }: {
   };
 
   const detail = (release: WindowsRelease, on: boolean, onboarded: boolean, last: boolean): string => {
-    if (last) return 'The last release stays. Use Remove to remove the model.';
+    if (last) return 'The last release stays. Use Remove model to remove the model.';
     if (onboarded && !on) {
       const impact = impacts[release];
       return impact ? `Deletes ${plural(impact.sets, 'driver set', 'driver sets')} and ${plural(impact.overrides, 'override', 'overrides')}. Devices installing it get no drivers.` : 'Devices installing it get no drivers.';

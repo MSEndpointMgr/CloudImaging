@@ -47,6 +47,10 @@ public sealed class ImagingCoreClient
     public Task<HttpResponseMessage> RefreshSessionDriverComponentLinkAsync(Guid sessionId, int index, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/sessions/{sessionId}/driver-set/components/{index}/link", null, ct);
 
+    /// <summary>Forward the request for the session's BIOS to ImagingCoreApi; 204 when it gets none.</summary>
+    public Task<HttpResponseMessage> GetSessionFirmwareAsync(Guid sessionId, CancellationToken ct = default) =>
+        _http.GetAsync($"/api/internal/sessions/{sessionId}/firmware", ct);
+
     /// <summary>Forward SAS token refresh request to ImagingCoreApi.</summary>
     public Task<HttpResponseMessage> RefreshSasTokenAsync(Guid sessionId, CancellationToken ct = default) =>
         _http.PostAsync($"/api/internal/sessions/{sessionId}/sas/refresh", null, ct);

@@ -86,6 +86,32 @@ public sealed class PreFlightCheckEvaluatorTests
     }
 
     [Theory]
+    [InlineData(PowerSource.Battery, PreFlightCheckOutcome.Failed)]
+    [InlineData(PowerSource.Ac, PreFlightCheckOutcome.Passed)]
+    [InlineData(PowerSource.Unknown, PreFlightCheckOutcome.NotRequired)]
+    public void AcPower_BlocksOnlyADeviceOnBattery_ThatGetsABiosUpdate(PowerSource power, PreFlightCheckOutcome expected)
+    {
+        var device = new DeviceSecurityPosture { FirmwareMode = FirmwareMode.Uefi, SecureBoot = SecureBootState.Enabled, Tpm = TpmPresence.Tpm20, PowerSource = power };
+
+        // The administrator switches are all off: AC power does not depend on them.
+        var checks = PreFlightCheckEvaluator.Evaluate(Config(on: false), device, PreFlightAuthorizationResult.Skipped, biosUpdate: true);
+
+        OutcomeOf(checks, PreFlightCheck.AcPower).Should().Be(expected);
+        checks.Single(c => c.Check == PreFlightCheck.AcPower).Observed.Should().Be(power.ToString());
+    }
+
+    [Fact]
+    public void AcPower_IsNotListed_WithoutABiosUpdate()
+    {
+        // A Client older than BIOS updates fails to read a check it does not know.
+        var device = new DeviceSecurityPosture { FirmwareMode = FirmwareMode.Uefi, SecureBoot = SecureBootState.Enabled, Tpm = TpmPresence.Tpm20, PowerSource = PowerSource.Battery };
+
+        var checks = PreFlightCheckEvaluator.Evaluate(Config(), device, PreFlightAuthorizationResult.Skipped);
+
+        checks.Should().NotContain(c => c.Check == PreFlightCheck.AcPower);
+    }
+
+    [Theory]
     [InlineData(SecureBootState.Disabled)]
     [InlineData(SecureBootState.Unsupported)]
     [InlineData(SecureBootState.Unknown)]

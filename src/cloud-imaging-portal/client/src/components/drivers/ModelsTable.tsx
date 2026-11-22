@@ -62,9 +62,9 @@ export function ModelStatus({ model }: { model: DriverModelRow }): React.ReactEl
 
 function StatusLine({ icon, label }: { icon: React.ReactNode; label: string }): React.ReactElement {
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className="flex min-w-0 max-w-48 items-center gap-2">
       {icon}
-      <span className="truncate">{label}</span>
+      <span className="truncate" title={label}>{label}</span>
     </span>
   );
 }
@@ -87,17 +87,18 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
   );
   return (
     <div className="overflow-hidden rounded-md border border-border">
-    <Table className="table-fixed">
+    {/* Every column but Model is as wide as its content, so Model gets the rest of the row. */}
+    <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[34%]">Model</TableHead>
-          <TableHead className="w-[7%]">Vendor</TableHead>
-          <TableHead className="w-[13%]">Windows releases</TableHead>
-          <TableHead className="w-[9%] text-right">Included</TableHead>
-          <TableHead className="w-[9%] text-right">Skipped</TableHead>
-          <TableHead className="w-[9%] text-right"><SizeHead /></TableHead>
-          <TableHead className="w-[15%]">Status</TableHead>
-          <TableHead className="w-[4%]"><span className="sr-only">Open</span></TableHead>
+          <TableHead className="w-full">Model</TableHead>
+          <TableHead className="whitespace-nowrap">Vendor</TableHead>
+          <TableHead className="whitespace-nowrap">Windows releases</TableHead>
+          <TableHead className="whitespace-nowrap text-right">Included</TableHead>
+          <TableHead className="whitespace-nowrap text-right">Skipped</TableHead>
+          <TableHead className="whitespace-nowrap text-right"><SizeHead /></TableHead>
+          <TableHead className="whitespace-nowrap">Status</TableHead>
+          <TableHead><span className="sr-only">Open</span></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -113,19 +114,20 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
           const releases = model.releases.map(releaseLabel).join(', ');
           return (
             <TableRow key={model.modelId} className="h-14 cursor-pointer" onClick={() => onOpen(model.modelId)}>
-              <TableCell>
+              {/* max-w-0 lets the long names truncate instead of widening the column. */}
+              <TableCell className="max-w-0">
                 <div className="truncate font-medium" title={model.displayName}>{model.displayName}</div>
                 <div className="truncate text-xs text-muted-foreground">{model.matchKeys.join(', ')}</div>
               </TableCell>
-              <TableCell className="truncate">{vendorLabel(model.vendor)}</TableCell>
+              <TableCell className="whitespace-nowrap">{vendorLabel(model.vendor)}</TableCell>
               <TableCell>
-                <span className="flex gap-1 overflow-hidden" aria-label={releases}>
+                <span className="flex gap-1" aria-label={releases}>
                   {model.releases.map(r => <Badge key={r} variant="outline" className="shrink-0">{releaseVersion(r)}</Badge>)}
                 </span>
               </TableCell>
               <TableCell className="text-right">{model.included}</TableCell>
               <TableCell className="text-right">{model.skipped}</TableCell>
-              <TableCell className="text-right">{formatSize(model.maxDownloadBytes)}</TableCell>
+              <TableCell className="whitespace-nowrap text-right">{formatSize(model.maxDownloadBytes)}</TableCell>
               <TableCell><ModelStatus model={model} /></TableCell>
               <TableCell>
                 <button

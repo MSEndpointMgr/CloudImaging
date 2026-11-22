@@ -217,7 +217,7 @@ public sealed class DriverSyncServiceTests
 
         var run = await _h.RunAsync();
 
-        _h.Handled.Select(m => m.Kind).Should().StartWith([DriverWorkKind.FetchVendorCatalog, DriverWorkKind.ResolveModel, DriverWorkKind.BuildSet]);
+        _h.Handled.Select(m => m.Kind).Should().StartWith([DriverWorkKind.FetchVendorCatalog, DriverWorkKind.ResolveModel, DriverWorkKind.ResolveFirmware, DriverWorkKind.BuildSet]);
         _h.Handled.Count(m => m.Kind == DriverWorkKind.DownloadFile).Should().Be(2);
         _h.Handled.Count(m => m.Kind == DriverWorkKind.FinalizeRun).Should().Be(1);
         _h.Handled.Last().Kind.Should().Be(DriverWorkKind.FinalizeRun);
@@ -243,7 +243,8 @@ public sealed class DriverSyncServiceTests
         _h.Bed.Queues.Sent.Should().BeEmpty();
         (await _h.Bed.Runs.GetAsync(start.RunId!.Value))!.Value.Outstanding.Should().Be(afterFirst);
         children.Should().ContainSingle(m => m.Work.Kind == DriverWorkKind.ResolveModel && m.Work.ModelId == model.ModelId);
-        afterFirst.Should().Be(1);
+        children.Should().ContainSingle(m => m.Work.Kind == DriverWorkKind.ResolveFirmware && m.Work.ModelId == model.ModelId);
+        afterFirst.Should().Be(2);
     }
 
     [Fact]

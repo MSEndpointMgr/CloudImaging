@@ -25,6 +25,10 @@ export interface SessionDriverPin {
   driverMatchKey?: string | null;
   driverChosenManually?: boolean;
   driverChosenBy?: string | null;
+  /** BIOS version the device is updated to, decided when it registered; null when it gets none. */
+  firmwareVersion?: string | null;
+  /** BIOS version the device reported when it registered. */
+  firmwareInstalledVersion?: string | null;
 }
 
 /**
@@ -38,6 +42,7 @@ export const PIPELINE_STEPS: readonly { name: string; label: string; optional: b
   { name: 'InstallDrivers', label: 'Install drivers', optional: true },
   { name: 'PrepareSetup', label: 'Prepare setup', optional: true },
   { name: 'ConfigureBoot', label: 'Configure boot', optional: false },
+  { name: 'UpdateFirmware', label: 'Update firmware', optional: true },
   { name: 'ApplyRecoveryImage', label: 'Configure recovery', optional: false },
 ];
 

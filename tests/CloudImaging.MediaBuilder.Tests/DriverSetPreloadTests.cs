@@ -258,6 +258,24 @@ public sealed class DriverSetPreloadTests : IDisposable
     }
 
     [Fact]
+    public async Task TheWorkerWritesTheEntryTheClientReads()
+    {
+        // Shared with the Client tests, which read an entry in exactly this shape.
+        var fixture = JsonDocument.Parse(System.IO.File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "driver-cache-entry.json"))).RootElement;
+        var expected = fixture.GetProperty("metadata");
+        var file = Source(fixture.GetProperty("fileContent").GetString()!, expected.GetProperty("fileName").GetString()!);
+        var cache = Path.Combine(_root, "E", "CloudImagingCache");
+
+        await DriverSetPreloadCopier.CopyAsync(cache, [file], null);
+
+        var written = JsonDocument.Parse(System.IO.File.ReadAllText(Path.Combine(cache, "drivers", expected.GetProperty("sha256").GetString()!, "metadata.json"))).RootElement;
+        written.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo(expected.EnumerateObject().Select(p => p.Name));
+        written.GetProperty("sha256").GetString().Should().Be(expected.GetProperty("sha256").GetString());
+        written.GetProperty("fileName").GetString().Should().Be(expected.GetProperty("fileName").GetString());
+        written.GetProperty("sizeBytes").GetInt64().Should().Be(expected.GetProperty("sizeBytes").GetInt64());
+    }
+
+    [Fact]
     public async Task AHashMismatchWhileCopying_FailsWithTheFix_AndRemovesTheEntry()
     {
         var file = Source("softpaq") with { Sha256 = Sha("expected") };

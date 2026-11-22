@@ -411,6 +411,11 @@ public sealed class DriverModelService
             {
                 await _work.EnqueueAsync(new DriverWorkMessage { Kind = DriverWorkKind.ResolveModel, ModelId = modelId, Release = release }, TimeSpan.Zero, ct);
             }
+
+            if (DriverFirmwareService.Supports(model))
+            {
+                await _work.EnqueueAsync(new DriverWorkMessage { Kind = DriverWorkKind.ResolveFirmware, ModelId = modelId }, TimeSpan.Zero, ct);
+            }
         }
 
         await _store.LogAsync(now, upn, actor.ObjectId, "Model", model.DisplayName, "Onboarding completed", ct);

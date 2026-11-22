@@ -66,6 +66,18 @@ public sealed class DriverPolicyResolverTests
         DriverPolicyResolver.Resolve(Audio, null, []).Should().Be(new DriverPolicyDecision(DriverAction.OfflineAndSpecialize, DriverActionSource.Default));
     }
 
+    [Theory]
+    [InlineData("Driver - *", true)]
+    [InlineData("driver*", true)]
+    [InlineData("Driver - Net", false)]
+    [InlineData("Firmware*", false)]
+    public void Resolve_CategoryRule_AcceptsTheWildcard(string value, bool matches)
+    {
+        var decision = DriverPolicyResolver.Resolve(Wlan, null, [Rule("Category", DriverRuleMatch.Category, value, DriverAction.Skip)]);
+
+        (decision.Source == DriverActionSource.Rule).Should().Be(matches);
+    }
+
     [Fact]
     public void Resolve_SameLayer_IdBeatsNameBeatsCategory()
     {

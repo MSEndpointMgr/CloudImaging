@@ -431,13 +431,14 @@ export interface DriverComponentVersion {
   sizeBytes: number;
 }
 
-export type DriverVersionChange = 'Onboarding' | 'Sync' | 'RollBack' | 'Custom';
+export type DriverVersionChange = 'Onboarding' | 'Sync' | 'RollBack' | 'Custom' | 'Release';
 
 export const VERSION_CHANGE_LABELS: Record<DriverVersionChange, string> = {
   Onboarding: 'Onboard',
   Sync: 'Sync',
   RollBack: 'Roll back',
   Custom: 'Custom component',
+  Release: 'Release',
 };
 
 /** "52 to 53", or "52" when one set used it. */
@@ -468,6 +469,78 @@ export const rollBackComponent = (modelId: string, release: WindowsRelease, line
 
 export const undoRollBack = (modelId: string, release: WindowsRelease, lineageKey: string): Promise<DriverComponentRow> =>
   driversSend('DELETE', `${componentPath(modelId, release, lineageKey)}/rollback`, undefined, 'Could not undo the roll back.');
+
+export type DriverFirmwareAction = 'UpdateAtRestart' | 'Skip';
+
+export const FIRMWARE_ACTIONS: readonly DriverFirmwareAction[] = ['UpdateAtRestart', 'Skip'];
+
+/** Label of a BIOS action. */
+export function firmwareActionLabel(action: DriverFirmwareAction): string {
+  return action === 'UpdateAtRestart' ? 'Update at restart' : 'Skip';
+}
+
+export type DriverFirmwareNewVersions = 'AvailableImmediately' | 'PreProductionFirst';
+
+/** The BIOS of one platform of a model. */
+export interface DriverFirmwareRow {
+  platformId: string;
+  name: string;
+  /** Newest version in HP's catalog. */
+  version: string;
+  lastUpdated: string | null;
+  fileName: string;
+  critical: boolean;
+  action: DriverFirmwareAction;
+  /** Default, Override or RolledBack. */
+  source: DriverActionSource;
+  /** The version devices of every location get. */
+  releasedVersion: string;
+  rollBack: DriverComponentRollBack | null;
+  /** Size of the newest version once downloaded, otherwise 0. */
+  sizeBytes: number;
+  descriptionUrl: string | null;
+  downloadFailure: string | null;
+  downloading: boolean;
+}
+
+/** A BIOS only devices of the pre-production location get. */
+export interface DriverFirmwarePreProduction {
+  platformId: string;
+  version: string;
+  releasedAt: string | null;
+  releasedVersion: string;
+  since: string | null;
+}
+
+/** The Firmware tab of a model. */
+export interface DriverFirmwarePage {
+  supported: boolean;
+  newVersions: DriverFirmwareNewVersions;
+  preProductionLocationName: string | null;
+  rows: DriverFirmwareRow[];
+  preProduction: DriverFirmwarePreProduction[];
+}
+
+const firmwarePath = (modelId: string, platformId: string): string =>
+  `models/${encodeURIComponent(modelId)}/firmware/${encodeURIComponent(platformId)}`;
+
+export const fetchFirmware = (modelId: string): Promise<DriverFirmwarePage> =>
+  driversGet(`models/${encodeURIComponent(modelId)}/firmware`, 'Could not load the firmware.');
+
+export const setFirmwareAction = (modelId: string, platformId: string, action: DriverFirmwareAction): Promise<DriverFirmwarePage> =>
+  driversSend('PUT', `${firmwarePath(modelId, platformId)}/action`, { action }, 'Could not change the action.');
+
+export const releaseFirmware = (modelId: string, platformId: string): Promise<DriverFirmwarePage> =>
+  driversSend('POST', `${firmwarePath(modelId, platformId)}/release`, {}, 'Could not release the BIOS.');
+
+export const fetchFirmwareVersions = (modelId: string, platformId: string): Promise<DriverComponentVersion[]> =>
+  driversGet(`${firmwarePath(modelId, platformId)}/versions`, 'Could not load the version history.');
+
+export const rollBackFirmware = (modelId: string, platformId: string, version: string, until: DriverRollBackUntil): Promise<DriverFirmwarePage> =>
+  driversSend('PUT', `${firmwarePath(modelId, platformId)}/rollback`, { version, until }, 'Could not roll back the BIOS.');
+
+export const undoFirmwareRollBack = (modelId: string, platformId: string): Promise<DriverFirmwarePage> =>
+  driversSend('DELETE', `${firmwarePath(modelId, platformId)}/rollback`, undefined, 'Could not undo the roll back.');
 
 export interface DriverCustomNotice {
   customId: string;
@@ -809,11 +882,17 @@ export interface DriverSyncSettingsInput {
   waitForApprovalOfNewComponents: boolean;
   /** Newer driver sets wait in testing until an Operator releases them. */
   waitForTesting: boolean;
+  /** Who gets a newer BIOS a sync finds. */
+  firmwareNewVersions: DriverFirmwareNewVersions;
+  /** Location whose devices get a BIOS in pre-production. */
+  firmwarePreProductionLocationId: string | null;
 }
 
 export interface DriverSyncSettings extends DriverSyncSettingsInput {
   /** Model and release pairs with a set in testing; switching to Use automatically releases them. */
   setsInTesting?: number;
+  /** BIOS versions in pre-production; switching to Available immediately releases them. */
+  firmwareInPreProduction?: number;
   nextRunAt: string | null;
   syncNowAvailableAt: string | null;
   lastRunStartedAt: string | null;

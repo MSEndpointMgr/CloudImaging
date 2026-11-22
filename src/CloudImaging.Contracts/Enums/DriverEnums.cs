@@ -102,7 +102,7 @@ public enum DriverRuleScope
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DriverRuleMatch
 {
-    /// <summary>The vendor category, compared case-insensitively.</summary>
+    /// <summary>The vendor category, compared case-insensitively; <c>*</c> matches any text.</summary>
     Category,
 
     /// <summary>A name pattern where <c>*</c> matches any text.</summary>
@@ -199,6 +199,9 @@ public enum DriverVersionChange
 
     /// <summary>Someone added it as a custom component.</summary>
     Custom,
+
+    /// <summary>Someone released a BIOS from pre-production to every location.</summary>
+    Release,
 }
 
 /// <summary>Result of a run.</summary>

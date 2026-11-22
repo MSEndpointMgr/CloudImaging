@@ -24,6 +24,7 @@ vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => (
 }));
 vi.mock('../../../src/cloud-imaging-portal/client/src/context/authContext.tsx', () => ({ useAuth: () => auth }));
 vi.mock('../../../src/cloud-imaging-portal/client/src/context/toastContext.tsx', () => ({ useToast: () => ({ notify, update: vi.fn(), dismiss: vi.fn() }) }));
+vi.mock('../../../src/cloud-imaging-portal/client/src/context/userPreferencesContext.tsx', () => ({ useUserPreferences: () => ({ locations: [{ locationId: 'lab', name: 'IT Lab' }, { locationId: 'hq', name: 'Stockholm Office' }] }) }));
 
 import DriversPage from '../../../src/cloud-imaging-portal/client/src/pages/DriversPage.tsx';
 import DriverModelPage from '../../../src/cloud-imaging-portal/client/src/pages/DriverModelPage.tsx';
@@ -373,7 +374,7 @@ describe('Drivers: checks on the Models tab and the model page', () => {
     } } });
     renderAt(`/drivers/models/${modelId}`);
 
-    const button = await screen.findByRole('button', { name: /^Updates$/ });
+    const button = await screen.findByRole('button', { name: 'Check for updates' });
     expect((button as HTMLButtonElement).disabled).toBe(true);
     fireEvent.focus(button.parentElement!);
     expect(await screen.findByText(text)).toBeTruthy();
@@ -426,5 +427,37 @@ describe('Drivers: a driver set in testing', () => {
 
     expect(await screen.findByText('Only devices an Operator chooses it for at imaging start get it. Other devices of this model get no drivers.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Release' })).toBeNull();
+  });
+});
+
+describe('Drivers: Firmware card on the Sync tab', () => {
+  it('offers Pre-production first only once a pre-production location is chosen', async () => {
+    serve(syncRoutes({}, settings({ firmwareNewVersions: 'AvailableImmediately', firmwarePreProductionLocationId: null })));
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Newer BIOS versions' }));
+    expect(screen.getByRole('option', { name: /Pre-production first/ }).getAttribute('aria-disabled')).toBe('true');
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Pre-production location' }));
+    fireEvent.click(screen.getByRole('option', { name: 'IT Lab' }));
+
+    await waitFor(() => expect(puts().at(-1)).toMatchObject({ firmwareNewVersions: 'AvailableImmediately', firmwarePreProductionLocationId: 'lab' }));
+  });
+
+  it('confirms before Available immediately releases the BIOS versions in pre-production', async () => {
+    const current = settings({ firmwareNewVersions: 'PreProductionFirst', firmwarePreProductionLocationId: 'lab', firmwareInPreProduction: 2 });
+    serve(syncRoutes({}, current));
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Newer BIOS versions' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Available immediately' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Make newer BIOS versions available immediately?' });
+    expect(within(dialog).getByText(/All 2 BIOS versions in pre-production are released/)).toBeTruthy();
+    expect(puts()).toEqual([]);
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Release and make available' }));
+
+    await waitFor(() => expect(puts().at(-1)).toMatchObject({ firmwareNewVersions: 'AvailableImmediately' }));
   });
 });

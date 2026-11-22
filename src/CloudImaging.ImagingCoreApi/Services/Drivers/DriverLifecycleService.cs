@@ -173,6 +173,9 @@ public sealed class DriverLifecycleService
             await DeletePairAsync(modelId, release, ct);
         }
 
+        // Its BIOS files go at the next clean-up, except one pinned to a running deployment.
+        await DriverFirmwareService.DeleteModelAsync(_store, modelId, ct);
+
         await _store.LogAsync(_time.GetUtcNow(), changedBy, null, "Model", model.DisplayName, "Removed", ct);
         return new DriverResult(HttpStatusCode.NoContent);
     }

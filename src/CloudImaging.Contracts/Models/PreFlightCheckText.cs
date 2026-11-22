@@ -15,6 +15,7 @@ public static class PreFlightCheckText
         PreFlightCheck.FirmwareMode => "Firmware mode",
         PreFlightCheck.SecureBoot => "Secure Boot",
         PreFlightCheck.TpmVersion => "TPM version",
+        PreFlightCheck.AcPower => "AC power",
         _ => check.ToString(),
     };
 
@@ -33,6 +34,8 @@ public static class PreFlightCheckText
         nameof(TpmPresence.Tpm20) => "Version 2.0 or above",
         nameof(TpmPresence.Tpm12) => "Version 1.2",
         nameof(TpmPresence.NotDetected) => "Not detected",
+        nameof(PowerSource.Ac) => "Connected",
+        nameof(PowerSource.Battery) => "On battery",
         nameof(FirmwareMode.Unknown) => "Could not be detected",
         _ => observed,
     };
@@ -48,6 +51,7 @@ public static class PreFlightCheckText
             PreFlightCheck.FirmwareMode => "Switch to UEFI in firmware settings.",
             PreFlightCheck.SecureBoot => "Enable Secure Boot in firmware settings.",
             PreFlightCheck.TpmVersion => "Enable the TPM in firmware settings.",
+            PreFlightCheck.AcPower => "Connect the AC adapter. The device gets a BIOS update at the end of imaging.",
             _ => string.Empty,
         },
     };

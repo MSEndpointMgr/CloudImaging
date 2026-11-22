@@ -10,11 +10,12 @@ import { ToggleGroup } from '../ui/toggle-group.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { useAuth } from '../../context/authContext.tsx';
 import { useToast } from '../../context/toastContext.tsx';
+import { useUserPreferences } from '../../context/userPreferencesContext.tsx';
 import { useRerenderAt } from '../../hooks/useRerenderAt.ts';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
   MONDAY_TO_FRIDAY, WEEKDAYS, availableAgainText, browserTimeZone, fetchSyncRuns, fetchSyncSettings, fetchVendors, nextSyncLine, saveSyncSettings, syncNow,
-  type DriverSyncRun, type DriverSyncSchedule, type DriverSyncSettings, type DriverSyncSettingsInput, type DriverVendorRow,
+  type DriverFirmwareNewVersions, type DriverSyncRun, type DriverSyncSchedule, type DriverSyncSettings, type DriverSyncSettingsInput, type DriverVendorRow,
 } from '../../lib/drivers.ts';
 import { SyncHistory } from './SyncHistory.tsx';
 import { DriverCard, DriverCardRow, DriverCardRows } from './DriverCard.tsx';
@@ -49,6 +50,9 @@ const NEWER_VERSION_OPTIONS = [
 /** How often the history is read again while a sync runs. */
 export const SYNC_POLL_MS = 15_000;
 
+// Select values cannot be empty, so "no pre-production location" has its own value.
+const NO_LOCATION = 'none';
+
 /** Sync tab: schedule, Sync now, approval setting, vendors and the run history. */
 export function SyncTab(): React.ReactElement {
   const { canManageDrivers } = useAuth();
@@ -62,6 +66,8 @@ export function SyncTab(): React.ReactElement {
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [confirmingRelease, setConfirmingRelease] = useState(false);
+  const [confirmingFirmwareRelease, setConfirmingFirmwareRelease] = useState(false);
+  const { locations } = useUserPreferences();
 
   const applyLoaded = useCallback((loaded: DriverSyncSettings) => {
     setSettings(current => ({ ...loaded, timeZones: loaded.timeZones.length > 0 ? loaded.timeZones : current?.timeZones ?? [] }));
@@ -150,6 +156,8 @@ export function SyncTab(): React.ReactElement {
     timeZone: settings.timeZone,
     waitForApprovalOfNewComponents: settings.waitForApprovalOfNewComponents,
     waitForTesting: settings.waitForTesting,
+    firmwareNewVersions: settings.firmwareNewVersions,
+    firmwarePreProductionLocationId: settings.firmwarePreProductionLocationId,
   };
   const readOnly = !canManageDrivers || saving;
   const manual = settings.schedule === 'Manual';
@@ -198,6 +206,38 @@ export function SyncTab(): React.ReactElement {
     await save({ ...input, weekdays: days || settings.weekdays, waitForTesting: false }, false, `${inTesting === 1 ? '1 driver set' : `${inTesting} driver sets`} released from testing.`);
     setConfirmingRelease(false);
   };
+
+  // Available immediately again releases every BIOS in pre-production, so that is confirmed first.
+  const inPreProduction = settings.firmwareInPreProduction ?? 0;
+  const chooseFirmwareVersions = async (value: string) => {
+    const next = value as DriverFirmwareNewVersions;
+    if (next === 'AvailableImmediately' && settings.firmwareNewVersions === 'PreProductionFirst') {
+      const fresh = await fetchSyncSettings().then(s => s.firmwareInPreProduction ?? 0, () => inPreProduction);
+      setSettings(current => (current ? { ...current, firmwareInPreProduction: fresh } : current));
+      if (fresh > 0) {
+        setConfirmingFirmwareRelease(true);
+        return;
+      }
+    }
+    void save({ ...input, weekdays: days || settings.weekdays, firmwareNewVersions: next });
+  };
+
+  const releaseFirmwareAndUseImmediately = async () => {
+    await save({ ...input, weekdays: days || settings.weekdays, firmwareNewVersions: 'AvailableImmediately' }, false, `${inPreProduction === 1 ? '1 BIOS' : `${inPreProduction} BIOS versions`} released from pre-production.`);
+    setConfirmingFirmwareRelease(false);
+  };
+
+  const preProductionLocation = settings.firmwarePreProductionLocationId;
+  const firmwareVersionOptions = [
+    { value: 'AvailableImmediately', label: 'Available immediately' },
+    { value: 'PreProductionFirst', label: 'Pre-production first', disabled: !preProductionLocation, description: preProductionLocation ? undefined : 'Choose the pre-production location first' },
+  ];
+  // A location that was deleted still shows by name until another is chosen.
+  const locationOptions = [
+    ...(settings.firmwareNewVersions === 'PreProductionFirst' ? [] : [{ value: NO_LOCATION, label: 'None' }]),
+    ...locations.map(l => ({ value: l.locationId, label: l.name })),
+    ...(preProductionLocation && !locations.some(l => l.locationId === preProductionLocation) ? [{ value: preProductionLocation, label: 'Removed location' }] : []),
+  ];
 
   const startSync = async () => {
     setStarting(true);
@@ -322,6 +362,34 @@ export function SyncTab(): React.ReactElement {
         onError={message => notify({ status: 'error', title: 'Could not change the vendor', description: message })}
       />
 
+      <DriverCard title="Firmware" description="New BIOS versions HP publishes for your onboarded HP models, read by the same sync as the drivers.">
+        <DriverCardRows>
+          <DriverCardRow
+            label="Newer versions"
+            help="Available immediately gives a new BIOS to every device of the model at once. Pre-production first gives it only to devices from the pre-production location until someone releases it on the model page."
+          >
+            <Select
+              value={settings.firmwareNewVersions}
+              onValueChange={v => void chooseFirmwareVersions(v)}
+              options={firmwareVersionOptions}
+              aria-label="Newer BIOS versions"
+              disabled={readOnly}
+              wrapperClassName="w-[240px]"
+            />
+          </DriverCardRow>
+          <DriverCardRow label="Pre-production location" help="The location on the device's USB media, as for setup profiles.">
+            <Select
+              value={preProductionLocation ?? NO_LOCATION}
+              onValueChange={v => void save({ ...input, weekdays: days || settings.weekdays, firmwarePreProductionLocationId: v === NO_LOCATION ? null : v })}
+              options={locationOptions}
+              aria-label="Pre-production location"
+              disabled={readOnly}
+              wrapperClassName="w-[240px]"
+            />
+          </DriverCardRow>
+        </DriverCardRows>
+      </DriverCard>
+
       <SyncHistory runs={runs} />
 
       {confirmingRelease && (
@@ -337,6 +405,22 @@ export function SyncTab(): React.ReactElement {
           busy={saving}
           onCancel={() => setConfirmingRelease(false)}
           onConfirm={() => void releaseAndUseAutomatically()}
+        />
+      )}
+
+      {confirmingFirmwareRelease && (
+        <ConfirmImpactDialog
+          icon={Rocket}
+          titleId="release-firmware-title"
+          copy={{
+            confirmTitle: 'Make newer BIOS versions available immediately?',
+            impact: `${inPreProduction === 1 ? 'The BIOS in pre-production is released' : `All ${inPreProduction} BIOS versions in pre-production are released`}: devices of every location imaged from now on get ${inPreProduction === 1 ? 'it' : 'them'}. New BIOS versions no longer wait in pre-production.`,
+            confirmLabel: 'Release and make available',
+            destructive: false,
+          }}
+          busy={saving}
+          onCancel={() => setConfirmingFirmwareRelease(false)}
+          onConfirm={() => void releaseFirmwareAndUseImmediately()}
         />
       )}
     </div>

@@ -22,6 +22,10 @@ public sealed class WifiConnectionViewModelTests
             Authentication          : WPA2-Enterprise
                  Signal             : 90%
 
+        SSID 3 : CafeOpen
+            Authentication          : Open
+                 Signal             : 85%
+
         """;
 
     [Fact]
@@ -32,8 +36,7 @@ public sealed class WifiConnectionViewModelTests
 
         var vm = new WifiConnectionViewModel(wifiService);
 
-        vm.Networks.Should().HaveCount(2);
-        vm.Networks[0].Ssid.Should().Be("CorpWifi", "networks are ordered by signal strength descending");
+        vm.Networks.Select(n => n.Ssid).Should().Equal(["CafeOpen", "HomeNetwork"], "networks are ordered by signal strength descending");
         vm.IsScanning.Should().BeFalse();
     }
 
@@ -48,15 +51,14 @@ public sealed class WifiConnectionViewModelTests
     }
 
     [Fact]
-    public void CanConnect_IsFalse_WhenSelectedNetworkIsUnsupported()
+    public void EnterpriseNetworks_AreLeftOutOfTheList()
     {
         var wifiService = new WirelessConnectionService(runNetshOverride: (_, _) =>
             Task.FromResult((0, ScanFixture, string.Empty)));
         var vm = new WifiConnectionViewModel(wifiService);
 
-        vm.SelectedNetwork = vm.Networks.Single(n => n.Ssid == "CorpWifi");
-
-        vm.CanConnect.Should().BeFalse("Enterprise networks are not connectable via this simple PSK-only flow");
+        vm.Networks.Should().NotContain(n => n.Ssid == "CorpWifi", "Enterprise networks are not connectable via this simple PSK-only flow");
+        vm.EnterpriseNote.Should().Be("1 network that needs Enterprise (802.1X) sign-in is not shown. It is not supported.");
     }
 
     [Fact]
@@ -94,7 +96,7 @@ public sealed class WifiConnectionViewModelTests
         vm.SelectedNetwork = vm.Networks.Single(n => n.Ssid == "HomeNetwork");
 
         vm.ConnectCommand.Execute("password123");
-        await Task.Delay(1500); // allow the fire-and-forget async command + one poll tick to complete
+        await WaitUntil(() => vm.StatusMessage is not null);
 
         vm.HasSucceeded.Should().BeTrue();
         vm.HasConnected.Should().BeTrue();
@@ -117,7 +119,7 @@ public sealed class WifiConnectionViewModelTests
         vm.SelectedNetwork = vm.Networks.Single(n => n.Ssid == "HomeNetwork");
 
         vm.ConnectCommand.Execute("password123");
-        await Task.Delay(250);
+        await WaitUntil(() => vm.StatusMessage is not null);
 
         vm.HasError.Should().BeTrue();
         vm.HasSucceeded.Should().BeFalse();
@@ -162,5 +164,12 @@ public sealed class WifiConnectionViewModelTests
         vm.CloseCommand.Execute(null);
 
         closeCalled.Should().BeTrue();
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (!condition() && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
     }
 }

@@ -53,11 +53,11 @@ function renderSidebar(): void {
 }
 
 describe('Drivers shell', () => {
-  it('lists Drivers between Recovery Images and Setup Profiles for a Technician', () => {
+  it('lists Drivers & Firmware between Recovery Images and Setup Profiles for a Technician', () => {
     renderSidebar();
 
     const links = screen.getAllByRole('link').map((link) => link.textContent?.trim());
-    const drivers = links.indexOf('Drivers');
+    const drivers = links.indexOf('Drivers & Firmware');
     expect(drivers).toBeGreaterThan(-1);
     expect(links[drivers - 1]).toBe('Recovery Images');
     expect(links[drivers + 1]).toBe('Setup Profiles');
@@ -68,7 +68,7 @@ describe('Drivers shell', () => {
 
     renderSidebar();
 
-    expect(screen.queryByRole('link', { name: 'Drivers' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Drivers & Firmware' })).toBeNull();
   });
 
   it.each([

@@ -91,9 +91,10 @@ Device-facing gateway that supports WinPE clients without direct Entra ID sign-i
 - Request body:
   - `stepName`
   - `status`
-  - `progressPercent` (optional)
-  - `errorDetail` (optional)
 - Response: `204 No Content`
+  - A start or percent report for a step that has already ended is acknowledged with `204` and not stored. The device does not wait for its percent reports, so one can arrive after the step's end report.
+  - `409 Conflict` when the session is not started or in progress.
+  - `503 Service Unavailable` when another report for the same step kept changing it while this one was being stored. The device sends the report again.
 
 ### 4) Refresh SAS Token URL
 
@@ -135,7 +136,7 @@ Device-facing gateway that supports WinPE clients without direct Entra ID sign-i
 
 Per-session rate limiting is enforced on all authenticated Device Gateway API endpoints. The public bootstrap endpoint (`POST /api/v1/sessions`) is exempt.
 
-- **Limit**: 10 API calls per 30-second sliding window per device-session token.
+- **Limit**: 30 API calls per 30-second sliding window per device-session token.
 - **Exceeded**: `429 Too Many Requests` with `Retry-After` header (value in seconds).
 - **Scope**: Limit is per device-session token; separate sessions have independent counters.
 

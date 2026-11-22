@@ -211,7 +211,7 @@ assignment and the step could change the set).
 **Decision**: The descriptor (`GET /api/v1/sessions/{id}/driver-set`) returns one user-delegation
 read SAS per component, valid for 60 minutes. A component whose URL expires before it finishes is
 refreshed alone (`POST .../driver-set/components/{index}/link`). The descriptor is fetched once;
-refreshes are rare, so the session stays far inside 10 calls per 30 seconds.
+refreshes are rare, so the session stays far inside 30 calls per 30 seconds.
 
 **Rationale**: Matches the clarification (one link per component) and the existing setup profile
 descriptor pattern (15-minute SAS, Core issues, Gateway relays). 60 minutes covers an 800 MB file

@@ -8,12 +8,11 @@
         (Format, Download, Apply, Configure Boot, Apply Recovery) with a small dot + label +
         caption per step (mirrors CloudImaging.MediaBuilder's GenerateBootImageView step list).
         The right "hero" panel shows a continuously-spinning (indeterminate) progress ring next
-        to the current step's title/subtitle: the overall session percentage is shown as text
-        over the ring, so the ring itself only needs to communicate "still working", not the
-        value: a short live-activity ticker underneath (the same StatusMessage strings
+        to the current step's title/subtitle, with the overall session percentage labelled
+        "overall" inside the ring: a short live-activity ticker underneath (the same StatusMessage strings
         ImagingWorkflowViewModel already sets), and a progress bar scoped to the step that is
-        currently running (download / apply / recovery), with the real downloaded-vs-total byte
-        counts under it while a transfer is in flight. No fabricated speed or time-remaining
+        currently running (download / apply / recovery), with the step's percentage and the real
+        downloaded-vs-total byte counts under it while a transfer is in flight. No fabricated speed or time-remaining
         telemetry, since the pipeline doesn't expose any. Sized to fit the fixed 800x600 WinPE
         window with no page-level scrolling (FR-002b).
     -->
@@ -131,14 +130,23 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Ring + title/subtitle -->
+            <!-- Ring + title/subtitle. The ring's number is labelled "overall" so it is not read as the
+                 progress of the step named beside it; the step's own figure sits under the step bar. -->
             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,18">
                 <Grid Width="52" Height="52" VerticalAlignment="Center">
                     <ui:ProgressRing IsIndeterminate="True"
                                      Width="52" Height="52" />
-                    <TextBlock Text="{Binding OverallPercent, StringFormat='{}{0}%'}"
-                               FontSize="12" FontWeight="SemiBold"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding OverallPercent, StringFormat='{}{0}%'}"
+                                   FontSize="12" FontWeight="SemiBold" LineHeight="13"
+                                   LineStackingStrategy="BlockLineHeight"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="overall"
+                                   FontSize="8" LineHeight="9"
+                                   LineStackingStrategy="BlockLineHeight"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
                 </Grid>
                 <StackPanel VerticalAlignment="Center" Margin="16,0,0,0">
                     <TextBlock Text="{Binding CurrentStepTitle}" Style="{StaticResource TitleTextBlockStyle}" />
@@ -184,11 +192,18 @@
             -->
             <StackPanel Grid.Row="2" Margin="0,0,0,0">
                 <ProgressBar Value="{Binding StepPercent}" Minimum="0" Maximum="100" Height="6" />
-                <TextBlock Text="{Binding TransferDetail, Mode=OneWay}"
-                           Visibility="{Binding HasTransferDetail, Converter={StaticResource BoolToVisibility}}"
-                           Margin="0,6,0,0"
-                           FontSize="11.5"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <!-- Byte counter on the left, the step's percentage (as the portal shows it) on the right. -->
+                <Grid Margin="0,6,0,0"
+                      Visibility="{Binding HasStepPercentText, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="{Binding TransferDetail, Mode=OneWay}"
+                               HorizontalAlignment="Left"
+                               FontSize="11.5"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Text="{Binding StepPercentText, Mode=OneWay}"
+                               HorizontalAlignment="Right"
+                               FontSize="11.5" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </Grid>
             </StackPanel>
 
             <!-- Error section: accent-strip design (icon + title, selectable message, no boxed InfoBar) -->
