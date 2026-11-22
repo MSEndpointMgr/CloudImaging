@@ -356,6 +356,33 @@ public sealed record DriverComponentRow
 
     /// <summary>Download size.</summary>
     public long SizeBytes { get; init; }
+
+    /// <summary>Set while the file of an included component is not stored yet.</summary>
+    public DriverComponentDownload? Download { get; init; }
+}
+
+/// <summary>Where the file of an included component is on its way to storage.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DriverComponentDownloadStatus
+{
+    /// <summary>Downloads when the waiting changes are built into a driver set.</summary>
+    Waiting,
+
+    /// <summary>Downloading from the vendor.</summary>
+    Downloading,
+
+    /// <summary>The download failed; the next sync tries again.</summary>
+    Failed,
+}
+
+/// <summary>A component whose file is not stored yet.</summary>
+public sealed record DriverComponentDownload
+{
+    /// <summary>Where the file is.</summary>
+    public required DriverComponentDownloadStatus Status { get; init; }
+
+    /// <summary>Why the download failed.</summary>
+    public string? FailureReason { get; init; }
 }
 
 /// <summary>Edits waiting to be built into a set.</summary>

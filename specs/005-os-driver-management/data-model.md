@@ -192,8 +192,8 @@ All writes use the row's ETag.
 | `Vendors` | JSON | Per vendor: processed or failed with reason, and for syncs `newModels` (models added to the vendor's list by this run). |
 
 `DriverSyncRunItems` (PK runId, RK index): `ModelId`, `ModelName`, `LineageKey`, `ComponentName`,
-`OldVersion`, `NewVersion`, `Outcome`, `Reason`. Runs and items older than 90 days are deleted at
-the end of every run.
+`OldVersion`, `NewVersion`, `Outcome`, `Reason`. Runs and items older than 2 months are deleted at
+the end of every run, and an Administrator can delete every finished run at once (Clear history).
 
 ### 3.12 Queue `driver-work` (Core storage account, not a table)
 
@@ -266,7 +266,7 @@ vendor version a banner was last shown for) and `DismissedAt`, `DismissedBy`.
 `Trigger` (`Onboarding`, `Sync`, `Policy`, `RollBack`, `Custom`), `BuiltAt`, `ReadyAt?`,
 `Components`, `NewComponents`, `ReusedComponents`, `SizeBytes`, `DownloadedBytes`, `FailedComponents`.
 Feeds the Downloads tab (in progress: `ReadyAt` null; finished: `ReadyAt` in the last 7 days) and
-the "Driver sets" ranges of the version history. Rows older than 90 days are deleted with the run
+the "Driver sets" ranges of the version history. Rows older than 2 months are deleted with the run
 history.
 
 ## 4. Blobs (container `drivers`)

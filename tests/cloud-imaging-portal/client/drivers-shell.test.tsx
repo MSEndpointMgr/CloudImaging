@@ -42,6 +42,7 @@ import DriversPage from '../../../src/cloud-imaging-portal/client/src/pages/Driv
 afterEach(() => {
   cleanup();
   auth.canViewDrivers = true;
+  auth.canViewAutopilot = false;
 });
 
 function renderSidebar(): void {
@@ -53,14 +54,13 @@ function renderSidebar(): void {
 }
 
 describe('Drivers shell', () => {
-  it('lists Drivers & Firmware between Recovery Images and Setup Profiles for a Technician', () => {
+  it('lists Drivers & Firmware last in Imaging, after Autopilot and Setup Profiles', () => {
+    auth.canViewAutopilot = true;
     renderSidebar();
 
     const links = screen.getAllByRole('link').map((link) => link.textContent?.trim());
     const drivers = links.indexOf('Drivers & Firmware');
-    expect(drivers).toBeGreaterThan(-1);
-    expect(links[drivers - 1]).toBe('Recovery Images');
-    expect(links[drivers + 1]).toBe('Setup Profiles');
+    expect(links.slice(drivers - 3, drivers + 1)).toEqual(['Recovery Images', 'Autopilot', 'Setup Profiles', 'Drivers & Firmware']);
   });
 
   it('hides Drivers from a role without driver access', () => {

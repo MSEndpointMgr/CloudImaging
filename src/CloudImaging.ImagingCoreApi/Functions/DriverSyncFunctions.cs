@@ -16,7 +16,8 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 /// endpoints, called by the Operator API on behalf of the portal.
 ///
 /// POST internal/drivers/sync/runs    Sync now
-/// GET  internal/drivers/sync/runs    runs of the last 90 days, newest first
+/// GET  internal/drivers/sync/runs    runs of the last 2 months, newest first
+/// DELETE internal/drivers/sync/runs?changedBy=   clear the history (finished runs and their items)
 /// GET  internal/drivers/sync/runs/{id}/items   one line per change of a run
 /// GET  internal/drivers/sync/runs/{id}/progress   stages, found so far and latest items of a run
 /// GET  internal/drivers/reports/sync?from=&amp;to=   runs and their items, for the report
@@ -82,11 +83,15 @@ public sealed partial class DriverSyncFunctions
     [Function("GetDriverSyncRuns")]
     public async Task<HttpResponseData> GetDriverSyncRuns(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "internal/drivers/sync/runs")] HttpRequestData req,
-        FunctionContext context)
-    {
-        var runs = (await _runs.ListAsync(context.CancellationToken)).Select(DriverSyncService.ToContract).ToList();
-        return await DriverHttp.JsonAsync(req, HttpStatusCode.OK, runs, context.CancellationToken);
-    }
+        FunctionContext context) =>
+        await DriverHttp.JsonAsync(req, HttpStatusCode.OK, await _sync.ListHistoryAsync(context.CancellationToken), context.CancellationToken);
+
+    /// <summary>DELETE internal/drivers/sync/runs?changedBy=: returns the runs that remain.</summary>
+    [Function("ClearDriverSyncRuns")]
+    public async Task<HttpResponseData> ClearDriverSyncRuns(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "internal/drivers/sync/runs")] HttpRequestData req,
+        FunctionContext context) =>
+        await DriverHttp.ResultAsync(req, await _sync.ClearHistoryAsync(DriverHttp.ChangedBy(req), context.CancellationToken), context.CancellationToken);
 
     /// <summary>GET internal/drivers/sync/runs/{id}/progress.</summary>
     [Function("GetDriverSyncRunProgress")]

@@ -103,6 +103,13 @@ public sealed partial class DriverFunctions
         FunctionContext context) =>
         ForwardAsync(req, HttpMethod.Get, "sync/runs", context.CancellationToken);
 
+    /// <summary>DELETE drivers/sync/runs?changedBy=: clear the sync history.</summary>
+    [Function("ClearDriverSyncRuns")]
+    public Task<HttpResponseData> ClearDriverSyncRuns(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "drivers/sync/runs")] HttpRequestData req,
+        FunctionContext context) =>
+        ForwardAsync(req, HttpMethod.Delete, "sync/runs", context.CancellationToken);
+
     /// <summary>POST drivers/models/check: Check for updates on every model.</summary>
     [Function("CheckAllDriverModelUpdates")]
     public Task<HttpResponseData> CheckAllDriverModelUpdates(

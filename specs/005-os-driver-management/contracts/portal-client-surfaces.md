@@ -74,7 +74,11 @@ this model only; disabled on a draft with the tooltip "Available once onboarding
 the vendor's Sync is off with "Sync is off for HP.", while any run is active with "A sync is running.",
 and
 until `checkAvailableAt` with the tooltip "Available at 14:32"; on success a toast "Checking
-<model> for updates." and the History card gets the run), "Add custom component" (`Plus`), "Roll
+<model> for updates." and the History card gets the run. The page then reads the run's progress
+every 3 seconds; when it ends, the page and the Firmware tab are read again, so new components,
+versions and BIOS updates show without a reload, and a toast "Check for updates finished." (or
+"The check for updates failed.") carries the run summary. Whenever a run that blocked the check
+ends, a scheduled sync included, the Firmware tab is read again with the page), "Add custom component" (`Plus`), "Roll
 back driver set" (`Undo2`; tooltip naming the change, "Devices get driver set 6 instead of 7 from
 their next deployment"; disabled without a previous set with the tooltip "No previous driver set
 to roll back to") and "Remove model" (`Trash2`). No overflow menu. No set version or build time
@@ -104,7 +108,8 @@ Tiles: Offline, Offline + Specialize, Specialize, Skip, Size (same info icon as 
 Toolbar: search, Windows release `Select` (230 px, "Windows 11, version 24H2"; scopes the tiles and
 the table and sets `?release=`), action filter, category filter, "4 updated by today's sync" toggle.
 
-Component table (fixed widths except Component): chevron 44 px; Component (name; ID and category
+Component table (fixed widths except Component): chevron 64 px (room for a status icon beside the
+chevron); Component (name; ID and category
 below; amber "New" badge while waiting; muted "Withdrawn" badge); Version 120 px; Last updated
 110 px; Action 176 px (`Select` with the allowed actions; locked: disabled with `Lock` icon and
 tooltip "The vendor's data only allows Skip for this component."; replaced: disabled at Skip);
@@ -115,11 +120,20 @@ on <date>, skipping <version>. Moves forward when <vendor> publishes a version n
 <version>." or "... Stays until the roll back is undone."); "Override" with an undo icon button
 "Undo override"; the rule name over "Rule"; "Default". Custom component rows show "Uploaded by
 <upn>, <category>" under the name instead of the ID.
+A row whose file is not stored yet (`download` on the row) shows an icon between the chevron and the
+name, centred on both lines, and a line under the name in place of the ID and category: `Clock`
+muted "Downloads when driver set 54 is built at 14:32"; `Download` blue "Downloading from HP for
+driver set 54", with the row tinted blue and a 2 px bar moving along its bottom edge (still with
+reduced motion; `progressbar` "Downloading <name>"); `CircleX` red "Download failed. The next sync
+tries again.", the reason as the icon's tooltip. The Firmware tab's BIOS row does the same with
+"Downloading from HP. Devices get it once it is verified.", and its Size field reads "Downloading"
+or "Download failed" as plain text.
 Footer: "31 of 40 components". Waiting rows have an "Approve" button (`outline`, `sm`) in the
 Source column. Withdrawn rows have "Remove" in the expanded details.
 
 Expanded row: three-column grid of labelled fields, then a bordered Description section with
-"Release notes" link. HP: Offline injection, Contains an app, Silent install, Default action,
+"Release notes" link. The labels, the text inside the bordered boxes and the first column of the
+Version history table all start on one vertical line. HP: Offline injection, Contains an app, Silent install, Default action,
 Released by HP, Release type, Added to this model, Previous version, Download size. Dell:
 Installer (64-bit or 32-bit), Hardware match, Package type, Default action, Released by Dell,
 Criticality, Added to this model, Previous version, Download size. Custom: Package, Uploaded by,
@@ -128,7 +142,10 @@ history** (heading, "Roll back component" `outline` `Undo2` on the right; "Undo 
 while rolled back): a read-only table Version, Driver sets (pill "52 to 53", the current range
 highlighted), From, To ("Now" for the current), Changed by ("Sync", "Onboarding by <upn>",
 "Roll back by <upn>"), Status (icon and label: `CircleCheck` green "Stored", `Download` blue
-"Downloads on roll back", `X` red icon with muted text "No longer available from <vendor>").
+"Downloads on roll back", `X` red icon with muted text "No longer available from <vendor>"). The
+BIOS's current version, whose file is only downloaded once the action is Update at restart, shows
+`Download` blue "Downloading", `CircleX` red "Download failed" or muted "Not downloaded" until it
+is stored. The history is read again whenever its row is, so it follows a download or a new set.
 
 **Roll back component**: `ConfirmImpactDialog` (icon top-aligned) "Roll back <component>?";
 impact "Devices of this model imaged from now on get the version you choose. Other components keep
@@ -199,7 +216,7 @@ above 0 opens `ConfirmImpactDialog` (`Rocket`) "Use newer versions automatically
 driver sets in testing are released: devices imaged from now on get them instead of the current
 set. New driver sets no longer wait in testing." and "Release and use automatically"; the toast
 adds "2 driver sets released from testing."), "New components" (`Switch` "Wait for approval"). Changes apply immediately with a
-toast; no Save button. Under the controls, aligned with the time, a 16 px muted line shows
+toast; no Save button. Under the controls, right-aligned and 12 px below them, a 16 px muted line shows
 `nextRunAt` in the schedule's time zone and the repeat: "Next sync: Monday 2026-10-26 02:00, then
 every day.", "... then every week on Monday to Friday." (three or more consecutive days as "X to
 Y", otherwise "Monday, Wednesday and Friday"), "... then every 2 weeks on Monday.". Manually only
@@ -216,8 +233,18 @@ switch disabled.
 ("4 updated, 1 failed", "1 new", "No changes", and for a model's check the model name first:
 "HP EliteBook 840 G11: 1 updated"; a sync that found new models adds "HP: 3 new models available",
 for example "No changes. HP: 3 new models available"); chevron only when there are items, opening one
-line per item: Model, Component (link to `/drivers/models/:id?release=...#<lineageKey>`),
-Change ("23.70 to 23.80"), Outcome.
+line per item: Model and Component (link to `/drivers/models/:id?release=...#<lineageKey>`), each
+wrapping to two lines with the full name as a tooltip, Previous ("23.70", muted) and Current
+("23.80"), Outcome (a reason follows the label and wraps). Previous, Current and Outcome start as
+wide as their longest value in the run and Model and Component share the rest; every edge but the
+last can be dragged, and a double-click restores the widths. The card description reads "Every sync and check for updates in
+the last 2 months." It shows the newest 20 runs; under the table "Showing 20 of 64" and an
+`outline` "Load more" button add 20 at a time. Administrators get an `outline` "Clear history"
+button (`Trash2`) beside the title, disabled without finished runs, which opens a destructive
+`ConfirmImpactDialog` "Clear the sync history?" ("Removes all 12 finished syncs and checks for
+updates, with their changes, from this list and from the Driver Synchronization report. A sync
+that is running stays. This cannot be undone.", confirm "Clear history") and calls route 27a; the
+toast reads "Sync history cleared."
 
 ## 6. Downloads tab
 

@@ -246,6 +246,15 @@ public enum DriverVersionStatus
 
     /// <summary>The vendor no longer hosts it.</summary>
     Unavailable,
+
+    /// <summary>The current version's file is downloading.</summary>
+    Downloading,
+
+    /// <summary>The current version's file could not be downloaded.</summary>
+    Failed,
+
+    /// <summary>The current version's file is not downloaded, because devices do not get it.</summary>
+    NotDownloaded,
 }
 
 /// <summary>One version in a component's history.</summary>

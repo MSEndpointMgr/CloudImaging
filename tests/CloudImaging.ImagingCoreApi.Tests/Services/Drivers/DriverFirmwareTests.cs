@@ -97,6 +97,36 @@ public sealed class DriverFirmwareTests
     }
 
     [Fact]
+    public async Task History_TheCurrentVersionSaysWhetherItsFileIsThereYet()
+    {
+        var model = await OnboardAsync();
+        Publish(("01.09.00", true), ("01.10.00", true));
+        await _h.RunAsync();
+
+        (await CurrentStatusAsync(model)).Should().Be(DriverVersionStatus.NotDownloaded, "a skipped BIOS is not downloaded, and the current version is not something to roll back to");
+
+        await _firmware.SetActionAsync(model.ModelId, Platform, new DriverFirmwareActionRequest { Action = DriverFirmwareAction.UpdateAtRestart, Actor = Admin });
+        (await CurrentStatusAsync(model)).Should().Be(DriverVersionStatus.Downloading);
+
+        await _h.PumpAsync();
+        (await CurrentStatusAsync(model)).Should().Be(DriverVersionStatus.Stored);
+    }
+
+    [Fact]
+    public async Task History_ACurrentVersionThatCouldNotBeDownloaded_SaysSo()
+    {
+        var model = await OnboardAsync();
+        Publish(("01.10.00", true));
+        await _h.RunAsync();
+        _h.Bed.Vendor.ServeStatus(HpBiosCatalog.FileUrl(Platform, FileName("01.10.00")), System.Net.HttpStatusCode.NotFound);
+
+        await _firmware.SetActionAsync(model.ModelId, Platform, new DriverFirmwareActionRequest { Action = DriverFirmwareAction.UpdateAtRestart, Actor = Admin });
+        await _h.PumpAsync();
+
+        (await CurrentStatusAsync(model)).Should().Be(DriverVersionStatus.Failed);
+    }
+
+    [Fact]
     public async Task PreProductionFirst_GivesANewerBiosOnlyToThePreProductionLocation_UntilReleased()
     {
         var model = await OnboardAsync();
@@ -237,6 +267,9 @@ public sealed class DriverFirmwareTests
         await _h.EnableAsync();
         return await _h.OnboardAsync(Platform, "HP EliteBook 840 G11");
     }
+
+    private async Task<DriverVersionStatus> CurrentStatusAsync(DriverModelRecord model) =>
+        ((List<DriverComponentVersion>)(await _firmware.VersionsAsync(model.ModelId, Platform)).Body!).Single(v => v.To is null).Status;
 
     private void Publish(params (string Version, bool Critical)[] releases)
     {

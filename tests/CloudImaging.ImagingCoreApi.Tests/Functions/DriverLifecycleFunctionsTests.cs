@@ -7,6 +7,7 @@ using CloudImaging.ImagingCoreApi.Services.Drivers;
 using CloudImaging.ImagingCoreApi.Tests.TestDoubles;
 using FluentAssertions;
 using Xunit;
+using DriverApi = CloudImaging.Contracts.Models.Drivers;
 
 namespace CloudImaging.ImagingCoreApi.Tests.Functions;
 
@@ -48,6 +49,69 @@ public sealed class DriverLifecycleFunctionsTests
 
     private List<DriverChangeLogRecord> Log() =>
         _h.Bed.Store.ChangeLog.ListPartitionAsync(DriverStore.LogPartition).GetAwaiter().GetResult().Select(r => r.Value).ToList();
+
+    // Wireless 1.1 and audio 2.1 are published; the wireless download is held back, so the set stays
+    // pending while the audio file fails its hash.
+    private async Task<List<DriverWorkMessage>> HoldWirelessWhileAudioFailsAsync()
+    {
+        _h.PublishComponents("8C26", DriverSyncHarness.Component("sp100", "sp211", "1.1", "Intel Wireless LAN Driver"), DriverSyncHarness.Component("sp101", "sp202", "2.1", "Realtek Audio Driver", "Driver - Audio"));
+        _h.Bed.Vendor.ServeBytes("https://ftp.hp.com/pub/softpaq/sp202.exe", "tampered"u8.ToArray());
+        _h.Bed.Time.Advance(TimeSpan.FromHours(2));
+        await _h.Sync.StartRunAsync(DriverSyncTrigger.Manual, Upn);
+        var held = new List<DriverWorkMessage>();
+        for (var batch = _h.Bed.Queues.Drain(); batch.Count > 0; batch = _h.Bed.Queues.Drain())
+        {
+            foreach (var sent in batch)
+            {
+                if (sent.Work is { Kind: DriverWorkKind.DownloadFile, FileKey: "sp211_1.1" })
+                {
+                    held.Add(sent.Work);
+                }
+                else if (sent.Delay is null || sent.Delay <= TimeSpan.Zero)
+                {
+                    await _h.Sync.HandleAsync(sent.Work);
+                }
+            }
+        }
+
+        return held;
+    }
+
+    private async Task<DriverApi.DriverModelPage> PageAsync(DriverModelRecord model) =>
+        (DriverApi.DriverModelPage)(await _h.ModelService.GetModelPageAsync(model.ModelId, DriverSyncHarness.Release)).Body!;
+
+    [Fact]
+    public async Task ModelPage_RowsSayWhenTheirFileDownloadsOrFailed()
+    {
+        var model = await ModelWithASetAsync();
+        (await PageAsync(model)).Components.Should().OnlyContain(c => c.Download == null, "every file of the current set is stored");
+
+        await HoldWirelessWhileAudioFailsAsync();
+        var rows = (await PageAsync(model)).Components;
+
+        rows.Single(c => c.LineageKey == "sp100").Download!.Status.Should().Be(DriverApi.DriverComponentDownloadStatus.Downloading);
+        var audio = rows.Single(c => c.LineageKey == "sp101").Download!;
+        audio.Status.Should().Be(DriverApi.DriverComponentDownloadStatus.Failed);
+        audio.FailureReason.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task ModelPage_AComponentSetFromSkip_WaitsForTheNextSet()
+    {
+        var wireless = DriverSyncHarness.Component("sp100", "sp200", "1.0", "Intel Wireless LAN Driver");
+        var hotkeys = DriverSyncHarness.Component("sp102", "sp301", "3.0", "HP Hotkey Support", "Software - Keyboard", DriverAction.Skip);
+        _h.PublishComponents("8C26", wireless, hotkeys);
+        var model = await ModelWithASetAsync();
+
+        await _h.PolicyService.SetOverrideAsync(model.ModelId, DriverSyncHarness.Release, "sp102", new DriverApi.DriverOverrideRequest { Action = DriverAction.Offline, Actor = new DriverApi.DriverActor { Upn = Upn } });
+        var rows = (await PageAsync(model)).Components;
+
+        rows.Single(c => c.LineageKey == "sp102").Download!.Status.Should().Be(DriverApi.DriverComponentDownloadStatus.Waiting);
+        rows.Single(c => c.LineageKey == "sp100").Download.Should().BeNull();
+
+        await _h.AdvanceAsync(TimeSpan.FromMinutes(3));
+        (await PageAsync(model)).Components.Should().OnlyContain(c => c.Download == null, "the set was built and its files are stored");
+    }
 
     [Fact]
     public async Task Storage_CountsEveryFileOnce_PerVendorAndPerModel()
@@ -159,27 +223,7 @@ public sealed class DriverLifecycleFunctionsTests
     public async Task Downloads_ShowsThePendingSetWithItsFailure_AndFinishedBuildsOfTheLastSevenDays()
     {
         var model = await ModelWithASetAsync();
-        _h.PublishComponents("8C26", DriverSyncHarness.Component("sp100", "sp211", "1.1", "Intel Wireless LAN Driver"), DriverSyncHarness.Component("sp101", "sp202", "2.1", "Realtek Audio Driver", "Driver - Audio"));
-        _h.Bed.Vendor.ServeBytes("https://ftp.hp.com/pub/softpaq/sp202.exe", "tampered"u8.ToArray());
-        _h.Bed.Time.Advance(TimeSpan.FromHours(2));
-
-        // The wireless download is held back, so the set stays pending while the audio file fails.
-        await _h.Sync.StartRunAsync(DriverSyncTrigger.Manual, Upn);
-        var held = new List<DriverWorkMessage>();
-        for (var batch = _h.Bed.Queues.Drain(); batch.Count > 0; batch = _h.Bed.Queues.Drain())
-        {
-            foreach (var sent in batch)
-            {
-                if (sent.Work is { Kind: DriverWorkKind.DownloadFile, FileKey: "sp211_1.1" })
-                {
-                    held.Add(sent.Work);
-                }
-                else if (sent.Delay is null || sent.Delay <= TimeSpan.Zero)
-                {
-                    await _h.Sync.HandleAsync(sent.Work);
-                }
-            }
-        }
+        var held = await HoldWirelessWhileAudioFailsAsync();
 
         var json = await (await _functions.GetDriverDownloads(FunctionTestHost.Request("GET", $"{Base}/downloads"), FunctionTestHost.Context)).ReadJsonAsync();
 

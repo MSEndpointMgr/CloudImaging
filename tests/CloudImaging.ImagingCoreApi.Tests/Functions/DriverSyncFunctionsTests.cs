@@ -170,6 +170,31 @@ public sealed class DriverSyncFunctionsTests
     }
 
     [Fact]
+    public async Task History_ListsTheLastTwoMonths_AndClearingRemovesFinishedRunsWithTheirItems()
+    {
+        await _h.EnableAsync();
+        await _h.OnboardAsync("8C26", "HP EliteBook 840 G11");
+        var finished = await RunOf(await SyncNowAsync());
+        var old = new DriverSyncRunRecord { RunId = Guid.NewGuid(), Trigger = DriverSyncTrigger.Scheduled, StartedAt = DriverTestBed.Start.AddMonths(-3), Result = DriverSyncResult.Completed };
+        var running = new DriverSyncRunRecord { RunId = Guid.NewGuid(), Trigger = DriverSyncTrigger.Manual, StartedAt = DriverTestBed.Start.AddMinutes(5) };
+        await _h.Bed.Runs.TryAddAsync(old);
+        await _h.Bed.Runs.TryAddAsync(running);
+        await _h.Bed.Runs.AddItemAsync(finished.RunId, DriverTestBed.Start, new DriverSyncRunItem { Outcome = DriverSyncItemOutcome.Updated });
+
+        var listed = await (await _sync.GetDriverSyncRuns(FunctionTestHost.Request("GET", $"{Base}/sync/runs"), FunctionTestHost.Context)).ReadJsonAsync();
+        listed.EnumerateArray().Select(r => r.GetProperty("runId").GetGuid()).Should().BeEquivalentTo([finished.RunId, running.RunId], "runs older than 2 months are not listed");
+
+        (await _sync.ClearDriverSyncRuns(FunctionTestHost.Request("DELETE", $"{Base}/sync/runs"), FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var cleared = await _sync.ClearDriverSyncRuns(FunctionTestHost.Request("DELETE", $"{Base}/sync/runs?changedBy={Upn}"), FunctionTestHost.Context);
+
+        cleared.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await cleared.ReadJsonAsync()).EnumerateArray().Select(r => r.GetProperty("runId").GetGuid()).Should().Equal(running.RunId);
+        (await _h.Bed.Runs.ListAsync()).Select(r => r.RunId).Should().Equal(running.RunId);
+        (await _h.Bed.Runs.ListItemsAsync(finished.RunId)).Should().BeEmpty();
+        (await LogAsync()).Should().ContainSingle(l => l.Area == "Sync" && l.Subject == "History" && l.By == Upn && l.Change == "Cleared 2 runs");
+    }
+
+    [Fact]
     public async Task Settings_Manual_HasNoNextRun()
     {
         var set = await (await PutSettingsAsync(Settings("Manual"))).ReadJsonAsync();

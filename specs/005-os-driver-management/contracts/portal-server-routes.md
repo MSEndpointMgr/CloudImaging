@@ -42,7 +42,8 @@ Operator only.
 | 24 | `GET /sync/settings` | Technician | `GET /api/drivers/sync/settings` | 200 settings plus `nextRunAt` and `syncNowAvailableAt` |
 | 25 | `PUT /sync/settings` | Operator | `PUT /api/drivers/sync/settings` | 200 |
 | 26 | `POST /sync/runs` | Operator | `POST /api/drivers/sync/runs` | 202 run; 409 running or 429 too soon, both with `availableAt` |
-| 27 | `GET /sync/runs` | Technician | `GET /api/drivers/sync/runs` | 200 runs of the last 90 days |
+| 27 | `GET /sync/runs` | Technician | `GET /api/drivers/sync/runs` | 200 runs of the last 2 months |
+| 27a | `DELETE /sync/runs` | Administrator | `DELETE /api/drivers/sync/runs?changedBy=` | 200 the runs that remain (a running run) |
 | 28 | `GET /sync/runs/:runId/items` | Technician | `GET /api/drivers/sync/runs/{id}/items` | 200 |
 | 29 | `GET /storage` | Technician | `GET /api/drivers/storage` | 200 totals, per vendor, per model |
 | 30 | `POST /assignment-preview` `{ osImageId, sessionIds[] }` | Technician | `POST /api/drivers/assignment-preview` | 200 options and per-session match (operator-and-core-api section 2) |

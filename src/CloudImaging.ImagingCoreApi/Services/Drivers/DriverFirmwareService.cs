@@ -507,7 +507,15 @@ public sealed class DriverFirmwareService
                 Change = row.Change,
                 ChangedBy = row.ChangedBy,
                 Origin = row.Change == DriverVersionChange.RollBack ? DriverComponentOrigin.RolledBack : DriverComponentOrigin.Vendor,
-                Status = file?.Status == DriverFileStatus.Verified ? DriverVersionStatus.Stored : record.Find(row.Version) is not null ? DriverVersionStatus.DownloadsOnRollBack : DriverVersionStatus.Unavailable,
+                // The current version says whether its file is there yet; an earlier one whether a roll back can get it.
+                Status = (file?.Status, row.To) switch
+                {
+                    (DriverFileStatus.Verified, _) => DriverVersionStatus.Stored,
+                    (DriverFileStatus.Downloading, null) => DriverVersionStatus.Downloading,
+                    (DriverFileStatus.Failed, null) => DriverVersionStatus.Failed,
+                    (_, null) => DriverVersionStatus.NotDownloaded,
+                    _ => record.Find(row.Version) is not null ? DriverVersionStatus.DownloadsOnRollBack : DriverVersionStatus.Unavailable,
+                },
                 SizeBytes = file?.Size ?? 0,
             });
         }

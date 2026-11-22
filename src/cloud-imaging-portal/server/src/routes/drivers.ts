@@ -245,6 +245,13 @@ router.get('/sync/runs', requireTechnician, async (_req: Request, res: Response,
   } catch (err) { next(err); }
 });
 
+// 27a. Clear the sync history: Administrators only; returns the runs that remain.
+router.delete('/sync/runs', requireRole('CloudImaging.Administrator'), async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('DELETE', 'sync/runs', { query: changedBy(req) }));
+  } catch (err) { next(err); }
+});
+
 /** `?changedBy=` for a DELETE: the acting user's UPN from the token. */
 function changedBy(req: AuthenticatedRequest): { changedBy: string | undefined } {
   return { changedBy: actorOf(req)?.upn };

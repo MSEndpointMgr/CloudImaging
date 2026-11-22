@@ -324,6 +324,16 @@ describe('Portal backend: driver routes (vendors, sync settings, run items, chec
     expect(res.body.detail).toBe('Choose a time zone from the list.');
   });
 
+  it('clears the sync history for Administrators only, with changedBy from the token', async () => {
+    const admin = { roles: ['CloudImaging.Administrator'], preferred_username: 'ada@contoso.com', oid: 'oid-ada' };
+
+    expect((await request(appFor(admin)).delete('/api/drivers/sync/runs?changedBy=mallory')).status).toBe(200);
+    expect(operatorApi.drivers).toHaveBeenCalledWith('DELETE', 'sync/runs', { query: { changedBy: 'ada@contoso.com' } });
+    expect((await request(appFor(operator)).delete('/api/drivers/sync/runs')).status).toBe(403);
+    expect((await request(appFor(technician)).delete('/api/drivers/sync/runs')).status).toBe(403);
+    expect(operatorApi.drivers).toHaveBeenCalledTimes(1);
+  });
+
   it('28: lists a run\'s items, and a run id that is not a GUID is 400', async () => {
     expect((await request(appFor(technician)).get(`/api/drivers/sync/runs/${runId}/items`)).status).toBe(200);
     expect(operatorApi.drivers).toHaveBeenCalledWith('GET', `sync/runs/${runId}/items`);

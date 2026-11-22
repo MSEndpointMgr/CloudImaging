@@ -6,8 +6,10 @@ import { Select } from '../ui/select.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { actionLabel, rollBackText, vendorLabel, type DriverAction, type DriverComponentRow, type DriverVendor } from '../../lib/drivers.ts';
+import { cn } from '../../lib/utils.ts';
 import { ComponentDetails, type ComponentHistoryContext } from './ComponentDetails.tsx';
 import { LockedComponentsFlyout } from './LockedComponentsFlyout.tsx';
+import { RowDownloadEdge, RowDownloadIcon, type RowDownload } from './RowDownload.tsx';
 
 const LOCKED_HINT = "The vendor's data only allows Skip for this component.";
 
@@ -133,9 +135,10 @@ function ActionCell({ component, editing }: { component: DriverComponentRow; edi
  * Components of a model and release, every one listed (no paging), one line each with a chevron
  * for the details. With `editing`, the Action column is a dropdown of the allowed actions and an
  * override can be undone from the Source column. `locked` components have no choice to make, so
- * they are listed from the footer instead of as rows.
+ * they are listed from the footer instead of as rows. `downloadOf` describes a row whose file is on
+ * its way.
  */
-export function ComponentTable({ components, total, locked = [], editing, history }: { components: DriverComponentRow[]; total: number; locked?: DriverComponentRow[]; editing?: ComponentTableEditing; history?: ComponentHistoryContext }): React.ReactElement {
+export function ComponentTable({ components, total, locked = [], editing, history, downloadOf }: { components: DriverComponentRow[]; total: number; locked?: DriverComponentRow[]; editing?: ComponentTableEditing; history?: ComponentHistoryContext; downloadOf?: (component: DriverComponentRow) => RowDownload | null }): React.ReactElement {
   // A link from the sync history (#lineageKey) opens its row; otherwise the first component waiting for approval.
   const [open, setOpen] = useState<string | null>(() => {
     const linked = decodeURIComponent(window.location.hash.slice(1));
@@ -155,7 +158,7 @@ export function ComponentTable({ components, total, locked = [], editing, histor
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>
+            <TableHead className="w-[64px]"><span className="sr-only">Details</span></TableHead>
             <TableHead>Component</TableHead>
             <TableHead className="w-[128px]">Version</TableHead>
             <TableHead className="w-[132px] whitespace-nowrap">Last updated</TableHead>
@@ -177,20 +180,27 @@ export function ComponentTable({ components, total, locked = [], editing, histor
             const expanded = open === component.lineageKey;
             const detailsId = `component-details-${component.lineageKey}`;
             const waiting = component.state === 'WaitingForApproval';
+            const download = downloadOf?.(component) ?? null;
+            const downloading = download?.status === 'Downloading';
             return (
               <Fragment key={component.lineageKey}>
-                <TableRow id={`component-${component.lineageKey}`} className={`h-14 ${waiting ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''} ${component.action === 'Skip' ? 'text-muted-foreground' : ''}`}>
-                  <TableCell>
-                    <button
-                      type="button"
-                      aria-expanded={expanded}
-                      aria-controls={detailsId}
-                      aria-label={`${expanded ? 'Hide' : 'Show'} details of ${component.name}`}
-                      className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={() => setOpen(expanded ? null : component.lineageKey)}
-                    >
-                      {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                    </button>
+                <TableRow id={`component-${component.lineageKey}`} className={cn('h-14', waiting && 'bg-amber-50/60 dark:bg-amber-950/20', downloading && 'relative bg-blue-50/60 dark:bg-blue-950/30', component.action === 'Skip' && 'text-muted-foreground')}>
+                  {/* The icon of a file on its way sits between the chevron and the name, centred on both lines. */}
+                  <TableCell className="pr-0">
+                    <span className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        aria-expanded={expanded}
+                        aria-controls={detailsId}
+                        aria-label={`${expanded ? 'Hide' : 'Show'} details of ${component.name}`}
+                        className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => setOpen(expanded ? null : component.lineageKey)}
+                      >
+                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                      {download && <RowDownloadIcon download={download} />}
+                    </span>
+                    {downloading && <RowDownloadEdge label={`Downloading ${component.name}`} />}
                   </TableCell>
                   <TableCell>
                     <div className="flex min-w-0 items-center gap-2">
@@ -198,12 +208,16 @@ export function ComponentTable({ components, total, locked = [], editing, histor
                       {component.state === 'WaitingForApproval' && <Badge variant="warning">New</Badge>}
                       {component.state === 'Withdrawn' && <Badge variant="muted" title="The vendor no longer publishes this component.">Withdrawn</Badge>}
                     </div>
-                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                      {component.custom
-                        ? <span className="truncate">{`Uploaded by ${component.custom.uploadedBy ?? 'unknown'}`}</span>
-                        : <span className="shrink-0 font-mono">{component.componentId}</span>}
-                      {component.category && <span className="truncate">{component.category}</span>}
-                    </div>
+                    {download ? (
+                      <p className="truncate text-xs text-foreground" title={download.text}>{download.text}</p>
+                    ) : (
+                      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                        {component.custom
+                          ? <span className="truncate">{`Uploaded by ${component.custom.uploadedBy ?? 'unknown'}`}</span>
+                          : <span className="shrink-0 font-mono">{component.componentId}</span>}
+                        {component.category && <span className="truncate">{component.category}</span>}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="truncate" title={component.version ?? undefined}>{component.version}</TableCell>
                   <TableCell>{component.lastUpdated}</TableCell>

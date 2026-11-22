@@ -1,12 +1,12 @@
 import React, { useEffect, useId, useState } from 'react';
-import { ChevronDown, ChevronRight, CircleCheck, Download, ExternalLink, Undo2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleCheck, CircleX, Download, ExternalLink, Undo2, X } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
   fetchComponentVersions, fetchFirmwareVersions, setRangeLabel, vendorLabel, VERSION_CHANGE_LABELS,
-  type DriverComponentRow, type DriverComponentVersion, type DriverVendor, type WindowsRelease,
+  type DriverComponentRow, type DriverComponentVersion, type DriverDetailField, type DriverVendor, type WindowsRelease,
 } from '../../lib/drivers.ts';
 
 /** What the details need to show a component's version history and its roll back actions. */
@@ -28,6 +28,15 @@ function VersionStatus({ version, vendor }: { version: DriverComponentVersion; v
   if (version.status === 'DownloadsOnRollBack') {
     return <span className="flex items-center gap-2"><Download className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />Downloads on roll back</span>;
   }
+  if (version.status === 'Downloading') {
+    return <span className="flex items-center gap-2"><Download className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />Downloading</span>;
+  }
+  if (version.status === 'Failed') {
+    return <span className="flex items-center gap-2"><CircleX className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />Download failed</span>;
+  }
+  if (version.status === 'NotDownloaded') {
+    return <span className="text-muted-foreground">Not downloaded</span>;
+  }
   return <span className="flex items-center gap-2 text-muted-foreground"><X className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />{`No longer available from ${vendorLabel(vendor)}`}</span>;
 }
 
@@ -41,13 +50,15 @@ export type VersionHistorySource =
  * every update. `setVersion` adds the Driver sets column; the BIOS has none, being the same for
  * every Windows release.
  */
-export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRollBack, onUndoRollBack }: {
+export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRollBack, onUndoRollBack, refreshKey }: {
   source: VersionHistorySource;
   vendor: DriverVendor;
   setVersion?: number | null;
   rolledBack: boolean;
   onRollBack?: () => void;
   onUndoRollBack?: () => void;
+  /** The row the history belongs to: a new one, read after a download or a build, reads the history again. */
+  refreshKey?: unknown;
 }): React.ReactElement {
   const [versions, setVersions] = useState<DriverComponentVersion[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,11 +80,12 @@ export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRo
       .then(list => { if (current) setVersions(list); })
       .catch((err: unknown) => { if (current) setError(err instanceof Error ? err.message : 'Could not load the version history.'); });
     return () => { current = false; };
-  }, [kind, modelId, key, version, attempt]);
+  }, [kind, modelId, key, version, attempt, refreshKey]);
 
   const nothingEarlier = versions !== null && versions.length < 2;
   return (
     <div className="overflow-hidden rounded-md border border-border bg-background">
+      {/* px-3, not px-4: the chevron's stroke sits 3 to 5px inside its box, which puts it on the line of the text. */}
       <div className="flex items-center gap-4 px-3 py-2">
         <button
           type="button"
@@ -99,7 +111,7 @@ export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRo
       {open && (
         <div id={bodyId} className="border-t border-border">
           {error ? (
-            <p role="alert" className="flex items-center gap-2 px-3 py-2 text-sm text-destructive">
+            <p role="alert" className="flex items-center gap-2 px-4 py-2 text-sm text-destructive">
               {error}
               <Button variant="link" className="h-auto px-0" onClick={() => setAttempt(n => n + 1)}>Try again</Button>
             </p>
@@ -109,7 +121,7 @@ export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRo
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[180px]">Version</TableHead>
+                  <TableHead className="w-[180px] pl-4">Version</TableHead>
                   {showSets && <TableHead className="w-[110px]">Driver sets</TableHead>}
                   <TableHead className="w-[150px]">From</TableHead>
                   <TableHead className="w-[150px]">To</TableHead>
@@ -121,7 +133,7 @@ export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRo
               <TableBody>
                 {versions.map(v => (
                   <TableRow key={`${v.version}-${v.from}`}>
-                    <TableCell className="truncate" title={v.version}>{v.version}</TableCell>
+                    <TableCell className="truncate pl-4" title={v.version}>{v.version}</TableCell>
                     {showSets && (
                       <TableCell>
                         <span className={v.lastSet === null ? 'inline-flex rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium' : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground'}>
@@ -155,7 +167,25 @@ function VersionHistory({ component, history }: { component: DriverComponentRow;
       rolledBack={!!component.rollBack}
       onRollBack={history.onRollBack ? () => history.onRollBack?.(component) : undefined}
       onUndoRollBack={history.onUndoRollBack ? () => history.onUndoRollBack?.(component) : undefined}
+      refreshKey={component}
     />
+  );
+}
+
+/**
+ * Labelled fields in a three-column grid. The transparent border and px-4 match the boxes below
+ * them, so the labels start on the same line as the text inside those boxes.
+ */
+export function DetailFields({ fields }: { fields: DriverDetailField[] }): React.ReactElement {
+  return (
+    <dl className="grid grid-cols-3 gap-x-8 gap-y-3 border-x border-transparent px-4">
+      {fields.map(field => (
+        <div key={field.label} className="min-w-0">
+          <dt className="text-xs text-muted-foreground">{field.label}</dt>
+          <dd className="truncate text-sm" title={field.value}>{field.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -167,14 +197,7 @@ function VersionHistory({ component, history }: { component: DriverComponentRow;
 export function ComponentDetails({ component, history, children }: { component: DriverComponentRow; history?: ComponentHistoryContext; children?: React.ReactNode }): React.ReactElement {
   return (
     <div className="space-y-4 px-4 py-4">
-      <dl className="grid grid-cols-3 gap-x-8 gap-y-3">
-        {component.details.map(field => (
-          <div key={field.label} className="min-w-0">
-            <dt className="text-xs text-muted-foreground">{field.label}</dt>
-            <dd className="truncate text-sm" title={field.value}>{field.value}</dd>
-          </div>
-        ))}
-      </dl>
+      <DetailFields fields={component.details} />
       {component.descriptionUrl && (
         <div className="rounded-md border border-border px-4 py-3">
           <div className="text-xs text-muted-foreground">Description</div>

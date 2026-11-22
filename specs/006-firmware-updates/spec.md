@@ -114,7 +114,7 @@ An Administrator sets Newer versions to Pre-production first and the pre-product
 - **FR-009**: The Device Gateway MUST serve `GET /api/v1/sessions/{id}/firmware` with a 60-minute read link, or 204 when the session gets no BIOS update.
 - **FR-010**: The Client MUST run Update firmware after Configure boot when the session has a BIOS, check AC power and the installed version again, run HP's tools in a restricted PowerShell process that cannot restart the device, map HP's messages to outcomes, and never fail the session.
 - **FR-011**: Media Builder MUST add HP's tools only after the operator accepts HP's licence, download them on the operator's machine at a pinned version, and refuse files without HP's valid signature.
-- **FR-012**: The BIOS row MUST mirror a driver component row: details, release notes link from HP's driver reference catalog, version history and Roll back component.
+- **FR-012**: The BIOS row MUST mirror a driver component row: details, release notes link from HP's driver reference catalog, version history and Roll back component. The history's current version MUST say whether its file is Stored, Downloading, Download failed or Not downloaded (while the action is Skip), never Downloads on roll back.
 - **FR-013**: The deployment timeline MUST show Update firmware with the BIOS from and to versions and the device's outcome; Start imaging MUST show the AC power line when devices update their BIOS.
 - **FR-014**: Changes MUST be recorded in the change log with the user. Reads need Technician, changes need Operator.
 

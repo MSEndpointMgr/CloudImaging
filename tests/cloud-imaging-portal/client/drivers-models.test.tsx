@@ -284,6 +284,26 @@ describe('Drivers: model page', () => {
     expect(screen.queryByText('Realtek Audio Driver')).toBeNull();
   });
 
+  it('a row whose file is on its way says so under its name: waiting for the next set, downloading, or failed', async () => {
+    const [wireless, , services] = page().components;
+    const components = [
+      { ...wireless, download: { status: 'Downloading' } },
+      { ...wireless, lineageKey: 'sp103', componentId: 'sp203', name: 'AMD AMS Mailbox Driver', download: { status: 'Waiting' } },
+      { ...wireless, lineageKey: 'sp104', componentId: 'sp204', name: 'AMD Chipset Driver', download: { status: 'Failed', failureReason: 'The file does not match its checksum.' } },
+      services,
+    ];
+    serve({ [`GET /api/drivers/models/${modelId}`]: { body: page({ components, pendingVersion: 8, pending: { changes: 1, buildAt: '2026-10-25T12:32:00Z' }, preparing: { setVersion: 8, done: 0, total: 1 } }) } });
+    renderAt(`/drivers/models/${modelId}`);
+
+    expect(await screen.findByText('Downloading from HP for driver set 8')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Downloading Intel Wireless LAN Driver' })).toBeTruthy();
+    expect(screen.getByText(/^Downloads when driver set 8 is built at \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText('Download failed. The next sync tries again.')).toBeTruthy();
+    expect(screen.getByLabelText('The file does not match its checksum.')).toBeTruthy();
+    expect(screen.queryByText('sp200')).toBeNull();
+    expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+  });
+
   it('expands a component to its labelled fields and release notes, never a hash or install command', async () => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: page() } });
     renderAt(`/drivers/models/${modelId}`);
