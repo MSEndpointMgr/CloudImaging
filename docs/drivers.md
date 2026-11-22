@@ -91,7 +91,11 @@ catalogs read, models checked, components downloaded and driver sets checked, ea
 count, plus what it found so far and the latest changes. The totals grow while the sync finds
 work. When it ends, the card shows the result until you dismiss it.
 
-**Reports** > **Driver Synchronization** covers the last 90 days: how many synchronizations ran
+The **History** card on the **Sync** tab keeps every sync and check for updates of the last 2
+months and shows 20 at a time; **Load more** shows the next 20. Administrators can **Clear
+history**, which removes every finished sync, also from the report below.
+
+**Reports** > **Driver Synchronization** covers the same 2 months: how many synchronizations ran
 and how many completed, how long they took, the components they changed per week, what they
 downloaded, and the components that keep failing. Open a synchronization for its vendor catalogs,
 downloads and changes per model.

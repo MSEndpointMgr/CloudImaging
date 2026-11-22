@@ -522,6 +522,11 @@ public sealed class DriverModelService
             : null;
         var checkAvailableAt = model.LastCheckedAt + DriverSyncService.ModelCheckLimit;
         var rows = await RowsAsync(model, selected, resolved, today, ct);
+        if (model.State == DriverModelState.Active)
+        {
+            rows = await WithDownloadsAsync(model, pointer, rows, ct);
+        }
+
         var counted = rows.Where(r => r.State == DriverComponentState.Active).ToList();
 
         return DriverResult.Ok(new DriverModelPage
@@ -612,6 +617,33 @@ public sealed class DriverModelService
             return CustomRow(c, replaces is null ? null : vendorNames.GetValueOrDefault(replaces));
         }));
         return rows;
+    }
+
+    // An included component whose file is not stored yet says so on its row. A rolled back row is
+    // left out: the version it holds is stored under an earlier component id.
+    private async Task<List<DriverComponentRow>> WithDownloadsAsync(DriverModelRecord model, DriverSetPointerRecord? pointer, List<DriverComponentRow> rows, CancellationToken ct)
+    {
+        var vendor = model.Vendor.ToString();
+        var result = new List<DriverComponentRow>(rows.Count);
+        foreach (var row in rows)
+        {
+            DriverComponentDownload? download = null;
+            if (row is { Custom: null, RollBack: null, State: DriverComponentState.Active } && row.Action != DriverAction.Skip)
+            {
+                var file = (await _store.Files.GetAsync(vendor, DriverSyncService.FileKey(row.ComponentId, row.Version), ct))?.Value;
+                download = file?.Status switch
+                {
+                    DriverFileStatus.Verified => null,
+                    DriverFileStatus.Downloading => new DriverComponentDownload { Status = DriverComponentDownloadStatus.Downloading },
+                    DriverFileStatus.Failed => new DriverComponentDownload { Status = DriverComponentDownloadStatus.Failed, FailureReason = file.FailureReason },
+                    _ => pointer is { Dirty: true } ? new DriverComponentDownload { Status = DriverComponentDownloadStatus.Waiting } : null,
+                };
+            }
+
+            result.Add(download is null ? row : row with { Download = download });
+        }
+
+        return result;
     }
 
     private static DriverComponentRow CustomRow(DriverCustomComponentRecord custom, string? replacesName) => new()

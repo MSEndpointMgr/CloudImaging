@@ -1,5 +1,5 @@
 import React, { Fragment, useCallback, useEffect, useId, useState } from 'react';
-import { ChevronDown, ChevronRight, CircleX, Cpu, Download, ExternalLink, FlaskConical, Info, RefreshCw, Rocket, Undo2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Cpu, ExternalLink, FlaskConical, Info, RefreshCw, Rocket, Undo2 } from 'lucide-react';
 import { ConfirmImpactDialog } from '../ConfirmImpactDialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
@@ -9,11 +9,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Tooltip } from '../ui/tooltip.tsx';
 import { useToast } from '../../context/toastContext.tsx';
 import {
-  FIRMWARE_ACTIONS, fetchFirmware, fetchFirmwareVersions, firmwareActionLabel, formatSize, releaseFirmware, rollBackFirmware, rollBackText, setFirmwareAction, undoFirmwareRollBack,
+  FIRMWARE_ACTIONS, fetchFirmware, fetchFirmwareVersions, firmwareActionLabel, formatSize, releaseFirmware, rollBackFirmware, rollBackText, setFirmwareAction, undoFirmwareRollBack, vendorLabel,
   type DriverComponentVersion, type DriverFirmwareAction, type DriverFirmwarePage, type DriverFirmwareRow, type DriverRollBackUntil, type DriverVendor,
 } from '../../lib/drivers.ts';
+import { cn } from '../../lib/utils.ts';
 import { Banner } from './Banner.tsx';
-import { VersionHistoryBox } from './ComponentDetails.tsx';
+import { DetailFields, VersionHistoryBox } from './ComponentDetails.tsx';
+import { RowDownloadEdge, RowDownloadIcon, type RowDownload } from './RowDownload.tsx';
 
 const ACTION_HINT = 'Update at restart: the BIOS is staged at the end of imaging and flashes at the restart into Windows setup. Devices that already have this version or a newer one are left alone. Skip: the BIOS is left as it is.';
 
@@ -148,7 +150,13 @@ function RollBackFirmwareDialog({ modelId, row, onCancel, onDone }: { modelId: s
  * components, with the pre-production banner above. The BIOS is the same for every Windows
  * release, so there is no release to choose.
  */
-export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; vendor: DriverVendor; canManage: boolean }): React.ReactElement {
+export function FirmwareTab({ modelId, vendor, canManage, refreshKey = 0 }: {
+  modelId: string;
+  vendor: DriverVendor;
+  canManage: boolean;
+  /** Changes when a sync or check ends, so a BIOS it found shows without a reload. */
+  refreshKey?: number;
+}): React.ReactElement {
   const { notify } = useToast();
   const [page, setPage] = useState<DriverFirmwarePage | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -168,7 +176,7 @@ export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; v
     }
   }, [modelId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, refreshKey]);
 
   // A BIOS downloads in the background after Update at restart, so the tab follows it until it settles.
   const downloading = page?.rows.some(r => r.downloading) ?? false;
@@ -254,7 +262,7 @@ export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; v
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>
+              <TableHead className="w-[64px]"><span className="sr-only">Details</span></TableHead>
               <TableHead>Component</TableHead>
               <TableHead className="w-[128px]">Version</TableHead>
               <TableHead className="w-[132px] whitespace-nowrap">Last updated</TableHead>
@@ -283,43 +291,33 @@ export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; v
               const expanded = open === row.platformId;
               const detailsId = `firmware-details-${row.platformId}`;
               const name = nameOf(row);
+              const download: RowDownload | null = row.downloadFailure
+                ? { status: 'Failed', text: 'Download failed. The next sync tries again.', reason: row.downloadFailure }
+                : row.downloading ? { status: 'Downloading', text: `Downloading from ${vendorLabel(vendor)}. Devices get it once it is verified.` } : null;
               return (
                 <Fragment key={row.platformId}>
-                  <TableRow className={`h-14 ${row.action === 'Skip' ? 'text-muted-foreground' : ''}`}>
-                    <TableCell>
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-controls={detailsId}
-                        aria-label={`${expanded ? 'Hide' : 'Show'} details of ${name}`}
-                        className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setOpen(expanded ? null : row.platformId)}
-                      >
-                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                      </button>
+                  <TableRow className={cn('h-14', download?.status === 'Downloading' && 'relative bg-blue-50/60 dark:bg-blue-950/30', row.action === 'Skip' && 'text-muted-foreground')}>
+                    <TableCell className="pr-0">
+                      <span className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          aria-controls={detailsId}
+                          aria-label={`${expanded ? 'Hide' : 'Show'} details of ${name}`}
+                          className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => setOpen(expanded ? null : row.platformId)}
+                        >
+                          {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                        </button>
+                        {download && <RowDownloadIcon download={download} />}
+                      </span>
+                      {download?.status === 'Downloading' && <RowDownloadEdge label={`Downloading ${name}`} />}
                     </TableCell>
                     <TableCell>
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-medium" title={name}>{name}</span>
-                        {row.downloadFailure && (
-                          <Tooltip content={row.downloadFailure}>
-                            <span tabIndex={0} aria-label={row.downloadFailure} className="inline-flex shrink-0">
-                              <CircleX className="h-4 w-4 text-destructive" aria-hidden="true" />
-                            </span>
-                          </Tooltip>
-                        )}
-                        {!row.downloadFailure && row.downloading && (
-                          <Tooltip content="Downloading. Devices get it once it is downloaded and verified.">
-                            <span tabIndex={0} aria-label="Downloading" className="inline-flex shrink-0">
-                              <Download className="h-4 w-4 text-blue-600 dark:text-blue-400" aria-hidden="true" />
-                            </span>
-                          </Tooltip>
-                        )}
-                      </div>
-                      <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-                        <span className="truncate font-mono">{row.fileName}</span>
-                        <span className="shrink-0">Firmware</span>
-                      </div>
+                      <span className="block truncate font-medium" title={name}>{name}</span>
+                      {download
+                        ? <p className="truncate text-xs text-foreground" title={download.text}>{download.text}</p>
+                        : <p className="truncate font-mono text-xs text-muted-foreground">{row.fileName}</p>}
                     </TableCell>
                     <TableCell className="truncate" title={row.version}>{row.version}</TableCell>
                     <TableCell>{row.lastUpdated}</TableCell>
@@ -343,20 +341,13 @@ export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; v
                     <TableRow id={detailsId}>
                       <TableCell colSpan={6} className="bg-muted/30 p-0">
                         <div className="space-y-4 px-4 py-4">
-                          <dl className="grid grid-cols-3 gap-x-8 gap-y-3">
-                            {[
-                              { label: 'Platform ID', value: row.platformId },
-                              { label: 'Criticality', value: row.critical ? 'Critical' : 'Recommended' },
-                              { label: 'Size', value: row.sizeBytes > 0 ? formatSize(row.sizeBytes) : 'Not downloaded' },
-                              { label: 'File', value: row.fileName },
-                              { label: 'Released', value: row.lastUpdated ?? 'Unknown' },
-                            ].map(field => (
-                              <div key={field.label} className="min-w-0">
-                                <dt className="text-xs text-muted-foreground">{field.label}</dt>
-                                <dd className="truncate text-sm" title={field.value}>{field.value}</dd>
-                              </div>
-                            ))}
-                          </dl>
+                          <DetailFields fields={[
+                            { label: 'Platform ID', value: row.platformId },
+                            { label: 'Criticality', value: row.critical ? 'Critical' : 'Recommended' },
+                            { label: 'Size', value: row.sizeBytes > 0 ? formatSize(row.sizeBytes) : download?.status === 'Failed' ? 'Download failed' : download ? 'Downloading' : 'Not downloaded' },
+                            { label: 'File', value: row.fileName },
+                            { label: 'Released', value: row.lastUpdated ?? 'Unknown' },
+                          ]} />
                           {row.descriptionUrl && (
                             <div className="rounded-md border border-border px-4 py-3">
                               <div className="text-xs text-muted-foreground">Description</div>
@@ -367,7 +358,7 @@ export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; v
                             </div>
                           )}
                           {row.downloadFailure && (
-                            <p role="alert" className="text-sm text-destructive">{`${row.downloadFailure} The next sync tries again; until then devices are not updated.`}</p>
+                            <p role="alert" className="border-x border-transparent px-4 text-sm text-destructive">{`${row.downloadFailure} The next sync tries again; until then devices are not updated.`}</p>
                           )}
                           <VersionHistoryBox
                             source={{ kind: 'firmware', modelId, platformId: row.platformId, version: row.releasedVersion }}
@@ -375,6 +366,7 @@ export function FirmwareTab({ modelId, vendor, canManage }: { modelId: string; v
                             rolledBack={!!row.rollBack}
                             onRollBack={canManage ? () => setRollingBack(row) : undefined}
                             onUndoRollBack={canManage ? () => setUndoing(row) : undefined}
+                            refreshKey={row}
                           />
                         </div>
                       </TableCell>

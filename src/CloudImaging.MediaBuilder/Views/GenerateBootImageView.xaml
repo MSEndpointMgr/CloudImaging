@@ -273,13 +273,15 @@
                         <CheckBox Content="Include HP firmware tools"
                                   IsChecked="{Binding IncludeHpFirmwareTools}"
                                   IsEnabled="{Binding IsX64Selected}" />
-                        <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                             <CheckBox Content="I accept HP's licence terms"
                                       IsChecked="{Binding AcceptHpLicence}"
-                                      IsEnabled="{Binding IncludeHpFirmwareTools}" />
+                                      IsEnabled="{Binding IncludeHpFirmwareTools}"
+                                      VerticalAlignment="Center" />
                             <ui:Button Content="Read HP's licence"
                                        Appearance="Transparent"
                                        Margin="8,0,0,0"
+                                       VerticalAlignment="Center"
                                        Command="{Binding OpenHpLicenceCommand}" />
                         </StackPanel>
                         <TextBlock Text="HP's tools are only available for x64 boot images."

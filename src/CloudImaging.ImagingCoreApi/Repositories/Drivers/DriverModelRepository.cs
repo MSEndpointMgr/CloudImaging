@@ -249,24 +249,32 @@ public sealed class DriverSyncRunRepository
         await _steps.DeleteManyAsync(StepPartition(runId), (await _steps.ListPartitionAsync(StepPartition(runId), ct)).Select(row => row.RowKey), ct);
 
     /// <summary>Deletes runs that started before <paramref name="cutoff"/> and their items.</summary>
-    public async Task DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct = default)
+    public Task<int> DeleteOlderThanAsync(DateTimeOffset cutoff, CancellationToken ct = default) =>
+        DeleteWhereAsync(run => run.StartedAt < cutoff, ct);
+
+    /// <summary>Deletes every run that has ended, with its items; a running run stays. Returns how many were deleted.</summary>
+    public Task<int> DeleteFinishedAsync(CancellationToken ct = default) =>
+        DeleteWhereAsync(run => run.Result != Contracts.Enums.DriverSyncResult.Running, ct);
+
+    private async Task<int> DeleteWhereAsync(Func<DriverSyncRunRecord, bool> delete, CancellationToken ct)
     {
+        var deleted = 0;
         foreach (var row in await _runs.ListPartitionAsync(RunPartition, ct))
         {
-            if (row.RowKey == ActiveRow || row.Value.StartedAt >= cutoff)
+            if (row.RowKey == ActiveRow || !delete(row.Value))
             {
                 continue;
             }
 
-            foreach (var item in await _items.ListPartitionAsync(row.Value.RunId.ToString("N"), ct))
-            {
-                await _items.DeleteAsync(row.Value.RunId.ToString("N"), item.RowKey, ct: ct);
-            }
-
+            var partition = row.Value.RunId.ToString("N");
+            await _items.DeleteManyAsync(partition, (await _items.ListPartitionAsync(partition, ct)).Select(item => item.RowKey), ct);
             await DeleteStepsAsync(row.Value.RunId, ct);
-            await _active.DeleteAsync(IndexPartition, row.Value.RunId.ToString("N"), ct: ct);
+            await _active.DeleteAsync(IndexPartition, partition, ct: ct);
             await _runs.DeleteAsync(RunPartition, row.RowKey, ct: ct);
+            deleted++;
         }
+
+        return deleted;
     }
 
     /// <summary>Queues an onboarding behind the active run; false when it is already queued.</summary>

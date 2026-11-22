@@ -215,6 +215,7 @@ const ROUTES: Row[] = [
   ['post', '/api/drivers/models/:modelId/complete', OPS, OPS_USERS, null],
   ['post', '/api/drivers/sync/runs', OPS, OPS_USERS, null],
   ['get', '/api/drivers/sync/runs', TECH, PA_USERS, null],
+  ['delete', '/api/drivers/sync/runs', ADM, ADM_USERS, null],
   ['post', '/api/drivers/models/check', OPS, OPS_USERS, null],
   ['post', '/api/drivers/models/:modelId/check', OPS, OPS_USERS, null],
   ['put', '/api/drivers/models/:modelId/releases/:release/overrides/:lineageKey', OPS, OPS_USERS, null],
@@ -410,7 +411,7 @@ describe('Portal backend: route-by-role matrix', () => {
   it('lists every route the 19 routers register exactly once', () => {
     const table = ROUTES.map(([method, path]) => `${method.toUpperCase()} ${path}`);
     expect(MOUNTS).toHaveLength(19);
-    expect(ROUTES).toHaveLength(143);
+    expect(ROUTES).toHaveLength(144);
     expect(new Set(table).size).toBe(table.length);
     expect([...registeredRoutes()].sort()).toEqual([...table].sort());
   });

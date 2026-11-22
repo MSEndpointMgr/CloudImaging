@@ -1,7 +1,8 @@
-using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography.X509Certificates;
 using System.Xml.Linq;
 
 namespace CloudImaging.MediaBuilder.Services;
@@ -33,6 +34,8 @@ public static class HpFirmwareTools
     public const string ProgressText = "Adding HP firmware tools";
 
     private const string GalleryPackageUrl = "https://www.powershellgallery.com/api/v2/package/";
+    private const string HpOrganization = "HP Inc.";
+    private const string OrganizationOid = "2.5.4.10";
     private static readonly string[] SignedExtensions = [".ps1", ".psm1", ".psd1", ".ps1xml", ".dll"];
 
     /// <summary>
@@ -61,7 +64,7 @@ public static class HpFirmwareTools
         }
 
         log("Checking HP's signature on the HP firmware tools.");
-        await VerifySignaturesAsync(targetFolder, ct);
+        await Task.Run(() => VerifySignatures(targetFolder, ct), ct);
         return targetFolder;
     }
 
@@ -126,9 +129,9 @@ public static class HpFirmwareTools
         }
     }
 
-    // Get-AuthenticodeSignature checks the whole chain against the machine's trust store; the
-    // signer must be HP, so a validly signed file from anyone else is refused too.
-    private static async Task VerifySignaturesAsync(string folder, CancellationToken ct)
+    // Each file's own signature, never a Windows catalog: Get-AuthenticodeSignature reports Microsoft for
+    // libraries HP ships byte-identical to ones in Windows (System.Memory.dll), although HP signed them.
+    internal static void VerifySignatures(string folder, CancellationToken ct)
     {
         var files = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
             .Where(f => SignedExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase))
@@ -138,54 +141,115 @@ public static class HpFirmwareTools
             throw new InvalidOperationException("The HP firmware tools contain no scripts.");
         }
 
-        var listFile = Path.Combine(Path.GetTempPath(), $"ci-hp-tools-{Guid.NewGuid():N}.txt");
-        await File.WriteAllLinesAsync(listFile, files, ct);
-        try
+        var bad = new List<string>();
+        foreach (var file in files)
         {
-            // UTF-8 both ways, so a path with non-ASCII characters matches the list it came from.
-            var command = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Content -LiteralPath $env:CI_FILE_LIST -Encoding UTF8 | ForEach-Object { $s = Get-AuthenticodeSignature -LiteralPath $_; \"$($s.Status)|$($s.SignerCertificate.Subject)|$_\" }";
-            var encoded = Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(command));
-            var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), $"-NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}")
+            ct.ThrowIfCancellationRequested();
+            if (!string.Equals(SignerOrganization(file), HpOrganization, StringComparison.Ordinal))
             {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardOutputEncoding = System.Text.Encoding.UTF8,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            start.Environment["CI_FILE_LIST"] = listFile;
-            using var process = Process.Start(start) ?? throw new InvalidOperationException("PowerShell could not be started to check HP's signature.");
-            string output;
-            try
-            {
-                // Both streams are drained together: a full error pipe would otherwise stall PowerShell.
-                var errors = process.StandardError.ReadToEndAsync(ct);
-                output = await process.StandardOutput.ReadToEndAsync(ct);
-                await errors;
-                await process.WaitForExitAsync(ct);
-            }
-            catch (OperationCanceledException)
-            {
-                process.Kill(entireProcessTree: true);
-                throw;
-            }
-            var results = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(line => line.Split('|', 3))
-                .Where(parts => parts.Length == 3)
-                .ToList();
-            var bad = files.Where(f => !results.Any(r => string.Equals(r[2], f, StringComparison.OrdinalIgnoreCase) && IsHpSignature(r[0], r[1]))).ToList();
-            if (bad.Count > 0)
-            {
-                throw new InvalidOperationException($"{bad.Count} file(s) of the HP firmware tools are not signed by HP, for example \"{Path.GetFileName(bad[0])}\". Nothing was added to the boot image.");
+                bad.Add(file);
             }
         }
-        finally
+
+        if (bad.Count > 0)
         {
-            File.Delete(listFile);
+            throw new InvalidOperationException($"{bad.Count} file(s) of the HP firmware tools are not signed by HP, for example \"{Path.GetFileName(bad[0])}\". Nothing was added to the boot image.");
         }
     }
 
-    /// <summary>True for a valid signature whose signer is HP Inc.</summary>
-    public static bool IsHpSignature(string status, string subject) =>
-        status == "Valid" && subject.Contains("O=HP Inc.", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// The organization (O) of whoever signed the file itself, after Windows has checked the signature
+    /// and its chain, or null when the file has no signature of its own that Windows trusts.
+    /// </summary>
+    internal static string? SignerOrganization(string path)
+    {
+        var action = GenericVerifyV2;
+        var pathPointer = Marshal.StringToHGlobalUni(path);
+        var filePointer = Marshal.AllocHGlobal(Marshal.SizeOf<WintrustFileInfo>());
+        var data = new WintrustData { Size = (uint)Marshal.SizeOf<WintrustData>(), UiChoice = WtdUiNone, UnionChoice = WtdChoiceFile, File = filePointer, StateAction = WtdStateActionVerify };
+        try
+        {
+            Marshal.StructureToPtr(new WintrustFileInfo { Size = (uint)Marshal.SizeOf<WintrustFileInfo>(), FilePath = pathPointer }, filePointer, fDeleteOld: false);
+            if (WinVerifyTrust(NoInteractiveUser, ref action, ref data) != 0)
+            {
+                return null;
+            }
+
+            var provider = WTHelperProvDataFromStateData(data.StateData);
+            var signer = provider == IntPtr.Zero ? IntPtr.Zero : WTHelperGetProvSignerFromChain(provider, 0, counterSigner: false, 0);
+            var providerCertificate = signer == IntPtr.Zero ? IntPtr.Zero : WTHelperGetProvCertFromChain(signer, 0);
+            if (providerCertificate == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            // CRYPT_PROVIDER_CERT starts with a DWORD size, then the pointer-aligned certificate context.
+            using var certificate = new X509Certificate2(Marshal.ReadIntPtr(providerCertificate, IntPtr.Size));
+            return certificate.SubjectName.EnumerateRelativeDistinguishedNames()
+                .Where(n => !n.HasMultipleElements && n.GetSingleElementType().Value == OrganizationOid)
+                .Select(n => n.GetSingleElementValue())
+                .FirstOrDefault();
+        }
+        finally
+        {
+            if (data.StateData != IntPtr.Zero)
+            {
+                data.StateAction = WtdStateActionClose;
+                _ = WinVerifyTrust(NoInteractiveUser, ref action, ref data);
+            }
+
+            Marshal.FreeHGlobal(filePointer);
+            Marshal.FreeHGlobal(pathPointer);
+        }
+    }
+
+    private const uint WtdUiNone = 2;
+    private const uint WtdChoiceFile = 1;
+    private const uint WtdStateActionVerify = 1;
+    private const uint WtdStateActionClose = 2;
+    private static readonly IntPtr NoInteractiveUser = new(-1);
+    private static readonly Guid GenericVerifyV2 = new("00AAC56B-CD44-11d0-8CC2-00C04FC295EE");
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WintrustFileInfo
+    {
+        public uint Size;
+        public IntPtr FilePath;
+        public IntPtr FileHandle;
+        public IntPtr KnownSubject;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WintrustData
+    {
+        public uint Size;
+        public IntPtr PolicyCallbackData;
+        public IntPtr SipClientData;
+        public uint UiChoice;
+        public uint RevocationChecks;
+        public uint UnionChoice;
+        public IntPtr File;
+        public uint StateAction;
+        public IntPtr StateData;
+        public IntPtr UrlReference;
+        public uint ProviderFlags;
+        public uint UiContext;
+        public IntPtr SignatureSettings;
+    }
+
+    [DllImport("wintrust.dll", ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern int WinVerifyTrust(IntPtr window, ref Guid action, ref WintrustData data);
+
+    [DllImport("wintrust.dll", ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr WTHelperProvDataFromStateData(IntPtr stateData);
+
+    [DllImport("wintrust.dll", ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr WTHelperGetProvSignerFromChain(IntPtr providerData, uint signerIndex, [MarshalAs(UnmanagedType.Bool)] bool counterSigner, uint counterSignerIndex);
+
+    [DllImport("wintrust.dll", ExactSpelling = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern IntPtr WTHelperGetProvCertFromChain(IntPtr signer, uint certificateIndex);
 }

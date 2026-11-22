@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 const { apiFetch, notify, auth } = vi.hoisted(() => ({
   apiFetch: vi.fn(),
   notify: vi.fn(() => 'toast'),
-  auth: { canManageDrivers: true, canViewDrivers: true },
+  auth: { canManageDrivers: true, canViewDrivers: true, isAdministrator: false },
 }));
 
 vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => ({
@@ -103,6 +103,7 @@ afterEach(() => {
   vi.clearAllMocks();
   calls.length = 0;
   auth.canManageDrivers = true;
+  auth.isAdministrator = false;
 });
 
 describe('Drivers: sync helpers', () => {
@@ -315,7 +316,40 @@ describe('Drivers: Sync tab', () => {
 
     const link = await screen.findByRole('link', { name: 'Intel Wireless LAN Driver' });
     expect(link.getAttribute('href')).toBe(`/drivers/models/${modelId}?release=Windows11_24H2#sp140001`);
-    expect(screen.getByText('23.70 to 23.80')).toBeTruthy();
+    const table = link.closest('table')!;
+    expect(within(table).getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Model', 'Component', 'Previous', 'Current', 'Outcome']);
+    expect(within(table).getByText('23.70')).toBeTruthy();
+    expect(within(table).getByText('23.80')).toBeTruthy();
+    expect(within(table).getByText('HP EliteBook 840 G11').getAttribute('title')).toBe('HP EliteBook 840 G11');
+  });
+
+  it('the changes of a run start as wide as their data needs, and every edge but the last can be dragged', async () => {
+    // jsdom lays nothing out, so the automatic layout's widths are given here: a 1000px table.
+    const measured: Record<string, number> = { Model: 300, Component: 380, Previous: 100, Current: 100, Outcome: 120 };
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      const width = this.tagName === 'TABLE' ? 1000 : this.tagName === 'TH' ? measured[this.textContent ?? ''] ?? 0 : 0;
+      return { width, height: 0, top: 0, left: 0, right: width, bottom: 0, x: 0, y: 0, toJSON: () => ({}) } as DOMRect;
+    });
+    serve(syncRoutes({ 'GET /api/drivers/sync/runs/r1/items': { body: [
+      { modelId, modelName: 'HP EliteBook 840 G11', release: 'Windows11_24H2', lineageKey: 'sp140001', componentName: 'Intel Wireless LAN Driver', oldVersion: '23.70', newVersion: '23.80', outcome: 'Updated', reason: null },
+      { modelId, modelName: 'HP EliteBook 840 G11', release: 'Windows11_24H2', lineageKey: 'sp140002', componentName: 'Realtek Audio Driver', oldVersion: '6.0.9600.1', newVersion: '6.0.9611.1', outcome: 'Failed', reason: 'The file does not match its checksum.' },
+    ] } }));
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click((await screen.findAllByRole('button', { name: /^Show the changes of the run/ }))[0]);
+    const table = (await screen.findByRole('link', { name: 'Intel Wireless LAN Driver' })).closest('table')!;
+    const heads = within(table).getAllByRole('columnheader');
+
+    expect(table.className).toContain('table-fixed');
+    expect(heads.map(h => h.style.width)).toEqual(['30%', '38%', '10%', '10%', '12%']);
+    expect(within(table).getByText('Failed: The file does not match its checksum.')).toBeTruthy();
+    expect(within(table).queryByRole('separator', { name: 'Resize Outcome column' })).toBeNull();
+
+    const edge = within(table).getByRole('separator', { name: 'Resize Model column' });
+    fireEvent.keyDown(edge, { key: 'ArrowRight' });
+    expect(heads.slice(0, 2).map(h => h.style.width)).toEqual(['32%', '36%']);
+    fireEvent.doubleClick(edge);
+    expect(heads.slice(0, 2).map(h => h.style.width)).toEqual(['30%', '38%']);
   });
 
   it('read-only users see the settings with every control disabled and no Sync button', async () => {
@@ -328,6 +362,40 @@ describe('Drivers: Sync tab', () => {
     expect((screen.getByRole('combobox', { name: 'Newer versions' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('switch', { name: 'Sync HP' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /^Sync$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Clear history/ })).toBeNull();
+  });
+
+  it('History shows 20 runs, and Load more shows the next 20', async () => {
+    const many = Array.from({ length: 25 }, (_, i) => ({ ...runs[1], runId: `m${i}`, startedAt: `2026-10-${String(25 - i).padStart(2, '0')}T12:00:00Z` }));
+    serve(syncRoutes({ 'GET /api/drivers/sync/runs': { body: many } }));
+    renderAt('/drivers?tab=sync');
+
+    expect(await screen.findByText('Showing 20 of 25')).toBeTruthy();
+    expect(screen.getAllByText('HP EliteBook 840 G11: No changes')).toHaveLength(20);
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(screen.getAllByText('HP EliteBook 840 G11: No changes')).toHaveLength(25);
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('Administrators clear the history after a confirmation; a running sync stays', async () => {
+    auth.isAdministrator = true;
+    const running = { ...runs[1], runId: 'r9', result: 'Running', finishedAt: null };
+    serve(syncRoutes({
+      'GET /api/drivers/sync/runs': { body: [running, ...runs] },
+      'DELETE /api/drivers/sync/runs': { body: [running] },
+    }));
+    renderAt('/drivers?tab=sync');
+
+    fireEvent.click(await screen.findByRole('button', { name: /Clear history/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(/Removes all 2 finished syncs and checks for updates, with their changes, from this list and from the Driver Synchronization report\. A sync that is running stays\./)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear history' }));
+
+    await waitFor(() => expect(calls.some(c => c.key === 'DELETE /api/drivers/sync/runs')).toBe(true));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Sync history cleared.' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Partly failed')).toBeNull();
   });
 });
 

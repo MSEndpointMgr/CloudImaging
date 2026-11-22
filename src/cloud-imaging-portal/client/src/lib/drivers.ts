@@ -189,6 +189,14 @@ export interface DriverComponentRow {
   details: DriverDetailField[];
   descriptionUrl: string | null;
   sizeBytes: number;
+  /** Set while the file of an included component is not stored yet. */
+  download?: DriverComponentDownload | null;
+}
+
+/** Where the file of an included component is: waiting for the next driver set, downloading, or failed. */
+export interface DriverComponentDownload {
+  status: 'Waiting' | 'Downloading' | 'Failed';
+  failureReason?: string | null;
 }
 
 export interface DriverModelPage {
@@ -413,7 +421,8 @@ export interface DriverComponentRollBack {
   changedAt: string;
 }
 
-export type DriverVersionStatus = 'Stored' | 'DownloadsOnRollBack' | 'Unavailable';
+/** The last three only describe the current version of a BIOS: its file downloads, failed, or is not needed while it is skipped. */
+export type DriverVersionStatus = 'Stored' | 'DownloadsOnRollBack' | 'Unavailable' | 'Downloading' | 'Failed' | 'NotDownloaded';
 
 /** One version in a component's history, newest first. */
 export interface DriverComponentVersion {
@@ -1090,6 +1099,9 @@ export const saveSyncSettings = (settings: DriverSyncSettingsInput): Promise<Dri
 export const syncNow = (): Promise<{ runId: string }> => driversSend('POST', 'sync/runs', {}, 'Could not start the sync.');
 
 export const fetchSyncRuns = (): Promise<DriverSyncRun[]> => driversGet('sync/runs', 'Could not load the sync history.');
+
+/** Clears every finished run (Administrators); returns the runs that remain. */
+export const clearSyncRuns = (): Promise<DriverSyncRun[]> => driversSend('DELETE', 'sync/runs', undefined, 'Could not clear the sync history.');
 
 export const fetchSyncRunItems = (runId: string): Promise<DriverSyncRunItem[]> =>
   driversGet(`sync/runs/${encodeURIComponent(runId)}/items`, 'Could not load the run.');

@@ -179,7 +179,7 @@ function RunDetails({ entry }: { entry: DriverSyncReportRun }): React.ReactEleme
 /**
  * Driver Synchronization report: every sync and check for updates of a period, how reliable and
  * long they were, what they changed and downloaded, and which components keep failing. Runs are
- * kept for 90 days.
+ * kept for 2 months, or until an Administrator clears the sync history.
  */
 export default function ReportDriverSyncPage(): React.ReactElement {
   const [range, setRange] = useState<DateRange>(() => resolvePreset('last30')!);
@@ -260,7 +260,7 @@ export default function ReportDriverSyncPage(): React.ReactElement {
           <RefreshCw size={24} className="text-primary" aria-hidden="true" />
           <h2 className="text-lg font-semibold">Driver synchronization</h2>
         </div>
-        <p className="text-sm text-muted-foreground">Every synchronization and check for updates, with what it changed and downloaded. They are kept for 90 days.</p>
+        <p className="text-sm text-muted-foreground">Every synchronization and check for updates, with what it changed and downloaded. They are kept for 2 months.</p>
       </div>
 
       <ReportFilterBar

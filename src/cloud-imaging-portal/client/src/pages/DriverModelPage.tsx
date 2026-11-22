@@ -14,6 +14,7 @@ import { Banner } from '../components/drivers/Banner.tsx';
 import { FirmwareTab } from '../components/drivers/FirmwareTab.tsx';
 import { WindowsReleasesDialog } from '../components/drivers/WindowsReleasesDialog.tsx';
 import { ComponentTable } from '../components/drivers/ComponentTable.tsx';
+import type { RowDownload } from '../components/drivers/RowDownload.tsx';
 import { RollBackComponentDialog } from '../components/drivers/RollBackComponentDialog.tsx';
 import { AddCustomComponentDialog } from '../components/drivers/AddCustomComponentDialog.tsx';
 import { SizeHead } from '../components/drivers/ModelsTable.tsx';
@@ -21,8 +22,8 @@ import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
 import { formatTimestamp } from '../lib/utils.ts';
 import {
-  DRIVER_ACTIONS, actionLabel, approveComponents, buildNow, checkModel, clearOverride, completeOnboarding, fetchModelPage, fetchRemovalImpact, formatSize, isLockedAway, matchKeyLabel,
-  releaseLabel, releaseTestingSet, removeModel, removeWithdrawnComponent, rollBackSet, setOverride, undoRollBack, vendorLabel,
+  DRIVER_ACTIONS, actionLabel, approveComponents, buildNow, checkModel, clearOverride, completeOnboarding, fetchModelPage, fetchRemovalImpact, fetchSyncRunProgress, formatSize, isLockedAway, matchKeyLabel,
+  releaseLabel, releaseTestingSet, removeModel, removeWithdrawnComponent, rollBackSet, runSummary, setOverride, undoRollBack, vendorLabel,
   deleteCustomComponent, dismissCustomNotice, fetchCustomComponents, fetchModels,
   type DriverCustomComponent, type DriverModelRow,
   type DriverAction, type DriverComponentRow, type DriverModelPage as ModelPage, type DriverRemovalImpact, type WindowsRelease,
@@ -40,6 +41,9 @@ const MODEL_VIEWS: readonly { key: ModelView; label: string }[] = [
 
 /** How often the page is read again while a build, download or check is under way. */
 export const MODEL_POLL_MS = 15_000;
+
+/** How often a check started on this page is read, so its result shows within seconds of the run ending. */
+export const CHECK_POLL_MS = 3_000;
 
 /** The overlay open on the page, if any. */
 type Pending =
@@ -139,7 +143,10 @@ export default function DriverModelPage(): React.ReactElement {
   const [customTargetsFailed, setCustomTargetsFailed] = useState(false);
   const [customModels, setCustomModels] = useState<DriverModelRow[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [checkRunId, setCheckRunId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const request = useRef(0);
+  const wasRunning = useRef(false);
 
   // The tab and the release are both in the address; changing one keeps the other.
   const setParam = (key: 'release' | 'view', value: string) => {
@@ -172,6 +179,44 @@ export default function DriverModelPage(): React.ReactElement {
     const timer = window.setInterval(() => void load(), MODEL_POLL_MS);
     return () => window.clearInterval(timer);
   }, [active, load]);
+
+  // When any run ends (a scheduled sync included), the Firmware tab is read again with the page.
+  const running = page?.checkBlockedReason === 'Running';
+  useEffect(() => {
+    if (wasRunning.current && !running) setRefreshKey(k => k + 1);
+    wasRunning.current = running;
+  }, [running]);
+
+  // A check started here is followed closely, so new components, versions and BIOS updates show as soon as it ends.
+  useEffect(() => {
+    if (!checkRunId) return undefined;
+    let cancelled = false;
+    let timer: number | undefined;
+    const read = async () => {
+      try {
+        const progress = await fetchSyncRunProgress(checkRunId);
+        if (cancelled) return;
+        if (progress.run.result === 'Running') {
+          timer = window.setTimeout(() => void read(), CHECK_POLL_MS);
+          return;
+        }
+        setCheckRunId(null);
+        wasRunning.current = false;
+        await load();
+        setRefreshKey(k => k + 1);
+        notify(progress.run.result === 'Failed'
+          ? { status: 'error', title: 'The check for updates failed.', description: runSummary(progress.run) }
+          : { status: 'success', title: 'Check for updates finished.', description: runSummary(progress.run) });
+      } catch {
+        if (!cancelled) timer = window.setTimeout(() => void read(), CHECK_POLL_MS);
+      }
+    };
+    timer = window.setTimeout(() => void read(), CHECK_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [checkRunId, load, notify]);
 
   // Check for updates becomes available at its time without a reload.
   const availableAt = page?.checkAvailableAt ? Date.parse(page.checkAvailableAt) : NaN;
@@ -224,7 +269,8 @@ export default function DriverModelPage(): React.ReactElement {
   const check = async () => {
     setBusy('check');
     try {
-      await checkModel(model.modelId);
+      const started = await checkModel(model.modelId);
+      setCheckRunId(started.runId);
       notify({ status: 'success', title: `Checking ${model.displayName} for updates.` });
       await load();
     } catch (err) {
@@ -416,6 +462,18 @@ export default function DriverModelPage(): React.ReactElement {
   // A pending set already has its number; otherwise the next build takes the one after the current set.
   const nextSet = page.pendingVersion ?? (page.setVersion ?? 0) + 1;
   const waitingApproval = page.components.filter(c => c.state === 'WaitingForApproval').length;
+  const downloadOf = (component: DriverComponentRow): RowDownload | null => {
+    switch (component.download?.status) {
+      case 'Waiting':
+        return { status: 'Waiting', text: `Downloads when driver set ${nextSet} is built${pending ? ` at ${formatTimestamp(pending.buildAt).slice(11)}` : ''}` };
+      case 'Downloading':
+        return { status: 'Downloading', text: `Downloading from ${vendorLabel(model.vendor)}${page.preparing ? ` for driver set ${page.preparing.setVersion}` : ''}` };
+      case 'Failed':
+        return { status: 'Failed', text: 'Download failed. The next sync tries again.', reason: component.download.failureReason };
+      default:
+        return null;
+    }
+  };
 
   // Everyday work is Check for updates; the rest of the model's actions wait in the More menu. The
   // Firmware tab has no release or driver set, so its menu holds only Remove model.
@@ -479,7 +537,7 @@ export default function DriverModelPage(): React.ReactElement {
 
       {view === 'firmware' ? (
         <div id="model-panel-firmware" role="tabpanel" aria-labelledby="model-tab-firmware">
-          <FirmwareTab modelId={model.modelId} vendor={model.vendor} canManage={canManageDrivers} />
+          <FirmwareTab modelId={model.modelId} vendor={model.vendor} canManage={canManageDrivers} refreshKey={refreshKey} />
         </div>
       ) : (
       <div id="model-panel-drivers" role="tabpanel" aria-labelledby="model-tab-drivers" className="space-y-6">
@@ -569,7 +627,7 @@ export default function DriverModelPage(): React.ReactElement {
         </Button>
       </div>
 
-      <ComponentTable components={components.filter(c => !isLockedAway(c))} total={page.components.filter(c => !isLockedAway(c)).length} locked={components.filter(isLockedAway)} editing={editing} history={history} />
+      <ComponentTable components={components.filter(c => !isLockedAway(c))} total={page.components.filter(c => !isLockedAway(c)).length} locked={components.filter(isLockedAway)} editing={editing} history={history} downloadOf={downloadOf} />
       </div>
       )}
 

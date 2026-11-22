@@ -14,7 +14,7 @@ import { useUserPreferences } from '../../context/userPreferencesContext.tsx';
 import { useRerenderAt } from '../../hooks/useRerenderAt.ts';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
-  MONDAY_TO_FRIDAY, WEEKDAYS, availableAgainText, browserTimeZone, fetchSyncRuns, fetchSyncSettings, fetchVendors, nextSyncLine, saveSyncSettings, syncNow,
+  MONDAY_TO_FRIDAY, WEEKDAYS, availableAgainText, browserTimeZone, clearSyncRuns, fetchSyncRuns, fetchSyncSettings, fetchVendors, nextSyncLine, saveSyncSettings, syncNow,
   type DriverFirmwareNewVersions, type DriverSyncRun, type DriverSyncSchedule, type DriverSyncSettings, type DriverSyncSettingsInput, type DriverVendorRow,
 } from '../../lib/drivers.ts';
 import { SyncHistory } from './SyncHistory.tsx';
@@ -55,7 +55,7 @@ const NO_LOCATION = 'none';
 
 /** Sync tab: schedule, Sync now, approval setting, vendors and the run history. */
 export function SyncTab(): React.ReactElement {
-  const { canManageDrivers } = useAuth();
+  const { canManageDrivers, isAdministrator } = useAuth();
   const { notify } = useToast();
   const [settings, setSettings] = useState<DriverSyncSettings | null>(null);
   const [vendors, setVendors] = useState<DriverVendorRow[]>([]);
@@ -239,6 +239,17 @@ export function SyncTab(): React.ReactElement {
     ...(preProductionLocation && !locations.some(l => l.locationId === preProductionLocation) ? [{ value: preProductionLocation, label: 'Removed location' }] : []),
   ];
 
+  const clearHistory = async (): Promise<boolean> => {
+    try {
+      setRuns(await clearSyncRuns());
+      notify({ status: 'success', title: 'Sync history cleared.' });
+      return true;
+    } catch (err) {
+      notify({ status: 'error', title: 'Could not clear the sync history', description: err instanceof Error ? err.message : undefined });
+      return false;
+    }
+  };
+
   const startSync = async () => {
     setStarting(true);
     try {
@@ -298,11 +309,11 @@ export function SyncTab(): React.ReactElement {
                 />
               </div>
             )}
-            {/* Aligned under the time field; the day error takes the hint's place so nothing moves. */}
+            {/* Right-aligned 12px under the controls; the day error takes the hint's place so nothing moves. */}
             {!manual && (dayError ? (
-              <p className="ml-[178px] text-sm text-destructive" role="alert">{DAY_ERROR}</p>
+              <p className="mt-1 text-right text-sm text-destructive" role="alert">{DAY_ERROR}</p>
             ) : (
-              <p className="ml-[178px] min-h-4 text-xs text-muted-foreground" aria-live="polite">{nextLine}</p>
+              <p className="mt-1 min-h-4 text-right text-xs text-muted-foreground" aria-live="polite">{nextLine}</p>
             ))}
           </div>
         )}
@@ -390,7 +401,7 @@ export function SyncTab(): React.ReactElement {
         </DriverCardRows>
       </DriverCard>
 
-      <SyncHistory runs={runs} />
+      <SyncHistory runs={runs} onClear={isAdministrator ? clearHistory : undefined} />
 
       {confirmingRelease && (
         <ConfirmImpactDialog

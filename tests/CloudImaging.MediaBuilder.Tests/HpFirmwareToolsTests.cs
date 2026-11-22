@@ -77,13 +77,41 @@ public sealed class HpFirmwareToolsTests : IDisposable
         act.Should().Throw<InvalidDataException>();
     }
 
-    [Theory]
-    [InlineData("Valid", "CN=HP Inc., OU=HP Cybersecurity, O=HP Inc., L=Palo Alto, S=California, C=US", true)]
-    [InlineData("HashMismatch", "CN=HP Inc., O=HP Inc., C=US", false)]
-    [InlineData("Valid", "CN=Contoso, O=Contoso Ltd, C=US", false)]
-    [InlineData("NotSigned", "", false)]
-    public void IsHpSignature_AcceptsOnlyAValidSignatureFromHp(string status, string subject, bool expected) =>
-        HpFirmwareTools.IsHpSignature(status, subject).Should().Be(expected);
+    // A NuGet library Microsoft signed itself, so the check sees a real signature of the file's own.
+    private static string MicrosoftSignedLibrary => typeof(NullLogger).Assembly.Location;
+
+    [Fact]
+    public void SignerOrganization_ReadsTheFilesOwnSignature()
+    {
+        HpFirmwareTools.SignerOrganization(MicrosoftSignedLibrary).Should().Be("Microsoft Corporation");
+    }
+
+    [Fact]
+    public void SignerOrganization_IsNull_ForAChangedOrUnsignedFile()
+    {
+        Directory.CreateDirectory(_folder);
+        var changed = Path.Combine(_folder, "changed.dll");
+        var bytes = File.ReadAllBytes(MicrosoftSignedLibrary);
+        bytes[0x4E] ^= 0x20;
+        File.WriteAllBytes(changed, bytes);
+        var unsigned = Path.Combine(_folder, "unsigned.ps1");
+        File.WriteAllText(unsigned, "Write-Output 'x'");
+
+        HpFirmwareTools.SignerOrganization(changed).Should().BeNull("a byte changed after signing breaks the signature");
+        HpFirmwareTools.SignerOrganization(unsigned).Should().BeNull();
+    }
+
+    [Fact]
+    public void VerifySignatures_RefusesFilesSignedBySomeoneElse()
+    {
+        Directory.CreateDirectory(_folder);
+        File.Copy(MicrosoftSignedLibrary, Path.Combine(_folder, "Other.dll"));
+        File.WriteAllText(Path.Combine(_folder, "license.txt"), "not checked");
+
+        var act = () => HpFirmwareTools.VerifySignatures(_folder, CancellationToken.None);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("1 file(s) of the HP firmware tools are not signed by HP, for example \"Other.dll\"*");
+    }
 
     [Fact]
     public void Generate_WaitsForHpsLicence_WhenTheToolsAreIncluded()

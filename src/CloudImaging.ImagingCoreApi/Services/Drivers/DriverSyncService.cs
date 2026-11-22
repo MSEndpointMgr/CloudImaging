@@ -74,8 +74,8 @@ public sealed partial class DriverSyncService
     // Beyond the watchdog, how long a run lock may stay before it is treated as abandoned.
     private static readonly TimeSpan StaleLockMargin = TimeSpan.FromMinutes(15);
 
-    /// <summary>Run history and set build rows are kept this long.</summary>
-    public static readonly TimeSpan History = TimeSpan.FromDays(90);
+    /// <summary>Run history and set build rows are kept for this many months.</summary>
+    public const int HistoryMonths = 2;
 
     private const int MaxConcurrencyRetries = 20;
     private const string TimedOutReason = "The sync did not finish within 2 hours.";
@@ -356,6 +356,27 @@ public sealed partial class DriverSyncService
         };
     }
 
+    /// <summary>The History card: runs of the last <see cref="HistoryMonths"/> months, newest first.</summary>
+    public async Task<IReadOnlyList<DriverSyncRun>> ListHistoryAsync(CancellationToken ct = default)
+    {
+        // Old runs are deleted when a run ends; with no runs, they are hidden until then.
+        var cutoff = _time.GetUtcNow().AddMonths(-HistoryMonths);
+        return (await _runs.ListAsync(ct)).Where(r => r.StartedAt >= cutoff).Select(ToContract).ToList();
+    }
+
+    /// <summary>Deletes every finished run with its changes; a running run stays. Returns how many were deleted.</summary>
+    public async Task<DriverResult> ClearHistoryAsync(string? changedBy, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(changedBy))
+        {
+            return DriverResult.BadRequest(DriverHttpText.MissingActor);
+        }
+
+        var cleared = await _runs.DeleteFinishedAsync(ct);
+        await _store.LogAsync(_time.GetUtcNow(), changedBy, null, "Sync", "History", cleared == 1 ? "Cleared 1 run" : $"Cleared {cleared} runs", ct);
+        return DriverResult.Ok(await ListHistoryAsync(ct));
+    }
+
     /// <summary>Runs that started between <paramref name="from"/> and <paramref name="to"/>, newest first, with their items.</summary>
     public async Task<IReadOnlyList<DriverSyncReportRun>> GetReportAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
     {
@@ -363,7 +384,7 @@ public sealed partial class DriverSyncService
         var vendors = (await _models.ListAsync(ct)).ToDictionary(m => m.ModelId, m => m.Vendor);
         var report = new List<DriverSyncReportRun>();
 
-        // Up to 90 days of runs, so their item partitions are read a few at a time rather than one by one.
+        // Up to 2 months of runs, so their item partitions are read a few at a time rather than one by one.
         foreach (var batch in (await _runs.ListAsync(ct)).Where(r => r.StartedAt >= from && r.StartedAt <= to).Chunk(ReportReadBatch))
         {
             var reads = batch.Select(async run => new DriverSyncReportRun
@@ -1353,10 +1374,11 @@ public sealed partial class DriverSyncService
             await CleanUpAsync(ct);
         }
 
-        await _runs.DeleteOlderThanAsync(now - History, ct);
+        var cutoff = now.AddMonths(-HistoryMonths);
+        await _runs.DeleteOlderThanAsync(cutoff, ct);
         foreach (var (pair, build) in await _store.SetBuilds.ListAllAsync(ct))
         {
-            if (build.Value.BuiltAt < now - History)
+            if (build.Value.BuiltAt < cutoff)
             {
                 await _store.SetBuilds.DeleteAsync(pair, build.RowKey, ct: ct);
             }

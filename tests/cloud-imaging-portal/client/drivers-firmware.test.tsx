@@ -1,6 +1,6 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const { apiFetch, notify, auth } = vi.hoisted(() => ({
@@ -25,7 +25,8 @@ vi.mock('../../../src/cloud-imaging-portal/client/src/lib/apiClient.ts', () => (
 vi.mock('../../../src/cloud-imaging-portal/client/src/context/authContext.tsx', () => ({ useAuth: () => auth }));
 vi.mock('../../../src/cloud-imaging-portal/client/src/context/toastContext.tsx', () => ({ useToast: () => ({ notify, update: vi.fn(), dismiss: vi.fn() }) }));
 
-import DriverModelPage from '../../../src/cloud-imaging-portal/client/src/pages/DriverModelPage.tsx';
+import DriverModelPage, { CHECK_POLL_MS, MODEL_POLL_MS } from '../../../src/cloud-imaging-portal/client/src/pages/DriverModelPage.tsx';
+import { FIRMWARE_POLL_MS } from '../../../src/cloud-imaging-portal/client/src/components/drivers/FirmwareTab.tsx';
 
 type Handler = (init?: RequestInit) => { status?: number; body?: unknown };
 
@@ -83,7 +84,60 @@ function renderFirmware(): void {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
   auth.canManageDrivers = true;
+});
+
+describe('Drivers & Firmware: a check started on the model page', () => {
+  it('shows the BIOS it found when the run ends, without a reload, and says what it found', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let started = false;
+    let finished = false;
+    const runId = '1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed';
+    const run = { runId, trigger: 'ModelCheck', modelId, modelName: modelPage.model.displayName, startedAt: '2026-11-22T10:00:00Z', finishedAt: null, startedBy: 'olle@contoso.com', vendors: [] };
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: () => ({ body: { ...modelPage, checkBlockedReason: started && !finished ? 'Running' : null } }),
+      [`GET /api/drivers/models/${modelId}/firmware`]: () => ({ body: finished ? firmware({ preProduction: [] }) : firmware({ rows: [], preProduction: [] }) }),
+      [`POST /api/drivers/models/${modelId}/check`]: () => { started = true; return { status: 202, body: { runId } }; },
+      [`GET /api/drivers/sync/runs/${runId}/progress`]: () => ({ body: { run: { ...run, result: finished ? 'Completed' : 'Running', counts: finished ? { New: 1 } : {} } } }),
+    });
+    render(
+      <MemoryRouter initialEntries={[`/drivers/models/${modelId}?view=firmware`]}>
+        <Routes><Route path="/drivers/models/:modelId" element={<DriverModelPage />} /></Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Check for updates/ }));
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: `Checking ${modelPage.model.displayName} for updates.` }));
+    expect(screen.queryByText('System BIOS')).toBeNull();
+
+    finished = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(CHECK_POLL_MS); });
+
+    expect(await screen.findByText('System BIOS')).toBeTruthy();
+    expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Check for updates finished.', description: `${modelPage.model.displayName}: 1 new` });
+  });
+
+  it('reads the Firmware tab again when a sync started elsewhere ends', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let finished = false;
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: () => ({ body: { ...modelPage, checkBlockedReason: finished ? null : 'Running' } }),
+      [`GET /api/drivers/models/${modelId}/firmware`]: () => ({ body: finished ? firmware({ preProduction: [] }) : firmware({ rows: [], preProduction: [] }) }),
+    });
+    render(
+      <MemoryRouter initialEntries={[`/drivers/models/${modelId}?view=firmware`]}>
+        <Routes><Route path="/drivers/models/:modelId" element={<DriverModelPage />} /></Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('tab', { name: 'Firmware' });
+    expect(screen.queryByText('System BIOS')).toBeNull();
+
+    finished = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(MODEL_POLL_MS); });
+
+    expect(await screen.findByText('System BIOS')).toBeTruthy();
+  });
 });
 
 describe('Drivers & Firmware: Firmware tab', () => {
@@ -101,6 +155,7 @@ describe('Drivers & Firmware: Firmware tab', () => {
     expect(screen.getByRole('tab', { name: 'Firmware' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByText('System BIOS')).toBeTruthy();
     expect(screen.getByText('Y88_01020400.bin')).toBeTruthy();
+    expect(within(screen.getByText('System BIOS').closest('td') as HTMLElement).queryByText('Firmware')).toBeNull();
     expect((screen.getByRole('combobox', { name: 'Action for System BIOS' }) as HTMLElement).textContent).toContain('Update at restart');
 
     fireEvent.click(screen.getByRole('button', { name: 'Release' }));
@@ -134,6 +189,76 @@ describe('Drivers & Firmware: Firmware tab', () => {
     expect(within(table).getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Version', 'From', 'To', 'Change', 'By', 'Status']);
     expect(within(table).getByText('Onboard')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Roll back component' })).toBeTruthy();
+  });
+
+  it('the history follows a download of the current version, without closing it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let downloaded = false;
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: modelPage },
+      [`GET /api/drivers/models/${modelId}/firmware`]: () => ({ body: firmware({ rows: [bios({ releasedVersion: '01.02.04', downloading: !downloaded, sizeBytes: downloaded ? 60_742_407 : 0 })], preProduction: [] }) }),
+      [`GET /api/drivers/models/${modelId}/firmware/8EF5/versions`]: () => ({ body: [
+        { componentId: 'firmware-8EF5', version: '01.02.04', firstSet: 0, lastSet: null, from: '2026-11-22T14:30:00Z', to: null, change: 'Sync', changedBy: null, origin: 'Vendor', status: downloaded ? 'Stored' : 'Downloading', sizeBytes: downloaded ? 60_742_407 : 0 },
+      ] }),
+    });
+    renderFirmware();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Show details of System BIOS' }));
+    fireEvent.click(screen.getByRole('button', { name: /Version history/ }));
+    const table = (await screen.findByText('Automatic')).closest('table')!;
+    expect(within(table).getByText('Downloading')).toBeTruthy();
+
+    downloaded = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(FIRMWARE_POLL_MS); });
+
+    await waitFor(() => expect(within(table).getByText('Stored')).toBeTruthy());
+    expect(screen.getByText('61 MB')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Version history/ }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('a downloading BIOS says so under its name with a moving edge, and a failed one says why in its icon', async () => {
+    let failed = false;
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: modelPage },
+      [`GET /api/drivers/models/${modelId}/firmware`]: () => ({ body: firmware({ rows: [bios({ releasedVersion: '01.02.04', sizeBytes: 0, downloading: !failed, downloadFailure: failed ? 'The file does not match its checksum.' : null })], preProduction: [] }) }),
+    });
+    renderFirmware();
+
+    expect(await screen.findByText('Downloading from HP. Devices get it once it is verified.')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Downloading System BIOS' })).toBeTruthy();
+    expect(screen.queryByText('Y88_01020400.bin')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show details of System BIOS' }));
+    const size = screen.getByText('Size').nextElementSibling!;
+    expect(size.textContent).toBe('Downloading');
+    expect(size.querySelector('svg')).toBeNull();
+    cleanup();
+
+    failed = true;
+    renderFirmware();
+
+    expect(await screen.findByText('Download failed. The next sync tries again.')).toBeTruthy();
+    expect(screen.getByLabelText('The file does not match its checksum.')).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show details of System BIOS' }));
+    expect(screen.getByText('Size').nextElementSibling!.textContent).toBe('Download failed');
+  });
+
+  it('the current version of a skipped BIOS is not downloaded, not something to roll back to', async () => {
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: modelPage },
+      [`GET /api/drivers/models/${modelId}/firmware`]: { body: firmware({ rows: [bios({ action: 'Skip', source: 'Default', releasedVersion: '01.02.04', sizeBytes: 0 })], preProduction: [] }) },
+      [`GET /api/drivers/models/${modelId}/firmware/8EF5/versions`]: { body: [
+        { componentId: 'firmware-8EF5', version: '01.02.04', firstSet: 0, lastSet: null, from: '2026-11-22T14:30:00Z', to: null, change: 'Sync', changedBy: null, origin: 'Vendor', status: 'NotDownloaded', sizeBytes: 0 },
+      ] },
+    });
+    renderFirmware();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Show details of System BIOS' }));
+    fireEvent.click(screen.getByRole('button', { name: /Version history/ }));
+    const table = (await screen.findByText('Automatic')).closest('table')!;
+
+    expect(within(table).getByText('Not downloaded')).toBeTruthy();
+    expect(within(table).queryByText('Downloads on roll back')).toBeNull();
   });
 
   it('choosing Skip saves the action for the platform', async () => {
