@@ -10,8 +10,9 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 /// <summary>
 /// Rate limiting middleware.
 ///
-/// Per token: 10 calls per 30-second window per device-session token (or Autopilot status token)
-/// (FR-018).
+/// Per token: 30 calls per 30-second window per device-session token (or Autopilot status token)
+/// (FR-018). The end of imaging alone sends about a dozen step reports within seconds, which
+/// outgrew the original 10.
 ///
 /// Per client address: the endpoints called without a token (session bootstrap, Autopilot
 /// availability and submission, managed Wi-Fi, the boot image update check) are limited to
@@ -24,7 +25,7 @@ namespace CloudImaging.DeviceGatewayApi.Middleware;
 public sealed partial class RateLimitingMiddleware : IFunctionsWorkerMiddleware
 {
     /// <summary>Maximum calls allowed per token within <see cref="WindowDuration"/>.</summary>
-    public const int MaxCallsPerWindow = 10;
+    public const int MaxCallsPerWindow = 30;
 
     /// <summary>Length of the per-token rate-limit window.</summary>
     public static readonly TimeSpan WindowDuration = TimeSpan.FromSeconds(30);

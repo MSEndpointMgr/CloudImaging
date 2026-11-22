@@ -191,6 +191,7 @@ public sealed class OverallProgressCalculatorTests
             ImagingStepName.InstallDrivers,
             ImagingStepName.PrepareSetup,
             ImagingStepName.ConfigureBoot,
+            ImagingStepName.UpdateFirmware,
             ImagingStepName.ApplyRecoveryImage);
         OverallProgressCalculator.PipelineOrder.Should().BeEquivalentTo(Enum.GetValues<ImagingStepName>(),
             "every step the Client can report must have a place in the pipeline order");

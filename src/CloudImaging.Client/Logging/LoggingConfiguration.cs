@@ -25,9 +25,9 @@ internal static class LoggingConfiguration
         "CloudImaging", "Client", "Logs");
 
     /// <summary>
-    /// The path of today's rolling log file — the same naming convention passed to
-    /// <see cref="LoggerConfiguration.WriteTo"/> below (<c>cloud-imaging-client-{Date}.log</c>,
-    /// daily rolling interval).
+    /// Today's newest log file. Past <c>fileSizeLimitBytes</c> Serilog continues in
+    /// <c>cloud-imaging-client-{Date}_001.log</c>, <c>_002</c> and so on, so the plain daily name
+    /// alone would stop at the first 10 MB.
     /// </summary>
     /// <remarks>
     /// Uses <see cref="DateTime.Now"/> (local time), NOT <see cref="DateTime.UtcNow"/> — the
@@ -38,8 +38,20 @@ internal static class LoggingConfiguration
     /// keeps whatever time zone the image is configured with), making LogViewerWindow report
     /// "No log file found yet" even though logging is working correctly.
     /// </remarks>
-    public static string CurrentLogFilePath =>
-        Path.Combine(LogDirectory, $"cloud-imaging-client-{DateTime.Now:yyyyMMdd}.log");
+    public static string CurrentLogFilePath
+    {
+        get
+        {
+            var daily = $"cloud-imaging-client-{DateTime.Now:yyyyMMdd}";
+            var names = Directory.Exists(LogDirectory)
+                ? Directory.EnumerateFiles(LogDirectory, daily + "*.log").Select(Path.GetFileName).OfType<string>()
+                : [];
+            return Path.Combine(LogDirectory, Newest(names) ?? daily + ".log");
+        }
+    }
+
+    /// <summary>The latest of one day's log files: the plain name sorts before its <c>_001</c>, <c>_002</c> successors.</summary>
+    internal static string? Newest(IEnumerable<string> fileNames) => fileNames.Max(StringComparer.Ordinal);
 
     /// <summary>
     /// Builds and returns the Serilog logger to be used as the application log.

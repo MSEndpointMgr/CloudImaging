@@ -17,6 +17,12 @@ public enum PreFlightCheck
 
     /// <summary>The device must have a TPM 2.0.</summary>
     TpmVersion,
+
+    /// <summary>
+    /// The AC adapter must be connected. Not an administrator switch: required only when the
+    /// device gets a BIOS update at the end of imaging.
+    /// </summary>
+    AcPower,
 }
 
 /// <summary>Result of one pre-flight check for one session.</summary>

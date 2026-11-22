@@ -17,7 +17,7 @@ reference requirement identifiers; nothing proposed here as user-facing text doe
 | Progress weights | `ImagingCoreApi/Services/OverallProgressCalculator.cs` | Fixed shares 8/47/25/5/15 mirroring the Client's bands (0-8, 8-55, 55-80, 80-85, 85-100). | A new step either takes a share (shifts every band) or has weight 0. |
 | Step storage | `ImagingCoreApi/Repositories/ImagingStepRepository.cs` | Table `ImagingSteps`, PK sessionId, RK step name; Status, timestamps, ErrorDetail, StepProgress. | No per-item outcomes exist. |
 | Client pipeline | `Client/ViewModels/ImagingWorkflowViewModel.cs` | Linear Format, Download, Apply, Configure boot, Recovery. Each step is reported InProgress then Completed or Failed via `ImagingProgressReporter`. Failure navigates to Results; Retry starts a new session. | Prepare setup slots between Apply image and Configure boot (after Install drivers once spec 005 ships). |
-| Progress budget | `DeviceGatewayApi/Middleware/RateLimitingMiddleware.cs`, `Client/Services/ImagingProgressReporter.cs` | 10 calls per 30 s per session token, shared by every authenticated endpoint; percent updates throttled to one per 10 s. | Per-item outcomes must ride on one final report, not one call per item. |
+| Progress budget | `DeviceGatewayApi/Middleware/RateLimitingMiddleware.cs`, `Client/Services/ImagingProgressReporter.cs` | 30 calls per 30 s per session token (10 until 2026-11-14), shared by every authenticated endpoint; percent updates throttled to one per 10 s. | Per-item outcomes must ride on one final report, not one call per item. |
 | Offline registry | `Client/Services/OfflineDriveLetterService.cs` | Loads the applied image's SYSTEM hive with `RegLoadKey` (SeBackup/SeRestore privileges enabled), edits `MountedDevices` through `Microsoft.Win32.Registry`, unloads with a GC retry. | Proven pattern in this product's WinPE. Reuse it for SOFTWARE, SYSTEM and the default user hive. |
 | Device location | `Contracts/Models/DeviceSession.cs` | `LocationId` and denormalized `LocationName` come from the USB preparation manifest through registration. | Profile resolution keys on `LocationId`; no new device identity. |
 | Locations | `Contracts/Models/Location.cs`, `ImagingCoreApi/Functions/LocationFunctions.cs` | Name, Region (legacy), CountryCode. Delete removes the row, then removes the id from every Wi-Fi network (`WifiNetworkRepository.RemoveLocationAsync`). No actor is passed. | Delete gets one more clean-up and one refusal rule, and needs the deleting user for history. |
@@ -213,8 +213,8 @@ step reuses the same fields and table (FR-053, FR-054, FR-059 there).
   user profile was not found in the applied image." Other hives continue.
 - No `WOW6432Node` redirection happens offline; a value meant for 32-bit software must name that
   key explicitly (help text in the registry dialog).
-- The same SYSTEM hive load also reads `Setup\Status\SysprepStatus\GeneralizationState` (R7) and
-  clears `Setup\UnattendFile` when Prepare setup will write an answer file (R7).
+- The same SYSTEM hive load also clears `Setup\UnattendFile` when Prepare setup will write an
+  answer file (R7).
 
 **Rationale**: `RegLoadKey` from the SYSTEM-context WinPE process is already proven in this product,
 needs no extra binaries, and is unit-testable behind a small interface. offreg.dll is not part of
@@ -311,9 +311,11 @@ writes it.
    neither a profile answer file nor Windows setup work), so the device gets exactly one answer
    file and any file the image contained is overwritten without a warning (FR-021).
 6. **Generalization check**: Windows setup only runs the specialize pass on a generalized image.
-   When there is Windows setup work and the offline `GeneralizationState` is not 7, the answer file
-   item fails with "The OS image is not generalized, so Windows setup will not run the setup runner.
-   Capture the image after Sysprep /generalize." Microsoft's install.wim is always generalized.
+   When there is Windows setup work and the image state in `Windows\Setup\State\State.ini` is not
+   `IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE` or `..._TO_AUDIT`, the answer file item fails with "The
+   OS image is not generalized, so Windows setup will not run the setup runner. Capture the image
+   after Sysprep /generalize." Microsoft's install.wim is always generalized, but its
+   `SysprepStatus\GeneralizationState` is 4, so that value cannot decide (corrected 2026-11-14).
 
 **Rationale**: FR-022 fixes the merge rules; the decisions above are the details Windows setup
 needs: architecture-matched component, unique `Order`, and a file Windows actually reads. Without

@@ -219,6 +219,34 @@ public sealed class DriverLifecycleFunctionsTests
     }
 
     [Fact]
+    public async Task ReleaseTesting_MakesTheSetInTestingCurrent_ShowsOnThePage_AndIsLogged()
+    {
+        var model = await ModelWithASetAsync();
+        await _h.Bed.Store.SyncSettings.UpsertAsync(DriverStore.SettingsPartition, DriverStore.SettingsRow, (await _h.Bed.Store.GetSyncSettingsAsync()).Value with { WaitForTesting = true });
+        PublishVersion("8C26", "1.1");
+        await NextRunAsync();
+        var page = (CloudImaging.Contracts.Models.Drivers.DriverModelPage)(await _h.ModelService.GetModelPageAsync(model.ModelId, DriverSyncHarness.Release)).Body!;
+        page.Testing!.SetVersion.Should().Be(2);
+        page.SetVersion.Should().Be(1);
+        page.Model.Status.InTesting.Should().BeTrue();
+        page.Preparing.Should().BeNull();
+        var storage = await (await _functions.GetDriverStorage(FunctionTestHost.Request("GET", $"{Base}/storage"), FunctionTestHost.Context)).ReadJsonAsync();
+        storage.GetProperty("models")[0].GetProperty("sets").GetProperty("testing").GetInt32().Should().Be(1);
+        var detail = await (await _functions.GetDriverStorageModel(FunctionTestHost.Request("GET", $"{Base}/storage/models/{model.ModelId}"), model.ModelId.ToString(), FunctionTestHost.Context)).ReadJsonAsync();
+        detail.GetProperty("releases")[0].GetProperty("testing").GetProperty("version").GetInt32().Should().Be(2);
+        detail.GetProperty("releases")[0].GetProperty("components").EnumerateArray().SelectMany(c => c.GetProperty("sets").EnumerateArray().Select(s => s.GetString())).Should().Contain("2").And.NotContain("testing");
+
+        var response = await _functions.ReleaseDriverSetInTesting(FunctionTestHost.Request("POST", $"{Base}/models/{model.ModelId}/releases/{Release}/testing/release", new { actor = new { upn = Upn } }), model.ModelId.ToString(), Release, FunctionTestHost.Context);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.ReadJsonAsync();
+        body.GetProperty("setVersion").GetInt32().Should().Be(2);
+        body.GetProperty("testing").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        Log().Should().ContainSingle(l => l.Area == "Release" && l.Subject == "HP EliteBook 840 G11" && l.Change == "Driver set 2 for Windows 11, version 24H2");
+        (await _functions.ReleaseDriverSetInTesting(FunctionTestHost.Request("POST", $"{Base}/models/{model.ModelId}/releases/{Release}/testing/release", new { actor = new { upn = Upn } }), model.ModelId.ToString(), Release, FunctionTestHost.Context)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
     public async Task RollBack_WithoutAPreviousSet_Is409_AndWithoutAnActorIs400()
     {
         var model = await ModelWithASetAsync();

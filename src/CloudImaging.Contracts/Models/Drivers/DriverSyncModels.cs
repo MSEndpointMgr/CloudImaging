@@ -36,6 +36,21 @@ public sealed record DriverSyncSettings
     /// <summary>New components wait for approval.</summary>
     public bool WaitForApprovalOfNewComponents { get; init; }
 
+    /// <summary>New driver sets wait in testing until someone releases them.</summary>
+    public bool WaitForTesting { get; init; }
+
+    /// <summary>Model and Windows release pairs with a set in testing; turning testing off releases them.</summary>
+    public int SetsInTesting { get; init; }
+
+    /// <summary>Who gets a newer BIOS a sync finds.</summary>
+    public DriverFirmwareNewVersions FirmwareNewVersions { get; init; }
+
+    /// <summary>Location whose devices get a BIOS in pre-production.</summary>
+    public Guid? FirmwarePreProductionLocationId { get; init; }
+
+    /// <summary>BIOS versions waiting in pre-production; choosing Available immediately releases them.</summary>
+    public int FirmwareInPreProduction { get; init; }
+
     /// <summary>Next scheduled sync in UTC, null for manual only.</summary>
     public DateTimeOffset? NextRunAt { get; init; }
 
@@ -72,6 +87,15 @@ public sealed record SetDriverSyncSettingsRequest
 
     /// <summary>New components wait for approval.</summary>
     public bool WaitForApprovalOfNewComponents { get; init; }
+
+    /// <summary>New driver sets wait in testing until someone releases them.</summary>
+    public bool WaitForTesting { get; init; }
+
+    /// <summary>Who gets a newer BIOS a sync finds.</summary>
+    public DriverFirmwareNewVersions FirmwareNewVersions { get; init; }
+
+    /// <summary>Location whose devices get a BIOS in pre-production; required for Pre-production first.</summary>
+    public Guid? FirmwarePreProductionLocationId { get; init; }
 
     /// <summary>Who made the change.</summary>
     public DriverActor? Actor { get; init; }

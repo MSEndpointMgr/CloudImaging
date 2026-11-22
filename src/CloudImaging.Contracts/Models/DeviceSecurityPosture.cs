@@ -16,4 +16,7 @@ public sealed class DeviceSecurityPosture
 
     /// <summary>TPM version detected, if any.</summary>
     public TpmPresence Tpm { get; init; }
+
+    /// <summary>Whether the AC adapter is connected; a BIOS update needs it. Null from a Client older than BIOS updates.</summary>
+    public PowerSource? PowerSource { get; init; }
 }

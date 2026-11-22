@@ -286,6 +286,17 @@ public sealed partial class DriverFunctions
             ? ForwardAsync(req, HttpMethod.Post, $"{path}/rollback", context.CancellationToken)
             : Task.FromResult(BadSegment(req));
 
+    /// <summary>POST drivers/models/{id}/releases/{release}/testing/release: Release the set in testing.</summary>
+    [Function("ReleaseDriverSetInTesting")]
+    public Task<HttpResponseData> ReleaseDriverSetInTesting(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "drivers/models/{id}/releases/{release}/testing/release")] HttpRequestData req,
+        string id,
+        string release,
+        FunctionContext context) =>
+        PairPath(id, release, null) is { } path
+            ? ForwardAsync(req, HttpMethod.Post, $"{path}/testing/release", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
     /// <summary>GET drivers/models/{id}/removal-impact?release=.</summary>
     [Function("GetDriverRemovalImpact")]
     public Task<HttpResponseData> GetDriverRemovalImpact(
@@ -475,6 +486,71 @@ public sealed partial class DriverFunctions
             ? ForwardAsync(req, HttpMethod.Post, $"custom-components/{customId:D}/notices/{model:D}/dismiss", context.CancellationToken)
             : Task.FromResult(BadSegment(req));
 
+    /// <summary>GET drivers/models/{id}/firmware: the model's Firmware tab.</summary>
+    [Function("GetDriverFirmware")]
+    public Task<HttpResponseData> GetDriverFirmware(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "drivers/models/{id}/firmware")] HttpRequestData req,
+        string id,
+        FunctionContext context) =>
+        Guid.TryParse(id, out var modelId)
+            ? ForwardAsync(req, HttpMethod.Get, $"models/{modelId:D}/firmware", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
+    /// <summary>PUT drivers/models/{id}/firmware/{platform}/action: Update at restart or Skip.</summary>
+    [Function("SetDriverFirmwareAction")]
+    public Task<HttpResponseData> SetDriverFirmwareAction(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "drivers/models/{id}/firmware/{platform}/action")] HttpRequestData req,
+        string id,
+        string platform,
+        FunctionContext context) =>
+        FirmwarePath(id, platform) is { } path
+            ? ForwardAsync(req, HttpMethod.Put, $"{path}/action", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
+    /// <summary>POST drivers/models/{id}/firmware/{platform}/release: the BIOS in pre-production goes to every location.</summary>
+    [Function("ReleaseDriverFirmware")]
+    public Task<HttpResponseData> ReleaseDriverFirmware(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "drivers/models/{id}/firmware/{platform}/release")] HttpRequestData req,
+        string id,
+        string platform,
+        FunctionContext context) =>
+        FirmwarePath(id, platform) is { } path
+            ? ForwardAsync(req, HttpMethod.Post, $"{path}/release", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
+    /// <summary>GET drivers/models/{id}/firmware/{platform}/versions.</summary>
+    [Function("GetDriverFirmwareVersions")]
+    public Task<HttpResponseData> GetDriverFirmwareVersions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "drivers/models/{id}/firmware/{platform}/versions")] HttpRequestData req,
+        string id,
+        string platform,
+        FunctionContext context) =>
+        FirmwarePath(id, platform) is { } path
+            ? ForwardAsync(req, HttpMethod.Get, $"{path}/versions", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
+    /// <summary>PUT drivers/models/{id}/firmware/{platform}/rollback.</summary>
+    [Function("SetDriverFirmwareRollBack")]
+    public Task<HttpResponseData> SetDriverFirmwareRollBack(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "drivers/models/{id}/firmware/{platform}/rollback")] HttpRequestData req,
+        string id,
+        string platform,
+        FunctionContext context) =>
+        FirmwarePath(id, platform) is { } path
+            ? ForwardAsync(req, HttpMethod.Put, $"{path}/rollback", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
+    /// <summary>DELETE drivers/models/{id}/firmware/{platform}/rollback?changedBy=.</summary>
+    [Function("ClearDriverFirmwareRollBack")]
+    public Task<HttpResponseData> ClearDriverFirmwareRollBack(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "drivers/models/{id}/firmware/{platform}/rollback")] HttpRequestData req,
+        string id,
+        string platform,
+        FunctionContext context) =>
+        FirmwarePath(id, platform) is { } path
+            ? ForwardAsync(req, HttpMethod.Delete, $"{path}/rollback", context.CancellationToken)
+            : Task.FromResult(BadSegment(req));
+
     /// <summary>GET media-builder/driver-sets?architecture=: sets Media Builder can preload; MediaBuilderAccess only.</summary>
     [Function("GetDriverSetsForMediaBuilder")]
     public Task<HttpResponseData> GetDriverSetsForMediaBuilder(
@@ -493,6 +569,12 @@ public sealed partial class DriverFunctions
     internal static string? PairPath(string id, string release, string? lineageKey) =>
         Guid.TryParse(id, out var modelId) && IsSafeSegment(release) && (lineageKey is null || IsSafeSegment(lineageKey))
             ? $"models/{modelId:D}/releases/{release}"
+            : null;
+
+    /// <summary><c>models/{id}/firmware/{platform}</c> when the id and platform are valid segments; otherwise null.</summary>
+    internal static string? FirmwarePath(string id, string platform) =>
+        Guid.TryParse(id, out var modelId) && platform is { Length: > 0 and <= 16 } && platform.All(char.IsAsciiLetterOrDigit)
+            ? $"models/{modelId:D}/firmware/{platform}"
             : null;
 
     /// <summary>Forwards a request and relays Core's answer.</summary>

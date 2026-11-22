@@ -137,6 +137,18 @@ public sealed record DeviceSession
     /// <summary>JSON array of the pinned model's vendor categories that were critical at assignment.</summary>
     public string? DriverCriticalCategories { get; init; }
 
+    /// <summary>Model whose BIOS the device gets, pinned at registration; null when it gets none.</summary>
+    public Guid? FirmwareModelId { get; init; }
+
+    /// <summary>HP platform ID of the pinned BIOS.</summary>
+    public string? FirmwarePlatformId { get; init; }
+
+    /// <summary>BIOS version the device is updated to.</summary>
+    public string? FirmwareVersion { get; init; }
+
+    /// <summary>BIOS version the device reported at registration.</summary>
+    public string? FirmwareInstalledVersion { get; init; }
+
     // Progress
     /// <summary>Overall imaging progress, 0-100.</summary>
     public int OverallProgressPercent { get; init; }

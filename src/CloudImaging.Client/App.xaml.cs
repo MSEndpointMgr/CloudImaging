@@ -491,7 +491,8 @@ public partial class App : Application
             errorDetail,
             () => window.NavigateTo(BuildOperationSelectionView(window, gateway, lf)),
             explicitSupportReferenceCode,
-            restartSystem: restartService.Restart);
+            restartSystem: restartService.Restart,
+            holdRestart: () => window.OwnedWindows.Count > 0);
         return view;
     }
 

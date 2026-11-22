@@ -161,6 +161,21 @@ describe('Drivers: the Sync running card', () => {
     expect(screen.getByText(/^Queued by olle@contoso\.com at \d\d:05$/)).toBeTruthy();
   });
 
+  it('keeps the stages of a run that ends at once on screen for 3 seconds before its result', async () => {
+    const finished = progress({ models: { done: 1, total: 1 }, components: { done: 0, total: 0 }, driverSets: { done: 1, total: 1 }, found: {}, latest: [] }, {
+      result: 'Completed', finishedAt: '2026-10-26T14:02:01Z', counts: {}, downloadedComponents: 0, downloadedBytes: 0, newSets: 0,
+    });
+    serve(routes([run()], { body: finished }));
+    renderSyncTab();
+
+    expect(await screen.findByRole('heading', { name: 'Sync running' }, { timeout: 5_000 })).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: 'Models' }).getAttribute('aria-valuetext')).toBe('1 of 1 checked');
+    expect(screen.queryByText('Finishing up')).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Sync finished' })).toBeNull();
+
+    expect(await screen.findByRole('heading', { name: 'Sync finished' }, { timeout: 5_000 })).toBeTruthy();
+  });
+
   it('reads the progress again every 5 seconds while the sync runs', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     let reads = 0;

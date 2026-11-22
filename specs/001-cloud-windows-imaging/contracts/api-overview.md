@@ -51,7 +51,7 @@ This document defines the purpose and responsibility split between the three API
 4. Cloud Imaging Portal backend -> Operator API: couple session by passcode (transitions to `SessionAssigned`).
 5. Cloud Imaging Portal backend -> Operator API: assign OS image to coupled session (single or bulk).
 6. Operator API -> Imaging Core API: couple and assign calls forwarded over Private Link.
-7. Cloud Imaging Client -> Device Gateway API: poll status/progress (rate-limited: 10 calls per 30-second window).
+7. Cloud Imaging Client -> Device Gateway API: poll status/progress (rate-limited: 30 calls per 30-second window).
 8. Device Gateway API -> Imaging Core API: state/progress/SAS refresh.
 
 ### Media Builder Flow

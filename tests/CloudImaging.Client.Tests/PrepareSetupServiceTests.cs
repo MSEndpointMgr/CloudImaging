@@ -208,11 +208,8 @@ public sealed class PrepareSetupServiceTests
     private (PrepareSetupService Service, StubScriptRunner Scripts, FakeOfflineRegistryHive Hive, FakeSetupFileSystem Files) CreateWithScripts(bool generalized = true)
     {
         var hive = new FakeOfflineRegistryHive();
-        if (generalized)
-        {
-            hive.Values[(SetupRegistryHive.System, @"Setup\Status\SysprepStatus", "GeneralizationState")] = 7;
-        }
         var files = _files = new FakeSetupFileSystem();
+        files.Files[PrepareSetupService.ImageStatePath] = Encoding.ASCII.GetBytes($"[State]\r\nImageState=\"{(generalized ? "IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE" : "IMAGE_STATE_COMPLETE")}\"\r\n");
         var scripts = new StubScriptRunner();
         var time = new FixedTime(new DateTimeOffset(2026, 10, 23, 10, 2, 11, TimeSpan.Zero));
         return (new PrepareSetupService(hive, files, scripts, () => RunnerBytes, time, NullLogger.Instance), scripts, hive, files);
@@ -298,7 +295,7 @@ public sealed class PrepareSetupServiceTests
         result.ErrorDetail.Should().Be("Bad: Exited with code 1.");
         scripts.Runs.Select(r => r.Name).Should().Equal("Bad");
         result.Items.Where(i => i.Name != "Bad").Should().OnlyContain(i => i.Outcome == StepItemOutcome.NotRun);
-        files.Files.Keys.Should().NotContain(k => k.StartsWith(@"Windows\Setup", StringComparison.OrdinalIgnoreCase));
+        files.Files.Keys.Should().NotContain(k => k.StartsWith(SetupRunnerManifestBuilder.StagingFolder, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -385,6 +382,33 @@ public sealed class PrepareSetupServiceTests
         var result = RunWith(service, content);
 
         result.Items.Single(i => i.Kind == StepItemKind.AnswerFile).Reason.Should().Be("The OS image is not generalized, so Windows setup will not run the setup runner. Capture the image after Sysprep /generalize.");
+    }
+
+    [Fact]
+    public void MicrosoftMedia_IsGeneralized_ThoughItsGeneralizationStateIsNot7()
+    {
+        // Microsoft builds install.wim with GeneralizationState 4 and writes State.ini as UTF-16.
+        var (service, _, hive, files) = CreateWithScripts();
+        hive.Values[(SetupRegistryHive.System, @"Setup\Status\SysprepStatus", "GeneralizationState")] = 4;
+        files.Files[PrepareSetupService.ImageStatePath] = [.. Encoding.Unicode.GetPreamble(), .. Encoding.Unicode.GetBytes("[State]\r\nImageState=IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE\r\n")];
+        files.Files[@"CloudImaging\Drivers\a.exe"] = [1];
+
+        var result = RunWith(service, null, [Installer("HP Hotkey Support", @"CloudImaging\Drivers\a.exe")]);
+
+        result.Items.Single(i => i.Kind == StepItemKind.AnswerFile).Outcome.Should().Be(StepItemOutcome.Succeeded);
+        UnattendComposer.CountRunnerCommands(UnattendComposer.Parse(Encoding.UTF8.GetString(files.Files[PrepareSetupService.AnswerFilePath]))).Should().Be(1);
+    }
+
+    [Fact]
+    public void WithoutAnImageState_TheAnswerFileIsWritten()
+    {
+        var (service, _, _, files) = CreateWithScripts();
+        files.Files.Remove(PrepareSetupService.ImageStatePath);
+        var content = new SetupProfileContent { Scripts = [Script("Setup", SetupScriptPhase.WindowsSetup, 1)] };
+
+        var result = RunWith(service, content);
+
+        result.Items.Single(i => i.Kind == StepItemKind.AnswerFile).Outcome.Should().Be(StepItemOutcome.Succeeded, "Windows ignores it on an image that is not generalized");
     }
 
     [Fact]

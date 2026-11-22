@@ -35,7 +35,7 @@ const navSections: NavSection[] = [
       { label: 'OS Images',       path: '/os-images',        icon: <HardDrive size={18} />, access: 'imaging' },
       { label: 'Boot Images',     path: '/boot-images',      icon: <Disc      size={18} />, access: 'imaging' },
       { label: 'Recovery Images', path: '/recovery-images',  icon: <LifeBuoy  size={18} />, access: 'imaging' },
-      { label: 'Drivers',         path: '/drivers',          icon: <Cpu       size={18} />, access: 'drivers' },
+      { label: 'Drivers & Firmware', path: '/drivers',          icon: <Cpu       size={18} />, access: 'drivers' },
       { label: 'Setup Profiles',  path: '/setup-profiles',   icon: <SlidersHorizontal size={18} />, access: 'setupProfiles' },
       { label: 'Autopilot',       path: '/autopilot',        icon: <BadgeCheck size={18} />, access: 'autopilot' },
     ],

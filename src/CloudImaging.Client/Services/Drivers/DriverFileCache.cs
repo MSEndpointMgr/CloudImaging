@@ -75,8 +75,9 @@ public sealed partial class DriverFileCache
     /// </summary>
     /// <param name="sha256">Expected hash.</param>
     /// <param name="destination">Target file path.</param>
+    /// <param name="sizeBytes">Expected size; a file of another size is rejected before it is copied. 0 when unknown.</param>
     /// <param name="ct">Cancellation.</param>
-    public async Task<bool> TryCopyAsync(string sha256, string destination, CancellationToken ct = default)
+    public async Task<bool> TryCopyAsync(string sha256, string destination, long sizeBytes = 0, CancellationToken ct = default)
     {
         if (EntryFolder(sha256) is not { } dir)
         {
@@ -91,10 +92,27 @@ public sealed partial class DriverFileCache
                 return false;
             }
 
-            var metadata = JsonSerializer.Deserialize<DriverCacheMetadata>(await File.ReadAllTextAsync(metadataPath, ct), Json);
-            var source = metadata is null ? null : Path.Combine(dir, Path.GetFileName(metadata.FileName));
+            DriverCacheMetadata? metadata;
+            try
+            {
+                metadata = JsonSerializer.Deserialize<DriverCacheMetadata>(await File.ReadAllTextAsync(metadataPath, ct), Json);
+            }
+            catch (JsonException)
+            {
+                // Unreadable metadata would otherwise count as a hit in AddAsync and block write-back forever.
+                metadata = null;
+            }
+
+            var source = metadata is null || string.IsNullOrWhiteSpace(metadata.FileName) ? null : Path.Combine(dir, Path.GetFileName(metadata.FileName));
             if (source is null || !File.Exists(source))
             {
+                TryDeleteDirectory(dir);
+                return false;
+            }
+
+            if (sizeBytes > 0 && new FileInfo(source).Length != sizeBytes)
+            {
+                LogDamaged(_logger, sha256);
                 TryDeleteDirectory(dir);
                 return false;
             }
@@ -119,7 +137,7 @@ public sealed partial class DriverFileCache
             TryWriteMetadata(metadataPath, metadata! with { LastUsedAt = DateTimeOffset.UtcNow });
             return true;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             LogReadFailed(_logger, sha256, ex.Message);
             TryDeleteFile(destination);

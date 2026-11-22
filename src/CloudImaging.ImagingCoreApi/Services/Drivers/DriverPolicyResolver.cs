@@ -84,7 +84,7 @@ public static class DriverPolicyResolver
         {
             DriverRuleMatch.ComponentId => string.Equals(rule.Value.Trim(), component.ComponentId, StringComparison.OrdinalIgnoreCase),
             DriverRuleMatch.NamePattern => MatchesNamePattern(rule.Value, component.Name),
-            DriverRuleMatch.Category => string.Equals(rule.Value.Trim(), component.Category?.Trim(), StringComparison.OrdinalIgnoreCase),
+            DriverRuleMatch.Category => MatchesNamePattern(rule.Value.Trim(), component.Category?.Trim() ?? string.Empty),
             _ => false,
         };
     }

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Xml;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
@@ -55,8 +56,8 @@ public sealed partial class PrepareSetupService(
     /// <summary>Answer files Windows setup would read instead of <see cref="AnswerFilePath"/>, removed before writing.</summary>
     public static readonly string[] CompetingAnswerFiles = [@"Windows\Panther\Unattend\unattend.xml", @"Windows\Panther\Unattend\autounattend.xml"];
 
-    /// <summary>Generalization state Sysprep /generalize leaves behind.</summary>
-    private const int Generalized = 7;
+    /// <summary>Where Windows records the image's setup state; the registry holds the same value.</summary>
+    public const string ImageStatePath = @"Windows\Setup\State\State.ini";
 
     private const int MaxErrorDetailLength = 500;
 
@@ -75,12 +76,11 @@ public sealed partial class PrepareSetupService(
         var total = registryValues.Count + winPeScripts.Count + installers.Count + setupScripts.Count + 1;
         var items = new List<ImagingStepItem>(total);
         bool Stopped() => failDeployment && items.Any(i => i.Outcome == StepItemOutcome.Failed);
-        int? generalizationState;
         int processed;
         int queued;
         try
         {
-            (generalizationState, processed, queued) = RunPhases(input, progress, items, registryValues, winPeScripts, installers, setupScripts, total, failDeployment, cancellationToken);
+            (processed, queued) = RunPhases(input, progress, items, registryValues, winPeScripts, installers, setupScripts, total, failDeployment, cancellationToken);
         }
         finally
         {
@@ -96,7 +96,7 @@ public sealed partial class PrepareSetupService(
         progress("Writing the answer file", Percent(processed, total));
         items.Add(Stopped()
             ? Item(items.Count, StepItemKind.AnswerFile, "Answer file", AnswerFilePath, StepItemOutcome.NotRun, OfflineRegistryWriter.NotRunReason)
-            : WriteAnswerFile(items.Count, input, hasWindowsSetupWork: queued > 0, generalizationState));
+            : WriteAnswerFile(items.Count, input, hasWindowsSetupWork: queued > 0));
         progress("Writing the answer file", 100);
 
         var failed = items.Where(i => i.Outcome == StepItemOutcome.Failed).ToList();
@@ -111,9 +111,9 @@ public sealed partial class PrepareSetupService(
 
     /// <summary>
     /// Registry values, Offline scripts and Specialize staging, adding an item for each. Returns the
-    /// image's generalization state, the items processed and how many items the setup runner will start.
+    /// items processed and how many items the setup runner will start.
     /// </summary>
-    private (int? GeneralizationState, int Processed, int Queued) RunPhases(
+    private (int Processed, int Queued) RunPhases(
         PrepareSetupInput input, Action<string, int> progress, List<ImagingStepItem> items, IReadOnlyList<SetupRegistryValue> registryValues,
         List<SetupScript> winPeScripts, IReadOnlyList<SpecializeInstaller> installers, List<SetupScript> setupScripts, int total, bool failDeployment,
         CancellationToken cancellationToken)
@@ -122,13 +122,12 @@ public sealed partial class PrepareSetupService(
         bool Stopped() => failDeployment && items.Any(i => i.Outcome == StepItemOutcome.Failed);
 
         // Phase 1: registry values. Runs even without values, because the SYSTEM hive load is also
-        // what clears Setup\UnattendFile and reads the generalization state.
+        // what clears Setup\UnattendFile.
         if (registryValues.Count > 0)
         {
             progress("Writing registry values", 0);
         }
         var written = new OfflineRegistryWriter(hive, logger).Write(registryValues, input.VolumeRoot, failDeployment, () => progress("Writing registry values", Percent(++processed, total)));
-        var generalizationState = written.GeneralizationState;
         foreach (var outcome in written.Values)
         {
             items.Add(Item(items.Count, StepItemKind.RegistryValue, outcome.Value.Name, OfflineRegistryPath.DisplayTarget(outcome.Value), outcome.Outcome, outcome.Reason));
@@ -187,7 +186,7 @@ public sealed partial class PrepareSetupService(
                 progress("Staging Specialize work", Percent(processed, total));
             }
         }
-        return (generalizationState, processed, queued);
+        return (processed, queued);
     }
 
     private static List<SetupScript> ScriptsFor(SetupProfileContent? content, SetupScriptPhase phase) =>
@@ -314,10 +313,13 @@ public sealed partial class PrepareSetupService(
         }
     }
 
-    private ImagingStepItem WriteAnswerFile(int index, PrepareSetupInput input, bool hasWindowsSetupWork, int? generalizationState)
+    private ImagingStepItem WriteAnswerFile(int index, PrepareSetupInput input, bool hasWindowsSetupWork)
     {
-        if (hasWindowsSetupWork && generalizationState is not Generalized)
+        // Only an image that runs the specialize pass starts the runner. An unknown state writes the
+        // file anyway: Windows ignores it on an image that is not generalized.
+        if (hasWindowsSetupWork && ReadImageState() is { } state && !state.StartsWith("IMAGE_STATE_GENERALIZE_RESEAL_TO_", StringComparison.Ordinal))
         {
+            LogImageNotGeneralized(logger, state);
             return Item(index, StepItemKind.AnswerFile, "Answer file", AnswerFilePath, StepItemOutcome.Failed,
                 "The OS image is not generalized, so Windows setup will not run the setup runner. Capture the image after Sysprep /generalize.");
         }
@@ -361,6 +363,34 @@ public sealed partial class PrepareSetupService(
     }
 
     private static int Percent(int processed, int total) => total == 0 ? 100 : Math.Min(100, processed * 100 / total);
+
+    /// <summary>The image state from <see cref="ImageStatePath"/>, or null when it cannot be read.</summary>
+    private string? ReadImageState()
+    {
+        try
+        {
+            if (!files.FileExists(ImageStatePath))
+            {
+                return null;
+            }
+
+            // Setup may write the file as UTF-16; dropping the NULs reads either encoding.
+            var bytes = files.ReadAllBytes(ImageStatePath);
+            var text = (bytes is [0xFF, 0xFE, ..] ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes)).Replace("\0", string.Empty, StringComparison.Ordinal);
+            var match = ImageStatePattern().Match(text);
+            return match.Success ? match.Groups[1].Value.ToUpperInvariant() : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    [GeneratedRegex(@"ImageState\s*=\s*""?(IMAGE_STATE_[A-Z_]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ImageStatePattern();
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The OS image's setup state is {State}, so Windows setup will not run the specialize pass.")]
+    private static partial void LogImageNotGeneralized(ILogger logger, string state);
 
     private static ImagingStepItem Item(int index, StepItemKind kind, string name, string? target, StepItemOutcome outcome, string? reason) => new()
     {

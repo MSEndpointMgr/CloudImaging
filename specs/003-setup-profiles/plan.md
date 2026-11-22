@@ -91,7 +91,7 @@ Static Web Apps (Portal frontend), WinPE and Windows RE boot images (x64, ARM64)
 - Prepare setup adds at most 30 seconds to a deployment, excluding the profile's own scripts (SC-005)
 - Portal list and detail reads at most 300 ms at p95 under 50 users (constitution V)
 - Client start-up unchanged (at most 5 seconds to the main window); the profile fetch happens after assignment, not at start-up
-- Progress reporting stays within 10 calls per 30 seconds per session
+- Progress reporting stays within 30 calls per 30 seconds per session
 
 **Constraints**:
 - WinPE: SYSTEM context, RAM disk `X:`, no shell; PowerShell present only in boot images built by the new Media Builder

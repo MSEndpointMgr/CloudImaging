@@ -811,14 +811,14 @@ The Operation Selection screen offers these troubleshooting tools, all accessibl
 the always-on-top Cloud Imaging Client window:
 
 - **Network button**: in the footer, names the connection in use (Ethernet, the Wi-Fi network, or
-  No network with a red dot) and opens a panel listing every adapter, its address, the one in use
-  and any adapter Windows found without a driver, with **Check again** and, on Windows RE,
-  **Connect to Wi-Fi**.
+  No network with a red dot) and opens a panel with one line for Ethernet and one for Wi-Fi: the
+  adapter, its address, which one is in use, or the adapter Windows found without a driver. It has
+  **Check again** and, on Windows RE, **Connect to Wi-Fi**.
 - **Connect to Wi-Fi**: shown only on Windows RE boot images; Windows PE has no Wi-Fi, so the
-  button is not there at all. Lists the location's managed networks first (marked **Managed**,
-  joined without a password, hidden ones included), then every other visible network. Open and
+  button is not there at all. Lists the location's managed networks first (marked with a briefcase,
+  joined without a password, hidden ones included), then every other network in range. Open and
   WPA2/WPA3-Personal networks can be joined by SSID and passphrase; Enterprise/802.1X networks
-  are shown as "Not supported". A password typed here is used for this session only. The
+  are left out, with a note saying how many. A password typed here is used for this session only. The
   temporary WLAN profile (which embeds the passphrase in plain text, per the netsh profile
   schema) is deleted immediately after each connect attempt.
 - **Managed Wi-Fi at startup**: on a Windows RE boot image, when Ethernet has no address after

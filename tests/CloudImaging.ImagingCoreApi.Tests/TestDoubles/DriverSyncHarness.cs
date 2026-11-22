@@ -64,7 +64,7 @@ internal sealed class DriverSyncHarness
         Sync = new DriverSyncService(Bed.Store, Bed.Models, Bed.Pointers, Bed.Runs, Bed.SetDocuments, Catalogs, Storage, Bed.Work, Sessions, Bed.Time, NullLogger<DriverSyncService>.Instance);
         ModelService = new DriverModelService(Bed.Store, Bed.Models, Bed.Pointers, Bed.Runs, Bed.SetDocuments, Catalogs, Sync, Bed.Work, Bed.Time);
         PolicyService = new DriverPolicyService(Bed.Store, Bed.Models, Bed.Pointers, ModelService, Bed.Work, Bed.Time);
-        Scheduler = new DriverSyncScheduler(Bed.Store, Sync, Bed.Runs, Bed.Work, Bed.Time, NullLogger<DriverSyncScheduler>.Instance);
+        Scheduler = new DriverSyncScheduler(Bed.Store, Sync, Bed.Work, Bed.Time, NullLogger<DriverSyncScheduler>.Instance);
         Lifecycle = new DriverLifecycleService(Bed.Store, Bed.Models, Bed.Pointers, Bed.SetDocuments, Sessions, Sync, ModelService, PolicyService, Bed.Time);
         History = new DriverComponentHistoryService(Bed.Store, Bed.Models, Storage, ModelService, PolicyService, Bed.Time);
         Custom = new DriverCustomComponentService(Bed.Store, Bed.Models, Storage, PolicyService, Bed.Time);

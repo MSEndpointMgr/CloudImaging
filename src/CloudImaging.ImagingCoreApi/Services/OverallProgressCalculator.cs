@@ -34,6 +34,9 @@ public static class OverallProgressCalculator
         (ImagingStepName.InstallDrivers, 0, false),
         (ImagingStepName.PrepareSetup, 0, false),
         (ImagingStepName.ConfigureBoot, 5, true),
+
+        // Before recovery, so the session cannot complete while the BIOS is still being staged.
+        (ImagingStepName.UpdateFirmware, 0, false),
         (ImagingStepName.ApplyRecoveryImage, 15, true),
     ];
 

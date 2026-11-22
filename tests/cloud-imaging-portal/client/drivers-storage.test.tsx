@@ -147,6 +147,19 @@ describe('Drivers: Storage tab', () => {
     expect(screen.getByText('2026-10-20 02:10')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Hide stored components of HP EliteBook 840 G11' }).getAttribute('aria-expanded')).toBe('true');
   });
+
+  it('counts and shows a set in testing', async () => {
+    const withTesting = { ...storage, models: [{ ...storage.models[0], sets: { current: 2, rollBack: 2, testing: 1 } }] };
+    const modelWithTesting = { ...storageModel, releases: [{ ...storageModel.releases[0], testing: { version: 8, builtAt: '2026-10-28T02:15:00' } }] };
+    serve({ 'GET /api/drivers/storage': { body: withTesting }, [`GET /api/drivers/storage/models/${modelId}`]: { body: modelWithTesting } });
+    renderStorage();
+
+    expect(await screen.findByText('2 current, 2 roll-back, 1 in testing')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show stored components of HP EliteBook 840 G11' }));
+
+    expect(await screen.findByText('In testing, built 2026-10-28 02:15')).toBeTruthy();
+    expect(screen.getByText('Set 8')).toBeTruthy();
+  });
 });
 
 function row(overrides: Record<string, unknown> = {}) {
@@ -183,6 +196,12 @@ function renderModel(path = `/drivers/models/${modelId}`): void {
   );
 }
 
+/** Opens the model page's More menu and returns one of its entries. */
+async function menuItem(name: string): Promise<HTMLButtonElement> {
+  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }));
+  return screen.getByRole('menuitem', { name }) as HTMLButtonElement;
+}
+
 describe('Drivers: model page roll back and removal', () => {
   it('rolls back the driver set through an overlay that names both sets, and returns focus on cancel', async () => {
     const calls: string[] = [];
@@ -192,12 +211,9 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    const button = await screen.findByRole('button', { name: 'Roll back driver set' });
-    fireEvent.focus(button.parentElement!);
-    expect(await screen.findByText('Devices get driver set 6 instead of 7 from their next deployment')).toBeTruthy();
-    fireEvent.blur(button.parentElement!);
-    button.focus();
-    fireEvent.click(button);
+    const item = await menuItem('Roll back driver set');
+    expect(screen.getByText('Devices get driver set 6 instead of 7 from their next deployment')).toBeTruthy();
+    fireEvent.click(item);
     const dialog = screen.getByRole('dialog', { name: 'Roll back to driver set 6?' });
     expect(within(dialog).getByText('Devices imaged from now on get driver set 6. Running deployments keep the set they started with. The next sync does not reinstate set 7.')).toBeTruthy();
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
@@ -205,9 +221,9 @@ describe('Drivers: model page roll back and removal', () => {
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Roll back' }));
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(document.activeElement).toBe(button);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'More actions' }));
 
-    fireEvent.click(button);
+    fireEvent.click(await menuItem('Roll back driver set'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Roll back' }));
 
     await waitFor(() => expect(calls).toEqual(['rollback']));
@@ -219,10 +235,9 @@ describe('Drivers: model page roll back and removal', () => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: page({ hasPreviousSet: false, previousSetVersion: null }) } });
     renderModel();
 
-    const button = await screen.findByRole('button', { name: 'Roll back driver set' }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
-    fireEvent.focus(button.parentElement!);
-    expect(await screen.findByText('No previous driver set to roll back to')).toBeTruthy();
+    const item = await menuItem('Roll back driver set');
+    expect(item.disabled).toBe(true);
+    expect(screen.getByText('No previous driver set to roll back to')).toBeTruthy();
   });
 
   it('removes a model after showing what is deleted, freed and kept', async () => {
@@ -234,7 +249,7 @@ describe('Drivers: model page roll back and removal', () => {
     });
     renderModel();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove model' }));
+    fireEvent.click(await menuItem('Remove model'));
     const dialog = screen.getByRole('dialog', { name: 'Remove HP EliteBook 840 G11?' });
     expect(within(dialog).getByText('Devices of this model imaged from now on get no drivers from Cloud Imaging. Running deployments keep their driver set.')).toBeTruthy();
     expect(await within(dialog).findByText('Deleted: 2 driver sets, 3 overrides')).toBeTruthy();
@@ -246,42 +261,75 @@ describe('Drivers: model page roll back and removal', () => {
     expect(calls).toEqual(['remove']);
   });
 
-  it('adds a Windows release and removes one, but not the last', async () => {
-    const added: unknown[] = [];
+  it('the Windows releases dialog lists only releases the vendor publishes, adds and removes them on Save, and keeps the last one', async () => {
+    const calls: string[] = [];
+    const twoReleases = page({ model: row({ releases: ['Windows11_24H2', 'Windows11_25H2'] }) });
     serve({
-      [`GET /api/drivers/models/${modelId}`]: { body: page({ model: row({ releases: ['Windows11_24H2', 'Windows11_25H2'] }) }) },
-      [`GET /api/drivers/models/${modelId}?release=Windows11_23H2`]: { body: page({ release: 'Windows11_23H2' }) },
-      [`GET /api/drivers/models/${modelId}?release=Windows11_25H2`]: { body: page({ release: 'Windows11_25H2', model: row({ releases: ['Windows11_25H2'] }) }) },
-      [`POST /api/drivers/models/${modelId}/releases`]: init => { added.push(JSON.parse(String(init?.body))); return { body: page() }; },
-      [`GET /api/drivers/models/${modelId}/removal-impact?release=Windows11_24H2`]: { body: { ...impact, sets: 1, overrides: 0 } },
-      [`DELETE /api/drivers/models/${modelId}/releases/Windows11_24H2`]: { status: 204 },
+      [`GET /api/drivers/models/${modelId}`]: { body: twoReleases },
+      [`GET /api/drivers/models/${modelId}?release=Windows11_24H2`]: { body: twoReleases },
+      [`GET /api/drivers/models/${modelId}?release=Windows11_25H2`]: { body: page({ release: 'Windows11_25H2', model: row({ releases: ['Windows11_24H2', 'Windows11_25H2'] }) }) },
+      [`GET /api/drivers/models/${modelId}?release=Windows11_23H2`]: { body: page({ release: 'Windows11_23H2', model: row({ releases: ['Windows11_23H2', 'Windows11_24H2'] }) }) },
+      'GET /api/drivers/catalog/models?vendor=Hp': { body: { fetchedAt: '2026-10-29T08:00:00Z', catalogUrl: 'https://hp', stale: false, warning: null, models: [
+        { catalogModelKey: '8C26_X64', vendor: 'Hp', displayName: 'HP EliteBook 840 G11', matchKeys: ['8C26'], architecture: 'X64', releases: ['Windows11_25H2', 'Windows11_24H2', 'Windows11_23H2'], onboardedModelId: modelId },
+      ] } },
+      'POST /api/drivers/models/preview': { body: { models: [{ catalogModelKey: '8C26_X64', displayName: 'HP EliteBook 840 G11', offline: 10, offlineAndSpecialize: 2, specialize: 0, skip: 5, sizeBytes: 2_380_000_000 }], errors: [] } },
+      [`GET /api/drivers/models/${modelId}/removal-impact?release=Windows11_25H2`]: { body: { ...impact, sets: 1, overrides: 0 } },
+      [`POST /api/drivers/models/${modelId}/releases`]: init => { calls.push(`add ${(JSON.parse(String(init?.body)) as { release: string }).release}`); return { body: twoReleases }; },
+      [`DELETE /api/drivers/models/${modelId}/releases/Windows11_25H2`]: () => { calls.push('remove Windows11_25H2'); return { status: 204 }; },
     });
     renderModel();
 
     fireEvent.click(await screen.findByRole('combobox', { name: 'Windows release' }));
-    expect(within(screen.getByRole('group', { name: 'Add to this model' })).getAllByRole('option').map(o => o.textContent)).toEqual(['Windows 11, version 23H2', 'Windows 10, version 22H2']);
-    fireEvent.click(screen.getByRole('option', { name: 'Windows 11, version 23H2' }));
-    await waitFor(() => expect(added).toEqual([{ release: 'Windows11_23H2' }]));
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith(`/api/drivers/models/${modelId}?release=Windows11_23H2`));
+    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['Windows 11, version 24H2', 'Windows 11, version 25H2']);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
 
-    cleanup();
+    fireEvent.click(await menuItem('Windows releases'));
+    const dialog = await screen.findByRole('dialog', { name: 'Windows releases' });
+    const list = await within(dialog).findByRole('list', { name: 'Windows releases' });
+    expect(within(list).getAllByRole('checkbox').length).toBe(3);
+    expect(within(dialog).queryByText('Windows 10, version 22H2')).toBeNull();
+    expect(await within(dialog).findByText('17 components, 12 included after your rules')).toBeTruthy();
+    expect((within(dialog).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Windows 11, version 23H2' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Windows 11, version 25H2' }));
+    expect(await within(dialog).findByText('Deletes 1 driver set and 0 overrides. Devices installing it get no drivers.')).toBeTruthy();
+    expect(within(dialog).getByText('Adds')).toBeTruthy();
+    expect(within(dialog).getByText('Removes')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(calls).toEqual(['add Windows11_23H2', 'remove Windows11_25H2']));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Windows releases of HP EliteBook 840 G11 saved.' });
+  });
+
+  it('the Windows releases dialog keeps the last release ticked', async () => {
     serve({
-      [`GET /api/drivers/models/${modelId}?release=Windows11_24H2`]: { body: page({ model: row({ releases: ['Windows11_24H2', 'Windows11_25H2'] }) }) },
-      [`GET /api/drivers/models/${modelId}?release=Windows11_25H2`]: { body: page({ release: 'Windows11_25H2', model: row({ releases: ['Windows11_25H2'] }) }) },
-      [`GET /api/drivers/models/${modelId}/removal-impact?release=Windows11_24H2`]: { body: { ...impact, sets: 1, overrides: 0 } },
-      [`DELETE /api/drivers/models/${modelId}/releases/Windows11_24H2`]: { status: 204 },
+      [`GET /api/drivers/models/${modelId}`]: { body: page() },
+      [`GET /api/drivers/models/${modelId}?release=Windows11_24H2`]: { body: page() },
+      'GET /api/drivers/catalog/models?vendor=Hp': { body: { fetchedAt: null, catalogUrl: 'https://hp', stale: false, warning: null, models: [
+        { catalogModelKey: '8C26_X64', vendor: 'Hp', displayName: 'HP EliteBook 840 G11', matchKeys: ['8C26'], architecture: 'X64', releases: ['Windows11_24H2'], onboardedModelId: modelId },
+      ] } },
     });
-    renderModel(`/drivers/models/${modelId}?release=Windows11_24H2`);
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove release' }));
-    const dialog = screen.getByRole('dialog', { name: 'Remove Windows 11, version 24H2 from HP EliteBook 840 G11?' });
-    expect(await within(dialog).findByText('Deleted: 1 driver set, 0 overrides')).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
+    renderModel();
 
-    await waitFor(() => expect(apiFetch).toHaveBeenCalledWith(`/api/drivers/models/${modelId}?release=Windows11_25H2`));
-    const removeRelease = await screen.findByRole('button', { name: 'Remove release' }) as HTMLButtonElement;
-    await waitFor(() => expect(removeRelease.disabled).toBe(true));
-    fireEvent.focus(removeRelease.parentElement!);
-    expect(await screen.findByText('Remove the model instead.')).toBeTruthy();
+    fireEvent.click(await menuItem('Windows releases'));
+    const dialog = await screen.findByRole('dialog', { name: 'Windows releases' });
+    const only = await within(dialog).findByRole('checkbox', { name: 'Windows 11, version 24H2' }) as HTMLButtonElement;
+    expect(only.disabled).toBe(true);
+    expect(within(dialog).getByText('The last release stays. Use Remove model to remove the model.')).toBeTruthy();
+  });
+
+  it('removing a model removes the whole model', async () => {
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: page({ model: row({ releases: ['Windows11_24H2', 'Windows11_25H2'] }) }) },
+      [`GET /api/drivers/models/${modelId}/removal-impact`]: { body: impact },
+    });
+    renderModel();
+
+    fireEvent.click(await menuItem('Remove model'));
+    expect(await screen.findByRole('dialog', { name: 'Remove HP EliteBook 840 G11?' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'What to remove' })).toBeNull();
   });
 
   it('shows the Withdrawn badge in text and removes a withdrawn component from its details', async () => {
@@ -309,8 +357,7 @@ describe('Drivers: model page roll back and removal', () => {
     renderModel();
 
     await screen.findByText('Withdrawn');
-    expect(screen.queryByRole('button', { name: 'Roll back driver set' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Remove model' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull();
     fireEvent.click(screen.getByRole('combobox', { name: 'Windows release' }));
     expect(screen.queryByRole('group', { name: 'Add to this model' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Remove release' })).toBeNull();

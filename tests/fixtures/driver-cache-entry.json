@@ -1,0 +1,10 @@
+{
+  "description": "A driver cache entry as Media Builder writes it to the USB drive's CACHE partition and the Client reads it: CloudImagingCache\\drivers\\<sha256>\\<fileName> plus metadata.json.",
+  "fileContent": "softpaq",
+  "metadata": {
+    "sha256": "f7ff0f8f99e783bff7bcd4fe35d2d36c5b460445aa35adb871e90335869dd9b4",
+    "fileName": "sp200.exe",
+    "sizeBytes": 7,
+    "lastUsedAt": "2026-11-01T10:00:00+00:00"
+  }
+}

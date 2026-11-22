@@ -12,17 +12,21 @@ public static class PreFlightCheckEvaluator
     /// <summary>Unused overrides drop off after this long.</summary>
     public static readonly TimeSpan OverrideLifetime = TimeSpan.FromDays(7);
 
-    /// <summary>Evaluates each configured pre-flight check against the reported security posture and enrollment result.</summary>
+    /// <summary>
+    /// Evaluates each configured pre-flight check against the reported security posture and enrollment result.
+    /// AC power is required whenever the device gets a BIOS update, whatever the administrator switches.
+    /// </summary>
     public static IReadOnlyList<PreFlightCheckResult> Evaluate(
         PortalConfiguration config,
         DeviceSecurityPosture? posture,
-        PreFlightAuthorizationResult enrollment)
+        PreFlightAuthorizationResult enrollment,
+        bool biosUpdate = false)
     {
         var on = config.DevicePreFlightAuthorizationEnabled;
 
         // A missing posture (Client older than this feature) or an undetectable value fails a required
         // check: either way the device cannot show it meets the requirement.
-        return
+        List<PreFlightCheckResult> checks =
         [
             Result(PreFlightCheck.AutopilotPresence, on && config.PreFlightRequireAutopilotPresence, ObservedEnrollment(enrollment),
                 enrollment is PreFlightAuthorizationResult.MatchedAutopilotV1 or PreFlightAuthorizationResult.MatchedCorporateIdentifier),
@@ -33,6 +37,17 @@ public static class PreFlightCheckEvaluator
             Result(PreFlightCheck.TpmVersion, on && config.PreFlightRequireTpm20, Observed(posture, p => p.Tpm),
                 posture?.Tpm == TpmPresence.Tpm20),
         ];
+
+        // Listed only for a BIOS update: a Client older than BIOS updates cannot read this check.
+        // Only a device that reports its battery is blocked; one that cannot tell skips the update
+        // itself if it finds itself on battery when the BIOS is staged.
+        if (biosUpdate)
+        {
+            checks.Add(Result(PreFlightCheck.AcPower, posture?.PowerSource is PowerSource.Ac or PowerSource.Battery, Observed(posture, p => p.PowerSource ?? PowerSource.Unknown),
+                posture?.PowerSource == PowerSource.Ac));
+        }
+
+        return checks;
     }
 
     /// <summary>Returns the checks that failed.</summary>

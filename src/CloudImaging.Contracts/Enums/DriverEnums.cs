@@ -102,7 +102,7 @@ public enum DriverRuleScope
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DriverRuleMatch
 {
-    /// <summary>The vendor category, compared case-insensitively.</summary>
+    /// <summary>The vendor category, compared case-insensitively; <c>*</c> matches any text.</summary>
     Category,
 
     /// <summary>A name pattern where <c>*</c> matches any text.</summary>
@@ -184,6 +184,26 @@ public enum DriverSyncTrigger
     Onboarding,
 }
 
+/// <summary>What brought a version into a model's driver set.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DriverVersionChange
+{
+    /// <summary>The first driver set, when onboarding was completed.</summary>
+    Onboarding,
+
+    /// <summary>A sync or check found it.</summary>
+    Sync,
+
+    /// <summary>Someone rolled the component back to it.</summary>
+    RollBack,
+
+    /// <summary>Someone added it as a custom component.</summary>
+    Custom,
+
+    /// <summary>Someone released a BIOS from pre-production to every location.</summary>
+    Release,
+}
+
 /// <summary>Result of a run.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DriverSyncResult
@@ -256,4 +276,7 @@ public enum DriverChoiceKind
 
     /// <summary>Install no drivers.</summary>
     None,
+
+    /// <summary>Use the chosen model's set in testing; the portal allows it for Operators only.</summary>
+    Testing,
 }

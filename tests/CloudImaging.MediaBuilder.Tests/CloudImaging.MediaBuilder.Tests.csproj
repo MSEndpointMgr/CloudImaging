@@ -21,4 +21,8 @@
     <ProjectReference Include="..\..\src\CloudImaging.MediaBuilder\CloudImaging.MediaBuilder.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\fixtures\driver-cache-entry.json" Link="fixtures\driver-cache-entry.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

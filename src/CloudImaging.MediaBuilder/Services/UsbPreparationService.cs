@@ -140,10 +140,11 @@ public sealed partial class UsbPreparationService
         await _provisioner.ProvisionAsync(
             p.DiskNumber, p.DiskSizeBytes, OnProvisionProgress, p.DiskLabel, ct);
 
-        var bootDrive = _provisioner.FindBootVolumeDriveLetter()
+        // Only the disk just partitioned: any other prepared USB device plugged in has BOOT and CACHE volumes too.
+        var bootDrive = _provisioner.FindBootVolumeDriveLetter(p.DiskNumber)
             ?? throw new InvalidOperationException(
                 "Could not locate the BOOT partition after provisioning the USB device.");
-        var cacheDrive = _provisioner.FindCacheVolumeDriveLetter();
+        var cacheDrive = _provisioner.FindCacheVolumeDriveLetter(p.DiskNumber);
 
         ReportProgress("Deploying boot image to USB…", 70);
         void OnDeployProgress(object? _, (string Message, int Percent) e) =>

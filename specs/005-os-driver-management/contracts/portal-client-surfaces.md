@@ -43,7 +43,7 @@ muted), Vendor 7%, Windows releases 13%, Included 9%, Skipped 9%, Size 9% (info 
 one device downloads. Devices without some hardware can download less."), Status 25% (icon and label,
 only when something needs attention or is in progress: `CircleDashed` muted "Draft",
 `Download` blue "Downloading 12 of 33",
-`CircleAlert` amber "1 waiting for approval", `CircleX` red "1 failed" with the reason in a tooltip
+`CircleAlert` amber "1 waiting for approval", `FlaskConical` blue "In testing", `CircleX` red "1 failed" with the reason in a tooltip
 on the icon, muted "Sync off"; otherwise empty), chevron 4%.
 Empty state: "No models onboarded yet" with "Onboard model".
 
@@ -91,6 +91,11 @@ to roll back to") and "Remove model" (`Trash2`). No overflow menu. No set versio
 - Preparing (`Download`): "Preparing driver set 54 for Windows 11, version 24H2: 12 of 31
   components downloaded." with "Devices keep getting driver set 53 until it is ready." (or, for a
   first set, "Devices of this model get no drivers until it is ready.").
+- In testing (`FlaskConical`, info tone): "Driver set 54 for Windows 11, version 24H2 is in
+  testing since 2026-10-25 08:00." with "Only devices an Operator chooses it for at imaging start
+  get it. Other devices get driver set 53." (or, for a first set, "Other devices of this model get
+  no drivers.") and "Release" (`default`, `Rocket`; Operators and Administrators; no confirmation;
+  toast "Driver set 54 released." with "Devices of this model get it from their next deployment.").
 - Custom component notice (`ArrowRight`): "<vendor> has published a new <vendor component> since
   the custom component was added." with "<componentId>, version <v>, released <date>. Test it, then
   remove the custom component to use <vendor>'s driver.", "Remove custom component" (`outline`) and
@@ -188,8 +193,12 @@ browser's); then, after an inset divider, a "Sync now" row (help "Runs the same 
 schedule: refreshes the model list of every enabled vendor and checks their onboarded models for
 component updates. Last sync started 2026-10-25 02:00."; `outline` button "Sync" with `RefreshCw`, calling route 26; disabled while a run
 is active or until `syncNowAvailableAt`, with the time in its tooltip); then, after a full-width
-divider, "Newer versions" (text "Use
-automatically"), "New components" (`Switch` "Wait for approval"). Changes apply immediately with a
+divider, "Newer versions" (`Select` "Use automatically" / "Wait for testing", saving
+`waitForTesting`; switching back to Use automatically while `setsInTesting` (read again first) is
+above 0 opens `ConfirmImpactDialog` (`Rocket`) "Use newer versions automatically?" with "All 2
+driver sets in testing are released: devices imaged from now on get them instead of the current
+set. New driver sets no longer wait in testing." and "Release and use automatically"; the toast
+adds "2 driver sets released from testing."), "New components" (`Switch` "Wait for approval"). Changes apply immediately with a
 toast; no Save button. Under the controls, aligned with the time, a 16 px muted line shows
 `nextRunAt` in the schedule's time zone and the repeat: "Next sync: Monday 2026-10-26 02:00, then
 every day.", "... then every week on Monday to Friday." (three or more consecutive days as "X to
@@ -233,9 +242,9 @@ one is instant and does not depend on the vendor. Older versions are downloaded 
 vendor when someone rolls back to them. Uses 1.4 GB now." (`previousVersionsBytes`: files kept only because of this setting), `Select`
 240 px "Keep none", "Keep 1 previous version" (default), "Keep 2 previous versions", "Keep 3
 previous versions", calling route 46 on change with a toast; disabled for read-only users. Table: chevron, Model, Vendor,
-Windows releases, Driver sets ("2 current, 2 roll-back"), Size. Expanding a model loads route 31
+Windows releases, Driver sets ("2 current, 2 roll-back", adding ", 1 in testing" when any), Size. Expanding a model loads route 31
 and shows one block per Windows release: heading "Windows 11, version 24H2", pill "Set 7" with
-"Current, built 2026-10-22 02:41", pill "Set 6" with "Roll-back, built 2026-10-08 02:37", and on
+"Current, built 2026-10-22 02:41", pill "Set 6" with "Roll-back, built 2026-10-08 02:37", pill "Set 8" with "In testing, built 2026-10-28 02:15" while one is in testing, and on
 the right "33 components, 2.3 GB"; then a table Component (name and ID), Version, Size, Driver sets
 (pills "7" and "6", "Previous version", or "Next set"), Shared with ("This model only", "3 models"), Status (icon and
 label: `CircleCheck` green "Stored", `Download` blue "Downloading", `CircleX` red "Failed" with the
@@ -286,12 +295,15 @@ Devices card of `pages/SessionsPage.tsx`; the logic goes in a new
     with the match key: "System ID 8D41 is not onboarded for Windows 11, version 24H2.",
     "System SKU 0CC1 is not onboarded for Windows 11, version 24H2.", "No system ID was read
     from this device.", "This model has no driver set for Windows 11, version 24H2 yet.",
+    for Operators and Administrators when `testingModelId` is set "The driver set of <model> for
+    Windows 11, version 24H2 is in testing. Choose <model> (testing) to use it.",
     "This model is onboarded for ARM64, the OS image is x64.".
   - Changed (choice differs from the match): the same `Select` and a ghost icon `Button`
     (`Undo2`, `aria-label` "Use the matched set") that clears the choice. No badge.
 - **Options**: grouped per vendor ("HP", "Dell"), the matched model first in its group, each item
   the display name with the size right-aligned in muted `text-xs` (`formatBytes(maxDownloadBytes)`
-  from `lib/drivers.ts`); then "No drivers". No set versions. The `Select` primitive has no groups
+  from `lib/drivers.ts`); for Operators and Administrators, a model's set in testing follows its
+  current set as "<model> (testing)" and is sent as kind `Testing`; then "No drivers". No set versions. The `Select` primitive has no groups
   or trailing text today: `SelectOption` gains optional `group` (a non-selectable heading row
   rendered when the value changes, skipped by arrow keys and type-ahead, list `role="group"` with
   `aria-label`) and optional `meta` (right-aligned muted text, not matched by type-ahead). Existing

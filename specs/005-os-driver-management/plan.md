@@ -66,7 +66,7 @@ downloads start within seconds of the event that needs them.
 
 **Constraints**: Function RSS under 256 MB (streaming copy, hash and XML); Client working set
 under 512 MB, nothing extracted to X:, all I/O off the UI thread; no unsigned drivers; vendor
-hosts allowlisted; at most 10 device calls per 30 seconds per session; ASCII-only user-facing text
+hosts allowlisted; at most 30 device calls per 30 seconds per session; ASCII-only user-facing text
 and no spec identifiers outside comments.
 
 **Scale/Scope**: Tens of onboarded models per tenant, 30 to 60 components per model and release,

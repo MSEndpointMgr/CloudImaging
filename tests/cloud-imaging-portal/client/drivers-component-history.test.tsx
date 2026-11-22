@@ -68,10 +68,10 @@ function page(row = component()) {
 }
 
 const versions = [
-  { componentId: 'sp212', version: '23.80', firstSet: 52, lastSet: null, from: '2026-10-20T02:00:00', to: null, changedBy: 'Sync', origin: 'Vendor', status: 'Stored', sizeBytes: 113_000_000 },
-  { componentId: 'sp211', version: '23.70', firstSet: 41, lastSet: 51, from: '2026-09-01T02:00:00', to: '2026-10-20T02:00:00', changedBy: 'Sync', origin: 'Vendor', status: 'Stored', sizeBytes: 110_000_000 },
-  { componentId: 'sp210', version: '23.60', firstSet: 30, lastSet: 40, from: '2026-08-01T02:00:00', to: '2026-09-01T02:00:00', changedBy: 'Onboarding by olle@contoso.com', origin: 'Vendor', status: 'DownloadsOnRollBack', sizeBytes: 790_000_000 },
-  { componentId: 'sp209', version: '23.50', firstSet: 20, lastSet: 29, from: '2026-07-01T02:00:00', to: '2026-08-01T02:00:00', changedBy: 'Sync', origin: 'Vendor', status: 'Unavailable', sizeBytes: 100_000_000 },
+  { componentId: 'sp212', version: '23.80', firstSet: 52, lastSet: null, from: '2026-10-20T02:00:00', to: null, change: 'Sync', changedBy: null, origin: 'Vendor', status: 'Stored', sizeBytes: 113_000_000 },
+  { componentId: 'sp211', version: '23.70', firstSet: 41, lastSet: 51, from: '2026-09-01T02:00:00', to: '2026-10-20T02:00:00', change: 'Sync', changedBy: null, origin: 'Vendor', status: 'Stored', sizeBytes: 110_000_000 },
+  { componentId: 'sp210', version: '23.60', firstSet: 30, lastSet: 40, from: '2026-08-01T02:00:00', to: '2026-09-01T02:00:00', change: 'Onboarding', changedBy: 'olle@contoso.com', origin: 'Vendor', status: 'DownloadsOnRollBack', sizeBytes: 790_000_000 },
+  { componentId: 'sp209', version: '23.50', firstSet: 20, lastSet: 29, from: '2026-07-01T02:00:00', to: '2026-08-01T02:00:00', change: 'Sync', changedBy: null, origin: 'Vendor', status: 'Unavailable', sizeBytes: 100_000_000 },
 ];
 
 function renderPage(): void {
@@ -94,18 +94,26 @@ afterEach(() => {
 });
 
 describe('Drivers: component version history and roll back', () => {
-  it('shows the read-only version history with sets, dates, who changed it and the status', async () => {
+  it('shows the version history collapsed, and expanded with sets, dates, the change, who made it and the status', async () => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: page() }, [`GET ${base}/versions`]: { body: versions } });
     renderPage();
     await expand();
 
-    expect(await screen.findByRole('heading', { name: 'Version history' })).toBeTruthy();
-    expect(screen.getAllByRole('columnheader').map(h => h.textContent)).toEqual(expect.arrayContaining(['Version', 'Driver sets', 'From', 'To', 'Changed by', 'Status']));
+    const toggle = await screen.findByRole('button', { name: /^Version history/ });
+    await screen.findByText('4 versions');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByText('52 to 53')).toBeNull();
+    fireEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getAllByRole('columnheader').map(h => h.textContent)).toEqual(expect.arrayContaining(['Version', 'Driver sets', 'From', 'To', 'Change', 'By', 'Status']));
     expect(screen.getByText('52 to 53')).toBeTruthy();
     expect(screen.getByText('41 to 51')).toBeTruthy();
     expect(screen.getByText('Now')).toBeTruthy();
     expect(screen.getAllByText('2026-10-20 02:00', { selector: 'td' }).length).toBe(2);
-    expect(screen.getByText('Onboarding by olle@contoso.com')).toBeTruthy();
+    expect(screen.getByText('Onboard')).toBeTruthy();
+    expect(screen.getByText('olle@contoso.com')).toBeTruthy();
+    expect(screen.getAllByText('Automatic').length).toBe(3);
     expect(screen.getAllByText('Stored').length).toBe(2);
     expect(screen.getByText('Downloads on roll back')).toBeTruthy();
     expect(screen.getByText('No longer available from HP')).toBeTruthy();
@@ -211,7 +219,7 @@ describe('Drivers: component version history and roll back', () => {
     renderPage();
     await expand();
 
-    expect(await screen.findByRole('heading', { name: 'Version history' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^Version history/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Roll back component' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Undo roll back' })).toBeNull();
   });

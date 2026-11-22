@@ -144,6 +144,66 @@ public sealed class ImageCacheValidationTests : IDisposable
         finally { File.Delete(tempFile); }
     }
 
+    // ── Leftovers of interrupted sessions ─────────────────────────────────────
+
+    [Fact]
+    public async Task CacheMaintenance_RemovesDownloadsAnInterruptedSessionLeftAtTheCacheRoot()
+    {
+        Directory.CreateDirectory(_cacheRoot);
+        var image = Path.Combine(_cacheRoot, ImageCacheService.StagingFileName("image", Guid.NewGuid()));
+        var recovery = Path.Combine(_cacheRoot, ImageCacheService.StagingFileName("recovery", Guid.NewGuid()));
+        var other = Path.Combine(_cacheRoot, "readme.txt");
+        foreach (var path in new[] { image, recovery, other })
+        {
+            await File.WriteAllBytesAsync(path, [0x01, 0x02]);
+        }
+
+        await Maintenance().RunAsync(CancellationToken.None);
+
+        File.Exists(image).Should().BeFalse("a restart or power loss mid-download leaves it behind, and no session can use it");
+        File.Exists(recovery).Should().BeFalse();
+        File.Exists(other).Should().BeTrue("only downloads the Client staged are removed");
+    }
+
+    [Fact]
+    public async Task CacheMaintenance_RemovesEntriesWithoutMetadata_AndKeepsCompleteOnes()
+    {
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            await File.WriteAllBytesAsync(tempFile, [0x01, 0x02, 0x03, 0x04]);
+            var hash = await ImageCacheService.ComputeSha256Async(tempFile, CancellationToken.None);
+            await _cache.WriteAsync("complete", tempFile, hash, CancellationToken.None);
+            var interrupted = Path.Combine(_cacheRoot, "images", "interrupted");
+            Directory.CreateDirectory(interrupted);
+            await File.WriteAllBytesAsync(Path.Combine(interrupted, "image.wim"), [0x01, 0x02]);
+
+            await Maintenance().RunAsync(CancellationToken.None);
+
+            Directory.Exists(interrupted).Should().BeFalse("an entry without metadata was never completed");
+            (await _cache.TryGetCachedWimAsync("complete", hash, CancellationToken.None)).Should().NotBeNull();
+        }
+        finally { File.Delete(tempFile); }
+    }
+
+    [Fact]
+    public async Task WriteAsync_HashMismatch_DiscardsTheDownload_AndCreatesNoEntry()
+    {
+        Directory.CreateDirectory(_cacheRoot);
+        var download = Path.Combine(_cacheRoot, ImageCacheService.StagingFileName("image", Guid.NewGuid()));
+        await File.WriteAllBytesAsync(download, [0x01, 0x02, 0x03, 0x04]);
+
+        var act = () => _cache.WriteAsync("damaged", download, new string('0', 64), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidDataException>();
+        File.Exists(download).Should().BeFalse("a download that failed verification is of no use to any session");
+        Directory.Exists(Path.Combine(_cacheRoot, "images", "damaged")).Should().BeFalse();
+    }
+
+    private ImageCacheMaintenanceService Maintenance() => new(
+        _cache,
+        Microsoft.Extensions.Logging.Abstractions.NullLogger<ImageCacheMaintenanceService>.Instance);
+
     // ── Insufficient space disables cache writes ──────────────────────────────
 
     [Fact]

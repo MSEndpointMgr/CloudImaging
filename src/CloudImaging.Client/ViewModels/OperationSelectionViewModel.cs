@@ -303,31 +303,54 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
         ? _readiness?.Gateway == GatewayReachability.NoNetwork
         : _network.Ethernet is null && _network.WiFi is null;
 
-    /// <summary>The Network panel's lines, one per adapter.</summary>
-    public IReadOnlyList<NetworkPanelRow> NetworkRows => BuildNetworkRows(_network ?? NetworkSnapshot.Empty, _wifiSsid);
+    /// <summary>The Network panel's lines: one for Ethernet, and one for Wi-Fi where the image or device has it.</summary>
+    public IReadOnlyList<NetworkPanelRow> NetworkRows => BuildNetworkRows(_network ?? NetworkSnapshot.Empty, _wifiSsid, IsWifiAvailable);
 
-    internal static IReadOnlyList<NetworkPanelRow> BuildNetworkRows(NetworkSnapshot network, string? wifiSsid)
+    /// <summary>
+    /// Ethernet and Wi-Fi each get one line, describing the best adapter of that kind: connected
+    /// first, then one without a driver (the likely reason it is not connected), then one without an
+    /// address, then one unplugged.
+    /// </summary>
+    internal static IReadOnlyList<NetworkPanelRow> BuildNetworkRows(NetworkSnapshot network, string? wifiSsid, bool wifiSupported)
     {
-        var rows = new List<NetworkPanelRow>();
         var inUse = network.Ethernet ?? network.WiFi;
-        foreach (var adapter in network.Adapters)
+        var rows = new List<NetworkPanelRow>
         {
-            var badge = ReferenceEquals(adapter, inUse) ? "In use" : null;
-            rows.Add((adapter.Kind, adapter.State) switch
+            Best(NetworkAdapterKind.Ethernet) switch
             {
-                (_, NetworkAdapterState.NoDriver) => new NetworkPanelRow(SymbolRegular.Warning24, adapter.Name, "No driver in the boot image", IsWarning: true),
-                (NetworkAdapterKind.Ethernet, NetworkAdapterState.Connected) => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", adapter.Display, badge),
-                (NetworkAdapterKind.Ethernet, NetworkAdapterState.NoAddress) => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", $"{adapter.Name}, no IP address"),
-                (NetworkAdapterKind.Ethernet, _) => new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "Ethernet", $"{adapter.Name}, cable unplugged"),
-                (_, NetworkAdapterState.Connected) => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", wifiSsid is null ? adapter.Display : $"{wifiSsid}, {adapter.Display}", badge),
-                (_, NetworkAdapterState.NoAddress) => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", $"{wifiSsid ?? adapter.Name}, no IP address"),
+                null => new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "Ethernet", "No Ethernet adapter found"),
+                { State: NetworkAdapterState.Connected } a => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", a.Display, ReferenceEquals(a, inUse) ? "In use" : null),
+                { State: NetworkAdapterState.NoDriver } a => new NetworkPanelRow(SymbolRegular.Warning24, "Ethernet", $"{a.Name} has no driver in the boot image", IsWarning: true),
+                { State: NetworkAdapterState.NoAddress } a => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", $"{a.Name}, no IP address"),
+                var a => new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "Ethernet", $"{a.Name}, cable unplugged"),
+            },
+        };
+
+        var wifi = Best(NetworkAdapterKind.WiFi);
+        if (wifi is not null || wifiSupported)
+        {
+            rows.Add(wifi switch
+            {
+                null => new NetworkPanelRow(SymbolRegular.WifiOff24, "Wi-Fi", "No Wi-Fi adapter found"),
+                { State: NetworkAdapterState.Connected } a => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", wifiSsid is null ? a.Display : $"{wifiSsid}, {a.Display}", ReferenceEquals(a, inUse) ? "In use" : null),
+                { State: NetworkAdapterState.NoDriver } a => new NetworkPanelRow(SymbolRegular.Warning24, "Wi-Fi", $"{a.Name} has no driver in the boot image", IsWarning: true),
+                _ when !wifiSupported => new NetworkPanelRow(SymbolRegular.WifiOff24, "Wi-Fi", "Not available in this boot image"),
+                { State: NetworkAdapterState.NoAddress } a => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", $"{wifiSsid ?? a.Name}, no IP address"),
                 _ => new NetworkPanelRow(SymbolRegular.WifiOff24, "Wi-Fi", "Not connected"),
             });
         }
-
-        if (rows.Count == 0)
-            rows.Add(new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "No network adapter", "Windows found none. Add the adapter's driver to the boot image."));
         return rows;
+
+        NetworkAdapterInfo? Best(NetworkAdapterKind kind) => network.Adapters
+            .Where(a => a.Kind == kind)
+            .OrderBy(a => a.State switch
+            {
+                NetworkAdapterState.Connected => 0,
+                NetworkAdapterState.NoDriver => 1,
+                NetworkAdapterState.NoAddress => 2,
+                _ => 3,
+            })
+            .FirstOrDefault();
     }
 
     /// <summary>Runs the network and service checks again, on this screen.</summary>

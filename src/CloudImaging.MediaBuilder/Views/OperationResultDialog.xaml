@@ -6,7 +6,7 @@
         Shared success/failure/cancelled modal for Generate Boot Image and Prepare Storage Device.
         Binds to the host view model's result properties (ShowResultDialog, IsComplete, HasError,
         WasCancelled, SuccessTitle, StatusMessage, ErrorTitle, ErrorMessage, ErrorReference,
-        CancelledTitle, CancelledMessage, ResultFilePath/FileName/Folder/FileSymbol and the
+        CancelledTitle, CancelledMessage, ResultFilePath/FileSymbol and the
         Copy/Open/Dismiss commands). The 4px accent strip signals the outcome; text stays
         selectable; the card caps its height and scrolls so the footer never leaves the window.
     -->
@@ -110,7 +110,7 @@
                                      Margin="0,8,0,0" />
                         </StackPanel>
 
-                        <!-- Output file row: name, folder, inline copy and open. -->
+                        <!-- Output file row: full path, inline copy and open. -->
                         <Border Margin="0,16,0,0"
                                 Padding="14,10,8,10"
                                 CornerRadius="6"
@@ -128,18 +128,12 @@
                                 <ui:SymbolIcon Grid.Column="0" Symbol="{Binding ResultFileSymbol}" FontSize="24" Margin="0,0,12,0"
                                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                                VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
-                                             Text="{Binding ResultFileName, Mode=OneWay}"
-                                             FontFamily="Cascadia Mono, Consolas, monospace"
-                                             FontSize="12"
-                                             FontWeight="SemiBold" />
-                                    <TextBox Style="{StaticResource SelectableMessageTextBoxStyle}"
-                                             Text="{Binding ResultFolder, Mode=OneWay}"
-                                             FontSize="12"
-                                             Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                             Margin="0,2,0,0" />
-                                </StackPanel>
+                                <TextBox Grid.Column="1" VerticalAlignment="Center"
+                                         Style="{StaticResource SelectableMessageTextBoxStyle}"
+                                         Text="{Binding ResultFilePath, Mode=OneWay}"
+                                         FontSize="12"
+                                         Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                         Margin="0" />
                                 <ui:Button Grid.Column="2"
                                            Appearance="Transparent"
                                            ToolTip="Copy path"

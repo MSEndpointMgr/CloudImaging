@@ -137,6 +137,39 @@ public sealed class DriverSyncFunctionsTests
     }
 
     [Fact]
+    public async Task Settings_WaitForTesting_IsSaved_Returned_AndLogged()
+    {
+        var response = await PutSettingsAsync(new { schedule = "Daily", weekdays = 31, repeatWeeks = 1, localTime = "02:00", timeZone = "Europe/Berlin", waitForTesting = true, actor = Actor });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.ReadJsonAsync()).GetProperty("waitForTesting").GetBoolean().Should().BeTrue();
+        (await GetSettingsAsync()).GetProperty("waitForTesting").GetBoolean().Should().BeTrue();
+        (await LogAsync()).Should().ContainSingle(l => l.Area == "Sync" && l.Subject == "Newer versions" && l.Change == "Wait for testing");
+    }
+
+    [Fact]
+    public async Task Settings_BackToUseAutomatically_ReleasesEverySetInTesting_AndLogsEach()
+    {
+        await _h.EnableAsync();
+        await PutSettingsAsync(new { schedule = "Daily", weekdays = 31, repeatWeeks = 1, localTime = "02:00", timeZone = "Europe/Berlin", waitForTesting = true, actor = Actor });
+        var model = await _h.OnboardAsync("8C26", "HP EliteBook 840 G11");
+        await _h.RunAsync();
+        (await GetSettingsAsync()).GetProperty("setsInTesting").GetInt32().Should().Be(1);
+
+        var response = await PutSettingsAsync(new { schedule = "Daily", weekdays = 31, repeatWeeks = 1, localTime = "02:00", timeZone = "Europe/Berlin", waitForTesting = false, actor = Actor });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.ReadJsonAsync()).GetProperty("setsInTesting").GetInt32().Should().Be(0);
+        var pointer = (await _h.Bed.Pointers.GetAsync(model.ModelId, DriverSyncHarness.Release))!.Value;
+        pointer.CurrentVersion.Should().Be(1);
+        pointer.TestingVersion.Should().BeNull();
+        (await LogAsync()).Should().ContainSingle(l => l.Area == "Release" && l.Subject == "HP EliteBook 840 G11" && l.By == Upn && l.Change == "Driver set 1 for Windows 11, version 24H2, released when newer versions were set to Use automatically");
+
+        await PutSettingsAsync(new { schedule = "Daily", weekdays = 31, repeatWeeks = 1, localTime = "03:00", timeZone = "Europe/Berlin", waitForTesting = false, actor = Actor });
+        (await LogAsync()).Count(l => l.Area == "Release").Should().Be(1, "only switching back releases");
+    }
+
+    [Fact]
     public async Task Settings_Manual_HasNoNextRun()
     {
         var set = await (await PutSettingsAsync(Settings("Manual"))).ReadJsonAsync();
@@ -146,7 +179,7 @@ public sealed class DriverSyncFunctionsTests
     }
 
     [Fact]
-    public async Task SyncNowAndCheckAll_ShareOneLimit_409WhileRunning_429WithinTheHour()
+    public async Task SyncNowAndCheckAll_ShareOneLimit_409WhileRunning_429WithinTheMinute()
     {
         await _h.EnableAsync();
         var started = await SyncNowAsync();
@@ -154,20 +187,20 @@ public sealed class DriverSyncFunctionsTests
         var checkWhileRunning = await CheckAllAsync();
 
         running.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await running.ReadJsonAsync()).GetProperty("availableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start.AddMinutes(60));
+        (await running.ReadJsonAsync()).GetProperty("availableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start + DriverSyncService.RunLimit);
         checkWhileRunning.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await GetSettingsAsync()).GetProperty("syncNowAvailableAt").ValueKind.Should().NotBe(JsonValueKind.Null);
 
         await RunOf(started);
-        _h.Bed.Time.Advance(TimeSpan.FromMinutes(10));
+        _h.Bed.Time.Advance(TimeSpan.FromSeconds(30));
         var tooSoon = await CheckAllAsync();
 
         tooSoon.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        (await tooSoon.ReadJsonAsync()).GetProperty("availableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start.AddMinutes(60));
+        (await tooSoon.ReadJsonAsync()).GetProperty("availableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start + DriverSyncService.RunLimit);
         tooSoon.Headers.GetValues("Retry-After").Should().ContainSingle();
-        (await GetSettingsAsync()).GetProperty("syncNowAvailableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start.AddMinutes(60));
+        (await GetSettingsAsync()).GetProperty("syncNowAvailableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start + DriverSyncService.RunLimit);
 
-        _h.Bed.Time.Advance(TimeSpan.FromMinutes(51));
+        _h.Bed.Time.Advance(TimeSpan.FromSeconds(31));
         (await CheckAllAsync()).StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
 
@@ -361,9 +394,9 @@ public sealed class DriverSyncFunctionsTests
         _h.Bed.Vendor.Requests.Should().NotContain(u => u.ToString().Contains("8c27", StringComparison.Ordinal));
         _h.Handled.Should().NotContain(m => m.Kind == DriverWorkKind.DownloadFile && m.FileKey == "sp202_3.0", "a skipped component is not downloaded");
         tooSoon.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
-        (await tooSoon.ReadJsonAsync()).GetProperty("availableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start.AddMinutes(15));
+        (await tooSoon.ReadJsonAsync()).GetProperty("availableAt").GetDateTimeOffset().Should().Be(DriverTestBed.Start + DriverSyncService.ModelCheckLimit);
         tooSoon.Headers.GetValues("Retry-After").Should().ContainSingle();
-        (await _h.Bed.Store.GetSyncSettingsAsync()).Value.LastRunStartedAt.Should().BeNull("a model check does not move the 60-minute limit");
+        (await _h.Bed.Store.GetSyncSettingsAsync()).Value.LastRunStartedAt.Should().BeNull("a model check does not move the shared limit");
         (await SyncNowAsync()).StatusCode.Should().Be(HttpStatusCode.Accepted);
     }
 

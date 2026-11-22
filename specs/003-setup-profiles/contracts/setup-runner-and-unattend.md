@@ -33,7 +33,7 @@ Phases, in order (FR-025):
 
 | # | Phase | Items reported | Notes |
 |---|---|---|---|
-| 1 | Write registry values | one `RegistryValue` item per value | Hives loaded only as needed and unloaded before phase 2. The SYSTEM hive load also reads `GeneralizationState` and clears `Setup\UnattendFile`. |
+| 1 | Write registry values | one `RegistryValue` item per value | Hives loaded only as needed and unloaded before phase 2. The SYSTEM hive load also clears `Setup\UnattendFile`. |
 | 2 | Run In WinPE scripts | one `WinPEScript` item per script | Profile order; each in a restricted, kill-on-close job with its timeout. |
 | 3 | Stage Windows setup work | one `WindowsSetupScript` item per script (`Queued` or `Failed`), one `DriverInstaller` item per handed-over installer (`Queued` or `Failed`) | Copies runner and scripts, writes the manifest. Skipped when there is no Windows setup work. |
 | 4 | Write the answer file | one `AnswerFile` item | Always when the step runs. |
@@ -188,9 +188,11 @@ Write rules (`PrepareSetupService`):
 - Create `<W>:\Windows\Panther` if missing; overwrite `unattend.xml` without a warning (FR-021).
 - Delete `<W>:\Windows\Panther\Unattend\unattend.xml` and `...\autounattend.xml` if present.
 - `HKLM\SYSTEM\Setup\UnattendFile` in the offline hive was cleared in phase 1.
-- With Windows setup work and offline `Setup\Status\SysprepStatus\GeneralizationState` not 7:
-  the `AnswerFile` item fails with "The OS image is not generalized, so Windows setup will not run
-  the setup runner. Capture the image after Sysprep /generalize."
+- With Windows setup work and an `ImageState` in `<W>:\Windows\Setup\State\State.ini` other than
+  `IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE` or `IMAGE_STATE_GENERALIZE_RESEAL_TO_AUDIT`: the
+  `AnswerFile` item fails with "The OS image is not generalized, so Windows setup will not run
+  the setup runner. Capture the image after Sysprep /generalize." Without a readable state the file
+  is written. `GeneralizationState` is not used: Microsoft's install.wim carries 4, not 7.
 - Without a profile (driver work only), a write failure's reason names the installers that will
   not run: "The answer file could not be written, so these driver installers will not run: HP
   Hotkey Support, Realtek Audio Console."

@@ -259,6 +259,38 @@
                     </StackPanel>
                 </ui:Card>
 
+                <!-- HP firmware tools (x64 only): downloaded on this machine after the operator accepts HP's licence -->
+                <ui:Card Margin="0,0,0,16" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="HP Firmware Updates"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="Adds HP's Client Management Script Library, so HP devices whose model updates its BIOS in the portal get the new BIOS at the end of imaging. Media Builder downloads it from the PowerShell Gallery on this computer and checks HP's signature. HP's licence does not allow Cloud Imaging to ship it, so you need to accept the licence first."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
+                        <CheckBox Content="Include HP firmware tools"
+                                  IsChecked="{Binding IncludeHpFirmwareTools}"
+                                  IsEnabled="{Binding IsX64Selected}" />
+                        <StackPanel Orientation="Horizontal" Margin="28,8,0,0">
+                            <CheckBox Content="I accept HP's licence terms"
+                                      IsChecked="{Binding AcceptHpLicence}"
+                                      IsEnabled="{Binding IncludeHpFirmwareTools}" />
+                            <ui:Button Content="Read HP's licence"
+                                       Appearance="Transparent"
+                                       Margin="8,0,0,0"
+                                       Command="{Binding OpenHpLicenceCommand}" />
+                        </StackPanel>
+                        <TextBlock Text="HP's tools are only available for x64 boot images."
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,8,0,0"
+                                   Visibility="{Binding IsArm64Selected, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </ui:Card>
+
                 <!-- Support tools (optional), FR-051d -->
                 <ui:Card Margin="0,0,0,16" Padding="20">
                     <StackPanel>

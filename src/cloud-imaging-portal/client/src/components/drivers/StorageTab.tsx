@@ -88,6 +88,12 @@ function ModelBlocks({ modelId }: { modelId: string }): React.ReactElement {
                 {`Roll-back${block.rollBack.builtAt ? `, built ${formatTimestamp(block.rollBack.builtAt)}` : ''}`}
               </span>
             )}
+            {block.testing && (
+              <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Pill>{`Set ${block.testing.version}`}</Pill>
+                {`In testing${block.testing.builtAt ? `, built ${formatTimestamp(block.testing.builtAt)}` : ''}`}
+              </span>
+            )}
             <span className="ml-auto text-sm text-muted-foreground">{`${block.componentCount} components, ${formatSize(block.bytes)}`}</span>
           </div>
           <div className="overflow-hidden rounded-md border border-border bg-background">

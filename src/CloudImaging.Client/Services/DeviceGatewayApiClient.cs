@@ -34,6 +34,13 @@ public sealed partial class DeviceGatewayApiClient
     private const int CreateSessionAttempts = 3;
     private static readonly TimeSpan CreateSessionRetryBaseDelay = TimeSpan.FromSeconds(2);
 
+    // The session's rate limit window is 30 seconds: waiting that long always reaches a new window.
+    private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TransientRetryBaseDelay = TimeSpan.FromSeconds(2);
+    private const int RecoveryImageLookupAttempts = 3;
+
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+
     /// <param name="http">The mTLS-configured HTTP client.</param>
     /// <param name="signingCertificate">
     /// The boot-media certificate (with private key) used to sign the session-bootstrap
@@ -44,15 +51,31 @@ public sealed partial class DeviceGatewayApiClient
     /// Optional so existing tests/tools can keep constructing this client without a logging
     /// pipeline wired up; defaults to a no-op logger.
     /// </param>
+    /// <param name="delay">Waits between attempts of a retried lookup; tests pass one that does not wait.</param>
     public DeviceGatewayApiClient(
         HttpClient http,
         X509Certificate2? signingCertificate = null,
-        ILogger<DeviceGatewayApiClient>? logger = null)
+        ILogger<DeviceGatewayApiClient>? logger = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         _http = http;
         _signingCertificate = signingCertificate;
         _logger = logger ?? NullLogger<DeviceGatewayApiClient>.Instance;
+        _delay = delay ?? Task.Delay;
     }
+
+    /// <summary>
+    /// How long to wait before sending a failed request again, or null when that cannot help: a 429
+    /// waits out the gateway's Retry-After, a 5xx or a transport failure backs off, and any other
+    /// rejection is final.
+    /// </summary>
+    internal static TimeSpan? RetryDelay(Exception ex, int attempt) => ex switch
+    {
+        DeviceGatewayApiException { StatusCode: System.Net.HttpStatusCode.TooManyRequests } limited => limited.RetryAfter is { } wait && wait < MaxRetryAfter ? wait : MaxRetryAfter,
+        DeviceGatewayApiException { StatusCode: >= System.Net.HttpStatusCode.InternalServerError } => TransientRetryBaseDelay * attempt,
+        HttpRequestException => TransientRetryBaseDelay * attempt,
+        _ => null,
+    };
 
     /// <summary>
     /// POST /api/v1/sessions: Register a new imaging session.
@@ -313,6 +336,36 @@ public sealed partial class DeviceGatewayApiClient
     };
 
     /// <summary>
+    /// GET /api/v1/sessions/{sessionId}/firmware: the BIOS pinned when the device registered.
+    /// 204 (no BIOS update) and 404 (an older backend) mean the step is not shown; 409 means the
+    /// session is ending; 410 means the pinned BIOS is no longer stored. The read link is never logged.
+    /// </summary>
+    public async Task<FirmwareFetch> GetFirmwareAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        var path = $"/api/v1/sessions/{sessionId}/firmware";
+        LogHttpRequest(_logger, "GET", path);
+        using var response = await _http.GetAsync(path, ct);
+        LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+        switch (response.StatusCode)
+        {
+            case System.Net.HttpStatusCode.OK:
+                var descriptor = await response.Content.ReadFromJsonAsync<CloudImaging.Contracts.Models.Drivers.SessionFirmwareDescriptor>(DriverJsonOptions, ct);
+                return new FirmwareFetch(descriptor is null ? FirmwareFetchStatus.Failed : FirmwareFetchStatus.Loaded, descriptor);
+            case System.Net.HttpStatusCode.NoContent:
+            case System.Net.HttpStatusCode.NotFound:
+                return new FirmwareFetch(FirmwareFetchStatus.None, null);
+            case System.Net.HttpStatusCode.Conflict:
+                return new FirmwareFetch(FirmwareFetchStatus.PipelineEnding, null);
+            case System.Net.HttpStatusCode.Gone:
+                return new FirmwareFetch(FirmwareFetchStatus.Unavailable, null);
+            default:
+                var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
+                LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
+                return new FirmwareFetch(FirmwareFetchStatus.Failed, null);
+        }
+    }
+
+    /// <summary>
     /// POST /api/v1/sessions/{sessionId}/sas/refresh: Refresh the SAS token URL.
     /// Returns both the (possibly unchanged) URL and its actual server-computed expiry, so the caller
     /// never has to guess the new expiry (see <see cref="SasRefreshCoordinator"/>).
@@ -454,19 +507,43 @@ public sealed partial class DeviceGatewayApiClient
     /// GET /api/v1/recovery-image/latest: Retrieve the latest published recovery (WinRE)
     /// image's version, hash, and SAS download URL, used by <see cref="Services.RecoveryImageService"/>
     /// to apply the recovery image to the Recovery partition. Requires the device-session token
-    /// Bearer (set via <see cref="SetSessionToken"/>). Returns null on any non-success response.
+    /// Bearer (set via <see cref="SetSessionToken"/>). Returns null only when none is published
+    /// (404). A rate limit, a 5xx or a transport failure is retried; after that, and on any other
+    /// rejection, it throws: a failed lookup must not pass for "nothing published", which would
+    /// silently deploy the OS image's own WinRE instead of the published one.
     /// </summary>
     public async Task<LatestRecoveryImageInfo?> GetLatestRecoveryImageAsync(MachineArchitecture architecture = MachineArchitecture.X64, CancellationToken ct = default)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await GetLatestRecoveryImageOnceAsync(architecture, ct);
+            }
+            catch (Exception ex) when (attempt < RecoveryImageLookupAttempts && RetryDelay(ex, attempt) is { } wait)
+            {
+                LogRecoveryImageLookupRetry(_logger, attempt, Logging.LoggedFailure.Reason(ex));
+                await _delay(wait, ct);
+            }
+        }
+    }
+
+    private async Task<LatestRecoveryImageInfo?> GetLatestRecoveryImageOnceAsync(MachineArchitecture architecture, CancellationToken ct)
     {
         var path = $"/api/v1/recovery-image/latest?architecture={MachineArchitecturePlatform.Slug(architecture)}";
         LogHttpRequest(_logger, "GET", path);
         var response = await _http.GetAsync(path, ct);
         LogHttpResponse(_logger, "GET", path, (int)response.StatusCode);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
         if (!response.IsSuccessStatusCode)
         {
             var failure = await DeviceGatewayApiException.FromResponseAsync(response, ct);
             LogHttpRequestFailed(_logger, "GET", path, (int)response.StatusCode, failure.ProblemType, failure.Message);
-            return null;
+            throw failure;
         }
 
         var result = await response.Content.ReadFromJsonAsync<LatestRecoveryImageInfo>(JsonOptions, ct);
@@ -719,6 +796,9 @@ public sealed partial class DeviceGatewayApiClient
         Message = "Latest recovery image: version={Version} sha256={Sha256Hash} url={SasUrl} (signature omitted).")]
     private static partial void LogLatestRecoveryImage(ILogger logger, string version, string sha256Hash, string sasUrl);
 
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Recovery image lookup attempt {Attempt} failed ({Reason}); retrying.")]
+    private static partial void LogRecoveryImageLookupRetry(ILogger logger, int attempt, string reason);
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Setup profile {ProfileName} version {Version} is pinned on this session; content is served from {Host}.")]
     private static partial void LogSetupProfileDescriptor(ILogger logger, string profileName, int version, string host);
 
@@ -840,6 +920,28 @@ public enum DriverSetFetchStatus
 /// <summary>Result of <see cref="DeviceGatewayApiClient.GetDriverSetAsync"/>.</summary>
 public sealed record DriverSetFetch(DriverSetFetchStatus Status, CloudImaging.Contracts.Models.Drivers.SessionDriverSetDescriptor? Descriptor, TimeSpan? RetryAfter);
 
+/// <summary>How the BIOS descriptor request ended.</summary>
+public enum FirmwareFetchStatus
+{
+    /// <summary>The device gets a BIOS update.</summary>
+    Loaded,
+
+    /// <summary>No BIOS update for this session, or the backend has no firmware support.</summary>
+    None,
+
+    /// <summary>The session is no longer starting or in progress.</summary>
+    PipelineEnding,
+
+    /// <summary>The Device Gateway or Imaging Core failed.</summary>
+    Failed,
+
+    /// <summary>The session was given a BIOS whose file is no longer stored.</summary>
+    Unavailable,
+}
+
+/// <summary>Result of <see cref="DeviceGatewayApiClient.GetFirmwareAsync"/>.</summary>
+public sealed record FirmwareFetch(FirmwareFetchStatus Status, CloudImaging.Contracts.Models.Drivers.SessionFirmwareDescriptor? Descriptor);
+
 /// <summary>
 /// Response from the Device Gateway API POST /api/v1/sessions/{sessionId}/logs/upload-url
 /// endpoint: see <see cref="DeviceGatewayApiClient.RequestLogUploadUrlAsync"/>.
@@ -874,6 +976,9 @@ public sealed class DeviceGatewayApiException : Exception
 
     /// <summary>RFC7807 "type" field from the response body, if present.</summary>
     public string? ProblemType { get; }
+
+    /// <summary>How long the gateway asked the caller to wait (the Retry-After of a 429), if it said.</summary>
+    public TimeSpan? RetryAfter { get; init; }
 
     /// <summary>Builds the exception from an already-known status code, problem type and detail.</summary>
     public DeviceGatewayApiException(System.Net.HttpStatusCode statusCode, string? problemType, string? detail)
@@ -923,6 +1028,6 @@ public sealed class DeviceGatewayApiException : Exception
             }
         }
 
-        return new DeviceGatewayApiException(response.StatusCode, problemType, detail);
+        return new DeviceGatewayApiException(response.StatusCode, problemType, detail) { RetryAfter = response.Headers.RetryAfter?.Delta };
     }
 }

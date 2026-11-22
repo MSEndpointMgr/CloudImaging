@@ -27,9 +27,10 @@ where this product is furthest behind the standalone alternatives.
 
 ## Competitive note
 
-Foundry OSD ships OS selection, unattend, machine naming, OOBE shaping, post-installation actions,
-optional features, AppX removals and AI component control. Every one of those is a post-apply
-concern. We have none of them, and we cannot have any of them until this stage exists.
+Standalone deployment tools commonly offer OS selection, unattend, machine naming, OOBE shaping,
+post-installation actions, optional features, AppX removals and AI component control. Every one of
+those is a post-apply concern. We have none of them, and we cannot have any of them until this
+stage exists.
 
 ## The two mechanisms
 

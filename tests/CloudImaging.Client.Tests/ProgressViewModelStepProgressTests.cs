@@ -77,6 +77,27 @@ public sealed class ProgressViewModelStepProgressTests
         vm.TransferDetail.Should().Be($"{Number(128)} MB downloaded");
     }
 
+    [Fact]
+    public void StepPercentText_ShowsTheStepPercent_NextToTheByteCounter()
+    {
+        // 23% into the download is 19% overall (8% for the disk plus 23% of the download's 47%); the step figure is the portal's.
+        var vm = new ProgressViewModel();
+        vm.StepPercentText.Should().BeNull();
+
+        vm.StepPercent = 23;
+        vm.SetTransferProgress(1L * 1024 * 1024 * 1024, 4L * 1024 * 1024 * 1024);
+
+        vm.StepPercentText.Should().Be("23%");
+        vm.HasStepPercentText.Should().BeTrue();
+        vm.TransferDetail.Should().Be($"{Number(1)} GB of {Number(4)} GB");
+
+        vm.UpdateStep(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress);
+        vm.StepPercentText.Should().BeNull("a new step starts without a figure until it reports one");
+        vm.StepPercent = 40;
+        vm.StepPercentText.Should().Be("40%");
+        vm.TransferDetail.Should().BeNull();
+    }
+
     /// <summary>Formats a figure the way the view model does, so these assertions hold on build
     /// agents and workstations whose decimal separator is not a period.</summary>
     private static string Number(double value) => value.ToString("0.00", CultureInfo.CurrentCulture);

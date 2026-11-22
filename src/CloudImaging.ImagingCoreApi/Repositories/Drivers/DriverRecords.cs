@@ -70,6 +70,12 @@ public static class DriverTables
     /// <summary>Set builds, for the Downloads tab.</summary>
     public const string SetBuilds = "DriverSetBuilds";
 
+    /// <summary>BIOS per model and platform.</summary>
+    public const string Firmware = "DriverFirmware";
+
+    /// <summary>BIOS versions devices got.</summary>
+    public const string FirmwareVersions = "DriverFirmwareVersions";
+
     /// <summary>Blob container for catalogs, files and set documents.</summary>
     public const string Container = "drivers";
 
@@ -123,8 +129,20 @@ public sealed record DriverSyncSettingsRecord
     /// <summary>Wait for approval of new components.</summary>
     public bool WaitForApprovalOfNewComponents { get; init; }
 
+    /// <summary>New driver sets wait in testing until released.</summary>
+    public bool WaitForTesting { get; init; }
+
     /// <summary>Previous versions to keep.</summary>
     public int PreviousVersionsToKeep { get; init; } = 1;
+
+    /// <summary>True once the starting rules were added, so a deleted one is never added again.</summary>
+    public bool StartingRulesAdded { get; init; }
+
+    /// <summary>Who gets a newer BIOS a sync finds.</summary>
+    public DriverFirmwareNewVersions FirmwareNewVersions { get; init; } = DriverFirmwareNewVersions.AvailableImmediately;
+
+    /// <summary>Location whose devices get a BIOS in pre-production.</summary>
+    public Guid? FirmwarePreProductionLocationId { get; init; }
 
     /// <summary>Last scheduled slot utc.</summary>
     public DateTimeOffset? LastScheduledSlotUtc { get; init; }
@@ -388,6 +406,15 @@ public sealed record DriverSetPointerRecord
 
     /// <summary>Built at.</summary>
     public DateTimeOffset? BuiltAt { get; init; }
+
+    /// <summary>A built set waiting in testing; devices only get it when chosen for it.</summary>
+    public int? TestingVersion { get; init; }
+
+    /// <summary>Fingerprint of the set in testing.</summary>
+    public string? TestingFingerprint { get; init; }
+
+    /// <summary>When the set went into testing.</summary>
+    public DateTimeOffset? TestingSince { get; init; }
 }
 
 /// <summary>Status of a stored file.</summary>

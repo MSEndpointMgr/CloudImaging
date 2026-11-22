@@ -89,6 +89,35 @@ public sealed class ResultsViewModelTests
         restarted.Should().BeFalse("the restart callback must only fire once the countdown reaches zero");
     }
 
+    [Fact]
+    public void Success_WhileAWindowCoversTheCountdown_DoesNotRestart_AndCountsDownOnceItCloses()
+    {
+        var restarted = false;
+        var covered = true;
+        var vm = new ResultsViewModel(
+            ResultsViewModel.Outcome.Success,
+            deviceSerialNumber: null,
+            errorDetail: null,
+            navigateToStart: () => { },
+            restartSystem: () => restarted = true,
+            holdRestart: () => covered);
+        var tick = typeof(ResultsViewModel).GetMethod("OnRestartTimerTick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+
+        for (var i = 0; i < 30; i++)
+        {
+            tick.Invoke(vm, [null, EventArgs.Empty]);
+        }
+        restarted.Should().BeFalse("the operator cannot see the countdown behind the log viewer");
+        vm.RestartCountdownSecondsRemaining.Should().Be(10);
+
+        covered = false;
+        for (var i = 0; i < 10; i++)
+        {
+            tick.Invoke(vm, [null, EventArgs.Empty]);
+        }
+        restarted.Should().BeTrue();
+    }
+
     // ── Failure outcome ────────────────────────────────────────────────────────
 
     [Fact]

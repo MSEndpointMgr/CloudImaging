@@ -33,6 +33,19 @@ Some releases also need a one-time manual step that no script performs. Check
 > ever tracks the backend and infrastructure stream, and it never installs anything: upgrading
 > stays the deliberate, manual procedure below.
 
+### Version Compatibility
+
+The versions that belong together, one row per backend release. Upgrade the backend first, then
+Media Builder, then the Client: a Client or Media Builder newer than the backend is not supported.
+
+| Backend | Media Builder | Client | What happens with older versions |
+|---|---|---|---|
+| `mse-ci-v1.1.0` | `mse-ci-mediabuilder-v1.1.0` | `mse-ci-client-v1.1.0` | Boot media built with an earlier Client still images devices, but no longer updates itself and skips setup profiles and drivers. An earlier Media Builder cannot preload driver sets or give Operators access. |
+| `mse-ci-v1.0.0` | `mse-ci-mediabuilder-v1.0.0` | `mse-ci-client-v1.0.0` | First release. |
+
+Media Builder's **Automatic download** always takes the newest Client, so upgrade the backend
+before generating new boot images with it.
+
 ### What `upgrade.ps1` does and does not do
 
 It is worth being precise about this, because the boundary catches people out.

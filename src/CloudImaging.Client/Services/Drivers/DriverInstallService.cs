@@ -201,7 +201,7 @@ public sealed partial class DriverInstallService
         var handedOff = false;
         try
         {
-            if (_cache is not null && await _cache.TryCopyAsync(component.Sha256, package, ct))
+            if (_cache is not null && await _cache.TryCopyAsync(component.Sha256, package, component.SizeBytes, ct))
             {
                 _fromUsb.Add(position);
             }

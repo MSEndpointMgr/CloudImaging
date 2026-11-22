@@ -83,9 +83,24 @@ public sealed class NetworkFallbackTests
     [InlineData("Unknown device", new[] { @"USB\Class_02&SubClass_06" }, true)]
     [InlineData("Plantronics headset", new[] { @"USB\Class_01" }, false)]
     [InlineData("PCI Simple Communications Controller", new[] { @"PCI\VEN_8086&DEV_A0E0&CC_078000" }, false)]
+    [InlineData("BT_FUNCTION", new[] { @"USB\Class_E0&SubClass_01&Prot_01" }, false)]
+    [InlineData("Intel(R) Wireless Bluetooth(R)", new[] { @"USB\VID_8087&PID_0033" }, false)]
+    [InlineData("Remote NDIS based Internet Sharing Device", new[] { @"USB\Class_E0&SubClass_01&Prot_03" }, true)]
     public void IsNetworkDevice_RecognisesAdaptersWithoutADriver(string? name, string[] ids, bool expected)
     {
         NetworkStatus.IsNetworkDevice(name, ids).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Microsoft Wi-Fi Direct Virtual Adapter #2", true)]
+    [InlineData("Microsoft Kernel Debug Network Adapter", true)]
+    [InlineData("Bluetooth Device (Personal Area Network)", true)]
+    [InlineData("MediaTek Wi-Fi 7 MT7925 160MHz PCIe Adapter", false)]
+    [InlineData("Realtek USB GbE Family Controller", false)]
+    [InlineData("Microsoft Hyper-V Network Adapter", false)]
+    public void IsVirtualAdapter_LeavesOutAdaptersThatNeverCarryTraffic(string description, bool expected)
+    {
+        NetworkStatus.IsVirtualAdapter(description).Should().Be(expected);
     }
 
     // netsh
@@ -295,21 +310,57 @@ public sealed class NetworkFallbackTests
     }
 
     [Fact]
-    public void NetworkRows_ListEveryAdapter_AndMarkTheOneInUse()
+    public void NetworkRows_ShowOneLineForEthernet_AndOneForWifi()
     {
         var rows = OperationSelectionViewModel.BuildNetworkRows(new NetworkSnapshot(
         [
-            Ethernet,
             new("Intel(R) Ethernet Connection I219-LM", NetworkAdapterKind.Ethernet, NetworkAdapterState.Disconnected),
+            Ethernet,
             new(WiFi.Name, NetworkAdapterKind.WiFi, NetworkAdapterState.Disconnected),
-            new("ASIX AX88179 USB 3.0 to Gigabit Ethernet Adapter", NetworkAdapterKind.Ethernet, NetworkAdapterState.NoDriver),
-        ]), wifiSsid: null);
+        ]), wifiSsid: null, wifiSupported: true);
 
         rows.Select(r => (r.Symbol, r.Title, r.Detail, r.Badge, r.IsWarning)).Should().Equal(
             (SymbolRegular.PlugConnected24, "Ethernet", $"{Usb} (10.20.4.40)", "In use", false),
-            (SymbolRegular.PlugDisconnected24, "Ethernet", "Intel(R) Ethernet Connection I219-LM, cable unplugged", (string?)null, false),
-            (SymbolRegular.WifiOff24, "Wi-Fi", "Not connected", (string?)null, false),
-            (SymbolRegular.Warning24, "ASIX AX88179 USB 3.0 to Gigabit Ethernet Adapter", "No driver in the boot image", (string?)null, true));
+            (SymbolRegular.WifiOff24, "Wi-Fi", "Not connected", (string?)null, false));
+    }
+
+    [Fact]
+    public void NetworkRows_NameAnEthernetAdapterWithoutADriver_OverAnUnpluggedOne()
+    {
+        var rows = OperationSelectionViewModel.BuildNetworkRows(new NetworkSnapshot(
+        [
+            new("Intel(R) Ethernet Connection I219-LM", NetworkAdapterKind.Ethernet, NetworkAdapterState.Disconnected),
+            new("ASIX AX88179 USB 3.0 to Gigabit Ethernet Adapter", NetworkAdapterKind.Ethernet, NetworkAdapterState.NoDriver),
+        ]), wifiSsid: null, wifiSupported: false);
+
+        rows.Should().ContainSingle("Windows PE without a Wi-Fi adapter shows no Wi-Fi line")
+            .Which.Should().Be(new NetworkPanelRow(SymbolRegular.Warning24, "Ethernet", "ASIX AX88179 USB 3.0 to Gigabit Ethernet Adapter has no driver in the boot image", IsWarning: true));
+    }
+
+    [Theory]
+    [InlineData(95, SymbolRegular.Wifi124)]
+    [InlineData(60, SymbolRegular.Wifi224)]
+    [InlineData(35, SymbolRegular.Wifi324)]
+    [InlineData(10, SymbolRegular.Wifi424)]
+    public void SignalSymbol_ShowsMoreArcs_ForAStrongerSignal(int signal, SymbolRegular expected)
+    {
+        new VisibleWifiNetwork("Office", signal, WifiAuthKind.PersonalPsk, true).SignalSymbol.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task WifiWindow_LeavesOutEnterpriseNetworks_AndSaysHowMany()
+    {
+        const string scan = "SSID 1 : Office\n    Authentication          : WPA2-Personal\n         Signal             : 80%\n\n"
+            + "SSID 2 : Corp\n    Authentication          : WPA2-Enterprise\n         Signal             : 90%\n\n"
+            + "SSID 3 : Corp IoT\n    Authentication          : WPA2-Enterprise\n         Signal             : 60%";
+        var vm = new WifiConnectionViewModel(new WirelessConnectionService(runNetshOverride: (_, _) => Task.FromResult((0, scan, string.Empty))));
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (vm.IsScanning && DateTime.UtcNow < deadline)
+            await Task.Delay(10);
+
+        vm.Networks.Select(n => n.Ssid).Should().Equal("Office");
+        vm.HasEnterpriseNote.Should().BeTrue();
+        vm.EnterpriseNote.Should().Be("2 networks that need Enterprise (802.1X) sign-in are not shown. They are not supported.");
     }
 
     [Fact]
@@ -322,6 +373,6 @@ public sealed class NetworkFallbackTests
 
         vm.NetworkLabel.Should().Be("Office");
         vm.NetworkSymbol.Should().Be(SymbolRegular.Wifi124);
-        vm.NetworkRows.Single().Detail.Should().Be($"Office, {WiFi.Name} (10.20.8.17)");
+        vm.NetworkRows.Single(r => r.Title == "Wi-Fi").Detail.Should().Be($"Office, {WiFi.Name} (10.20.8.17)");
     }
 }

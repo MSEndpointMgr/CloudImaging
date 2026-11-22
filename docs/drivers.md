@@ -4,7 +4,8 @@ Cloud Imaging can install the vendor drivers for each device model while it depl
 onboard a model once, Imaging Core keeps its driver set up to date from the vendor's catalog, and
 every device of that model gets the set that was current when imaging started.
 
-HP and Dell business models are supported, for x64 and ARM64. Open **Drivers** in the portal.
+HP and Dell business models are supported, for x64 and ARM64. Open **Drivers & Firmware** in the
+portal. HP x64 models can also update their BIOS during imaging; see [BIOS updates (HP)](#bios-updates-hp).
 
 ## How a device gets its drivers
 
@@ -50,11 +51,33 @@ Change one component with its action menu; that override wins over every rule an
 the vendor publishes a new version. A component the vendor no longer publishes is shown as
 withdrawn until you remove it.
 
+The vendor's BIOS and firmware packages are listed too. Cloud Imaging adds four rules that skip
+them: **BIOS**, **Firmware**, **Dock firmware** (HP) and **TPM firmware** (HP). Change or delete
+them like any other rule. A deleted rule is not added again. A rule's category can use `*` to
+match any text, for example `Firmware*`. To update an HP model's BIOS during imaging, use its
+**Firmware** tab instead.
+
 ## Approvals
 
 With **Wait for approval of new components** turned on (**Sync** tab), a component that appears
 in the vendor's catalog for the first time is not added to the set until an Operator approves it
 on the model page. Updated versions of approved components are not held.
+
+## Testing new driver sets
+
+Set **Newer versions** on the **Sync** tab to **Wait for testing** to try new driver sets on a
+few devices first. Every new set, including a new model's first, then waits in testing once its
+files are ready: devices keep the current set, or get no drivers when the model has none yet.
+
+- Operators and Administrators pick **<model> (testing)** in the **Driver set** column of
+  **Coupled Devices** for the devices that should get it. Technicians do not see sets in testing.
+- The model page shows which set is in testing. **Release** makes it current for every device,
+  with the previous set kept for **Roll back**.
+- A newer set that arrives while one is in testing replaces it, so testing starts again.
+- Switching **Newer versions** back to **Use automatically** releases every set in testing. The
+  portal asks first and says how many sets that releases.
+- The **Models** tab shows **In testing** for such a model, and **Storage** counts and lists sets
+  in testing.
 
 ## Sync
 
@@ -92,6 +115,41 @@ reports it as failed and the next sync tries again.
 - **One component**: open the component, choose an earlier version under **Version history** and
   roll back until a newer version is published, or until you undo it. A version that is no
   longer stored is downloaded again from the vendor first.
+
+## BIOS updates (HP)
+
+Imaging is the best moment to update a BIOS: the disk was just wiped, BitLocker is not on yet and
+someone is at the device. Cloud Imaging updates the system BIOS of HP x64 models, upgrade only.
+
+1. **Boot media**: in Media Builder, **Generate Boot Image**, tick **Include HP firmware tools**,
+   read HP's licence and tick **I accept HP's licence terms**. Media Builder downloads HP's Client
+   Management Script Library from the PowerShell Gallery on your computer, checks HP's signature
+   on every file and adds it to the boot image. HP's licence does not let Cloud Imaging ship it.
+2. **Model**: open the model, **Firmware** tab. The sync reads HP's BIOS catalog for each of the
+   model's platform IDs and lists one **System BIOS** row per platform. Its action is **Skip**
+   until you choose **Update at restart**; the BIOS is then downloaded and checked against HP's
+   hash.
+3. **Device**: a device of the model with an older BIOS gets the update. It must be on AC power to
+   start imaging (pre-flight check **AC power**). After **Configure boot**, the Client stages the
+   BIOS with HP's tools, and it flashes during the restart into Windows setup. **Start imaging**
+   says how many devices update their BIOS, and the device's completion screen asks to keep it on
+   AC power.
+
+The step never fails a deployment. It is skipped, with the reason on the deployment timeline, when
+the device runs on battery, its BIOS is locked or needs HP Sure Admin authorization or a BIOS
+password for updates, it has more than one EFI system partition, or the boot media lacks HP's
+tools. A device that starts a Client older than BIOS updates is imaged without one. A running
+deployment keeps the BIOS it started with, even when its model is removed.
+
+**Newer versions** on the **Sync** tab decides who gets a newer BIOS a sync finds:
+
+- **Available immediately**: every device of the model.
+- **Pre-production first**: only devices whose USB media carries the **Pre-production location**.
+  The model's Firmware tab shows the version in pre-production with **Release**, which gives it to
+  every location.
+
+The BIOS row's details show HP's release notes and the version history. **Roll back component**
+holds an earlier version; devices never get an older BIOS than they have.
 
 ## Custom components
 
@@ -136,6 +194,8 @@ Imaging Core must reach these hosts over HTTPS:
 - `downloads.dell.com`, `dl.dell.com` (Dell)
 
 Devices download driver files from the deployment's storage account, never from the vendors.
+
+Media Builder must reach `www.powershellgallery.com` to include HP's firmware tools in a boot image.
 
 ## Not yet available
 

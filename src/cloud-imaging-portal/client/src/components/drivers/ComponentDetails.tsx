@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { CircleCheck, Download, ExternalLink, Undo2, X } from 'lucide-react';
+import React, { useEffect, useId, useState } from 'react';
+import { ChevronDown, ChevronRight, CircleCheck, Download, ExternalLink, Undo2, X } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
-  fetchComponentVersions, setRangeLabel, vendorLabel,
+  fetchComponentVersions, fetchFirmwareVersions, setRangeLabel, vendorLabel, VERSION_CHANGE_LABELS,
   type DriverComponentRow, type DriverComponentVersion, type DriverVendor, type WindowsRelease,
 } from '../../lib/drivers.ts';
 
@@ -31,77 +31,131 @@ function VersionStatus({ version, vendor }: { version: DriverComponentVersion; v
   return <span className="flex items-center gap-2 text-muted-foreground"><X className="h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />{`No longer available from ${vendorLabel(vendor)}`}</span>;
 }
 
-/** The read-only Version history of a component, loaded when its row is expanded. */
-function VersionHistory({ component, history }: { component: DriverComponentRow; history: ComponentHistoryContext }): React.ReactElement {
+/** Where a version history is read from: a driver component of one release, or a model's BIOS. */
+export type VersionHistorySource =
+  | { kind: 'component'; modelId: string; release: WindowsRelease; lineageKey: string; version: string | null }
+  | { kind: 'firmware'; modelId: string; platformId: string; version: string };
+
+/**
+ * The Version history box, loaded when its row is expanded and shown collapsed, since it grows with
+ * every update. `setVersion` adds the Driver sets column; the BIOS has none, being the same for
+ * every Windows release.
+ */
+export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRollBack, onUndoRollBack }: {
+  source: VersionHistorySource;
+  vendor: DriverVendor;
+  setVersion?: number | null;
+  rolledBack: boolean;
+  onRollBack?: () => void;
+  onUndoRollBack?: () => void;
+}): React.ReactElement {
   const [versions, setVersions] = useState<DriverComponentVersion[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+  const showSets = setVersion !== undefined;
 
+  const { kind, modelId, version } = source;
+  const key = source.kind === 'component' ? `${source.release}|${source.lineageKey}` : source.platformId;
   useEffect(() => {
     let current = true;
     setError(null);
-    fetchComponentVersions(history.modelId, history.release, component.lineageKey)
+    const [first, second] = key.split('|');
+    const read = kind === 'component'
+      ? fetchComponentVersions(modelId, first as WindowsRelease, second)
+      : fetchFirmwareVersions(modelId, first);
+    read
       .then(list => { if (current) setVersions(list); })
       .catch((err: unknown) => { if (current) setError(err instanceof Error ? err.message : 'Could not load the version history.'); });
     return () => { current = false; };
-  }, [history.modelId, history.release, component.lineageKey, component.version, attempt]);
+  }, [kind, modelId, key, version, attempt]);
 
-  const rolledBack = !!component.rollBack;
   const nothingEarlier = versions !== null && versions.length < 2;
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-4">
-        <h4 className="text-sm font-semibold">Version history</h4>
-        {rolledBack && history.onUndoRollBack && (
-          <Button variant="outline" className="ml-auto" onClick={() => history.onUndoRollBack?.(component)}><Undo2 />Undo roll back</Button>
+    <div className="overflow-hidden rounded-md border border-border bg-background">
+      <div className="flex items-center gap-4 px-3 py-2">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen(o => !o)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          Version history
+          {versions && <span className="font-normal text-muted-foreground">{versions.length === 1 ? '1 version' : `${versions.length} versions`}</span>}
+        </button>
+        {rolledBack && onUndoRollBack && (
+          <Button variant="outline" onClick={onUndoRollBack}><Undo2 />Undo roll back</Button>
         )}
-        {!rolledBack && history.onRollBack && (
+        {!rolledBack && onRollBack && (
           <>
-            {nothingEarlier && <span className="ml-auto text-sm text-muted-foreground">No earlier version to roll back to.</span>}
-            <Button variant="outline" className={nothingEarlier ? undefined : 'ml-auto'} onClick={() => history.onRollBack?.(component)} disabled={versions === null || nothingEarlier}><Undo2 />Roll back component</Button>
+            {nothingEarlier && <span className="text-sm text-muted-foreground">No earlier version to roll back to.</span>}
+            <Button variant="outline" onClick={onRollBack} disabled={versions === null || nothingEarlier}><Undo2 />Roll back component</Button>
           </>
         )}
       </div>
-      {error ? (
-        <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
-          {error}
-          <Button variant="link" className="h-auto px-0" onClick={() => setAttempt(n => n + 1)}>Try again</Button>
-        </p>
-      ) : !versions ? (
-        <Skeleton className="h-16 w-full" />
-      ) : (
-        <div className="overflow-hidden rounded-md border border-border bg-background">
-        <Table className="table-fixed">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Version</TableHead>
-              <TableHead className="w-[120px]">Driver sets</TableHead>
-              <TableHead className="w-[150px]">From</TableHead>
-              <TableHead className="w-[150px]">To</TableHead>
-              <TableHead className="w-[220px]">Changed by</TableHead>
-              <TableHead className="w-[240px]">Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {versions.map(v => (
-              <TableRow key={`${v.version}-${v.from}`}>
-                <TableCell className="truncate" title={v.version}>{v.version}</TableCell>
-                <TableCell>
-                  <span className={v.lastSet === null ? 'inline-flex rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium' : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground'}>
-                    {setRangeLabel(v, history.setVersion)}
-                  </span>
-                </TableCell>
-                <TableCell>{formatTimestamp(v.from)}</TableCell>
-                <TableCell>{v.to ? formatTimestamp(v.to) : 'Now'}</TableCell>
-                <TableCell className="truncate" title={v.changedBy ?? undefined}>{v.changedBy}</TableCell>
-                <TableCell><VersionStatus version={v} vendor={history.vendor} /></TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      {open && (
+        <div id={bodyId} className="border-t border-border">
+          {error ? (
+            <p role="alert" className="flex items-center gap-2 px-3 py-2 text-sm text-destructive">
+              {error}
+              <Button variant="link" className="h-auto px-0" onClick={() => setAttempt(n => n + 1)}>Try again</Button>
+            </p>
+          ) : !versions ? (
+            <Skeleton className="m-3 h-16" />
+          ) : (
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[180px]">Version</TableHead>
+                  {showSets && <TableHead className="w-[110px]">Driver sets</TableHead>}
+                  <TableHead className="w-[150px]">From</TableHead>
+                  <TableHead className="w-[150px]">To</TableHead>
+                  <TableHead className="w-[150px]">Change</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead className="w-[220px]">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {versions.map(v => (
+                  <TableRow key={`${v.version}-${v.from}`}>
+                    <TableCell className="truncate" title={v.version}>{v.version}</TableCell>
+                    {showSets && (
+                      <TableCell>
+                        <span className={v.lastSet === null ? 'inline-flex rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium' : 'inline-flex rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground'}>
+                          {setRangeLabel(v, setVersion ?? null)}
+                        </span>
+                      </TableCell>
+                    )}
+                    <TableCell>{formatTimestamp(v.from)}</TableCell>
+                    <TableCell>{v.to ? formatTimestamp(v.to) : 'Now'}</TableCell>
+                    <TableCell>{VERSION_CHANGE_LABELS[v.change] ?? v.change}</TableCell>
+                    <TableCell className="truncate" title={v.changedBy ?? undefined}>{v.changedBy ?? <span className="text-muted-foreground">Automatic</span>}</TableCell>
+                    <TableCell><VersionStatus version={v} vendor={vendor} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/** The Version history of a driver component. */
+function VersionHistory({ component, history }: { component: DriverComponentRow; history: ComponentHistoryContext }): React.ReactElement {
+  return (
+    <VersionHistoryBox
+      source={{ kind: 'component', modelId: history.modelId, release: history.release, lineageKey: component.lineageKey, version: component.version }}
+      vendor={history.vendor}
+      setVersion={history.setVersion}
+      rolledBack={!!component.rollBack}
+      onRollBack={history.onRollBack ? () => history.onRollBack?.(component) : undefined}
+      onUndoRollBack={history.onUndoRollBack ? () => history.onUndoRollBack?.(component) : undefined}
+    />
   );
 }
 

@@ -137,8 +137,10 @@ jobs:
 
       - name: Build CloudImaging.MediaBuilder (WPF, self-contained win-x64)
         run: |
+          # Stamped so the tool version Media Builder records on every USB it prepares matches the release.
+          $semver = '${{ steps.tag.outputs.version }}' -replace '^v', ''
           dotnet publish src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj `
-            -c Release -r win-x64 --self-contained -o publish/MediaBuilder --no-restore
+            -c Release -r win-x64 --self-contained -o publish/MediaBuilder --no-restore -p:Version=$semver
           New-Item release-artifacts -ItemType Directory -Force | Out-Null
           Compress-Archive publish/MediaBuilder/* "release-artifacts/cloud-imaging-mediabuilder-${{ steps.tag.outputs.version }}.zip"
 

@@ -24,10 +24,18 @@ namespace CloudImaging.ImagingCoreApi.Functions;
 ///
 /// On success, recalculates overallProgressPercent, updates currentStep,
 /// and advances session state if all steps complete.
+///
+/// A start or percent report for a step that has already ended is ignored with 204: the device
+/// does not wait for its percent reports, so one can arrive after the step's end report. Steps are
+/// written only while their row is unchanged since it was read, so a report that raced with
+/// another for the same step is judged again against the one stored first.
 /// </summary>
 public sealed partial class ReportProgressFunction
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    // Only the device's own reports write its steps, so a few attempts settle any race; 503 makes it send again.
+    private const int MaxWriteAttempts = 5;
 
     private readonly DeviceSessionRepository _sessionRepo;
     private readonly ImagingStepRepository _stepRepo;
@@ -82,59 +90,79 @@ public sealed partial class ReportProgressFunction
             return req.CreateResponse(HttpStatusCode.BadRequest);
         }
 
-        var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
-        if (session is null)
-        {
-            return req.CreateResponse(HttpStatusCode.NotFound);
-        }
-
-        // Only a session the operator has actually started may report steps. Without this the
-        // reducer accepts reports in any state, so a device holding a valid token could drive an
-        // expired or already-terminal session back to Completed or Failed.
-        if (session.State is not (SessionState.SessionStarted or SessionState.SessionInProgress))
-        {
-            LogProgressRejected(_logger, sessionGuid, session.State);
-            return req.CreateResponse(HttpStatusCode.Conflict);
-        }
-
-        var allSteps = (await _stepRepo.GetBySessionAsync(sessionGuid, context.CancellationToken)).ToList();
-        var existingStep = allSteps.FirstOrDefault(existing => existing.StepName == payload.StepName);
-        var now = DateTimeOffset.UtcNow;
-
-        // Preserve the initial start timestamp when a later completion/failure report replaces
-        // the same Table Storage row. Without this, completed steps lose their elapsed-time data.
         // Items only travel on a step's final report; an older Client sends none.
         var isFinal = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed;
         var (items, truncated) = isFinal && payload.Items is { } reported ? NormalizeItems(reported) : ([], false);
-        var step = new ImagingStep
-        {
-            StepName = payload.StepName,
-            Status = payload.Status,
-            StepProgressPercent = payload.StepProgressPercent,
-            ErrorDetail = payload.ErrorDetail,
-            StartedAt = existingStep?.StartedAt
-                        ?? (payload.Status == ImagingStepStatus.InProgress ? now : null),
-            CompletedAt = payload.Status is ImagingStepStatus.Completed or ImagingStepStatus.Failed
-                                  ? now : null,
-            WarningCount = isFinal ? payload.WarningCount : existingStep?.WarningCount,
-            ItemCounts = isFinal && payload.Items is not null ? CountItems(items) : existingStep?.ItemCounts ?? [],
-            ItemsTruncated = isFinal ? truncated : existingStep?.ItemsTruncated ?? false,
-            StatusNote = Cap(payload.StatusNote, ImagingStep.MaxStatusNoteLength) ?? existingStep?.StatusNote,
-        };
 
-        if (isFinal && payload.Items is not null)
+        for (var attempt = 0; attempt < MaxWriteAttempts; attempt++)
         {
-            await _itemRepo.ReplaceAsync(sessionGuid, payload.StepName, items, context.CancellationToken);
+            var session = await _sessionRepo.GetByIdAsync(sessionGuid, context.CancellationToken);
+            if (session is null)
+            {
+                return req.CreateResponse(HttpStatusCode.NotFound);
+            }
+
+            // Only a session the operator has actually started may report steps. Without this the
+            // reducer accepts reports in any state, so a device holding a valid token could drive an
+            // expired or already-terminal session back to Completed or Failed.
+            if (session.State is not (SessionState.SessionStarted or SessionState.SessionInProgress))
+            {
+                LogProgressRejected(_logger, sessionGuid, session.State);
+                return req.CreateResponse(HttpStatusCode.Conflict);
+            }
+
+            var stored = await _stepRepo.GetStoredBySessionAsync(sessionGuid, context.CancellationToken);
+            var existing = stored.FirstOrDefault(s => s.Step.StepName == payload.StepName);
+            var existingStep = existing?.Step;
+
+            // Storing a late start or percent report would show the ended step running again, and the
+            // session could never complete: it stays in progress until the inactivity sweep fails it.
+            if (!isFinal && existingStep is { Status: ImagingStepStatus.Completed or ImagingStepStatus.Failed } ended)
+            {
+                LogLateReportIgnored(_logger, sessionGuid, payload.StepName, payload.Status, ended.Status);
+                return req.CreateResponse(HttpStatusCode.NoContent);
+            }
+
+            // Preserve the initial start timestamp when a later completion/failure report replaces
+            // the same Table Storage row. Without this, completed steps lose their elapsed-time data.
+            var now = DateTimeOffset.UtcNow;
+            var step = new ImagingStep
+            {
+                StepName = payload.StepName,
+                Status = payload.Status,
+                StepProgressPercent = payload.StepProgressPercent,
+                ErrorDetail = payload.ErrorDetail,
+                StartedAt = existingStep?.StartedAt
+                            ?? (payload.Status == ImagingStepStatus.InProgress ? now : null),
+                CompletedAt = isFinal ? now : null,
+                WarningCount = isFinal ? payload.WarningCount : existingStep?.WarningCount,
+                ItemCounts = isFinal && payload.Items is not null ? CountItems(items) : existingStep?.ItemCounts ?? [],
+                ItemsTruncated = isFinal ? truncated : existingStep?.ItemsTruncated ?? false,
+                StatusNote = Cap(payload.StatusNote, ImagingStep.MaxStatusNoteLength) ?? existingStep?.StatusNote,
+            };
+
+            if (isFinal && payload.Items is not null)
+            {
+                await _itemRepo.ReplaceAsync(sessionGuid, payload.StepName, items, context.CancellationToken);
+            }
+
+            // Another report for this step was stored after the read above; judge this one again against it.
+            if (!await _stepRepo.TryWriteAsync(sessionGuid, step, existing?.ETag, context.CancellationToken))
+            {
+                continue;
+            }
+
+            await UpdateSessionAsync(session, [.. stored.Select(s => s.Step).Where(s => s.StepName != step.StepName), step], step, context.CancellationToken);
+            return req.CreateResponse(HttpStatusCode.NoContent);
         }
-        await _stepRepo.UpsertAsync(sessionGuid, step, context.CancellationToken);
 
-        if (existingStep is not null)
-        {
-            allSteps.Remove(existingStep);
-        }
-        allSteps.Add(step);
+        LogProgressContended(_logger, sessionGuid, payload.StepName, MaxWriteAttempts);
+        return req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+    }
 
-        // Recalculate session summary from the updated step collection.
+    // Recalculates the session summary from its steps, and records the session history once it ends.
+    private async Task UpdateSessionAsync(DeviceSession session, IReadOnlyList<ImagingStep> allSteps, ImagingStep reported, CancellationToken ct)
+    {
         var overallPercent = OverallProgressCalculator.Calculate(allSteps);
         var activeStep = OverallProgressCalculator.CurrentOrLastStepName(allSteps);
 
@@ -161,13 +189,13 @@ public sealed partial class ReportProgressFunction
             TerminalAt = anyFailed || allCompleted ? DateTimeOffset.UtcNow : null,
         };
 
-        await _sessionRepo.UpdateAsync(updated, context.CancellationToken);
-        LogProgressReceived(_logger, sessionGuid, payload.StepName, payload.Status, overallPercent);
+        await _sessionRepo.UpdateAsync(updated, ct);
+        LogProgressReceived(_logger, session.SessionId, reported.StepName, reported.Status, overallPercent);
 
         if (anyFailed || allCompleted)
         {
             var failedStep = allSteps.FirstOrDefault(s => s.Status == ImagingStepStatus.Failed);
-            var config = await _configRepo.GetAsync(context.CancellationToken);
+            var config = await _configRepo.GetAsync(ct);
             var history = new SessionHistoryRecord
             {
                 SessionId = updated.SessionId,
@@ -186,11 +214,8 @@ public sealed partial class ReportProgressFunction
                 CreatedAt = updated.CreatedAt,
                 TerminalAt = updated.TerminalAt ?? DateTimeOffset.UtcNow,
             };
-            await _historyRepo.CreateAsync(history, config.SessionHistoryRetentionDays, context.CancellationToken);
+            await _historyRepo.CreateAsync(history, config.SessionHistoryRetentionDays, ct);
         }
-
-        var response = req.CreateResponse(HttpStatusCode.NoContent);
-        return response;
     }
 
     internal static ValueTask<ProgressPayload?> DeserializePayloadAsync(
@@ -244,4 +269,12 @@ public sealed partial class ReportProgressFunction
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "Progress rejected: session={SessionId} is in {State}, which cannot report steps.")]
     private static partial void LogProgressRejected(ILogger logger, Guid sessionId, SessionState state);
+
+    [LoggerMessage(Level = LogLevel.Information,
+        Message = "Progress ignored: session={SessionId} step={StepName} reported {Status} after the step ended {Ended}.")]
+    private static partial void LogLateReportIgnored(ILogger logger, Guid sessionId, ImagingStepName stepName, ImagingStepStatus status, ImagingStepStatus ended);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "Progress not stored: session={SessionId} step={StepName} changed during each of {Attempts} attempts to save it.")]
+    private static partial void LogProgressContended(ILogger logger, Guid sessionId, ImagingStepName stepName, int attempts);
 }

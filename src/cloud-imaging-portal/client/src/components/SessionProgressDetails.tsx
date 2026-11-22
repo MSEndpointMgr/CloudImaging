@@ -39,6 +39,7 @@ type StepStatus = 'Completed' | 'Warning' | 'InProgress' | 'Failed' | 'Pending' 
 
 const PREPARE_SETUP = 'PrepareSetup';
 const INSTALL_DRIVERS = 'InstallDrivers';
+const UPDATE_FIRMWARE = 'UpdateFirmware';
 const NOT_RUN_TOOLTIP = "This device's boot image is older than Setup Profiles, so the profile was not applied. Update the boot image.";
 
 interface ResolvedStep {
@@ -292,6 +293,21 @@ function DriverItemRows({ items }: { items: ImagingStepItem[] }): React.ReactEle
 }
 
 /**
+ * Update firmware card: the BIOS the device was pinned to when it registered, and what the device
+ * reported (staged, up to date, or why it was skipped). The flash itself happens at the restart,
+ * after the device stops reporting.
+ */
+function UpdateFirmwareCard({ pin, step }: { pin: SessionDriverPin | null | undefined; step: ResolvedStep }): React.ReactElement {
+  const from = pin?.firmwareInstalledVersion ? `${pin.firmwareInstalledVersion} to ` : '';
+  return (
+    <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
+      <p className="text-sm font-medium">{pin?.firmwareVersion ? `BIOS ${from}${pin.firmwareVersion}` : 'BIOS'}</p>
+      {step.statusNote && <p className="text-sm text-muted-foreground">{step.statusNote}</p>}
+    </div>
+  );
+}
+
+/**
  * Install drivers card: the driver set the session pinned (or why none applied), what happened,
  * and the items. Failed items load straight away; everything else is behind Show details.
  */
@@ -396,11 +412,13 @@ export function SessionProgressDetails({
 
   // Optional steps only take a column when reported or expected, so other sessions keep five.
   const driversExpected = Boolean(driverPin && (driverPin.driverSetVersion != null || driverPin.driverSkipReason));
+  const firmwareExpected = Boolean(driverPin?.firmwareVersion);
   const shownSteps = PIPELINE_STEPS.filter(definition =>
     !definition.optional
     || reportedSteps.has(definition.name)
     || (definition.name === PREPARE_SETUP && Boolean(setupProfile))
-    || (definition.name === INSTALL_DRIVERS && driversExpected));
+    || (definition.name === INSTALL_DRIVERS && driversExpected)
+    || (definition.name === UPDATE_FIRMWARE && firmwareExpected));
 
   const resolved: ResolvedStep[] = shownSteps.map(definition => {
     const reported = reportedSteps.get(definition.name);
@@ -446,6 +464,7 @@ export function SessionProgressDetails({
         : 'Waiting for the first progress report';
   const prepareSetup = resolved.find(step => step.name === PREPARE_SETUP);
   const installDrivers = resolved.find(step => step.name === INSTALL_DRIVERS);
+  const updateFirmware = resolved.find(step => step.name === UPDATE_FIRMWARE);
 
   return (
     <div className="px-6 py-4">
@@ -524,6 +543,7 @@ export function SessionProgressDetails({
 
       {installDrivers && <InstallDriversCard pin={driverPin} step={installDrivers} sessionId={sessionId} />}
       {prepareSetup && <PrepareSetupCard setupProfile={setupProfile} step={prepareSetup} sessionId={sessionId} />}
+      {updateFirmware && <UpdateFirmwareCard pin={driverPin} step={updateFirmware} />}
 
       {/* A failed Prepare setup already explains itself in its own card. */}
       {focus && !(failed && failed.name === PREPARE_SETUP) && (

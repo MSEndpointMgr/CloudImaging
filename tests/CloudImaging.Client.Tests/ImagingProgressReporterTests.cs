@@ -138,6 +138,154 @@ public sealed class ImagingProgressReporterTests
         handler.CallCount.Should().Be(2, "the second percent update falls inside the interval; the result always goes through");
     }
 
+    [Fact]
+    public async Task ReportAsync_PercentUpdateRightAfterTheStepStart_WaitsForTheInterval()
+    {
+        var (handler, gateway) = CreateGateway();
+        var clock = new FakeTimeProvider();
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, clock);
+
+        await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress);
+        await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, 0);
+        handler.CallCount.Should().Be(1, "the start report already tells the portal the step runs");
+
+        clock.UtcNow += TimeSpan.FromSeconds(11);
+        await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.InProgress, 40);
+        handler.CallCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ReportAsync_StepEnd_IsSentAgainAfterTheGatewaysRetryAfter()
+    {
+        var (handler, reporter, waits) = Scripted(RateLimited(7), Delivered());
+
+        await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed);
+
+        handler.Requests.Should().HaveCount(2, "without the end report the session never completes in the portal");
+        waits.Should().Equal(TimeSpan.FromSeconds(7));
+    }
+
+    [Fact]
+    public async Task ARateLimitWithoutRetryAfter_WaitsOutTheWholeWindow()
+    {
+        var (handler, reporter, waits) = Scripted(new HttpResponseMessage(HttpStatusCode.TooManyRequests), Delivered());
+
+        await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed);
+
+        handler.Requests.Should().HaveCount(2);
+        waits.Should().Equal(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task ReportResultAsync_IsSentAgainAfterAServerError()
+    {
+        var (handler, reporter, waits) = Scripted(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable), Delivered());
+
+        await reporter.ReportResultAsync(ImagingStepName.InstallDrivers, ImagingStepStatus.Completed, 0, []);
+
+        handler.Requests.Should().HaveCount(2);
+        waits.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ReportAsync_StepEnd_GivesUpAfterThreeAttempts_WithoutThrowing()
+    {
+        var (handler, reporter, _) = Scripted(RateLimited(1), RateLimited(1), RateLimited(1));
+
+        await reporter.ReportAsync(ImagingStepName.ConfigureBoot, ImagingStepStatus.Failed, errorDetail: "bcdboot failed");
+
+        handler.Requests.Should().HaveCount(3, "reporting stays best effort: imaging carries on");
+    }
+
+    [Fact]
+    public async Task ReportAsync_PercentUpdate_IsNotSentAgain()
+    {
+        var (handler, reporter, waits) = Scripted(RateLimited(7));
+
+        await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, 30);
+
+        handler.Requests.Should().ContainSingle("the next percent update replaces it anyway");
+        waits.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReportAsync_Rejection_IsNotSentAgain()
+    {
+        var (handler, reporter, waits) = Scripted(new HttpResponseMessage(HttpStatusCode.Conflict));
+
+        await reporter.ReportAsync(ImagingStepName.ApplyRecoveryImage, ImagingStepStatus.Completed);
+
+        handler.Requests.Should().ContainSingle("an ended session refuses every report");
+        waits.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StepEnd_WaitsForAPercentUpdateStillOnItsWay()
+    {
+        var handler = new SlowPercentHandler();
+        var gateway = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, new FakeTimeProvider());
+
+        // As in the pipeline: a percent update nobody waits for, then the step's end report.
+        var percent = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, 99);
+        await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.Completed);
+        await percent;
+
+        handler.EndArrivedWhilePercentInFlight.Should().BeFalse("Core stores whichever report reaches it last");
+        handler.Arrived.Should().Equal("InProgress", "Completed");
+    }
+
+    [Fact]
+    public async Task StartOrPercentUpdate_MadeAfterItsStepEnded_IsNotSent()
+    {
+        var (handler, gateway) = CreateGateway();
+        var clock = new FakeTimeProvider();
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, clock);
+
+        await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress);
+        await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.Completed);
+        clock.UtcNow += TimeSpan.FromSeconds(11);
+        await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress, 100);
+        await reporter.ReportAsync(ImagingStepName.ApplyImage, ImagingStepStatus.InProgress);
+
+        handler.CallCount.Should().Be(2, "either would show the finished step running again");
+    }
+
+    [Fact]
+    public async Task StepEnd_IsStillSent_WhenTheReportBeforeItFailed()
+    {
+        var (handler, reporter, _) = Scripted(new HttpResponseMessage(HttpStatusCode.InternalServerError), Delivered());
+
+        var percent = reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.InProgress, 50);
+        await reporter.ReportAsync(ImagingStepName.DownloadImage, ImagingStepStatus.Completed);
+        await percent;
+
+        handler.Requests.Should().HaveCount(2, "a report that failed must not hold up the ones after it");
+    }
+
+    private static (TestDoubles.RecordingHandler Handler, ImagingProgressReporter Reporter, List<TimeSpan> Waits) Scripted(params HttpResponseMessage[] responses)
+    {
+        var queue = new Queue<HttpResponseMessage>(responses);
+        var handler = new TestDoubles.RecordingHandler(_ => queue.Dequeue());
+        var gateway = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        var waits = new List<TimeSpan>();
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, new FakeTimeProvider(), (wait, _) =>
+        {
+            waits.Add(wait);
+            return Task.CompletedTask;
+        });
+        return (handler, reporter, waits);
+    }
+
+    internal static HttpResponseMessage RateLimited(int seconds)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+        response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(seconds));
+        return response;
+    }
+
+    private static HttpResponseMessage Delivered() => new(HttpStatusCode.NoContent);
+
     private sealed class FakeTimeProvider : TimeProvider
     {
         public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow;
@@ -152,6 +300,45 @@ public sealed class ImagingProgressReporterTests
         {
             CallCount++;
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
+    }
+
+    /// <summary>
+    /// A slow network for percent updates: each takes half a second, unless an end report overtakes
+    /// it first. Records the order reports arrive in, and whether an end report arrived while a
+    /// percent update was still on its way.
+    /// </summary>
+    private sealed class SlowPercentHandler : HttpMessageHandler
+    {
+        private readonly TaskCompletionSource _endArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _percentInFlight;
+
+        public List<string> Arrived { get; } = [];
+
+        public bool EndArrivedWhilePercentInFlight { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            var status = body.RootElement.GetProperty("status").GetString()!;
+            lock (Arrived)
+            {
+                Arrived.Add(status);
+            }
+
+            if (status == nameof(ImagingStepStatus.InProgress))
+            {
+                Interlocked.Increment(ref _percentInFlight);
+                await Task.WhenAny(_endArrived.Task, Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken));
+                Interlocked.Decrement(ref _percentInFlight);
+            }
+            else
+            {
+                EndArrivedWhilePercentInFlight |= Volatile.Read(ref _percentInFlight) > 0;
+                _endArrived.TrySetResult();
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
         }
     }
 }

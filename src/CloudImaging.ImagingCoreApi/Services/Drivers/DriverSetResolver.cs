@@ -143,9 +143,13 @@ public sealed class DriverSetResolver
             return (null, $"{model.DisplayName} is onboarded for {ArchitectureLabel(model.Architecture)}, the OS image is {ArchitectureLabel(image.Architecture)}.");
         }
 
-        if (!model.Releases.Contains(release) || (await _pointers.GetAsync(model.ModelId, release, ct))?.Value.CurrentVersion is not { } version)
+        var pointer = model.Releases.Contains(release) ? (await _pointers.GetAsync(model.ModelId, release, ct))?.Value : null;
+        var chosenVersion = choice.Kind == DriverChoiceKind.Testing ? pointer?.TestingVersion : pointer?.CurrentVersion;
+        if (chosenVersion is not { } version)
         {
-            return (null, $"{model.DisplayName} has no driver set for {DriverModelService.ReleaseLabel(release)}.");
+            return (null, choice.Kind == DriverChoiceKind.Testing
+                ? $"{model.DisplayName} has no driver set in testing for {DriverModelService.ReleaseLabel(release)}."
+                : $"{model.DisplayName} has no driver set for {DriverModelService.ReleaseLabel(release)}.");
         }
 
         var critical = (await _store.CriticalCategories.ListPartitionAsync(model.Vendor.ToString(), ct)).Select(r => r.Value.Category ?? r.RowKey).ToList();
@@ -153,8 +157,9 @@ public sealed class DriverSetResolver
     }
 
     /// <summary>
-    /// The models a device can be given for an image: active, same architecture, with a current set
-    /// for the image's release; ordered by vendor then name, with the size of that set.
+    /// The sets a device can be given for an image: each active model of the same architecture with
+    /// a current set for the image's release, plus its set in testing as a separate option; ordered by
+    /// vendor then name, with the size of each set.
     /// </summary>
     public async Task<IReadOnlyList<DriverAssignmentOption>> OptionsAsync(OsImage image, DriverSetDocumentRepository sets, CancellationToken ct = default)
     {
@@ -169,16 +174,22 @@ public sealed class DriverSetResolver
         foreach (var model in await _models.ListAsync(ct))
         {
             if (model.State != DriverModelState.Active || model.Architecture != image.Architecture || !model.Releases.Contains(release)
-                || (await _pointers.GetAsync(model.ModelId, release, ct))?.Value.CurrentVersion is not { } version)
+                || (await _pointers.GetAsync(model.ModelId, release, ct))?.Value is not { } pointer)
             {
                 continue;
             }
 
-            var document = await sets.GetAsync(model.ModelId, release, version, ct);
-            options.Add(new DriverAssignmentOption { ModelId = model.ModelId, Vendor = model.Vendor, DisplayName = model.DisplayName, MaxDownloadBytes = document?.Items.Sum(i => i.Size) ?? 0 });
+            foreach (var (version, testing) in new[] { (pointer.CurrentVersion, false), (pointer.TestingVersion, true) })
+            {
+                if (version is { } v)
+                {
+                    var document = await sets.GetAsync(model.ModelId, release, v, ct);
+                    options.Add(new DriverAssignmentOption { ModelId = model.ModelId, Vendor = model.Vendor, DisplayName = model.DisplayName, MaxDownloadBytes = document?.Items.Sum(i => i.Size) ?? 0, Testing = testing });
+                }
+            }
         }
 
-        return options.OrderBy(o => o.Vendor).ThenBy(o => o.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        return options.OrderBy(o => o.Vendor).ThenBy(o => o.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(o => o.Testing).ToList();
     }
 
     private static string ArchitectureLabel(MachineArchitecture architecture) => architecture == MachineArchitecture.Arm64 ? "ARM64" : "x64";

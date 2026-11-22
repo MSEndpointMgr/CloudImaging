@@ -3,7 +3,7 @@
 **Feature**: [../spec.md](../spec.md) | **Upstream**: [operator-and-core-api.md](operator-and-core-api.md) | **Consumer**: [client-install-drivers.md](client-install-drivers.md)
 
 Both endpoints sit behind the existing device middleware: mTLS boot media certificate, device
-session token (route session ID must equal the token's, else 403) and rate limiting (10 calls per
+session token (route session ID must equal the token's, else 403) and rate limiting (30 calls per
 30 seconds per token, shared with all session calls). They relay to Core through
 `DeviceGatewayApi/Services/ImagingCoreClient.cs`, map fields explicitly (pattern of
 `SessionSetupProfileFunction`), log only the SAS host, and get `OpenApiConfig.cs` entries and

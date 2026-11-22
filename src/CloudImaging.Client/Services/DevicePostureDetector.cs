@@ -27,18 +27,40 @@ public sealed partial class DevicePostureDetector
     public DevicePostureDetector(ILogger<DevicePostureDetector>? logger = null) =>
         _logger = logger ?? NullLogger<DevicePostureDetector>.Instance;
 
-    /// <summary>Reads the device's firmware mode, Secure Boot state and TPM presence.</summary>
+    /// <summary>Reads the device's firmware mode, Secure Boot state, TPM presence and power source.</summary>
     public DeviceSecurityPosture Detect()
     {
         var firmwareMode = DetectFirmwareMode();
+        var powerSource = DetectPowerSource();
         var posture = new DeviceSecurityPosture
         {
             FirmwareMode = firmwareMode,
             SecureBoot = DetectSecureBoot(firmwareMode),
             Tpm = DetectTpm(),
+            PowerSource = powerSource,
         };
-        LogPosture(_logger, posture.FirmwareMode, posture.SecureBoot, posture.Tpm);
+        LogPosture(_logger, posture.FirmwareMode, posture.SecureBoot, posture.Tpm, powerSource);
         return posture;
+    }
+
+    /// <summary>Reads whether the AC adapter is connected. A BIOS update is only staged on AC power.</summary>
+    public PowerSource DetectPowerSource()
+    {
+        try
+        {
+            if (GetSystemPowerStatus(out var status))
+            {
+                return MapPowerSource(status.AcLineStatus, status.BatteryFlag);
+            }
+
+            LogDetectionFailed(_logger, "GetSystemPowerStatus", new Win32Exception(Marshal.GetLastWin32Error()).Message);
+        }
+        catch (Exception ex) when (ex is EntryPointNotFoundException or DllNotFoundException)
+        {
+            LogDetectionFailed(_logger, "GetSystemPowerStatus", ex.Message);
+        }
+
+        return PowerSource.Unknown;
     }
 
     /// <summary>Reads whether the device booted UEFI or legacy BIOS.</summary>
@@ -152,6 +174,18 @@ public sealed partial class DevicePostureDetector
         _ => TpmPresence.NotDetected,
     };
 
+    /// <summary>
+    /// Maps SYSTEM_POWER_STATUS: ACLineStatus 1 = online, 0 = offline, 255 = unknown. A device
+    /// without a battery (BatteryFlag 128) runs on mains even when the line status is unknown.
+    /// </summary>
+    internal static PowerSource MapPowerSource(byte acLineStatus, byte batteryFlag) => acLineStatus switch
+    {
+        1 => PowerSource.Ac,
+        0 => PowerSource.Battery,
+        _ when batteryFlag == NoSystemBattery => PowerSource.Ac,
+        _ => PowerSource.Unknown,
+    };
+
     /// <summary>Lists the signatures of the ACPI tables the firmware exposes, or null on failure.</summary>
     private static List<string>? EnumerateAcpiTables()
     {
@@ -202,8 +236,8 @@ public sealed partial class DevicePostureDetector
         }
     }
 
-    [LoggerMessage(Level = LogLevel.Information, Message = "Device posture: firmware mode {FirmwareMode}, Secure Boot {SecureBoot}, TPM {Tpm}.")]
-    private static partial void LogPosture(ILogger logger, FirmwareMode firmwareMode, SecureBootState secureBoot, TpmPresence tpm);
+    [LoggerMessage(Level = LogLevel.Information, Message = "Device posture: firmware mode {FirmwareMode}, Secure Boot {SecureBoot}, TPM {Tpm}, power {PowerSource}.")]
+    private static partial void LogPosture(ILogger logger, FirmwareMode firmwareMode, SecureBootState secureBoot, TpmPresence tpm, PowerSource powerSource);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Could not read {Source} for the pre-flight checks: {Reason}")]
     private static partial void LogDetectionFailed(ILogger logger, string source, string reason);
@@ -228,6 +262,21 @@ public sealed partial class DevicePostureDetector
     private const uint TokenAdjustPrivileges = 0x0020;
     private const uint TokenQuery = 0x0008;
     private const uint SePrivilegeEnabled = 0x0002;
+    private const byte NoSystemBattery = 128;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SystemPowerStatus
+    {
+        public byte AcLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public uint BatteryLifeTime;
+        public uint BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetSystemPowerStatus(out SystemPowerStatus status);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool GetFirmwareType(out uint firmwareType);

@@ -8,7 +8,8 @@ namespace CloudImaging.Client.Services;
 /// Maintenance policy:
 ///   1. Purge entries not used (no cache hit) in the last 30 days (expired TTL); a cache hit
 ///      refreshes the entry's clock, so an actively-reused image is never purged for being old.
-///   2. Remove orphaned directories (dirs with no valid metadata.json).
+///   2. Remove what interrupted sessions left behind: downloads staged at the cache root and
+///      entry directories with no valid metadata.json.
 ///   3. If insufficient free space remains after purge, proceed WITHOUT caching
 ///      (do NOT perform LRU eviction of valid entries).
 ///
@@ -52,10 +53,13 @@ public sealed partial class ImageCacheMaintenanceService
         // 1. Purge expired entries
         int purged = await PurgeExpiredAsync(ct);
 
+        // 2. A session cut off mid-download leaves files no session can use; left alone they fill the partition for good.
+        purged += await _cache.RemoveIncompleteAsync(ct);
+
         // Driver files on the same partition follow the same idle rule.
         purged += Drivers.DriverFileCache.PurgeIdle(_cache.CacheRoot, CacheTtl);
 
-        // 2. Check available space
+        // 3. Check available space
         var freeSpace = _cache.GetAvailableDiskSpace();
         if (freeSpace < MinFreeSpaceBytes)
         {

@@ -25,8 +25,8 @@ public enum WifiAuthKind
 /// <summary>
 /// A network discovered by <see cref="WirelessConnectionService.ScanAsync"/>.
 /// <see cref="IsSupported"/> is true only for <see cref="WifiAuthKind.Open"/> and
-/// <see cref="WifiAuthKind.PersonalPsk"/> — Enterprise/802.1X networks are shown (not hidden)
-/// but cannot be connected to via this simple PSK-only flow.
+/// <see cref="WifiAuthKind.PersonalPsk"/>. The Wi-Fi window leaves Enterprise/802.1X networks out
+/// of its list and says how many it left out, since this PSK-only flow cannot join them.
 /// </summary>
 public sealed record VisibleWifiNetwork(string Ssid, int SignalPercent, WifiAuthKind AuthKind, bool IsSupported, bool IsManaged = false, bool IsHidden = false)
 {
@@ -36,9 +36,6 @@ public sealed record VisibleWifiNetwork(string Ssid, int SignalPercent, WifiAuth
     /// <summary>True when <see cref="Subtitle"/> has text.</summary>
     public bool HasSubtitle => IsHidden;
 
-    /// <summary>Empty when supported; a short explanatory suffix otherwise (bound directly in the UI, no converter needed).</summary>
-    public string NotSupportedLabel => IsSupported ? string.Empty : " (Not supported: Enterprise/802.1X)";
-
     /// <summary>True for any network that requires a passphrase/certificate (i.e. not Open) — drives the lock glyph shown next to the network name in the list.</summary>
     public bool IsSecured => AuthKind != WifiAuthKind.Open;
 
@@ -47,13 +44,14 @@ public sealed record VisibleWifiNetwork(string Ssid, int SignalPercent, WifiAuth
     /// UI, no converter needed — see the wpftmp source-generator note in
     /// wpf-temp-project-workaround.md for why a new local IValueConverter is avoided here).
     /// Mirrors how Windows' own network flyout renders signal strength as bars, not a percentage.
+    /// Fluent numbers them from full: Wifi1 has every arc, Wifi4 is the bare dot.
     /// </summary>
     public Wpf.Ui.Controls.SymbolRegular SignalSymbol => SignalPercent switch
     {
-        >= 80 => Wpf.Ui.Controls.SymbolRegular.Wifi424,
-        >= 55 => Wpf.Ui.Controls.SymbolRegular.Wifi324,
-        >= 30 => Wpf.Ui.Controls.SymbolRegular.Wifi224,
-        _ => Wpf.Ui.Controls.SymbolRegular.Wifi124,
+        >= 80 => Wpf.Ui.Controls.SymbolRegular.Wifi124,
+        >= 55 => Wpf.Ui.Controls.SymbolRegular.Wifi224,
+        >= 30 => Wpf.Ui.Controls.SymbolRegular.Wifi324,
+        _ => Wpf.Ui.Controls.SymbolRegular.Wifi424,
     };
 }
 

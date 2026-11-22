@@ -24,8 +24,11 @@ public sealed record DriverAssignmentOption
     /// <summary>Display name.</summary>
     public required string DisplayName { get; init; }
 
-    /// <summary>Largest download per device for the current set.</summary>
+    /// <summary>Largest download per device for the set this option gives.</summary>
     public long MaxDownloadBytes { get; init; }
+
+    /// <summary>True for the model's set in testing rather than its current set.</summary>
+    public bool Testing { get; init; }
 }
 
 /// <summary>What a session would get with the selected image.</summary>
@@ -36,6 +39,9 @@ public sealed record DriverAssignmentPreviewSession
 
     /// <summary>Matched model, or null.</summary>
     public Guid? MatchedModelId { get; init; }
+
+    /// <summary>The matched model when its only set for the release is in testing, so it can be chosen by hand.</summary>
+    public Guid? TestingModelId { get; init; }
 
     /// <summary>Why no set applies, or null.</summary>
     public DriverSkipReason? SkipReason { get; init; }
@@ -53,7 +59,7 @@ public sealed record DriverAssignmentPreview
     /// <summary>The image's architecture.</summary>
     public MachineArchitecture Architecture { get; init; }
 
-    /// <summary>Models with a current set for the release and architecture.</summary>
+    /// <summary>Models with a current set, or a set in testing, for the release and architecture.</summary>
     public IReadOnlyList<DriverAssignmentOption> Options { get; init; } = [];
 
     /// <summary>Per assignable session.</summary>
@@ -66,10 +72,10 @@ public sealed record DriverChoice
     /// <summary>Session id; used by bulk assignment.</summary>
     public Guid SessionId { get; init; }
 
-    /// <summary>A model's current set, or no drivers.</summary>
+    /// <summary>A model's current set, its set in testing, or no drivers.</summary>
     public DriverChoiceKind Kind { get; init; }
 
-    /// <summary>Model id when <see cref="Kind"/> is <see cref="DriverChoiceKind.Model"/>.</summary>
+    /// <summary>Model id when <see cref="Kind"/> is <see cref="DriverChoiceKind.Model"/> or <see cref="DriverChoiceKind.Testing"/>.</summary>
     public Guid? ModelId { get; init; }
 }
 

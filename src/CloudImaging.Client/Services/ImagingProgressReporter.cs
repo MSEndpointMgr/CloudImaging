@@ -20,7 +20,8 @@ public sealed partial class ImagingProgressReporter
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    // Device Gateway API enforces 10 calls / 30s per session (RateLimitingMiddleware), shared
+    // Device Gateway API enforces 30 calls / 30s per session (RateLimitingMiddleware; a gateway
+    // from before 2026-11 allows 10), shared
     // across EVERY authenticated endpoint the client calls for that session (progress, status
     // poll, SAS refresh, ...): not a separate budget per endpoint. A percent-progress callback
     // fires on every ~80 KB download chunk / every DISM console line, which for a multi-GB WIM is
@@ -31,10 +32,13 @@ public sealed partial class ImagingProgressReporter
     // updates: step start/completion/failure reports are rare, one-off events and must always go
     // through immediately.
     //
-    // Budget for the shared 10-calls/30s session bucket: 3 progress reports (this 10s interval)
-    // + 1 SessionHeartbeatCoordinator check-in + at most ~3 step-transition reports in any single
-    // 30s window ≈ 7, leaving deliberate headroom. Raising the cadence here eats into the
-    // heartbeat's budget, so don't lower this interval without re-doing that arithmetic.
+    // Budget for the shared 30-calls/30s session bucket: 3 progress reports (this 10s interval)
+    // + 1 SessionHeartbeatCoordinator check-in + the step-transition reports in that window.
+    // Raising the cadence here eats into the heartbeat's budget, so don't lower this interval
+    // without re-doing that arithmetic. Steps that take a second or less (Prepare setup,
+    // Configure boot) put several step reports into one window on their own, so a step's start,
+    // end and failure reports are sent again after the gateway's Retry-After: a lost end report
+    // leaves the session running in the portal while the device restarts into Windows.
     //
     // IMPORTANT: do NOT special-case percent 0/100 as an always-send "boundary". A prior version
     // of this gate did exactly that (to guarantee the very first/last update always got through),
@@ -45,24 +49,41 @@ public sealed partial class ImagingProgressReporter
     // a step gets through; nothing else may bypass the interval check.
     private static readonly TimeSpan MinProgressReportInterval = TimeSpan.FromSeconds(10);
 
+    private const int DeliveryAttempts = 3;
+
     private readonly object _throttleGate = new();
+    private readonly Func<TimeSpan, CancellationToken, Task> _delay;
     private ImagingStepName? _lastProgressStep;
     private DateTimeOffset _lastProgressReportUtc = DateTimeOffset.MinValue;
+
+    // Reports go out one at a time, in the order they were made. The pipeline does not wait for
+    // percent updates, so without this one could reach the gateway after its step's end report and
+    // show the finished step running again; the session would then never complete.
+    private readonly object _sendGate = new();
+    private readonly HashSet<ImagingStepName> _endedSteps = [];
+    private Task _previousSend = Task.CompletedTask;
 
     /// <summary>Builds the reporter over the Device Gateway API client for the given session.</summary>
     public ImagingProgressReporter(
         DeviceGatewayApiClient gatewayClient,
         Guid sessionId,
         ILogger<ImagingProgressReporter> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Func<TimeSpan, CancellationToken, Task>? delay = null)
     {
         _gatewayClient = gatewayClient;
         _sessionId = sessionId;
         _logger = logger;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _delay = delay ?? Task.Delay;
     }
 
-    /// <summary>Reports a step status update to the Device Gateway API.</summary>
+    /// <summary>
+    /// Reports a step status update to the Device Gateway API. A percent update is sent once; a
+    /// step's start, end or failure is sent again when the gateway is rate limiting or unreachable.
+    /// Reports are delivered in the order they are made, and a start or percent update made after
+    /// the step's end report is not sent.
+    /// </summary>
     public async Task ReportAsync(
         ImagingStepName stepName,
         ImagingStepStatus status,
@@ -70,24 +91,32 @@ public sealed partial class ImagingProgressReporter
         string? errorDetail = null,
         CancellationToken ct = default)
     {
-        if (status == ImagingStepStatus.InProgress
-            && stepProgressPercent.HasValue
-            && !ShouldSendProgressUpdate(stepName))
+        var isPercentUpdate = status == ImagingStepStatus.InProgress && stepProgressPercent.HasValue;
+        if (isPercentUpdate && !ShouldSendProgressUpdate(stepName))
         {
             return;
         }
 
+        // The start report already tells the portal the step runs, so the first percent update waits for the interval.
+        if (status == ImagingStepStatus.InProgress && !isPercentUpdate)
+        {
+            MarkProgressSent(stepName);
+        }
+
         try
         {
-            await _gatewayClient.ReportProgressAsync(_sessionId, new
+            var sent = await SendInOrderAsync(stepName, status, new
             {
                 stepName = stepName.ToString(),
                 status = status.ToString(),
                 stepProgressPercent,
                 errorDetail,
-            }, ct);
+            }, retry: !isPercentUpdate, ct);
 
-            LogReported(_logger, stepName, status, stepProgressPercent ?? -1);
+            if (sent)
+            {
+                LogReported(_logger, stepName, status, stepProgressPercent ?? -1);
+            }
         }
         catch (Exception ex)
         {
@@ -99,7 +128,8 @@ public sealed partial class ImagingProgressReporter
     /// <summary>
     /// Reports the final status of a step together with its per-item results in one call, so a
     /// step with items costs no more of the session's rate limit than any other step end. Never
-    /// throttled; the items replace any the step reported before.
+    /// throttled, and sent again when the gateway is rate limiting or unreachable; the items
+    /// replace any the step reported before.
     /// </summary>
     public async Task ReportResultAsync(
         ImagingStepName stepName,
@@ -112,7 +142,7 @@ public sealed partial class ImagingProgressReporter
     {
         try
         {
-            await _gatewayClient.ReportProgressAsync(_sessionId, new
+            var sent = await SendInOrderAsync(stepName, status, new
             {
                 stepName = stepName.ToString(),
                 status = status.ToString(),
@@ -121,9 +151,12 @@ public sealed partial class ImagingProgressReporter
                 warningCount,
                 items,
                 statusNote,
-            }, ct);
+            }, retry: true, ct);
 
-            LogResultReported(_logger, stepName, status, warningCount, items.Count);
+            if (sent)
+            {
+                LogResultReported(_logger, stepName, status, warningCount, items.Count);
+            }
         }
         catch (Exception ex)
         {
@@ -159,6 +192,76 @@ public sealed partial class ImagingProgressReporter
         }
     }
 
+    private void MarkProgressSent(ImagingStepName stepName)
+    {
+        lock (_throttleGate)
+        {
+            _lastProgressStep = stepName;
+            _lastProgressReportUtc = _timeProvider.GetUtcNow();
+        }
+    }
+
+    /// <summary>
+    /// Sends once every report made before this one has finished, delivered or not. False, without
+    /// sending, for a start or percent update made after its step's end report.
+    /// </summary>
+    private async Task<bool> SendInOrderAsync(ImagingStepName stepName, ImagingStepStatus status, object payload, bool retry, CancellationToken ct)
+    {
+        var ends = status is ImagingStepStatus.Completed or ImagingStepStatus.Failed;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var previous = Task.CompletedTask;
+        bool late;
+        lock (_sendGate)
+        {
+            late = !ends && _endedSteps.Contains(stepName);
+            if (!late)
+            {
+                if (ends)
+                {
+                    _endedSteps.Add(stepName);
+                }
+
+                previous = _previousSend;
+                _previousSend = done.Task;
+            }
+        }
+
+        if (late)
+        {
+            LogLateReportDropped(_logger, stepName, status);
+            return false;
+        }
+
+        try
+        {
+            // Never faults: each send only ever completes its own marker with SetResult.
+            await previous;
+            await SendAsync(stepName, payload, retry, ct);
+            return true;
+        }
+        finally
+        {
+            done.SetResult();
+        }
+    }
+
+    private async Task SendAsync(ImagingStepName stepName, object payload, bool retry, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await _gatewayClient.ReportProgressAsync(_sessionId, payload, ct);
+                return;
+            }
+            catch (Exception ex) when (retry && attempt < DeliveryAttempts && DeviceGatewayApiClient.RetryDelay(ex, attempt) is { } wait)
+            {
+                LogReportRetry(_logger, stepName, attempt, wait.TotalSeconds, LoggedFailure.Reason(ex));
+                await _delay(wait, ct);
+            }
+        }
+    }
+
     [LoggerMessage(Level = LogLevel.Debug,
         Message = "Progress reported: step={StepName} status={Status} subProgress={SubProgress}%.")]
     private static partial void LogReported(
@@ -168,6 +271,12 @@ public sealed partial class ImagingProgressReporter
         Message = "Step result reported: step={StepName} status={Status} warnings={WarningCount} items={ItemCount}.")]
     private static partial void LogResultReported(
         ILogger logger, ImagingStepName stepName, ImagingStepStatus status, int warningCount, int itemCount);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Report for step {StepName} not delivered on attempt {Attempt} ({Reason}); sending again in {Seconds} s.")]
+    private static partial void LogReportRetry(ILogger logger, ImagingStepName stepName, int attempt, double seconds, string reason);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Report for step {StepName} ({Status}) not sent: the step already reported its end.")]
+    private static partial void LogLateReportDropped(ILogger logger, ImagingStepName stepName, ImagingStepStatus status);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to report progress for step {StepName}: {Reason}")]
     private static partial void LogReportFailed(ILogger logger, Exception? ex, ImagingStepName stepName, string reason);

@@ -202,7 +202,9 @@ public sealed partial class SessionQueryFunctions
             s.DriverSkipReason,
             s.DriverMatchKey,
             s.DriverChosenManually,
-            s.DriverChosenBy);
+            s.DriverChosenBy,
+            s.FirmwareVersion,
+            s.FirmwareInstalledVersion);
     }
 
     /// <summary>
@@ -259,7 +261,9 @@ public sealed partial class SessionQueryFunctions
         DriverSkipReason? DriverSkipReason,
         string? DriverMatchKey,
         bool DriverChosenManually,
-        string? DriverChosenBy);
+        string? DriverChosenBy,
+        string? FirmwareVersion,
+        string? FirmwareInstalledVersion);
 
     /// <summary>The setup profile version pinned on a session.</summary>
     private sealed record SetupProfilePin(Guid ProfileId, string Name, int Version);

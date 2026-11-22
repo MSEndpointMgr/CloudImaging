@@ -72,10 +72,12 @@ public sealed class DriverComponentHistoryTests
         rows[0].GetProperty("firstSet").GetInt32().Should().Be(3);
         rows[0].GetProperty("lastSet").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
         rows[0].GetProperty("to").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
-        rows[0].GetProperty("changedBy").GetString().Should().Be("Sync");
+        rows[0].GetProperty("change").GetString().Should().Be("Sync");
+        rows[0].GetProperty("changedBy").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
         rows[1].GetProperty("firstSet").GetInt32().Should().Be(2);
         rows[1].GetProperty("lastSet").GetInt32().Should().Be(2);
-        rows[2].GetProperty("changedBy").GetString().Should().Be($"Onboarding by {Upn}");
+        rows[2].GetProperty("change").GetString().Should().Be("Onboarding");
+        rows[2].GetProperty("changedBy").GetString().Should().Be(Upn);
         rows.Select(r => r.GetProperty("status").GetString()).Should().Equal("Stored", "Stored", "DownloadsOnRollBack");
         rows[2].GetProperty("sizeBytes").GetInt64().Should().Be(DriverSyncHarness.Content("sp200", "1.0").Length);
     }

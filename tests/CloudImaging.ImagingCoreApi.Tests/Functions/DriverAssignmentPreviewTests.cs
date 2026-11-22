@@ -79,6 +79,25 @@ public sealed class DriverAssignmentPreviewTests
     }
 
     [Fact]
+    public async Task AModelWhoseOnlySetIsInTesting_IsNamedOnItsDevices_AndOfferedAsTesting()
+    {
+        await _h.EnableAsync();
+        await _h.Bed.Store.SyncSettings.UpsertAsync(DriverStore.SettingsPartition, DriverStore.SettingsRow, (await _h.Bed.Store.GetSyncSettingsAsync()).Value with { WaitForTesting = true });
+        var model = await _h.OnboardAsync("8C26", "HP EliteBook 840 G11");
+        await _h.RunAsync();
+        var session = await AddDeviceAsync("8C26");
+
+        var json = await (await PreviewAsync(_image.ImageId, session.SessionId)).ReadJsonAsync();
+
+        var option = json.GetProperty("options").EnumerateArray().Single();
+        option.GetProperty("testing").GetBoolean().Should().BeTrue();
+        var preview = json.GetProperty("sessions").EnumerateArray().Single();
+        preview.GetProperty("matchedModelId").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        preview.GetProperty("skipReason").GetString().Should().Be("NoDriverSet");
+        preview.GetProperty("testingModelId").GetGuid().Should().Be(model.ModelId);
+    }
+
+    [Fact]
     public async Task AnImageWithoutARelease_HasNoOptions_AndEverySessionSaysWhy()
     {
         await _h.EnableAsync();

@@ -77,6 +77,10 @@ function RunItems({ runId }: { runId: string }): React.ReactElement {
 /** The History card: one row per run of the last 90 days, expandable to its items. */
 export function SyncHistory({ runs }: { runs: DriverSyncRun[] | null }): React.ReactElement {
   const [open, setOpen] = useState<string | null>(null);
+  const hasItems = (run: DriverSyncRun) => Object.values(run.counts).some(n => (n ?? 0) > 0);
+  // Without a run to expand, an empty chevron column would only push every column to the right.
+  const expandable = runs?.some(hasItems) ?? false;
+  const columns = expandable ? 4 : 3;
   return (
     <DriverCard title="History" description="Every sync and check for updates in the last 90 days.">
       <div className="px-5 py-4">
@@ -84,7 +88,7 @@ export function SyncHistory({ runs }: { runs: DriverSyncRun[] | null }): React.R
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>
+                {expandable && <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>}
                 <TableHead className="w-[168px]">Started</TableHead>
                 <TableHead className="w-[150px]">Result</TableHead>
                 <TableHead>Details</TableHead>
@@ -92,40 +96,41 @@ export function SyncHistory({ runs }: { runs: DriverSyncRun[] | null }): React.R
             </TableHeader>
             <TableBody>
               {runs === null ? (
-                <TableSkeletonRows columns={4} rows={3} />
+                <TableSkeletonRows columns={3} rows={3} />
               ) : runs.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={4} className="p-0">
+                  <TableCell colSpan={columns} className="p-0">
                     <EmptyState icon={History} title="No syncs yet" description="Runs appear here when the schedule, Sync now or Check for updates starts one." />
                   </TableCell>
                 </TableRow>
               ) : runs.map(run => {
-                const hasItems = Object.values(run.counts).some(n => (n ?? 0) > 0);
                 const expanded = open === run.runId;
                 const summary = runSummary(run);
                 return (
                   <Fragment key={run.runId}>
                     <TableRow>
-                      <TableCell>
-                        {hasItems && (
-                          <button
-                            type="button"
-                            aria-expanded={expanded}
-                            aria-label={`${expanded ? 'Hide' : 'Show'} the changes of the run started ${formatTimestamp(run.startedAt)}`}
-                            className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                            onClick={() => setOpen(expanded ? null : run.runId)}
-                          >
-                            {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                          </button>
-                        )}
-                      </TableCell>
+                      {expandable && (
+                        <TableCell>
+                          {hasItems(run) && (
+                            <button
+                              type="button"
+                              aria-expanded={expanded}
+                              aria-label={`${expanded ? 'Hide' : 'Show'} the changes of the run started ${formatTimestamp(run.startedAt)}`}
+                              className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              onClick={() => setOpen(expanded ? null : run.runId)}
+                            >
+                              {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                            </button>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
                       <TableCell><Badge variant={RESULT_VARIANT[run.result]}>{RESULT_LABELS[run.result]}</Badge></TableCell>
                       <TableCell className="truncate" title={summary}>{summary}</TableCell>
                     </TableRow>
                     {expanded && (
                       <TableRow>
-                        <TableCell colSpan={4} className="bg-muted/30 p-0"><RunItems runId={run.runId} /></TableCell>
+                        <TableCell colSpan={columns} className="bg-muted/30 p-0"><RunItems runId={run.runId} /></TableCell>
                       </TableRow>
                     )}
                   </Fragment>

@@ -5,6 +5,7 @@ using CloudImaging.Contracts.Models;
 using CloudImaging.ImagingCoreApi.Domain;
 using CloudImaging.ImagingCoreApi.Repositories;
 using CloudImaging.ImagingCoreApi.Services;
+using CloudImaging.ImagingCoreApi.Services.Drivers;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
@@ -35,6 +36,7 @@ public sealed partial class CreateSessionFunction
     private readonly PartitioningSchemeRepository _partitioningSchemeRepo;
     private readonly SessionHistoryRepository _historyRepo;
     private readonly PreFlightOverrideRepository _overrideRepo;
+    private readonly DriverFirmwareService _firmware;
     private readonly IConfiguration _config;
     private readonly ILogger<CreateSessionFunction> _logger;
 
@@ -44,6 +46,7 @@ public sealed partial class CreateSessionFunction
     /// <param name="partitioningSchemeRepo">Partitioning scheme repository.</param>
     /// <param name="historyRepo">Session history repository.</param>
     /// <param name="overrideRepo">Pre-flight override repository.</param>
+    /// <param name="firmware">BIOS updates, decided at registration.</param>
     /// <param name="config">Application configuration.</param>
     /// <param name="logger">Logger for this function.</param>
     public CreateSessionFunction(
@@ -53,6 +56,7 @@ public sealed partial class CreateSessionFunction
         PartitioningSchemeRepository partitioningSchemeRepo,
         SessionHistoryRepository historyRepo,
         PreFlightOverrideRepository overrideRepo,
+        DriverFirmwareService firmware,
         IConfiguration config,
         ILogger<CreateSessionFunction> logger)
     {
@@ -62,6 +66,7 @@ public sealed partial class CreateSessionFunction
         _partitioningSchemeRepo = partitioningSchemeRepo;
         _historyRepo = historyRepo;
         _overrideRepo = overrideRepo;
+        _firmware = firmware;
         _config = config;
         _logger = logger;
     }
@@ -98,10 +103,14 @@ public sealed partial class CreateSessionFunction
         // Create session with passcode
         var (session, plainPasscode) = DeviceSessionFactory.CreateNew(payload);
 
+        // The BIOS is decided now, not at assignment: AC power is checked before imaging can start,
+        // and Start Imaging tells the operator which devices update.
+        var firmwarePin = await PinFirmwareAsync(payload, session.SessionId, context.CancellationToken);
+
         // Run device pre-flight checks. Evaluated once here and stored; later policy changes never touch this session.
         var portalConfig = await _configRepo.GetAsync(context.CancellationToken);
         var preFlightResult = await _preFlight.EvaluateAsync(payload, portalConfig, context.CancellationToken);
-        var preFlightChecks = PreFlightCheckEvaluator.Evaluate(portalConfig, payload.SecurityPosture, preFlightResult);
+        var preFlightChecks = PreFlightCheckEvaluator.Evaluate(portalConfig, payload.SecurityPosture, preFlightResult, firmwarePin is not null);
         if (PreFlightCheckEvaluator.FailedChecks(preFlightChecks).Count > 0
             && await TryUseOverrideAsync(payload.SerialNumber, preFlightChecks, context.CancellationToken) is { } approvedChecks)
         {
@@ -126,7 +135,7 @@ public sealed partial class CreateSessionFunction
         // Issue device-session token if not NotAuthorized
         // (The actual token service is in DeviceGatewayApi — ImagingCoreApi returns the raw session,
         //  and DeviceGatewayApi issues the bearer token before returning to the device)
-        var finalSession = session with
+        var finalSession = (firmwarePin?.ApplyTo(session) ?? session) with
         {
             State = targetState,
             PreFlightAuthorizationResult = preFlightResult,
@@ -208,6 +217,23 @@ public sealed partial class CreateSessionFunction
         LogOverrideUsed(_logger, serialNumber, stored.Override.ApprovedBy, stored.Override.SourceSessionId);
         return approved;
     }
+
+    // A failed lookup only costs the BIOS update, never the registration.
+    private async Task<DriverFirmwarePin?> PinFirmwareAsync(DeviceRegistrationPayload payload, Guid sessionId, CancellationToken ct)
+    {
+        try
+        {
+            return await _firmware.PinAsync(payload, ct);
+        }
+        catch (Exception ex) when (ex is Azure.RequestFailedException or JsonException or InvalidOperationException)
+        {
+            LogFirmwarePinFailed(_logger, ex, sessionId);
+            return null;
+        }
+    }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The BIOS update of session {SessionId} could not be decided; the device is imaged without it.")]
+    private static partial void LogFirmwarePinFailed(ILogger logger, Exception ex, Guid sessionId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Invalid device registration payload.")]
     private static partial void LogInvalidPayload(ILogger logger, Exception ex);
