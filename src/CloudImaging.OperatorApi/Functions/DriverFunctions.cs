@@ -38,6 +38,13 @@ public sealed partial class DriverFunctions
         FunctionContext context) =>
         ForwardAsync(req, HttpMethod.Get, "catalog/models", context.CancellationToken);
 
+    /// <summary>GET drivers/windows-releases: the releases offered for OS images and models.</summary>
+    [Function("GetWindowsReleases")]
+    public Task<HttpResponseData> GetWindowsReleases(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "drivers/windows-releases")] HttpRequestData req,
+        FunctionContext context) =>
+        ForwardAsync(req, HttpMethod.Get, "windows-releases", context.CancellationToken);
+
     /// <summary>POST drivers/models/preview.</summary>
     [Function("PreviewDriverModels")]
     public Task<HttpResponseData> PreviewDriverModels(

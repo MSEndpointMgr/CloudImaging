@@ -34,15 +34,22 @@ Every version comes from the tag at build time, so **no product version is bumpe
 
 | Artifact | Stamped by | Where it shows |
 |---|---|---|
-| Client exe | `-p:Version` in `release-client.yml` | Boot image manifest, Autopilot records |
+| Client exe | `-p:Version` in `release-client.yml`; the release fails if the published exe reports another version | Client title bar and info panel, boot image manifest, Autopilot records |
 | Media Builder exe | `-p:Version` in `release-mediabuilder.yml` | Tool version recorded on every USB it prepares |
 | Media Builder MSI | `MsiProductVersion` in `release-mediabuilder.yml` | Installed programs, in-place upgrade |
 | Portal backend | `DEPLOYED_VERSION` written to `src/version.ts` | Portal update check |
 | Backend bundle | `version.txt` | `install.ps1`, `upgrade.ps1`, `publish-template-spec.ps1` |
 
+A build that is not made from a tag (a local publish, CI, a Client that Media Builder takes from
+a local folder) keeps a development placeholder instead: `0.0.0-dev` for the Client and Media
+Builder, `dev` for the portal backend. The Client then shows `dev` and the commit, for example
+`Cloud Imaging dev f715787`, so a test build never passes for a release. A test build does not
+show the next version on purpose: that version is decided when the release is cut (step 2).
+
 Placeholders that are not release versions and must stay as they are: `"version": "0.0.1"` in both
-portal `package.json` files, the `MsiProductVersion` default `0.0.1` in the `.wixproj`, and
-`contentVersion` in ARM files.
+portal `package.json` files, the `MsiProductVersion` default `0.0.1` in the `.wixproj`, the
+`0.0.0-dev` default `Version` in `CloudImaging.Client.csproj` and `CloudImaging.MediaBuilder.csproj`,
+`DEPLOYED_VERSION = 'dev'` in the portal backend's `src/version.ts`, and `contentVersion` in ARM files.
 
 What drifts is every **reference** to a version, and that is what this skill keeps consistent:
 - each stream's notes file, its minimum versions of the other streams and its `compare/` link
@@ -161,6 +168,7 @@ Re-run the check script with the confirmed versions and fix every `Fail`, then e
 | Template Spec notice missing | Add the Template Spec section to the backend notes. |
 | `main.json` not rebuilt | `az bicep build --file src/deploy/bicep/main.bicep --outfile src/deploy/bicep/main.json` |
 | Version stamping or release contract `Fail` | A workflow or a consumer of the release assets changed. Report it; fixing it is a code change the user approves. |
+| No `0.0.0-dev` default in an app project | Test builds of that app report `1.0.0` again. Report it; restoring the default is a code change the user approves. |
 
 Then read the target notes of all in-scope streams side by side; the script cannot check these:
 1. Minimum versions agree in both directions and match the Version Compatibility row.

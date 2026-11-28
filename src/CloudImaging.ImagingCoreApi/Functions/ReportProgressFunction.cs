@@ -212,6 +212,7 @@ public sealed partial class ReportProgressFunction
                 FailedStepName = failedStep?.StepName,
                 ErrorDetail = failedStep?.ErrorDetail,
                 CreatedAt = updated.CreatedAt,
+                ImagingStartedAt = allSteps.Min(s => s.StartedAt),
                 TerminalAt = updated.TerminalAt ?? DateTimeOffset.UtcNow,
             };
             await _historyRepo.CreateAsync(history, config.SessionHistoryRetentionDays, ct);

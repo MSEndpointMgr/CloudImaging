@@ -252,11 +252,30 @@ public sealed class SetupProfileIntegrationTests
         var session = await _bed.AddSessionAsync(SessionState.SessionCompleted);
         await _bed.Sessions.UpdateAsync(session with { PurgeAt = Start.AddMinutes(-1), TerminalAt = Start.AddDays(-2) });
         await _bed.Items.ReplaceAsync(session.SessionId, ImagingStepName.PrepareSetup, [new ImagingStepItem { Index = 0, Name = "a", Outcome = StepItemOutcome.Succeeded }]);
-        var lifecycle = new DeviceSessionLifecycleService(_bed.Sessions, new SessionHistoryRepository(_bed.Tables), _bed.Config, new PreFlightOverrideRepository(_bed.Tables), _bed.Items, NullLogger<DeviceSessionLifecycleService>.Instance);
+        var lifecycle = new DeviceSessionLifecycleService(_bed.Sessions, new SessionHistoryRepository(_bed.Tables), _bed.Config, new PreFlightOverrideRepository(_bed.Tables), _bed.Items, _bed.Steps, NullLogger<DeviceSessionLifecycleService>.Instance);
 
         await lifecycle.PurgeTerminalSessionsAsync();
 
         (await _bed.Items.ListAsync(session.SessionId, ImagingStepName.PrepareSetup)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task InactivityEnd_RecordsWhenImagingStarted_AndASessionThatNeverImagedHasNone()
+    {
+        var imaging = await _bed.AddSessionAsync(SessionState.SessionInProgress);
+        var waiting = await _bed.AddSessionAsync(SessionState.SessionAllowed);
+        var started = DateTimeOffset.UtcNow.AddHours(-4);
+        await _bed.Steps.UpsertAsync(imaging.SessionId, new ImagingStep { StepName = ImagingStepName.FormatDisk, Status = ImagingStepStatus.Completed, StartedAt = started });
+        await _bed.Steps.UpsertAsync(imaging.SessionId, new ImagingStep { StepName = ImagingStepName.ApplyImage, Status = ImagingStepStatus.InProgress, StartedAt = started.AddMinutes(10) });
+        await _bed.Sessions.UpdateAsync(imaging with { LastHeartbeatAt = DateTimeOffset.UtcNow.AddHours(-3) });
+        await _bed.Sessions.UpdateAsync(waiting with { LastHeartbeatAt = DateTimeOffset.UtcNow.AddHours(-3) });
+        var lifecycle = new DeviceSessionLifecycleService(_bed.Sessions, new SessionHistoryRepository(_bed.Tables), _bed.Config, new PreFlightOverrideRepository(_bed.Tables), _bed.Items, _bed.Steps, NullLogger<DeviceSessionLifecycleService>.Instance);
+
+        (await lifecycle.ExpireInactiveSessionsAsync()).Should().Be(2);
+
+        var history = await new SessionHistoryRepository(_bed.Tables).QueryAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue).ToListAsync();
+        history.Single(h => h.SessionId == imaging.SessionId).Should().Match<SessionHistoryRecord>(h => h.FinalState == SessionState.SessionFailed && h.ImagingStartedAt == started);
+        history.Single(h => h.SessionId == waiting.SessionId).Should().Match<SessionHistoryRecord>(h => h.FinalState == SessionState.SessionExpired && h.ImagingStartedAt == null);
     }
 
     [Fact]

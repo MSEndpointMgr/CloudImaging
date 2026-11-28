@@ -10,6 +10,7 @@
     - docs that reference unreleased tags, or an upgrade guide without a compatibility row for the new backend version
     - a missing Template Spec notice when Bicep or the deployment wizard changed
     - release workflows that no longer stamp the tag into an artifact, or no longer produce the alias releases and asset names the products download
+    - a Client or Media Builder project that no longer gives builds outside the release workflows the 0.0.0-dev version
     Nothing is changed: the script only reads the repository and the tags on origin.
 
 .PARAMETER BackendVersion
@@ -35,12 +36,13 @@
     Author:      MSEndpointMgr
     Contact:     @MSEndpointMgr
     Created:     2026-11-14
-    Updated:     2026-11-14
+    Updated:     2026-11-23
 
     Version history:
     1.0.0 - (2026-11-14) Script created
     1.0.1 - (2026-11-14) Moved into the cloud-imaging-release skill; an unstamped Media Builder executable is now a Fail
     1.0.2 - (2026-11-14) Default target is the next unreleased draft, not the newest
+    1.0.3 - (2026-11-23) Warns when the Client or Media Builder project loses its 0.0.0-dev default version, or the Client release stops checking the published exe's version
 #>
 [CmdletBinding()]
 param (
@@ -107,6 +109,12 @@ Begin {
         [PSCustomObject]@{ File = ".github/workflows/release-iac.yml"; Text = "mse-ci-iac-latest"; Why = "the alias the portal update check reads" },
         [PSCustomObject]@{ File = ".github/workflows/release-iac.yml"; Text = "(latest: "; Why = "the alias title the portal parses the available version from" },
         [PSCustomObject]@{ File = "src/cloud-imaging-portal/server/src/services/updateCheck.ts"; Text = "mse-ci-iac-latest"; Why = "the alias the workflow moves" }
+    )
+
+    # Apps that report their own version. Built outside a release workflow they must not claim a release.
+    $AppProjects = @(
+        [PSCustomObject]@{ Stream = "Client"; Project = "src/CloudImaging.Client/CloudImaging.Client.csproj" },
+        [PSCustomObject]@{ Stream = "Media Builder"; Project = "src/CloudImaging.MediaBuilder/CloudImaging.MediaBuilder.csproj" }
     )
 
     function Add-Finding {
@@ -376,6 +384,12 @@ Process {
         else {
             Add-Finding -Status Fail -Stream "Client" -Area "Version stamping" -Detail "release-client.yml no longer passes -p:Version to the Client publish, so boot media and Autopilot records report the default version."
         }
+        if ($ClientWorkflow -match 'VersionInfo\.ProductVersion') {
+            Add-Finding -Status OK -Stream "Client" -Area "Version stamping" -Detail "The release fails if the published Client exe reports a version other than the tag."
+        }
+        else {
+            Add-Finding -Status Warning -Stream "Client" -Area "Version stamping" -Detail "release-client.yml no longer checks the published exe's version against the tag, so a stamping mistake would reach the Client title bar unnoticed."
+        }
 
         if ($MediaBuilderWorkflow -match 'MsiProductVersion=') {
             Add-Finding -Status OK -Stream "Media Builder" -Area "Version stamping" -Detail "MSI ProductVersion follows the tag."
@@ -388,7 +402,17 @@ Process {
             Add-Finding -Status OK -Stream "Media Builder" -Area "Version stamping" -Detail "Media Builder executable gets the tag version (-p:Version)."
         }
         else {
-            Add-Finding -Status Fail -Stream "Media Builder" -Area "Version stamping" -Detail "release-mediabuilder.yml no longer passes -p:Version to the Media Builder publish, so the executable and the tool version it records on every USB it prepares fall back to 1.0.0.0."
+            Add-Finding -Status Fail -Stream "Media Builder" -Area "Version stamping" -Detail "release-mediabuilder.yml no longer passes -p:Version to the Media Builder publish, so the executable and the tool version it records on every USB it prepares fall back to the development version."
+        }
+
+        # The SDK default 1.0.0 is also a release number, so an unstamped build must carry the placeholder.
+        foreach ($App in $AppProjects) {
+            if (Select-String -Path (Join-Path -Path $RepositoryRoot -ChildPath $App.Project) -Pattern ">0.0.0-dev</Version>" -SimpleMatch -Quiet) {
+                Add-Finding -Status OK -Stream $App.Stream -Area "Version stamping" -Detail "A build not made from a tag reports 0.0.0-dev."
+            }
+            else {
+                Add-Finding -Status Warning -Stream $App.Stream -Area "Version stamping" -Detail "$($App.Project) has no 0.0.0-dev default Version, so a test build reports 1.0.0 and passes for a release."
+            }
         }
 
         if ($BackendWorkflow -match 'DEPLOYED_VERSION' -and $BackendWorkflow -match 'version\.txt') {

@@ -1,21 +1,25 @@
 import React, { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, ChevronRight, CircleCheck, CircleDashed, CircleX, FileDown, RefreshCw } from 'lucide-react';
+import { CircleCheck, CircleDashed, CircleX, FileDown, RefreshCw } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card.tsx';
 import { DateRangeSelect } from '../components/ui/date-range-select.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { MultiSelect } from '../components/ui/multi-select.tsx';
 import { SearchInput } from '../components/ui/search-input.tsx';
-import { Select } from '../components/ui/select.tsx';
 import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
+import { RowToggle, RowToggleHead } from '../components/ui/row-toggle.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
 import { ReportFilterBar, type AppliedFilter } from '../components/ReportFilterBar.tsx';
+import { ReportLoadError } from '../components/ReportLoadError.tsx';
+import { ReportSummary } from '../components/ReportSummary.tsx';
 import { SyncOutcome } from '../components/drivers/SyncOutcome.tsx';
 import { useDebouncedValue } from '../hooks/useDebouncedValue.ts';
 import { downloadBlob, toCsv } from '../lib/csv.ts';
 import { resolvePreset, type DateRange } from '../lib/dateRange.ts';
+import { SUMMARY_COLORS, keepTogether, plural } from '../lib/reportSummary.ts';
 import { formatTimestamp } from '../lib/utils.ts';
 import {
   RESULT_LABELS, TRIGGER_LABELS, countsSummary, durationLabel, fetchSyncReport, formatSize, outcomeLabel, releaseLabel, vendorLabel,
@@ -25,14 +29,12 @@ import {
   changesPerWeek, filterSyncReport, groupItems, itemCounts, recurringFailures, syncReportTotals, unreadCatalogs, type SyncTriggerFilter,
 } from '../lib/driverSyncReport.ts';
 
-const VENDOR_FILTERS: { value: '' | DriverVendor; label: string }[] = [
-  { value: '', label: 'All vendors' },
+const VENDOR_OPTIONS: { value: DriverVendor; label: string }[] = [
   { value: 'Hp', label: 'HP' },
   { value: 'Dell', label: 'Dell' },
 ];
 
-const TRIGGER_FILTERS: { value: SyncTriggerFilter; label: string }[] = [
-  { value: '', label: 'All triggers' },
+const TRIGGER_OPTIONS: { value: SyncTriggerFilter; label: string }[] = [
   { value: 'Scheduled', label: 'Schedule' },
   { value: 'Manual', label: 'Sync now' },
   { value: 'Check', label: 'Check for updates' },
@@ -51,10 +53,6 @@ const SERIES = [
   { key: 'withdrawn', label: 'Withdrawn', className: 'text-slate-500', swatch: 'bg-slate-500' },
   { key: 'failed', label: 'Failed', className: 'text-red-500', swatch: 'bg-red-500' },
 ] as const;
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
 
 function version(item: DriverSyncRunItem): string {
   if (item.oldVersion && item.newVersion) return `${item.oldVersion} to ${item.newVersion}`;
@@ -188,8 +186,8 @@ export default function ReportDriverSyncPage(): React.ReactElement {
   const [attempt, setAttempt] = useState(0);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
-  const [vendor, setVendor] = useState<'' | DriverVendor>('');
-  const [trigger, setTrigger] = useState<SyncTriggerFilter>('');
+  const [vendors, setVendors] = useState<DriverVendor[]>([]);
+  const [triggers, setTriggers] = useState<SyncTriggerFilter[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const { from, to } = range;
 
@@ -204,7 +202,7 @@ export default function ReportDriverSyncPage(): React.ReactElement {
   }, [from, to, attempt]);
 
   const retry = useCallback(() => setAttempt(n => n + 1), []);
-  const filtered = useMemo(() => filterSyncReport(report ?? [], { search: debouncedSearch, vendor, trigger }), [report, debouncedSearch, vendor, trigger]);
+  const filtered = useMemo(() => filterSyncReport(report ?? [], { search: debouncedSearch, vendors, triggers }), [report, debouncedSearch, vendors, triggers]);
   const totals = useMemo(() => syncReportTotals(filtered), [filtered]);
   const weeks = useMemo(() => changesPerWeek(filtered, from, to), [filtered, from, to]);
   const failures = useMemo(() => recurringFailures(filtered), [filtered]);
@@ -212,10 +210,15 @@ export default function ReportDriverSyncPage(): React.ReactElement {
   const applied = useMemo<AppliedFilter[]>(() => {
     const chips: AppliedFilter[] = [];
     if (search) chips.push({ key: 'search', label: `Search: ${search}`, onClear: () => setSearch('') });
-    if (vendor) chips.push({ key: 'vendor', label: `Vendor: ${vendorLabel(vendor)}`, onClear: () => setVendor('') });
-    if (trigger) chips.push({ key: 'trigger', label: `Trigger: ${TRIGGER_FILTERS.find(t => t.value === trigger)?.label ?? trigger}`, onClear: () => setTrigger('') });
+    for (const value of vendors) {
+      chips.push({ key: `vendor:${value}`, label: `Vendor: ${vendorLabel(value)}`, onClear: () => setVendors(list => list.filter(v => v !== value)) });
+    }
+    for (const value of triggers) {
+      const label = TRIGGER_OPTIONS.find(t => t.value === value)?.label ?? value;
+      chips.push({ key: `trigger:${value}`, label: `Trigger: ${label}`, onClear: () => setTriggers(list => list.filter(v => v !== value)) });
+    }
     return chips;
-  }, [search, vendor, trigger]);
+  }, [search, vendors, triggers]);
 
   const exportCsv = (): void => {
     const rows = filtered.flatMap(({ run, items }) => items.map(item => ({ run, item })));
@@ -238,20 +241,12 @@ export default function ReportDriverSyncPage(): React.ReactElement {
   };
 
   const loading = report === null;
-  const completedShare = totals.finished === 0 ? null : Math.round((totals.completed / totals.finished) * 100);
+  const running = totals.runs - totals.finished;
   const failureParts = [
     totals.failedComponents > 0 ? plural(totals.failedComponents, 'component', 'components') : null,
     totals.catalogFailures > 0 ? plural(totals.catalogFailures, 'vendor catalog', 'vendor catalogs') : null,
     totals.otherFailures > 0 ? plural(totals.otherFailures, 'synchronization', 'synchronizations') : null,
-  ].filter(Boolean);
-  const tiles = [
-    { label: 'Synchronizations', value: String(totals.runs), sub: `${totals.scheduled} scheduled, ${totals.byHand} started by hand` },
-    { label: 'Completed', value: completedShare === null ? 'None' : `${completedShare}%`, sub: `${totals.partlyFailed} partly failed, ${totals.failed} failed` },
-    { label: 'Average duration', value: totals.averageMs === null ? 'None' : durationLabel(totals.averageMs), sub: totals.longestMs === null ? 'No finished synchronizations' : `Longest ${durationLabel(totals.longestMs)}` },
-    { label: 'Components changed', value: String(totals.changed), sub: `${totals.updated} updated, ${totals.fresh} new, ${totals.withdrawn} withdrawn` },
-    { label: 'Downloaded', value: formatSize(totals.downloadedBytes), sub: plural(totals.downloadedComponents, 'component', 'components') },
-    { label: 'Failures', value: String(totals.componentFailures + totals.catalogFailures + totals.otherFailures), sub: failureParts.length > 0 ? failureParts.join(', ') : 'None' },
-  ];
+  ].filter((part): part is string => part !== null);
 
   return (
     <div className="space-y-6">
@@ -265,37 +260,72 @@ export default function ReportDriverSyncPage(): React.ReactElement {
 
       <ReportFilterBar
         applied={applied}
-        onClearAll={() => { setSearch(''); setVendor(''); setTrigger(''); }}
+        onClearAll={() => { setSearch(''); setVendors([]); setTriggers([]); }}
         actions={<Button variant="outline" onClick={exportCsv} disabled={!filtered.some(entry => entry.items.length > 0)}><FileDown />Export CSV</Button>}
       >
         <SearchInput id="driver-sync-report-search" value={search} onValueChange={setSearch} placeholder="Model or component" wrapperClassName="w-80" />
         <DateRangeSelect id="driver-sync-report-range" aria-label="Started between" value={range} onValueChange={setRange} wrapperClassName="w-44" />
-        <Select id="driver-sync-report-vendor" aria-label="Vendor" value={vendor} onValueChange={v => setVendor(v as '' | DriverVendor)} options={VENDOR_FILTERS} wrapperClassName="w-40" />
-        <Select id="driver-sync-report-trigger" aria-label="Trigger" value={trigger} onValueChange={v => setTrigger(v as SyncTriggerFilter)} options={TRIGGER_FILTERS} wrapperClassName="w-44" />
+        <MultiSelect
+          id="driver-sync-report-vendor"
+          aria-label="Vendors"
+          values={vendors}
+          onValuesChange={values => setVendors(values as DriverVendor[])}
+          options={VENDOR_OPTIONS}
+          placeholder="All vendors"
+          countLabel={n => `${n} vendors`}
+          wrapperClassName="w-40"
+        />
+        <MultiSelect
+          id="driver-sync-report-trigger"
+          aria-label="Triggers"
+          values={triggers}
+          onValuesChange={values => setTriggers(values as SyncTriggerFilter[])}
+          options={TRIGGER_OPTIONS}
+          placeholder="All triggers"
+          countLabel={n => `${n} triggers`}
+          wrapperClassName="w-44"
+        />
       </ReportFilterBar>
 
       {loadError ? (
-        <div role="alert" className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
-          <div className="flex-1 space-y-1">
-            <p className="text-sm font-medium">Could not load the synchronizations</p>
-            <p className="text-sm text-muted-foreground">{loadError}</p>
-          </div>
-          <Button variant="outline" onClick={retry}><RefreshCw />Try again</Button>
-        </div>
+        <ReportLoadError title="Could not load the synchronizations" detail={loadError} onRetry={retry} />
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {tiles.map(tile => (
-              <Card key={tile.label}>
-                <CardContent className="p-4">
-                  <p className="text-xs text-muted-foreground">{tile.label}</p>
-                  <div className="mt-1 text-2xl font-semibold tabular-nums">{loading ? <Skeleton className="h-8 w-12" /> : tile.value}</div>
-                  <p className="mt-1 truncate text-xs text-muted-foreground" title={tile.sub}>{loading ? '' : tile.sub}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <ReportSummary
+            loading={loading}
+            total={totals.runs}
+            noun={['synchronization', 'synchronizations']}
+            aside={`${totals.scheduled} scheduled, ${totals.byHand} started by hand`}
+            parts={[
+              { key: 'Completed', label: RESULT_LABELS.Completed, count: totals.completed, colorClassName: SUMMARY_COLORS.success },
+              { key: 'PartlyFailed', label: RESULT_LABELS.PartlyFailed, count: totals.partlyFailed, colorClassName: SUMMARY_COLORS.warning },
+              { key: 'Failed', label: RESULT_LABELS.Failed, count: totals.failed, colorClassName: SUMMARY_COLORS.negative },
+              ...(running > 0 ? [{ key: 'Running', label: RESULT_LABELS.Running, count: running, colorClassName: SUMMARY_COLORS.info }] : []),
+            ]}
+            emptyText={applied.length > 0 ? 'No synchronizations match these filters.' : 'No synchronizations in this period.'}
+            figures={[
+              {
+                label: 'Average duration',
+                value: totals.averageMs === null ? null : durationLabel(totals.averageMs),
+                detail: totals.longestMs === null ? 'No finished synchronizations' : `Longest ${durationLabel(totals.longestMs)}`,
+              },
+              {
+                label: 'Components changed',
+                value: String(totals.changed),
+                detail: [`${totals.updated} updated`, `${totals.fresh} new`, `${totals.withdrawn} withdrawn`].map(keepTogether).join(', '),
+              },
+              {
+                label: 'Downloaded',
+                value: formatSize(totals.downloadedBytes),
+                detail: plural(totals.downloadedComponents, 'component', 'components'),
+              },
+              {
+                label: 'Failures',
+                value: String(totals.componentFailures + totals.catalogFailures + totals.otherFailures),
+                detail: failureParts.length > 0 ? failureParts.map(keepTogether).join(', ') : 'None',
+              },
+            ]}
+          />
 
           <Card>
             <CardHeader className="flex-row items-center gap-4 space-y-0">
@@ -340,7 +370,7 @@ export default function ReportDriverSyncPage(): React.ReactElement {
                 <Table className="table-fixed">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[48px]"><span className="sr-only">Details</span></TableHead>
+                      <RowToggleHead />
                       <TableHead className="w-[150px]">Started</TableHead>
                       <TableHead className="w-[170px]">Trigger</TableHead>
                       <TableHead className="w-[22%]">Started by</TableHead>
@@ -370,15 +400,11 @@ export default function ReportDriverSyncPage(): React.ReactElement {
                         <Fragment key={run.runId}>
                           <TableRow>
                             <TableCell className="pr-0">
-                              <button
-                                type="button"
-                                aria-expanded={expanded}
-                                aria-label={`${expanded ? 'Hide' : 'Show'} the details of the synchronization started ${formatTimestamp(run.startedAt)}`}
-                                className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                onClick={() => setOpen(expanded ? null : run.runId)}
-                              >
-                                {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                              </button>
+                              <RowToggle
+                                expanded={expanded}
+                                label={`${expanded ? 'Hide' : 'Show'} the details of the synchronization started ${formatTimestamp(run.startedAt)}`}
+                                onToggle={() => setOpen(expanded ? null : run.runId)}
+                              />
                             </TableCell>
                             <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
                             <TableCell className="truncate">{TRIGGER_LABELS[run.trigger]}</TableCell>

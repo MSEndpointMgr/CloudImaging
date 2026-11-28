@@ -38,8 +38,9 @@ muted "Last checked 02:00 today" (last run start from `GET /sync/settings`), "Ch
 (`outline`, `RefreshCw`; starts the components-only run of route 45; disabled while a run is active or
 until `syncNowAvailableAt` (shared with Sync now), with the tooltip "Checks every onboarded model for
 new component versions. Available again at 03:00."; on success a toast "Checking all models for updates.") and "Onboard
-model" (`default`, `Plus`). Columns and widths: Model 24% (name, match keys below in `text-xs`
-muted), Vendor 7%, Windows releases 13%, Included 9%, Skipped 9%, Size 9% (info icon: "The most
+model" (`default`, `Plus`). Columns and widths: Model 24% (name), Baseboard / SKU (as wide as its
+content up to 160 px; a longer list of Dell SKUs is cut off, with the full list in a tooltip), Vendor 7%,
+Windows releases 13%, Included 9%, Skipped 9%, Size 9% (info icon: "The most
 one device downloads. Devices without some hardware can download less."), Status 25% (icon and label,
 only when something needs attention or is in progress: `CircleDashed` muted "Draft",
 `Download` blue "Downloading 12 of 33",
@@ -78,10 +79,12 @@ until `checkAvailableAt` with the tooltip "Available at 14:32"; on success a toa
 every 3 seconds; when it ends, the page and the Firmware tab are read again, so new components,
 versions and BIOS updates show without a reload, and a toast "Check for updates finished." (or
 "The check for updates failed.") carries the run summary. Whenever a run that blocked the check
-ends, a scheduled sync included, the Firmware tab is read again with the page), "Add custom component" (`Plus`), "Roll
-back driver set" (`Undo2`; tooltip naming the change, "Devices get driver set 6 instead of 7 from
-their next deployment"; disabled without a previous set with the tooltip "No previous driver set
-to roll back to") and "Remove model" (`Trash2`). No overflow menu. No set version or build time
+ends, a scheduled sync included, the Firmware tab is read again with the page), then the More
+actions menu (`outline` icon button, `MoreHorizontal`). Its entries are an icon and a one-line
+label each, and the menu is as wide as its longest entry: "Add custom component" (`Plus`),
+"Windows releases" (`Monitor`), "Roll back driver set" (`Undo2`; disabled without a previous set
+with the tooltip "No previous driver set to roll back to.") and "Remove model" (`Trash2`,
+destructive). On the Firmware tab the menu holds only "Remove model". No set version or build time
 (they are on the Storage tab). Banners under the header (icon vertically centred, one per state):
 - Draft (`CircleDashed`, shown alone): "Onboarding is not complete. Nothing is downloaded and
   devices of this model get no drivers until you complete it." with "Choose what each component
@@ -108,8 +111,8 @@ Tiles: Offline, Offline + Specialize, Specialize, Skip, Size (same info icon as 
 Toolbar: search, Windows release `Select` (230 px, "Windows 11, version 24H2"; scopes the tiles and
 the table and sets `?release=`), action filter, category filter, "4 updated by today's sync" toggle.
 
-Component table (fixed widths except Component): chevron 64 px (room for a status icon beside the
-chevron); Component (name; ID and category
+Component table (fixed widths except Component): chevron 56 px (room for a status icon beside the
+chevron, with the same space on both sides of the icon); Component (name; ID and category
 below; amber "New" badge while waiting; muted "Withdrawn" badge); Version 120 px; Last updated
 110 px; Action 176 px (`Select` with the allowed actions; locked: disabled with `Lock` icon and
 tooltip "The vendor's data only allows Skip for this component."; replaced: disabled at Skip);
@@ -127,7 +130,11 @@ driver set 54", with the row tinted blue and a 2 px bar moving along its bottom 
 reduced motion; `progressbar` "Downloading <name>"); `CircleX` red "Download failed. The next sync
 tries again.", the reason as the icon's tooltip. The Firmware tab's BIOS row does the same with
 "Downloading from HP. Devices get it once it is verified.", and its Size field reads "Downloading"
-or "Download failed" as plain text.
+or "Download failed" as plain text. While the page is open, a download that ends gets a toast: "Driver
+set 54 for Windows 11, version 24H2 is ready." ("... is in testing." while new sets wait in testing),
+adding "1 component could not be downloaded; the next sync tries again."; "System BIOS 01.02.04 is
+downloaded." with "Devices of this model with an older BIOS get it from their next deployment.", or
+an error toast "System BIOS 01.02.04 could not be downloaded." with the reason.
 Footer: "31 of 40 components". Waiting rows have an "Approve" button (`outline`, `sm`) in the
 Source column. Withdrawn rows have "Remove" in the expanded details.
 
@@ -264,9 +271,12 @@ Model, Windows, Driver set, Components ("4 new, 27 already stored"), Size, Statu
 
 Tiles: "Total used" (info icon: "Components shared by several models are stored once, so the
 total is less than the sum of the models."), one per vendor. Then a card with one setting row:
-"Previous versions", help "Earlier versions of each component kept in storage, so rolling back to
-one is instant and does not depend on the vendor. Older versions are downloaded again from the
-vendor when someone rolls back to them. Uses 1.4 GB now." (`previousVersionsBytes`: files kept only because of this setting), `Select`
+"Previous versions", help in three lines: "How many older versions of each driver and BIOS stay in
+storage after a sync replaces them with a newer one. They use 1.4 GB now." (`previousVersionsBytes`:
+files kept only because of this setting), "Rolling a component back to a kept version takes effect
+at once. Any other older version is first downloaded again from the vendor, if the vendor still
+publishes it." and "A lower number frees that space after the next sync. A higher number keeps more
+from now on, but does not bring back versions already removed.", `Select`
 240 px "Keep none", "Keep 1 previous version" (default), "Keep 2 previous versions", "Keep 3
 previous versions", calling route 46 on change with a toast; disabled for read-only users. Table: chevron, Model, Vendor,
 Windows releases, Driver sets ("2 current, 2 roll-back", adding ", 1 in testing" when any), Size. Expanding a model loads route 31
@@ -293,7 +303,9 @@ staged for Specialize", "2 skipped, no matching hardware", "1 failed"), failures
 details. Item kind label "Driver", outcome texts "Installed", "Installed, app staged", "Staged for
 Specialize", "Skipped: no matching hardware", "Failed: <reason>". Completed with warnings uses the
 amber marker. When `driverChosenManually` is true, a muted line under the driver set reads
-"Chosen manually by <upn>". The item list shows Driver (name, with "Custom", "Rolled back" or the
+"Chosen manually by <upn>". When `driverFallbackFrom` is set (FR-108), a muted line under the
+driver set reads "This model has no driver set for Windows 11 26H2 yet, so its Windows 11 25H2 set
+is used." The item list shows Driver (name, with "Custom", "Rolled back" or the
 component ID below), Version (`componentVersion`) and Outcome (icon and label), so the deployment
 shows what it installed after its driver set is gone. When any item has `fromUsbCache`, the
 summary adds "24 from the USB drive, 2 downloaded" and those items show "From the USB drive" under
@@ -316,12 +328,17 @@ Devices card of `pages/SessionsPage.tsx`; the logic goes in a new
 - **Cell states**:
   - No OS image selected: muted "Choose an OS image first".
   - Image without a release: muted "The OS image has no Windows release".
-  - Matched: `Select` size `sm` with the model's display name.
+  - Matched: `Select` size `sm` with the model's display name. When the matched option gives an
+    earlier release's set (`release` set, FR-108) its label names that release, "HP EliteBook 840
+    G11 (25H2 set)", and an `Info` icon (muted, 16 px, `aria-label` with the text) has the
+    `Tooltip` "HP EliteBook 840 G11 has no driver set for Windows 11, version 26H2 yet, so its
+    Windows 11, version 25H2 set is used." The same applies when such an option is chosen.
   - No match: `Select` with placeholder "No match, choose a set", amber border, and a
     `CircleAlert` icon (amber, 16 px, `aria-label` with the reason) whose `Tooltip` is the reason
-    with the match key: "System ID 8D41 is not onboarded for Windows 11, version 24H2.",
-    "System SKU 0CC1 is not onboarded for Windows 11, version 24H2.", "No system ID was read
-    from this device.", "This model has no driver set for Windows 11, version 24H2 yet.",
+    with the match key: "Baseboard 8D41 is not onboarded for Windows 11, version 24H2.",
+    "System SKU 0CC1 is not onboarded for Windows 11, version 24H2.", "This device did not report
+    its baseboard.", "This model has no driver set for Windows 11, version 24H2 or an earlier
+    release.",
     for Operators and Administrators when `testingModelId` is set "The driver set of <model> for
     Windows 11, version 24H2 is in testing. Choose <model> (testing) to use it.",
     "This model is onboarded for ARM64, the OS image is x64.".

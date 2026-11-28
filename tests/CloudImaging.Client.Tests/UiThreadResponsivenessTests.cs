@@ -97,6 +97,17 @@ public sealed class UiThreadResponsivenessTests
             .Value.Should().Be("ActivityLogScrollViewer");
     }
 
+    [Fact]
+    public void ProgressView_ShowsTheAcPowerNotice_WhileImagingWaitsForTheAdapter()
+    {
+        var doc = XDocument.Load(Path.Combine(GetViewsDirectory(), "ProgressView.xaml"));
+        var binding = $"{{Binding {nameof(CloudImaging.Client.ViewModels.ProgressViewModel.IsWaitingForAcPower)},";
+
+        var notice = doc.Descendants(Presentation + "StackPanel").Single(panel => panel.Attribute("Visibility")?.Value.StartsWith(binding, StringComparison.Ordinal) == true);
+
+        notice.Descendants(Presentation + "TextBlock").Select(t => t.Attribute("Text")?.Value).Should().Contain("Connect the AC adapter");
+    }
+
     // ── Async operations must use Task, not Thread.Sleep ─────────────────────
 
     [Fact]

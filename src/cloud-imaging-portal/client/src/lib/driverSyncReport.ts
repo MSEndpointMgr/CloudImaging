@@ -2,20 +2,22 @@ import {
   type DriverSyncItemOutcome, type DriverSyncReportRun, type DriverSyncRun, type DriverSyncRunItem, type DriverSyncTrigger, type DriverVendor,
 } from './drivers.ts';
 
-/** The trigger filter: Check for updates covers every model and one model alike. */
-export type SyncTriggerFilter = '' | 'Scheduled' | 'Manual' | 'Check';
+/** A trigger the report filters by: Check for updates covers every model and one model alike. */
+export type SyncTriggerFilter = 'Scheduled' | 'Manual' | 'Check';
 
 export interface SyncReportFilter {
   search: string;
-  vendor: '' | DriverVendor;
-  trigger: SyncTriggerFilter;
+  /** Empty means every vendor. */
+  vendors: readonly DriverVendor[];
+  /** Empty means every trigger. */
+  triggers: readonly SyncTriggerFilter[];
 }
 
 const CHANGES: readonly DriverSyncItemOutcome[] = ['Updated', 'New', 'NewWaitingForApproval', 'Withdrawn', 'Removed'];
 
-function triggerMatches(trigger: DriverSyncTrigger, filter: SyncTriggerFilter): boolean {
-  if (!filter) return true;
-  return filter === 'Check' ? trigger === 'Check' || trigger === 'ModelCheck' : trigger === filter;
+function triggerMatches(trigger: DriverSyncTrigger, filters: readonly SyncTriggerFilter[]): boolean {
+  if (filters.length === 0) return true;
+  return filters.some(filter => (filter === 'Check' ? trigger === 'Check' || trigger === 'ModelCheck' : trigger === filter));
 }
 
 /** Vendors the run planned to read but never did; a running run may still read them. */
@@ -23,23 +25,24 @@ export function unreadCatalogs(run: DriverSyncRun): DriverVendor[] {
   return (run.plannedVendors ?? []).filter(planned => !run.vendors.some(v => v.vendor === planned));
 }
 
-function coversVendor({ run, items }: DriverSyncReportRun, vendor: DriverVendor): boolean {
-  return (run.plannedVendors ?? []).includes(vendor) || run.vendors.some(v => v.vendor === vendor) || items.some(i => i.vendor === vendor);
+function coversVendor({ run, items }: DriverSyncReportRun, vendors: readonly DriverVendor[]): boolean {
+  return vendors.some(vendor => (run.plannedVendors ?? []).includes(vendor) || run.vendors.some(v => v.vendor === vendor) || items.some(i => i.vendor === vendor));
 }
 
 /** Runs and their items narrowed by the filters. A search keeps only the runs with a matching model or component. */
 export function filterSyncReport(runs: readonly DriverSyncReportRun[], filter: SyncReportFilter): DriverSyncReportRun[] {
   const needle = filter.search.trim().toLowerCase();
+  const byVendor = filter.vendors.length > 0;
   const result: DriverSyncReportRun[] = [];
   for (const entry of runs) {
-    if (!triggerMatches(entry.run.trigger, filter.trigger)) continue;
-    if (filter.vendor && !coversVendor(entry, filter.vendor)) continue;
+    if (!triggerMatches(entry.run.trigger, filter.triggers)) continue;
+    if (byVendor && !coversVendor(entry, filter.vendors)) continue;
     const items = entry.items.filter(item =>
-      (!filter.vendor || !item.vendor || item.vendor === filter.vendor)
+      (!byVendor || !item.vendor || filter.vendors.includes(item.vendor))
       && (!needle || [item.modelName ?? '', item.componentName ?? ''].some(v => v.toLowerCase().includes(needle))));
     if (needle && items.length === 0) continue;
-    const run = filter.vendor
-      ? { ...entry.run, vendors: entry.run.vendors.filter(v => v.vendor === filter.vendor), plannedVendors: entry.run.plannedVendors?.filter(v => v === filter.vendor) }
+    const run = byVendor
+      ? { ...entry.run, vendors: entry.run.vendors.filter(v => filter.vendors.includes(v.vendor)), plannedVendors: entry.run.plannedVendors?.filter(v => filter.vendors.includes(v)) }
       : entry.run;
     result.push({ run, items });
   }

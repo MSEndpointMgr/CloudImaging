@@ -129,7 +129,7 @@ public sealed class DriverInstallServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData(DriverSkipReason.NoMatchingModel, "8D41", "HP", 1, "No onboarded model matches this device (system ID 8D41).")]
+    [InlineData(DriverSkipReason.NoMatchingModel, "8D41", "HP", 1, "No onboarded model matches this device (baseboard 8D41).")]
     [InlineData(DriverSkipReason.NoMatchingModel, "0CB4", "Dell Inc.", 1, "No onboarded model matches this device (system SKU 0CB4).")]
     [InlineData(DriverSkipReason.NoMatchingModel, null, "HP", 1, "No onboarded model matches this device.")]
     [InlineData(DriverSkipReason.NoWindowsRelease, "8D41", "HP", 1, "The OS image has no Windows release set.")]

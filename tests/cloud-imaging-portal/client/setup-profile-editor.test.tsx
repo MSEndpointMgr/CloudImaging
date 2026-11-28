@@ -132,6 +132,31 @@ describe('Portal frontend: setup profile editor', () => {
     expect(screen.queryByLabelText('Profile name')).toBeNull();
   });
 
+  it('shows every empty section as its table with an empty state, with Add in each card header', async () => {
+    serve({ ...profile, hasAnswerFile: false, content: { ...profile.content, answerFile: null } });
+    renderAt('/setup-profiles/p1');
+
+    expect(await screen.findByText('No registry values')).toBeTruthy();
+    expect(screen.getByText('No scripts')).toBeTruthy();
+    expect(screen.getByText('No answer file')).toBeTruthy();
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(expect.arrayContaining(['Name', 'Value', 'Data', 'Order', 'Runs', 'Timeout', 'File', 'Passes']));
+    expect(screen.getByRole('button', { name: 'Add value' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add script' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add answer file' })).toBeTruthy();
+    expect(screen.queryByLabelText('Search scripts')).toBeNull();
+  });
+
+  it('offers Add answer file only while the profile has none', async () => {
+    serve();
+    renderAt('/setup-profiles/p1');
+
+    expect(await screen.findByRole('button', { name: 'Edit the answer file' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add answer file' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the answer file' }));
+    expect(screen.getByText('No answer file')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add answer file' })).toBeTruthy();
+  });
+
   it('lets a viewer open the answer file read-only', async () => {
     serve();
     renderAt('/setup-profiles/p1/versions/8');
@@ -176,6 +201,9 @@ describe('Portal frontend: setup profile editor', () => {
       fireEvent.change(screen.getByLabelText('Search scripts'), { target: { value: 'oslo' } });
       expect(rowNames()).toEqual(['Oslo print server']);
       expect(screen.getByText('1 of 5 scripts')).toBeTruthy();
+      fireEvent.change(screen.getByLabelText('Search scripts'), { target: { value: 'printer' } });
+      expect(screen.getByText('No scripts match')).toBeTruthy();
+      expect(screen.getByText('Clear the search or choose All scripts.')).toBeTruthy();
       fireEvent.change(screen.getByLabelText('Search scripts'), { target: { value: '' } });
 
       fireEvent.click(screen.getByLabelText('Show the scripts for'));

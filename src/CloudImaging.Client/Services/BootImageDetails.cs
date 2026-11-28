@@ -30,7 +30,7 @@ public sealed record BootImageDetailRow(string Label, string Value);
 /// launch: a boot media update later rewrites the media manifest, which would then describe the
 /// next boot instead of this one.
 /// </summary>
-/// <param name="ClientVersion">Client release, without build metadata.</param>
+/// <param name="ClientVersion">Client release, or "dev" and the commit for a development build.</param>
 /// <param name="BootImageVersion">Version the portal lists, from the media manifest.</param>
 /// <param name="BuiltAt">When Media Builder built the running image, from the manifest inside it.</param>
 /// <param name="Base">Windows PE or Windows RE.</param>
@@ -48,6 +48,9 @@ public sealed record BootImageDetails(
 {
     /// <summary>Written by Media Builder to the root of the boot image.</summary>
     internal const string EmbeddedManifestFileName = "ci-manifest.json";
+
+    /// <summary>The version of a build not made from a release tag, set in CloudImaging.Client.csproj.</summary>
+    internal const string DevelopmentVersion = "0.0.0-dev";
 
     /// <summary>The rows the info panel shows, in order.</summary>
     public IReadOnlyList<BootImageDetailRow> Rows =>
@@ -68,12 +71,12 @@ public sealed record BootImageDetails(
         {
             var mediaPath = FindMediaManifestPath(out var media);
             var embeddedPath = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory) ?? @"X:\", EmbeddedManifestFileName);
-            return From(ClientReleaseVersion(), TryRead<UsbPreparationManifest>(mediaPath), media, TryRead<BootImageManifest>(embeddedPath), BootImageCapabilities.SupportsWifi(), architecture);
+            return From(ClientVersionLabel(), TryRead<UsbPreparationManifest>(mediaPath), media, TryRead<BootImageManifest>(embeddedPath), BootImageCapabilities.SupportsWifi(), architecture);
         }
         catch
         {
             // WMI can be missing or broken in a custom image; the Client version is still worth showing.
-            return From(ClientReleaseVersion(), null, BootMediaKind.Other, null, BootImageCapabilities.SupportsWifi(), architecture);
+            return From(ClientVersionLabel(), null, BootMediaKind.Other, null, BootImageCapabilities.SupportsWifi(), architecture);
         }
     }
 
@@ -87,9 +90,27 @@ public sealed record BootImageDetails(
             mediaManifest is null ? BootMediaKind.Other : media,
             mediaManifest?.LocationName);
 
-    /// <summary>Client release number; the "+commit" build metadata is dropped.</summary>
-    public static string? ClientReleaseVersion() =>
-        typeof(BootImageDetails).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0];
+    /// <summary>The Client release, or "dev" and the commit for a build not made from a release tag.</summary>
+    public static string? ClientVersionLabel() =>
+        VersionLabel(typeof(BootImageDetails).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+
+    /// <summary>A release drops the "+commit" build metadata; a development build shows the short commit instead.</summary>
+    internal static string? VersionLabel(string? informationalVersion)
+    {
+        if (string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return null;
+        }
+
+        var parts = informationalVersion.Split('+', 2);
+        if (parts[0] != DevelopmentVersion)
+        {
+            return parts[0];
+        }
+
+        var commit = parts.Length == 2 ? parts[1] : string.Empty;
+        return commit.Length == 0 ? "dev" : $"dev {commit[..Math.Min(7, commit.Length)]}";
+    }
 
     /// <summary>The preparation manifest on the USB BOOT volume, or else on the root of a CD/DVD drive for media booted from an ISO.</summary>
     internal static string? FindMediaManifestPath(out BootMediaKind media)

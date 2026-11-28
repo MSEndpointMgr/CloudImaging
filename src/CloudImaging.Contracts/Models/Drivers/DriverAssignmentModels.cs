@@ -29,6 +29,9 @@ public sealed record DriverAssignmentOption
 
     /// <summary>True for the model's set in testing rather than its current set.</summary>
     public bool Testing { get; init; }
+
+    /// <summary>The earlier release whose set this option gives, when the model has no set for the image's release; otherwise null.</summary>
+    public WindowsRelease? Release { get; init; }
 }
 
 /// <summary>What a session would get with the selected image.</summary>
@@ -59,7 +62,7 @@ public sealed record DriverAssignmentPreview
     /// <summary>The image's architecture.</summary>
     public MachineArchitecture Architecture { get; init; }
 
-    /// <summary>Models with a current set, or a set in testing, for the release and architecture.</summary>
+    /// <summary>Models with a current set for the release (or else an earlier one of the same Windows version), or a set in testing for it, and the architecture.</summary>
     public IReadOnlyList<DriverAssignmentOption> Options { get; init; } = [];
 
     /// <summary>Per assignable session.</summary>

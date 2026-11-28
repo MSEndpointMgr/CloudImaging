@@ -82,13 +82,15 @@ public sealed partial class ImagingProgressReporter
     /// Reports a step status update to the Device Gateway API. A percent update is sent once; a
     /// step's start, end or failure is sent again when the gateway is rate limiting or unreachable.
     /// Reports are delivered in the order they are made, and a start or percent update made after
-    /// the step's end report is not sent.
+    /// the step's end report is not sent. A <paramref name="statusNote"/> replaces the step's note
+    /// in the portal (an empty one clears it); null leaves the note as it is.
     /// </summary>
     public async Task ReportAsync(
         ImagingStepName stepName,
         ImagingStepStatus status,
         int? stepProgressPercent = null,
         string? errorDetail = null,
+        string? statusNote = null,
         CancellationToken ct = default)
     {
         var isPercentUpdate = status == ImagingStepStatus.InProgress && stepProgressPercent.HasValue;
@@ -111,6 +113,7 @@ public sealed partial class ImagingProgressReporter
                 status = status.ToString(),
                 stepProgressPercent,
                 errorDetail,
+                statusNote,
             }, retry: !isPercentUpdate, ct);
 
             if (sent)

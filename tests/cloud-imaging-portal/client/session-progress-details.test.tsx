@@ -66,6 +66,29 @@ describe('Portal frontend: session progress details', () => {
     expect(progressBar('Download image progress').getAttribute('aria-valuenow')).toBe('34');
   });
 
+  it('shows what the running step waits for in the focus card', () => {
+    const { rerender } = render(
+      <SessionProgressDetails
+        overallPercent={0}
+        currentStep="FormatDisk"
+        steps={[{ stepName: 'FormatDisk', status: 'InProgress', statusNote: 'Waiting for the AC adapter', startedAt: new Date().toISOString() }]}
+      />,
+    );
+
+    expect(screen.getByText('Waiting for the AC adapter')).toBeTruthy();
+
+    // The device clears the note with an empty one when it starts formatting.
+    rerender(
+      <SessionProgressDetails
+        overallPercent={0}
+        currentStep="FormatDisk"
+        steps={[{ stepName: 'FormatDisk', status: 'InProgress', statusNote: '', startedAt: new Date().toISOString() }]}
+      />,
+    );
+
+    expect(screen.queryByText('Waiting for the AC adapter')).toBeNull();
+  });
+
   it('never renders a raw status enum', () => {
     render(
       <SessionProgressDetails
@@ -263,11 +286,11 @@ describe('Portal frontend: session progress details', () => {
     });
 
     it('shows the skip note, and completed with warnings uses the amber marker', () => {
-      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 1, statusNote: 'No onboarded model matches this device (system ID 8D41).', startedAt: '2026-09-11T08:00:00.000Z', completedAt: '2026-09-11T08:00:01.000Z' }];
+      const steps = [{ stepName: 'InstallDrivers', status: 'Completed', warningCount: 1, statusNote: 'No onboarded model matches this device (baseboard 8D41).', startedAt: '2026-09-11T08:00:00.000Z', completedAt: '2026-09-11T08:00:01.000Z' }];
 
       render(<SessionProgressDetails overallPercent={90} currentStep="InstallDrivers" steps={steps} driverPin={{ ...driverPin, driverSetVersion: null, driverSkipReason: 'NoMatchingModel' }} />);
 
-      expect(screen.getByText('No onboarded model matches this device (system ID 8D41).')).toBeTruthy();
+      expect(screen.getByText('No onboarded model matches this device (baseboard 8D41).')).toBeTruthy();
       expect(screen.getByText('!')).toBeTruthy();
     });
 
@@ -310,6 +333,13 @@ describe('Portal frontend: session progress details', () => {
       render(<SessionProgressDetails overallPercent={10} currentStep={null} steps={[]} driverPin={{ ...driverPin, driverChosenManually: true, driverChosenBy: 'olle@contoso.com' }} />);
 
       expect(screen.getByText('Chosen manually by olle@contoso.com')).toBeTruthy();
+    });
+
+    it('says when an earlier release\'s set was used because the image\'s release has none yet', () => {
+      render(<SessionProgressDetails overallPercent={10} currentStep={null} steps={[]} driverPin={{ ...driverPin, driverFallbackFrom: 'Windows11_26H2' }} />);
+
+      expect(screen.getByText('Driver set: HP EliteBook 840 G11, Windows 11 24H2, set 7')).toBeTruthy();
+      expect(screen.getByText('This model has no driver set for Windows 11 26H2 yet, so its Windows 11 24H2 set is used.')).toBeTruthy();
     });
 
     it('says how many files came from the USB drive, and marks those items', async () => {

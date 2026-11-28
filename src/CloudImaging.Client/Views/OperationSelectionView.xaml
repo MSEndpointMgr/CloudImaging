@@ -328,8 +328,9 @@
                                                         <Grid Margin="8,0,0,0" VerticalAlignment="Center"
                                                               Visibility="{Binding HasBadge, Converter={StaticResource BoolToVisibility}}">
                                                             <Border CornerRadius="10" Background="{DynamicResource AccentFillColorDefaultBrush}" Opacity="0.16" />
+                                                            <!-- Segoe UI leaves more room above its glyphs than below, so the bottom margin is one pixel larger. -->
                                                             <TextBlock Text="{Binding Badge}" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
-                                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="7,0" />
+                                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="8,1,8,2" />
                                                         </Grid>
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding Detail}" Style="{StaticResource CaptionTextBlockStyle}"

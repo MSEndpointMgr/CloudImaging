@@ -12,7 +12,14 @@ import { decidingUser } from './autopilot.js';
  */
 export const DRIVER_VENDORS = ['Hp', 'Dell', 'Lenovo'] as const;
 
-export const WINDOWS_RELEASES = ['Windows10_22H2', 'Windows11_23H2', 'Windows11_24H2', 'Windows11_25H2'] as const;
+/** A Windows release value such as `Windows11_26H2`; Core decides which releases are offered. */
+const WINDOWS_RELEASE_PATTERN = /^Windows(10|11)_\d{2}H[12]$/;
+
+export function isWindowsRelease(value: unknown): value is string {
+  return typeof value === 'string' && WINDOWS_RELEASE_PATTERN.test(value);
+}
+
+const RELEASE_EXPECTED = 'a Windows release such as Windows11_24H2';
 
 const LINEAGE_KEY_PATTERN = /^[A-Za-z0-9_.-]{1,80}$/;
 
@@ -38,8 +45,8 @@ export function requireVendorParam(req: Request, res: Response, next: NextFuncti
 /** 400 unless `:release` is a Windows release value. */
 export function requireReleaseParam(req: Request, res: Response, next: NextFunction): void {
   const release = req.params['release'];
-  if (typeof release !== 'string' || !(WINDOWS_RELEASES as readonly string[]).includes(release)) {
-    badParameter(res, 'release', `Route parameter 'release' must be one of ${WINDOWS_RELEASES.join(', ')}.`);
+  if (!isWindowsRelease(release)) {
+    badParameter(res, 'release', `Route parameter 'release' must be ${RELEASE_EXPECTED}.`);
     return;
   }
   next();
@@ -100,6 +107,13 @@ function selection(body: unknown): { vendor: unknown; catalogModelKeys: unknown;
 router.get('/vendors', requireTechnician, async (_req: Request, res: Response, next: NextFunction) => {
   try {
     relay(res, await operatorApiClient.drivers('GET', 'vendors'));
+  } catch (err) { next(err); }
+});
+
+// The Windows releases offered for OS images and models, newest first.
+router.get('/windows-releases', requireTechnician, async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    relay(res, await operatorApiClient.drivers('GET', 'windows-releases'));
   } catch (err) { next(err); }
 });
 
@@ -355,8 +369,8 @@ router.delete('/models/:modelId/releases/:release', requireOperator, ...pairGuar
 router.get('/models/:modelId/removal-impact', requireOperator, requireGuidParams('modelId'), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const release = text(req.query['release']);
-    if (release !== undefined && !(WINDOWS_RELEASES as readonly string[]).includes(release)) {
-      badParameter(res, 'release', `Query parameter 'release' must be one of ${WINDOWS_RELEASES.join(', ')}.`);
+    if (release !== undefined && !isWindowsRelease(release)) {
+      badParameter(res, 'release', `Query parameter 'release' must be ${RELEASE_EXPECTED}.`);
       return;
     }
     relay(res, await operatorApiClient.drivers('GET', `models/${req.params['modelId'] as string}/removal-impact`, { query: { release } }));

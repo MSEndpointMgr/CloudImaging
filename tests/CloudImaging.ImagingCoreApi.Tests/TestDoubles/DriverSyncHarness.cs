@@ -20,7 +20,7 @@ internal sealed class FakeDriverVendorAdapter(DriverVendor vendor = DriverVendor
 {
     public DriverVendor Vendor => vendor;
 
-    public string MatchKeyType => vendor == DriverVendor.Hp ? "system ID" : "system SKU";
+    public string MatchKeyType => vendor == DriverVendor.Hp ? "baseboard" : "system SKU";
 
     public string ModelListUrl => vendor == DriverVendor.Hp ? "https://hpia.hpcloud.hp.com/ref/platformList.cab" : $"https://downloads.dell.com/fake/{vendor}/models.json";
 
@@ -35,7 +35,7 @@ internal sealed class FakeDriverVendorAdapter(DriverVendor vendor = DriverVendor
 
     public bool IsVendorOf(string? manufacturer) => manufacturer?.Contains(vendor == DriverVendor.Hp ? "HP" : vendor.ToString(), StringComparison.OrdinalIgnoreCase) == true;
 
-    public IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt) =>
+    public IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt, IReadOnlyCollection<WindowsRelease> releases) =>
         JsonSerializer.Deserialize<List<DriverVendorModel>>(content, DriverJson.Options)!
             .Select(m => m with { Model = m.Model with { SeenAt = seenAt } })
             .ToList();
@@ -53,14 +53,14 @@ internal sealed class FakeDriverVendorAdapter(DriverVendor vendor = DriverVendor
 /// </summary>
 internal sealed class DriverSyncHarness
 {
-    public const WindowsRelease Release = WindowsRelease.Windows11Version24H2;
+    public static readonly WindowsRelease Release = WindowsRelease.Windows11Version24H2;
 
     public DriverSyncHarness(params FakeDriverVendorAdapter[] otherVendors)
     {
         OtherVendors = otherVendors;
         Storage = new DriverStorageService(new BlobServiceClient("UseDevelopmentStorage=true"), Bed.Blobs, Bed.Http, Bed.Time);
         Sessions = new DeviceSessionRepository(Bed.Tables);
-        Catalogs = new DriverCatalogService(Bed.Store, Bed.Models, Storage, Bed.Blobs, [Adapter, .. otherVendors], Bed.Time);
+        Catalogs = new DriverCatalogService(Bed.Store, Bed.Models, Storage, Bed.Blobs, [Adapter, .. otherVendors], FakeWindowsReleaseSource.Catalog(Bed), Bed.Time);
         Sync = new DriverSyncService(Bed.Store, Bed.Models, Bed.Pointers, Bed.Runs, Bed.SetDocuments, Catalogs, Storage, Bed.Work, Sessions, Bed.Time, NullLogger<DriverSyncService>.Instance);
         ModelService = new DriverModelService(Bed.Store, Bed.Models, Bed.Pointers, Bed.Runs, Bed.SetDocuments, Catalogs, Sync, Bed.Work, Bed.Time);
         PolicyService = new DriverPolicyService(Bed.Store, Bed.Models, Bed.Pointers, ModelService, Bed.Work, Bed.Time);

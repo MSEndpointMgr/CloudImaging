@@ -42,7 +42,7 @@ export function LockedComponentsFlyout({ components, initiallyOpen = false }: { 
           role="dialog"
           aria-labelledby={titleId}
           onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); dismiss(); } }}
-          style={{ position: 'fixed', left: position.left, width: position.width, maxHeight: position.maxHeight, ...(position.top !== undefined ? { top: position.top } : { bottom: position.bottom }) }}
+          style={{ position: 'fixed', left: position.left, width: position.minWidth, maxHeight: position.maxHeight, ...(position.top !== undefined ? { top: position.top } : { bottom: position.bottom }) }}
           className="z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl ring-1 ring-black/5 animate-popover-in"
         >
           <div className="flex items-start gap-3 border-b border-border px-4 py-3">

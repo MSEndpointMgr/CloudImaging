@@ -79,7 +79,7 @@ const categories = [
   { vendor: 'Hp', category: 'Driver - Storage', critical: true },
 ];
 const vendors = [
-  { vendor: 'Hp', supported: true, syncEnabled: true, onboardedModels: 1, matchKeyType: 'system ID' },
+  { vendor: 'Hp', supported: true, syncEnabled: true, onboardedModels: 1, matchKeyType: 'baseboard' },
   { vendor: 'Lenovo', supported: false, syncEnabled: false, onboardedModels: 0, matchKeyType: null },
 ];
 const rulesRoutes = {

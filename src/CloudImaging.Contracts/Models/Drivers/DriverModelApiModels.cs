@@ -53,7 +53,7 @@ public sealed record DriverVendorRow
     /// <summary>Number of onboarded models.</summary>
     public int OnboardedModels { get; init; }
 
-    /// <summary>How devices are matched ("system ID" for HP, "system SKU" for Dell).</summary>
+    /// <summary>How devices are matched ("baseboard" for HP, "system SKU" for Dell).</summary>
     public string? MatchKeyType { get; init; }
 }
 

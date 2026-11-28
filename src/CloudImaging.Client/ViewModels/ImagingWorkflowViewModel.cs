@@ -32,7 +32,11 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
     private static readonly TimeSpan AssignmentPollInterval = TimeSpan.FromSeconds(5);
     private const int FirmwareFetchAttempts = 3;
     private static readonly TimeSpan FirmwareFetchRetryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan PowerPollInterval = TimeSpan.FromSeconds(2);
     private static readonly JsonSerializerOptions SchemeJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>The Prepare disk step's note in the portal while the device waits for the AC adapter.</summary>
+    internal const string AcPowerWaitNote = "Waiting for the AC adapter";
 
     private readonly Services.DeviceGatewayApiClient _gatewayClient;
     private readonly Guid _sessionId;
@@ -197,7 +201,8 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
             // The disk layout and boot files must match how the firmware booted WinPE: a GPT disk
             // never boots in Legacy BIOS mode, and an MBR disk never boots in UEFI mode.
-            var firmwareMode = new Services.DevicePostureDetector(_loggerFactory.CreateLogger<Services.DevicePostureDetector>()).DetectFirmwareMode();
+            var posture = new Services.DevicePostureDetector(_loggerFactory.CreateLogger<Services.DevicePostureDetector>());
+            var firmwareMode = posture.DetectFirmwareMode();
             var activityLogger = pipelineLoggerFactory.CreateLogger<ImagingWorkflowViewModel>();
             switch (firmwareMode)
             {
@@ -212,10 +217,27 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
                     return;
             }
 
+            // ── Wait for AC power ───────────────────────────────────────────────
+            // A battery that runs flat during imaging leaves the device without Windows. Waiting
+            // here changes nothing on the disk, and whoever started imaging is likely still there.
+            var waitedForPower = await WaitWhileOnBatteryAsync(posture.DetectPowerSource, async () =>
+            {
+                LogWaitingForAcPower(activityLogger);
+                _progress.IsWaitingForAcPower = true;
+                await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress, statusNote: AcPowerWaitNote, ct: ct);
+            }, Task.Delay, ct);
+            if (waitedForPower)
+            {
+                _progress.IsWaitingForAcPower = false;
+                LogNoLongerOnBattery(activityLogger);
+            }
+
             // ── Format ──────────────────────────────────────────────────────────
             _progress.StatusMessage = "Preparing the target disk…";
             _progress.UpdateStep(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress);
-            await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress, ct: ct);
+
+            // An empty note takes the AC power wait off the portal's timeline.
+            await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress, statusNote: waitedForPower ? string.Empty : null, ct: ct);
 
             Services.DiskFormatResult diskFormat;
             try
@@ -555,6 +577,28 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
         }
 
         return notes.Count == 0 ? null : string.Join(" ", notes);
+    }
+
+    /// <summary>
+    /// Waits while <paramref name="readPower"/> reports a battery, reading it again every two
+    /// seconds; <paramref name="onBattery"/> runs once before the first wait. A power source that
+    /// cannot be read never holds imaging. True when it waited.
+    /// </summary>
+    internal static async Task<bool> WaitWhileOnBatteryAsync(Func<PowerSource> readPower, Func<Task> onBattery, Func<TimeSpan, CancellationToken, Task> delay, CancellationToken ct)
+    {
+        if (readPower() != PowerSource.Battery)
+        {
+            return false;
+        }
+
+        await onBattery();
+        do
+        {
+            await delay(PowerPollInterval, ct);
+        }
+        while (readPower() == PowerSource.Battery);
+
+        return true;
     }
 
     /// <summary>
@@ -1091,6 +1135,12 @@ public sealed partial class ImagingWorkflowViewModel : IDisposable
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Firmware mode detected: Legacy BIOS (CSM). Using MBR layout with BIOS boot files.")]
     private static partial void LogFirmwareModeLegacy(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "The device runs on battery. Waiting for the AC adapter before the disk is formatted.")]
+    private static partial void LogWaitingForAcPower(ILogger logger);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "No longer on battery. Imaging continues.")]
+    private static partial void LogNoLongerOnBattery(ILogger logger);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The USB cache partition has {AvailableBytes} bytes free but the image needs {RequiredBytes}. Downloading to the target disk instead, without caching.")]
     private static partial void LogCachePartitionTooSmall(ILogger logger, long requiredBytes, long availableBytes);

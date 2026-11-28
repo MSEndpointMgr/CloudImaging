@@ -3,7 +3,7 @@ import { requireOperator, requireRole } from '../middleware/roleGuard.js';
 import { requireGuidParams } from '../middleware/validateParams.js';
 import { operatorApiClient } from '../services/operatorApiClient.js';
 import { isAllowedImageFile, OS_IMAGE_EXTENSIONS } from '../utils/imageFileValidation.js';
-import { WINDOWS_RELEASES } from './drivers.js';
+import { isWindowsRelease } from './drivers.js';
 
 /**
  * Images router. OS image catalog CRUD proxy to the Operator API (T086, FR-036, FR-037).
@@ -43,7 +43,7 @@ router.post('/upload/start', requireOperator, async (req: Request, res: Response
       return;
     }
     // Refused before any bytes are staged, so a long upload never ends in this error.
-    if (windowsRelease != null && !(typeof windowsRelease === 'string' && (WINDOWS_RELEASES as readonly string[]).includes(windowsRelease))) {
+    if (windowsRelease != null && !isWindowsRelease(windowsRelease)) {
       res.status(400).json({ error: 'Unknown Windows release.' });
       return;
     }

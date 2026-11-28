@@ -1,6 +1,6 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const { apiFetch, notify, auth } = vi.hoisted(() => ({
@@ -104,7 +104,9 @@ describe('Drivers: Storage tab', () => {
     });
     renderStorage();
 
-    expect(await screen.findByText(/Earlier versions of each component kept in storage, so rolling back to one is instant and does not depend on the vendor\..*Uses 1.40 GB now\./)).toBeTruthy();
+    expect(await screen.findByText('How many older versions of each driver and BIOS stay in storage after a sync replaces them with a newer one. They use 1.40 GB now.')).toBeTruthy();
+    expect(screen.getByText('Rolling a component back to a kept version takes effect at once. Any other older version is first downloaded again from the vendor, if the vendor still publishes it.')).toBeTruthy();
+    expect(screen.getByText('A lower number frees that space after the next sync. A higher number keeps more from now on, but does not bring back versions already removed.')).toBeTruthy();
     const select = screen.getByRole('combobox', { name: 'Previous versions' });
     expect(select.textContent).toContain('Keep 1 previous version');
     fireEvent.click(select);
@@ -212,7 +214,7 @@ describe('Drivers: model page roll back and removal', () => {
     renderModel();
 
     const item = await menuItem('Roll back driver set');
-    expect(screen.getByText('Devices get driver set 6 instead of 7 from their next deployment')).toBeTruthy();
+    expect(screen.getAllByRole('menuitem').map(i => i.textContent)).toEqual(['Add custom component', 'Windows releases', 'Roll back driver set', 'Remove model']);
     fireEvent.click(item);
     const dialog = screen.getByRole('dialog', { name: 'Roll back to driver set 6?' });
     expect(within(dialog).getByText('Devices imaged from now on get driver set 6. Running deployments keep the set they started with. The next sync does not reinstate set 7.')).toBeTruthy();
@@ -231,13 +233,17 @@ describe('Drivers: model page roll back and removal', () => {
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ status: 'success', title: 'Rolled back to driver set 6.' }));
   });
 
-  it('disables Roll back driver set without a previous set', async () => {
+  it('disables Roll back driver set without a previous set, saying why in its tooltip', async () => {
     serve({ [`GET /api/drivers/models/${modelId}`]: { body: page({ hasPreviousSet: false, previousSetVersion: null }) } });
     renderModel();
 
     const item = await menuItem('Roll back driver set');
-    expect(item.disabled).toBe(true);
-    expect(screen.getByText('No previous driver set to roll back to')).toBeTruthy();
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    act(() => item.focus());
+    expect(screen.getByRole('tooltip').textContent).toBe('No previous driver set to roll back to.');
+    fireEvent.click(item);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('menu')).toBeTruthy();
   });
 
   it('removes a model after showing what is deleted, freed and kept', async () => {

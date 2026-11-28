@@ -51,6 +51,12 @@ public sealed class UsbPartitionDeploymentTests
 
         cacheScript.Should().Contain("select disk 3");
         cacheScript.Should().Contain("fs=ntfs", "cache partition must be NTFS (FR-055)");
+
+        foreach (var script in new[] { bootScript, cacheScript })
+        {
+            script.Should().MatchRegex(@"create partition[^\n]*\n\s*format [^\n]*\boverride\b",
+                "each partition is formatted straight after it is created, dismounting anything that already opened it");
+        }
     }
 
     [Fact]
@@ -94,6 +100,17 @@ public sealed class UsbPartitionDeploymentTests
 
         (await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*too small*"))
             .Which.Message.Should().NotMatchRegex(@"\b(FR|T)-?\d{2,}");
+    }
+
+    [Fact]
+    public async Task FormatPromptPause_NeverFailsPartitioning_WhenTheServiceCannotBePaused()
+    {
+        Func<Task> act = async () =>
+        {
+            using var pause = await ShellHardwareDetectionPause.BeginAsync(NullLogger.Instance, "CloudImagingNoSuchService");
+        };
+
+        await act.Should().NotThrowAsync("without the pause Windows may only show its prompt; partitioning still works");
     }
 
     // ── Locating the new partitions ───────────────────────────────────────────

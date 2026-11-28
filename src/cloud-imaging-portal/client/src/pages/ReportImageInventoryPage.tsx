@@ -5,10 +5,12 @@ import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { formatImageVersion, formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { BOOT_IMAGE_STAGE_LABELS, bootImageStage } from '../lib/bootImageStage.ts';
+import { SUMMARY_COLORS, plural } from '../lib/reportSummary.ts';
 import { sortRows, useSort } from '../lib/tableSort.ts';
 import { Button } from '../components/ui/button.tsx';
+import { ReportSummary } from '../components/ReportSummary.tsx';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
-import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
+import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge, type BadgeProps } from '../components/ui/badge.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/table.tsx';
@@ -44,6 +46,13 @@ interface RecoveryImage {
 
 type Catalog = 'OS Image' | 'Boot Image' | 'Recovery Image';
 
+// Catalogs are not outcomes, so they take colours of their own rather than the status colours.
+const CATALOGS: readonly { catalog: Catalog; label: string; singular: string; colorClassName: string }[] = [
+  { catalog: 'OS Image', label: 'OS images', singular: 'OS image', colorClassName: SUMMARY_COLORS.info },
+  { catalog: 'Boot Image', label: 'Boot images', singular: 'Boot image', colorClassName: SUMMARY_COLORS.violet },
+  { catalog: 'Recovery Image', label: 'Recovery images', singular: 'Recovery image', colorClassName: SUMMARY_COLORS.cyan },
+];
+
 interface InventoryRow {
   catalog: Catalog;
   id: string;
@@ -65,7 +74,7 @@ function ageDays(iso: string): number {
 
 /**
  * Image Inventory report (Reports feature): combined view of the OS image, boot image, and
- * recovery image catalogs — age, size, and usage status. Reuses the existing live catalog
+ * recovery image catalogs: age, size, and usage status. Reuses the existing live catalog
  * endpoints as-is (catalogs aren't purged, so no history store is needed for this report).
  */
 export default function ReportImageInventoryPage(): React.ReactElement {
@@ -122,10 +131,15 @@ export default function ReportImageInventoryPage(): React.ReactElement {
   }, []);
 
   const totals = useMemo(() => {
-    if (!rows) return null;
+    const list = rows ?? [];
     return {
-      count: rows.length,
-      totalSize: rows.reduce((sum, r) => sum + r.sizeBytes, 0),
+      size: list.reduce((sum, r) => sum + r.sizeBytes, 0),
+      largest: list.reduce((max, r) => Math.max(max, r.sizeBytes), 0),
+      oldest: list.reduce<InventoryRow | null>((oldest, r) => (!oldest || Date.parse(r.date) < Date.parse(oldest.date) ? r : oldest), null),
+      catalogs: CATALOGS.map(c => {
+        const inCatalog = list.filter(r => r.catalog === c.catalog);
+        return { ...c, count: inCatalog.length, size: inCatalog.reduce((sum, r) => sum + r.sizeBytes, 0) };
+      }),
     };
   }, [rows]);
 
@@ -152,14 +166,39 @@ export default function ReportImageInventoryPage(): React.ReactElement {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm text-muted-foreground">
-          {totals ? `${totals.count} images, ${fmtSize(totals.totalSize)} total` : <Skeleton className="h-4 w-48" />}
-        </div>
-          <Button variant="outline" onClick={handleExport} disabled={!rows || rows.length === 0}>
+      <div className="flex items-center justify-end">
+        <Button variant="outline" onClick={handleExport} disabled={!rows || rows.length === 0}>
           <FileDown /> Export CSV
         </Button>
       </div>
+
+      <ReportSummary
+        loading={rows === null}
+        total={rows?.length ?? 0}
+        noun={['image', 'images']}
+        parts={totals.catalogs.map(c => ({
+          key: c.catalog,
+          label: c.label,
+          count: c.count,
+          colorClassName: c.colorClassName,
+          detail: c.count > 0 ? fmtSize(c.size) : undefined,
+        }))}
+        emptyText="No OS, boot or recovery images have been uploaded."
+        figures={[
+          {
+            label: 'Total size',
+            value: totals.oldest ? fmtSize(totals.size) : null,
+            detail: totals.oldest ? `Largest image ${fmtSize(totals.largest)}` : 'No images uploaded',
+          },
+          {
+            label: 'Oldest image',
+            value: totals.oldest ? plural(ageDays(totals.oldest.date), 'day', 'days') : null,
+            detail: totals.oldest
+              ? `${CATALOGS.find(c => c.catalog === totals.oldest?.catalog)?.singular ?? totals.oldest.catalog}, uploaded ${new Date(totals.oldest.date).toLocaleDateString(undefined, { dateStyle: 'medium' })}`
+              : 'No images uploaded',
+          },
+        ]}
+      />
 
       <div className="rounded-md border border-border overflow-hidden">
       <Table>

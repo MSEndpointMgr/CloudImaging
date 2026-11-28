@@ -141,10 +141,10 @@ Section cards in order, each with the icon chip header:
    before Autopilot. Logged on the device only."); the short labels keep the 200 px trigger readable. Timeout options 1, 2, 5, 10, 15, 20, 30 minutes.
    Footer Cancel and Done; Done only closes the dialog, Save creates the version.
 4. **Answer file** (`FileCode`): description "Optional. Your own unattend.xml for Windows setup,
-   for settings this profile has no control for." One-row table File ("unattend.xml",
+   for settings this profile has no control for."; header button "Add answer file" (`outline`,
+   `Plus`) while the profile has none. One-row table File ("unattend.xml",
    monospace), Passes (220 px, plain text "specialize, oobeSystem"), Size (100 px), Last modified
-   (160 px), Actions (96 px: Edit, Remove). Without a file the table shows one muted row "No answer
-   file" with an "Add" `outline` button. Dialog "Edit answer file", description "Used by Windows
+   (160 px), Actions (96 px: Edit, Remove). Dialog "Edit answer file", description "Used by Windows
    setup on every device that gets this profile.": the label "unattend.xml" and the "Upload file"
    `outline` button on one row (accepts `.xml`, read as UTF-8, at most 256 KB), the `CodeTextArea`
    with line numbers, then either the valid line "Valid. Passes: specialize, oobeSystem."
@@ -156,6 +156,13 @@ Section cards in order, each with the icon chip header:
    500) with "Windows setup scripts never change the result: they run after the portal stops
    tracking the device." (`text-xs` muted), and on the right a 300 px `Select` with "Complete with
    warnings" (default) and "Fail the deployment".
+
+Registry values, Scripts and Answer file always show their table with its header row. An empty
+table shows the `EmptyState` with the section's icon and "No registry values", "No scripts" or "No
+answer file", with 24 px vertical padding instead of 48 px since a profile stacks several. The
+Scripts search, location filter and footer show only when the profile has scripts; a search or
+filter that hides every script shows "No scripts match" with "Clear the search or choose All
+scripts."
 
 **Save bar** (at the end of the content, right-aligned, shown when the draft differs): "You have
 unsaved changes." with "Discard" (outline) and "Save as version N" (default) when content changed,

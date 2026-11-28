@@ -12,7 +12,7 @@ export interface ImagingStepDetails {
   itemCounts?: ImagingStepItemCount[] | null;
   /** The device reported more items than are kept. */
   itemsTruncated?: boolean | null;
-  /** Note shown under a step that was skipped, for example why no drivers were installed. */
+  /** Note on a step: why it was skipped (for example why no drivers were installed), or what a running step waits for. */
   statusNote?: string | null;
 }
 
@@ -20,6 +20,8 @@ export interface ImagingStepDetails {
 export interface SessionDriverPin {
   driverModelName?: string | null;
   driverRelease?: string | null;
+  /** The image's release when the model had no set for it and `driverRelease` is an earlier release's set. */
+  driverFallbackFrom?: string | null;
   driverSetVersion?: number | null;
   driverSkipReason?: string | null;
   driverMatchKey?: string | null;
@@ -57,4 +59,48 @@ export const PIPELINE_STEP_SHORT_LABELS: Record<string, string> = {
 export function progressStepLabel(stepName: string | null): string {
   if (!stepName) return 'Waiting for first progress report';
   return PIPELINE_STEPS.find(step => step.name === stepName)?.label ?? stepName;
+}
+
+/** What a running session is doing: the running step's note when it has one (waiting for the AC adapter), otherwise the step. */
+export function currentStepText(currentStep: string | null, steps?: readonly ImagingStepDetails[] | null): string {
+  const note = steps?.find(step => step.stepName === currentStep && step.status === 'InProgress')?.statusNote;
+  return note || progressStepLabel(currentStep);
+}
+
+/**
+ * When the device began imaging: the earliest step start it reported. The session's createdAt is
+ * when it registered, which can be hours earlier while it waits to be coupled.
+ */
+export function imagingStartedAt(steps?: readonly ImagingStepDetails[] | null): string | null {
+  let earliest: string | null = null;
+  for (const { startedAt } of steps ?? []) {
+    if (!startedAt || Number.isNaN(Date.parse(startedAt))) continue;
+    if (earliest === null || Date.parse(startedAt) < Date.parse(earliest)) earliest = startedAt;
+  }
+  return earliest;
+}
+
+/** How long imaging took, from the first step start to the end of the session; null while either is unknown. */
+export function imagingDurationMs(steps: readonly ImagingStepDetails[] | null | undefined, terminalAt: string | null | undefined): number | null {
+  const startedAt = imagingStartedAt(steps);
+  if (!startedAt || !terminalAt) return null;
+  const elapsed = Date.parse(terminalAt) - Date.parse(startedAt);
+  return Number.isNaN(elapsed) ? null : Math.max(0, elapsed);
+}
+
+/**
+ * Items that failed in steps that still completed (the timeline's amber knobs), with a sentence
+ * naming those steps in pipeline order. Null when every item succeeded.
+ */
+export function completionWarnings(steps?: readonly ImagingStepDetails[] | null): { count: number; text: string } | null {
+  const order = (name: string): number => PIPELINE_STEPS.findIndex(step => step.name === name);
+  const warned = (steps ?? [])
+    .filter(step => step.status === 'Completed' && (step.warningCount ?? 0) > 0)
+    .sort((a, b) => order(a.stepName) - order(b.stepName));
+  if (warned.length === 0) return null;
+
+  const count = warned.reduce((total, step) => total + (step.warningCount ?? 0), 0);
+  const labels = warned.map(step => progressStepLabel(step.stepName));
+  const where = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+  return { count, text: `${String(count)} ${count === 1 ? 'item' : 'items'} failed in ${where}.` };
 }

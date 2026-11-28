@@ -12,7 +12,10 @@
            which the device pre-flight authorization check needs in order to read Windows
            Autopilot and Intune corporate identifiers. With -EnableAutopilotRegistration it
            also grants DeviceManagementServiceConfig.ReadWrite.All, which importing approved
-           Autopilot hardware hashes into Intune requires.
+           Autopilot hardware hashes into Intune requires. It always grants
+           WindowsUpdates.Read.All, which reading the Windows releases Microsoft has shipped
+           requires, so a new release can be chosen for OS images the day it ships. That read
+           also needs a licence that includes Windows Autopatch.
 
         2. Assigns the CloudImaging.PortalAccess app role on the Operator API app registration
            to the portal backend's managed identity, so the portal backend can call the
@@ -57,7 +60,7 @@
     Author:      MSEndpointMgr
     Contact:     @MSEndpointMgr
     Created:     2026-09-13
-    Updated:     2026-10-06
+    Updated:     2026-11-23
 
     Version history:
     1.0.0 - (2026-09-13) Initial release, replacing grant-graph-permissions.ps1 and
@@ -67,6 +70,7 @@
     1.2.0 - (2026-09-20) Added -EnableAutopilotRegistration, which also grants
                          DeviceManagementServiceConfig.ReadWrite.All for Autopilot imports
     1.3.0 - (2026-10-06) Restarts the Imaging Core Function App after a new Microsoft Graph grant
+    1.4.0 - (2026-11-23) Grants WindowsUpdates.Read.All for the Windows release list
 #>
 #Requires -Modules Az.Accounts, Az.ManagedServiceIdentity, Az.Resources, Az.Websites, Microsoft.Graph.Authentication, Microsoft.Graph.Applications
 [CmdletBinding(SupportsShouldProcess)]
@@ -99,6 +103,7 @@ Begin {
     # tenants that never turn the feature on should not have to grant.
     $GraphPermissions = New-Object -TypeName "System.Collections.Generic.List[System.Object]"
     $GraphPermissions.Add("DeviceManagementServiceConfig.Read.All")
+    $GraphPermissions.Add("WindowsUpdates.Read.All")
     if ($EnableAutopilotRegistration) {
         $GraphPermissions.Add("DeviceManagementServiceConfig.ReadWrite.All")
     }
@@ -223,8 +228,8 @@ Process {
         Write-Output ""
         Write-Output "Applying grants"
 
-        # Grant 1: Microsoft Graph application permissions for the device pre-flight check and,
-        # when requested, Autopilot imports.
+        # Grant 1: Microsoft Graph application permissions for the device pre-flight check, the
+        # Windows release list and, when requested, Autopilot imports.
         $GraphServicePrincipal = $null
         foreach ($GraphPermission in $GraphPermissions) {
             $CurrentStepCount++
@@ -275,7 +280,7 @@ Process {
         }
 
         # Imaging Core caches its Graph token in process; one issued before a new grant lacks the new role
-        # until the token expires, so Autopilot imports would keep failing with 403 after the grant is in place.
+        # until the token expires, so Graph calls needing it would keep failing with 403 after the grant is in place.
         if ($CoreRestartNeeded) {
             $CoreFunctionApp = @(Get-AzWebApp -ResourceGroupName $ResourceGroupName | Where-Object { $PSItem.Name -like "*-func-core" })
             if ($CoreFunctionApp.Count -eq 1) {

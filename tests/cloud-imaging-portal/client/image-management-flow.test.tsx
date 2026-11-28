@@ -29,9 +29,23 @@ import { fireEvent, screen } from '@testing-library/react';
 import { capabilitiesFromRoles } from '../../../src/cloud-imaging-portal/client/src/lib/portalRoles.ts';
 
 describe('OS image Windows release', () => {
-  it('the editor shows the release and saves it with the PATCH, and None clears it', async () => {
+  const RELEASES_URL = '/api/drivers/windows-releases';
+
+  /** Core's release list for the field, and an empty 200 for anything else. */
+  function serveReleases(releases: string[], problem: string | null = null, status = 200) {
     const apiFetch = vi.mocked(apiClient.apiFetch);
-    apiFetch.mockResolvedValue(new Response(null, { status: 200 }));
+    apiFetch.mockImplementation(async (input) => (String(input) === RELEASES_URL
+      ? new Response(JSON.stringify({ releases, refreshedAt: null, problem }), { status })
+      : new Response(null, { status: 200 })));
+    return apiFetch;
+  }
+
+  function options(): string[] {
+    return screen.getAllByRole('option').map(o => o.textContent ?? '');
+  }
+
+  it('the editor shows the release and saves it with the PATCH, and None clears it', async () => {
+    const apiFetch = serveReleases(['Windows11_25H2', 'Windows11_24H2']);
     render(<ImageEditorDialog image={{ imageId: 'image-1', name: 'Windows 11', version: '24H2', windowsRelease: 'Windows11_24H2' }} onClose={vi.fn()} onSaved={vi.fn()} />);
 
     expect(screen.getByRole('combobox', { name: 'Windows release' }).textContent).toContain('Windows 11, version 24H2');
@@ -39,17 +53,37 @@ describe('OS image Windows release', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Not set' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
-    await waitFor(() => expect(apiFetch).toHaveBeenCalled());
-    const [, init] = apiFetch.mock.calls[0] as [string, RequestInit];
+    await waitFor(() => expect(apiFetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(true));
+    const [, init] = apiFetch.mock.calls.find(([, call]) => call?.method === 'PATCH') as [string, RequestInit];
     expect(JSON.parse(String(init.body))).toEqual({ name: 'Windows 11', version: '24H2', description: '', windowsRelease: null });
   });
 
-  it('the upload field offers every release and None', () => {
+  it('the field offers the releases Core lists, newest first, and Not set', async () => {
+    serveReleases(['Windows11_24H2', 'Windows11_26H2', 'Windows10_22H2', 'Windows11_25H2', 'Windows11_23H2']);
     render(<WindowsReleaseField id="r" value={null} onChange={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Windows release' }));
 
-    expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual(['Not set', 'Windows 11, version 25H2', 'Windows 11, version 24H2', 'Windows 11, version 23H2', 'Windows 10, version 22H2']);
+    await waitFor(() => expect(options()).toEqual(['Not set', 'Windows 11, version 26H2', 'Windows 11, version 25H2', 'Windows 11, version 24H2', 'Windows 11, version 23H2', 'Windows 10, version 22H2']));
+    expect(vi.mocked(apiClient.apiFetch)).toHaveBeenCalledWith(RELEASES_URL);
+  });
+
+  it('keeps the image\'s own release, and says why newer ones may be missing', async () => {
+    serveReleases(['Windows11_25H2'], 'Microsoft Graph denied reading the Windows releases.');
+    render(<WindowsReleaseField id="r" value="Windows11_26H2" onChange={vi.fn()} />);
+
+    expect(await screen.findByText('Newer releases may be missing. Microsoft Graph denied reading the Windows releases.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('combobox', { name: 'Windows release' }));
+    expect(options()).toEqual(['Not set', 'Windows 11, version 26H2', 'Windows 11, version 25H2']);
+  });
+
+  it('says when the list cannot be loaded, and still offers the image\'s release', async () => {
+    serveReleases([], null, 503);
+    render(<WindowsReleaseField id="r" value="Windows11_24H2" onChange={vi.fn()} />);
+
+    expect((await screen.findByRole('alert')).textContent).toBe('The Windows releases could not be loaded.');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Windows release' }));
+    expect(options()).toEqual(['Not set', 'Windows 11, version 24H2']);
   });
 });
 

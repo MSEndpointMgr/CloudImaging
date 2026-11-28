@@ -55,8 +55,8 @@ describe('Portal frontend: relative timestamps', () => {
     expect(formatRelativeTime(new Date(now + 5 * MINUTE).toISOString(), now)).toBe('just now');
   });
 
-  it('renders an em dash for an unparseable value instead of "Invalid Date"', () => {
-    expect(formatRelativeTime('not-a-timestamp', now)).toBe('\u2014');
-    expect(formatRelativeTime('', now)).toBe('\u2014');
+  it('renders a hyphen for an unparseable value instead of "Invalid Date"', () => {
+    expect(formatRelativeTime('not-a-timestamp', now)).toBe('-');
+    expect(formatRelativeTime('', now)).toBe('-');
   });
 });

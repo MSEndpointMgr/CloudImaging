@@ -1,6 +1,6 @@
 ---
 applyTo: 'src/cloud-imaging-portal/client/**'
-description: 'Design system rules for the Cloud Imaging portal frontend (tokens, typography, spacing, icons, contrast, primitives, accessibility).'
+description: 'Design system rules for the Cloud Imaging portal frontend (consistency, tokens, typography, spacing, icons, contrast, primitives, accessibility).'
 ---
 
 # Portal UI design system
@@ -11,6 +11,27 @@ defer to, so these conventions are the only thing keeping the surface coherent.
 
 Every rule below has a reason. A rule without its reason gets "fixed" back by the next person, so
 keep the reason when you move or restate one.
+
+## 0. Consistency comes first
+
+Every component, element and control looks and behaves the same wherever it appears. An operator
+who has learnt one menu, table or card has learnt them all; one that differs reads as a bug, or as
+a hint that it means something else.
+
+- **Siblings share one anatomy.** The entries of one menu, the columns of one table, the cards
+  stacked on one page and the buttons in one toolbar are built the same way. If one menu entry
+  gets a description line, every entry gets one or none does (none, by default). If one section
+  card puts Add in its header, they all do.
+- **Change the pattern, not the instance.** Something only one instance needs is usually a sign
+  the shared pattern is wrong. Change the primitive, or agree a variant, so every instance follows;
+  never style one call site differently.
+- **Compare before you finish.** Put the new or changed element next to its siblings on the page
+  and its twins elsewhere in the portal, and check icon, label style, spacing, button placement,
+  empty state and disabled behaviour all match.
+
+**Menus.** A `MoreMenu` entry is an icon and a one-line label, nothing else. A disabled entry says
+why in its tooltip (`disabledReason`), as a disabled button does (§6a). The menu is as wide as its
+longest entry: a fixed width leaves empty space on the right of short menus.
 
 ## 1. Theming: the primary-colour trap
 
@@ -107,6 +128,11 @@ second copy is how the two `role="switch"` implementations silently drifted apar
   `wrapperClassName`, visuals on `className`.
 - **`Button`**: see §6a. Every button is this component.
 - **`CopyableId`**: any value an operator transcribes (serials, SHA-256 digests, thumbprints).
+- **`RowToggle` / `RowToggleHead`**: every expandable table row. The 36px first column puts the
+  chevron 16px from the table edge and 16px from the next column's text; a 32px `Button` in a
+  percentage column left 40px of dead space and drifted per table. The toggle cell is `pr-0`, and a
+  `useColumnWidths` table beside it names a `fill` column, or `table-fixed` hands the leftover width
+  to the toggle column. No tooltip: the chevron is self-evident and the `aria-label` names the row.
 - **`RelativeTime`**: "how long ago". It shares one module-level 30s ticker across all instances,
   so a 200-row table costs one interval, not 200. Reports keep absolute `formatDateTime`, because an
   export needs the instant.
@@ -136,7 +162,7 @@ is**, never by how it should look. Rendered catalogue:
 
 1. **Always `<Button>`.** A raw `<button>` is allowed only inside `components/ui/`, or for a control
    that is not a button in the design-system sense: a **tab** (`role="tab"`), a **menu trigger or
-   menu item**, and a **row disclosure toggle**. Those carry their own ARIA contract and their own
+   menu item**, and a **row disclosure toggle** (`RowToggle`). Those carry their own ARIA contract and their own
    geometry, and forcing the button chrome onto them is wrong. Everything else, including text
    links that act (`variant="link"`) and dismiss affordances (`variant="ghost" size="icon"`), uses
    the primitive, which is the only thing that gets the focus ring, disabled handling, icon sizing

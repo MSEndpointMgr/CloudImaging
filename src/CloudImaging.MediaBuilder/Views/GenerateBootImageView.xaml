@@ -531,9 +531,9 @@
                 </Border>
 
                 <!--
-                    Steps sidebar — same row as the log viewer so their top edges align. Scrolls
-                    independently (rather than stretching the row) so a long step list, or one
-                    with several Skipped captions, never changes the log viewer's height.
+                    Steps sidebar: same row as the log viewer so their top edges align. Lists only the
+                    steps this run performs, and scrolls independently (rather than stretching the row)
+                    so a long step list never changes the log viewer's height.
                 -->
                 <ScrollViewer Grid.Row="2" Grid.Column="2" VerticalScrollBarVisibility="Auto" Focusable="False">
                 <ItemsControl ItemsSource="{Binding Steps}">
@@ -557,42 +557,30 @@
                                                     <Setter Property="Stroke" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                     <Setter Property="Fill" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                                 </DataTrigger>
-                                                <DataTrigger Binding="{Binding State}" Value="Skipped">
-                                                    <Setter Property="StrokeDashArray" Value="2,2" />
-                                                </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
                                     </Ellipse.Style>
                                 </Ellipse>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Label}" TextWrapping="Wrap">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
-                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding State}" Value="Done">
-                                                        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding State}" Value="Active">
-                                                        <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-                                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding State}" Value="Failed">
-                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
-                                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding State}" Value="Skipped">
-                                                        <Setter Property="FontStyle" Value="Italic" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
-                                    <TextBlock Text="{Binding Caption}" FontSize="11" FontStyle="Italic"
-                                               TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                               Visibility="{Binding IsSkipped, Converter={StaticResource BoolToVisibility}}" />
-                                </StackPanel>
+                                <TextBlock Text="{Binding Label}" TextWrapping="Wrap">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding State}" Value="Done">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Active">
+                                                    <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding State}" Value="Failed">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>

@@ -206,6 +206,22 @@
                 </Grid>
             </StackPanel>
 
+            <!-- Shown while imaging waits before Format disk for the AC adapter; same layout as the error section. -->
+            <StackPanel Grid.Row="3" Margin="0,14,0,0"
+                        Visibility="{Binding IsWaitingForAcPower, Converter={StaticResource BoolToVisibility}}">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                    <ui:SymbolIcon Symbol="PlugDisconnected24" FontSize="20" Margin="0,0,8,0"
+                                   Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                   VerticalAlignment="Center" />
+                    <TextBlock Text="Connect the AC adapter" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Text="Imaging continues when the adapter is connected. Nothing on the disk has changed yet."
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Margin="0,8,0,0" />
+            </StackPanel>
+
             <!-- Error section: accent-strip design (icon + title, selectable message, no boxed InfoBar) -->
             <StackPanel Grid.Row="3" Margin="0,14,0,0"
                         Visibility="{Binding HasError, Converter={StaticResource BoolToVisibility}}">

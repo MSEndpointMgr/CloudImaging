@@ -30,9 +30,10 @@ interface DateRangeSelectProps {
 const PANEL_HEIGHT = 420;
 /**
  * Wide enough for two date fields side by side. Each needs room for the formatted date plus the
- * calendar button, and a browser clips its date text rather than letting the field scroll.
+ * calendar button, and a browser clips its date text rather than letting the field scroll. The
+ * presets fit the button, so only a custom range widens the panel.
  */
-const PANEL_MIN_WIDTH = 340;
+const CUSTOM_MIN_WIDTH = 340;
 
 /**
  * Report date range picker: named presets, with two date fields revealed for a custom range.
@@ -63,10 +64,12 @@ export function DateRangeSelect({
   const selectedPreset = matchPreset(value);
   const [activePreset, setActivePreset] = React.useState<DateRangePresetKey>(selectedPreset);
   const [draft, setDraft] = React.useState<DateRange>(value);
+  const custom = activePreset === 'custom';
 
   const position = useAnchoredPosition(triggerRef, open, {
     preferredHeight: PANEL_HEIGHT,
-    minWidth: PANEL_MIN_WIDTH,
+    minWidth: custom ? CUSTOM_MIN_WIDTH : 0,
+    panelRef,
   });
 
   const close = React.useCallback(() => setOpen(false), []);
@@ -118,7 +121,7 @@ export function DateRangeSelect({
   };
 
   const days = rangeDayCount(draft);
-  const customInvalid = activePreset === 'custom' && !isValidRange(draft);
+  const customInvalid = custom && !isValidRange(draft);
 
   return (
     <div className={cn('relative', wrapperClassName)}>
@@ -159,7 +162,9 @@ export function DateRangeSelect({
             style={{
               position: 'fixed',
               left: position.left,
-              width: position.width,
+              minWidth: position.minWidth,
+              maxWidth: position.maxWidth,
+              width: custom ? position.minWidth : 'max-content',
               ...(position.top !== undefined ? { top: position.top } : { bottom: position.bottom }),
             }}
             className="z-50 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl ring-1 ring-black/5 animate-popover-in"
@@ -175,7 +180,7 @@ export function DateRangeSelect({
                       aria-selected={selected}
                       onClick={() => choosePreset(preset.key)}
                       className={cn(
-                        'relative flex w-full cursor-pointer select-none items-center rounded-md px-2 py-1.5 text-left text-sm',
+                        'relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-2 pr-8 text-left text-sm',
                         'hover:bg-accent hover:text-accent-foreground',
                         selected && 'bg-accent font-medium text-accent-foreground',
                       )}
@@ -188,7 +193,7 @@ export function DateRangeSelect({
               })}
             </ul>
 
-            {activePreset === 'custom' && (
+            {custom && (
               <div className="border-t border-border p-3">
                 <div className="flex items-start gap-3">
                   <div className="min-w-0 flex-1 space-y-2">

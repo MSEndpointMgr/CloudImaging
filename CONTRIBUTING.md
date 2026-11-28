@@ -153,6 +153,13 @@ Builder workflows erase USB drives.
 Maintainers may request changes to keep component boundaries, security
 posture, and documentation accurate.
 
+### Versions
+
+Every version comes from the release tag at build time; no version is bumped
+in the repository. A Client or Media Builder build that is not made by a
+release workflow reports `0.0.0-dev`, and the Client shows `dev` and the
+commit in its title bar, for example `Cloud Imaging dev f715787`.
+
 ### Release notes
 
 Release bodies are not generated. Each release workflow publishes a committed

@@ -1590,7 +1590,7 @@ public sealed partial class DriverSyncService
         var split = pair.IndexOf('_', StringComparison.Ordinal);
         release = default;
         modelId = default;
-        return split > 0 && Guid.TryParse(pair.AsSpan(0, split), out modelId) && Enum.TryParse(pair[(split + 1)..], out release);
+        return split > 0 && Guid.TryParse(pair.AsSpan(0, split), out modelId) && WindowsRelease.TryParse(pair[(split + 1)..], out release);
     }
 
     /// <summary>Display name of a vendor.</summary>

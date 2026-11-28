@@ -24,7 +24,7 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
     public DriverVendor Vendor => DriverVendor.Hp;
 
     /// <inheritdoc/>
-    public string MatchKeyType => "system ID";
+    public string MatchKeyType => "baseboard";
 
     /// <inheritdoc/>
     public string ModelListUrl => PlatformListUrl;
@@ -41,8 +41,9 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
         $"{systemId.ToUpperInvariant()}_{(architecture == MachineArchitecture.Arm64 ? "ARM64" : "X64")}";
 
     /// <inheritdoc/>
-    public IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt)
+    public IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt, IReadOnlyCollection<WindowsRelease> releases)
     {
+        ArgumentNullException.ThrowIfNull(releases);
         var models = new Dictionary<string, DriverVendorModel>(StringComparer.Ordinal);
         foreach (var platform in ReadElements(content, "Platform", depth: 1))
         {
@@ -55,13 +56,15 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
 
             foreach (var group in platform.Elements("OS").GroupBy(os => ParseArchitecture(os.Element("OSArchitecture")?.Value)))
             {
-                var releases = group
+                // HP still lists releases long out of support; only the ones Cloud Imaging offers are kept.
+                var platformReleases = group
                     .Select(os => ParseRelease(os.Element("OSDescription")?.Value, os.Element("OSReleaseIdFilename")?.Value))
                     .OfType<WindowsRelease>()
+                    .Where(releases.Contains)
                     .Distinct()
                     .Order()
                     .ToList();
-                if (releases.Count == 0)
+                if (platformReleases.Count == 0)
                 {
                     continue;
                 }
@@ -72,7 +75,7 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
                     Name = name,
                     MatchKeys = [systemId.ToUpperInvariant()],
                     Architecture = group.Key,
-                    Releases = releases,
+                    Releases = platformReleases,
                     SeenAt = seenAt,
                 });
             }
@@ -87,8 +90,7 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
         ArgumentNullException.ThrowIfNull(model);
         var id = model.MatchKeys[0].ToLowerInvariant();
         var architecture = model.Architecture == MachineArchitecture.Arm64 ? "arm64" : "64";
-        var (os, releaseName) = ReleaseParts(release);
-        return [$"https://hpia.hpcloud.hp.com/ref/{id}/{id}_{architecture}_{os}.{releaseName.ToLowerInvariant()}.cab"];
+        return [string.Create(CultureInfo.InvariantCulture, $"https://hpia.hpcloud.hp.com/ref/{id}/{id}_{architecture}_{release.Major}.0.{release.Version.ToLowerInvariant()}.cab")];
     }
 
     /// <inheritdoc/>
@@ -248,27 +250,12 @@ public sealed class HpDriverVendorAdapter : IDriverVendorAdapter
         return key;
     }
 
-    private static (string Os, string Release) ReleaseParts(WindowsRelease release) => release switch
-    {
-        WindowsRelease.Windows10Version22H2 => ("10.0", "22H2"),
-        WindowsRelease.Windows11Version23H2 => ("11.0", "23H2"),
-        WindowsRelease.Windows11Version24H2 => ("11.0", "24H2"),
-        WindowsRelease.Windows11Version25H2 => ("11.0", "25H2"),
-        _ => throw new ArgumentOutOfRangeException(nameof(release), release, "Unknown Windows release."),
-    };
-
     private static WindowsRelease? ParseRelease(string? description, string? releaseId)
     {
-        var windows11 = description?.Contains("Windows 11", StringComparison.OrdinalIgnoreCase) == true;
-        var windows10 = description?.Contains("Windows 10", StringComparison.OrdinalIgnoreCase) == true;
-        return (windows10, windows11, releaseId?.Trim().ToUpperInvariant()) switch
-        {
-            (true, false, "22H2") => WindowsRelease.Windows10Version22H2,
-            (false, true, "23H2") => WindowsRelease.Windows11Version23H2,
-            (false, true, "24H2") => WindowsRelease.Windows11Version24H2,
-            (false, true, "25H2") => WindowsRelease.Windows11Version25H2,
-            _ => null,
-        };
+        var major = description?.Contains("Windows 11", StringComparison.OrdinalIgnoreCase) == true ? 11
+            : description?.Contains("Windows 10", StringComparison.OrdinalIgnoreCase) == true ? 10
+            : 0;
+        return WindowsRelease.TryCreate(major, releaseId, out var release) ? release : null;
     }
 
     private static MachineArchitecture ParseArchitecture(string? value) =>

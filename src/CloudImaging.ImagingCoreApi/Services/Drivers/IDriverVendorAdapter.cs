@@ -23,14 +23,14 @@ public interface IDriverVendorAdapter
     /// <summary>The vendor.</summary>
     DriverVendor Vendor { get; }
 
-    /// <summary>How devices are matched, for the Vendors card ("system ID").</summary>
+    /// <summary>How devices are matched, for the Vendors card ("baseboard").</summary>
     string MatchKeyType { get; }
 
     /// <summary>The catalog the model list comes from.</summary>
     string ModelListUrl { get; }
 
-    /// <summary>Reads the decompressed model list.</summary>
-    IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt);
+    /// <summary>Reads the decompressed model list; models list only the <paramref name="releases"/> Cloud Imaging offers.</summary>
+    IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt, IReadOnlyCollection<WindowsRelease> releases);
 
     /// <summary>Component catalogs to read for a model and release.</summary>
     IReadOnlyList<string> ComponentCatalogUrls(DriverCatalogModelRecord model, WindowsRelease release);

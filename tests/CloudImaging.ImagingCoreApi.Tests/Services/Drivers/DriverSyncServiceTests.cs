@@ -309,12 +309,14 @@ public sealed class DriverSyncServiceTests
     public async Task TheStoredSetDocument_HasTheDocumentedShape()
     {
         var item = new DriverSetItem { LineageKey = "sp1", ComponentId = "sp2", Name = "n", FileKey = "k", BlobName = "files/Hp/sp2/1/sp2.exe", Sha256 = "ab", FileName = "sp2.exe", Size = 5, Extract = DriverExtractKind.Hp };
-        var document = new DriverSetDocument { ModelId = Guid.NewGuid(), Fingerprint = "f", Items = [item] };
+        var document = new DriverSetDocument { ModelId = Guid.NewGuid(), Release = WindowsRelease.Windows11Version24H2, Fingerprint = "f", Items = [item] };
 
         var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(document, DriverJson.Options)).RootElement;
         var back = System.Text.Json.JsonSerializer.Deserialize<DriverSetDocument>(json.GetRawText(), DriverJson.Options)!;
 
         json.GetProperty("schemaVersion").GetInt32().Should().Be(1);
+        json.GetProperty("release").GetString().Should().Be("Windows11_24H2");
+        back.Release.Should().Be(WindowsRelease.Windows11Version24H2);
         var stored = json.GetProperty("items")[0];
         stored.GetProperty("file").GetString().Should().Be("files/Hp/sp2/1/sp2.exe");
         stored.GetProperty("sizeBytes").GetInt64().Should().Be(5);

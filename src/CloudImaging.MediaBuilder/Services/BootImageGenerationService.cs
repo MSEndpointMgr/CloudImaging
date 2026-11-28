@@ -12,10 +12,10 @@ namespace CloudImaging.MediaBuilder.Services;
 /// Orchestrates the WinPE boot image generation workflow (T064/T173, FR-051, FR-067, FR-070).
 ///
 /// Workflow steps:
-///   1. Verify ADK / WinPE add-on is installed.
-///   2. Optionally retrieve the active boot media certificate PFX from the Operator API.
-///   3. Locate or download Cloud Imaging Client binaries.
-///   4. Copy WinPE base files to working directory.
+///   1. Prompt for elevation (UAC) when not already running as Administrator.
+///   2. Retrieve the boot media certificate, branding logo and Device Gateway URL from the Operator API.
+///   3. Locate or download Cloud Imaging Client binaries (and HP's firmware tools when included).
+///   4. Verify ADK / WinPE add-on is installed, then copy WinPE base files to a working directory.
 ///   5. Mount WIM, inject Client binaries + cert + branding.
 ///   6. Optionally inject pre-staged storage/network drivers (FR-051c).
 ///   7. Unmount and commit WIM.
@@ -50,6 +50,9 @@ public sealed partial class BootImageGenerationService
     /// Several keep-alive intervals; not applied before the first line, which also covers the UAC prompt.
     /// </summary>
     private static readonly TimeSpan StalledElevatedWorkerTimeout = TimeSpan.FromSeconds(45);
+
+    /// <summary>How long a worker still waiting for its parameters gets to exit after the cancel flag.</summary>
+    private static readonly TimeSpan WaitingWorkerStopTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
     /// Conservative allowance for the WinPE media copype.cmd produces plus DISM mount
@@ -149,6 +152,13 @@ public sealed partial class BootImageGenerationService
     private sealed record ElevatedGenerationResult(
         bool Success, string? WimPath, string? Sha256Hash, string? Error);
 
+    /// <summary>What the caller prepares after the UAC prompt.</summary>
+    /// <param name="ClientBinariesPath">Folder containing the Cloud Imaging Client binaries.</param>
+    /// <param name="HpFirmwareToolsPath">HP's firmware tools, already downloaded and checked, or null.</param>
+    public sealed record GenerationInputs(string ClientBinariesPath, string? HpFirmwareToolsPath = null);
+
+    private sealed record PortalSettings(byte[]? PfxBytes, byte[]? LogoBytes, string? DeviceGatewayBaseUrl);
+
     /// <summary>
     /// Generates a WinPE boot image, transparently elevating when required.
     ///
@@ -161,10 +171,14 @@ public sealed partial class BootImageGenerationService
     /// and result back via small IPC files. When already elevated (e.g. launched via "Run as
     /// Administrator"), it just calls <see cref="GenerateAsync"/> directly with no relaunch.
     ///
+    /// The UAC prompt comes first: the worker starts and waits while this process resolves the
+    /// portal settings and <paramref name="prepareInputsAsync"/> locates or downloads the Client
+    /// binaries and HP's tools.
+    ///
     /// UI code should call this method instead of <see cref="GenerateAsync"/>.
     /// </summary>
     public async Task<GenerationResult> GenerateElevatedAsync(
-        string clientBinariesPath,
+        Func<CancellationToken, Task<GenerationInputs>> prepareInputsAsync,
         byte[]? pfxBytes,
         string outputDirectory,
         string? driverRootPath = null,
@@ -173,41 +187,40 @@ public sealed partial class BootImageGenerationService
         MachineArchitecture architecture = MachineArchitecture.X64,
         bool includeAutopilotTooling = false,
         string? windowsSourcePath = null,
-        string? hpFirmwareToolsPath = null,
         CancellationToken ct = default)
     {
-        // Resolve the boot media certificate, branding logo, and Device Gateway URL HERE, in
-        // this process, BEFORE branching on elevation. The elevated worker process (see
-        // RunElevatedWorkerAsync) constructs its own BootImageGenerationService with no
-        // OperatorApiClient of its own. If any of these were left for GenerateAsync to fetch
-        // lazily, the elevated-relaunch path (the one actually used on every non-Administrator
-        // run) would silently never retrieve them. The resolved values are threaded through to
-        // the elevated worker via the same file-based IPC used for everything else (see
-        // RunElevatedChildProcessAsync).
+        ArgumentNullException.ThrowIfNull(prepareInputsAsync);
+        if (_isElevated())
+        {
+            var settings = await ResolvePortalSettingsAsync(pfxBytes, ct);
+            var inputs = await prepareInputsAsync(ct);
+            return await GenerateAsync(inputs.ClientBinariesPath, settings.PfxBytes, outputDirectory, driverRootPath, toolsRootPath, settings.LogoBytes, settings.DeviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, inputs.HpFirmwareToolsPath, ct);
+        }
+
+        return await RunElevatedChildProcessAsync(prepareInputsAsync, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
+    }
+
+    /// <summary>
+    /// Resolves the boot media certificate, branding logo and Device Gateway URL in THIS process. The
+    /// elevated worker (see RunElevatedWorkerAsync) has no OperatorApiClient of its own, so anything
+    /// left for GenerateAsync to fetch lazily would silently never be retrieved on the relaunch path;
+    /// the values reach the worker through the IPC files instead.
+    /// </summary>
+    private async Task<PortalSettings> ResolvePortalSettingsAsync(byte[]? pfxBytes, CancellationToken ct)
+    {
         if (pfxBytes is null && _operatorApiClient is not null)
         {
             pfxBytes = await ResolveBootMediaCertificateAsync(ct);
         }
 
-        byte[]? logoBytes = _brandingLogoEmbedService is not null
-            ? await _brandingLogoEmbedService.TryDownloadLogoAsync(ct)
-            : null;
-
-        string? deviceGatewayBaseUrl = _operatorApiClient is not null
-            ? await ResolveDeviceGatewayBaseUrlAsync(ct)
-            : null;
-
-        if (_isElevated())
-        {
-            return await GenerateAsync(clientBinariesPath, pfxBytes, outputDirectory, driverRootPath, toolsRootPath, logoBytes, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, hpFirmwareToolsPath, ct);
-        }
-
-        return await RunElevatedChildProcessAsync(clientBinariesPath, pfxBytes, logoBytes, deviceGatewayBaseUrl, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, hpFirmwareToolsPath, ct);
+        var logoBytes = _brandingLogoEmbedService is not null ? await _brandingLogoEmbedService.TryDownloadLogoAsync(ct) : null;
+        var deviceGatewayBaseUrl = _operatorApiClient is not null ? await ResolveDeviceGatewayBaseUrlAsync(ct) : null;
+        return new PortalSettings(pfxBytes, logoBytes, deviceGatewayBaseUrl);
     }
 
     /// <summary>
     /// Retrieves the active boot media certificate PFX from the Operator API (T173, FR-070).
-    /// Called from <see cref="GenerateElevatedAsync"/> (before any elevation relaunch) so the
+    /// Called from <see cref="ResolvePortalSettingsAsync"/> in this (non-elevated) process so the
     /// bytes can be threaded through IPC to the elevated worker. Boot image generation MUST NOT
     /// proceed without an active certificate: the produced media would be unable to complete the
     /// mTLS handshake with the Device Gateway API and would be non-functional, so a retrieval
@@ -216,7 +229,7 @@ public sealed partial class BootImageGenerationService
     /// </summary>
     private async Task<byte[]> ResolveBootMediaCertificateAsync(CancellationToken ct)
     {
-        ReportProgress("Retrieving boot media certificate", 8);
+        ReportProgress("Retrieving boot media certificate", 1);
         try
         {
             var pfx = await _operatorApiClient!.GetBootMediaCertPfxAsync(ct);
@@ -241,14 +254,14 @@ public sealed partial class BootImageGenerationService
 
     /// <summary>
     /// Resolves the live Device Gateway API base URL from the Operator API (FR-062), called
-    /// from <see cref="GenerateElevatedAsync"/> before any elevation relaunch, so the value
+    /// from <see cref="ResolvePortalSettingsAsync"/> in this (non-elevated) process, so the value
     /// can be threaded through to the elevated worker. Boot image generation MUST NOT proceed
     /// without a resolved URL: the produced media would have no working Device Gateway endpoint
     /// configured, so a retrieval failure here is a hard failure, not a warning.
     /// </summary>
     private async Task<string> ResolveDeviceGatewayBaseUrlAsync(CancellationToken ct)
     {
-        ReportProgress("Resolving Device Gateway endpoint", 9);
+        ReportProgress("Resolving Device Gateway endpoint", 1);
         try
         {
             var endpoints = await _operatorApiClient!.GetEndpointConfigurationAsync(ct);
@@ -272,7 +285,7 @@ public sealed partial class BootImageGenerationService
     }
 
     private async Task<GenerationResult> RunElevatedChildProcessAsync(
-        string clientBinariesPath, byte[]? pfxBytes, byte[]? logoBytes, string? deviceGatewayBaseUrl, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, bool includeAutopilotTooling, string? windowsSourcePath, string? hpFirmwareToolsPath, CancellationToken ct)
+        Func<CancellationToken, Task<GenerationInputs>> prepareInputsAsync, byte[]? pfxBytes, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, bool includeAutopilotTooling, string? windowsSourcePath, CancellationToken ct)
     {
         // A previous run's IPC folder is only ever left behind when this (non-elevated) parent
         // process itself was killed/crashed before its own finally block ran (the elevated
@@ -291,22 +304,6 @@ public sealed partial class BootImageGenerationService
 
         try
         {
-            string? pfxFilePath = null;
-            if (pfxBytes is { Length: > 0 })
-            {
-                pfxFilePath = Path.Combine(ipcDir, "cert.pfx");
-                await File.WriteAllBytesAsync(pfxFilePath, pfxBytes, ct);
-            }
-
-            string? logoFilePath = null;
-            if (logoBytes is { Length: > 0 })
-            {
-                logoFilePath = Path.Combine(ipcDir, "logo.png");
-                await File.WriteAllBytesAsync(logoFilePath, logoBytes, ct);
-            }
-
-            var request = new ElevatedGenerationParams(clientBinariesPath, outputDirectory, driverRootPath, toolsRootPath, pfxFilePath, logoFilePath, deviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, hpFirmwareToolsPath);
-            await File.WriteAllTextAsync(paramsFile, JsonSerializer.Serialize(request), ct);
             File.WriteAllText(progressFile, string.Empty);
 
             var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName
@@ -317,7 +314,7 @@ public sealed partial class BootImageGenerationService
             // (see GenerateBootImageView.xaml's ProgressMessage TextBlock): the full detail
             // about why elevation is needed still reaches the user via the elevation-request
             // UAC prompt itself, so it doesn't need to be repeated here.
-            ReportProgress("Requesting Administrator privileges", 3);
+            ReportProgress("Requesting Administrator privileges", 1);
 
             System.Diagnostics.Process elevatedProcess;
             try
@@ -349,6 +346,19 @@ public sealed partial class BootImageGenerationService
             DateTime? lastActivityUtc = null;
             using (elevatedProcess)
             {
+                // The worker is already running and waits for its parameters, so nothing below comes before the UAC prompt.
+                try
+                {
+                    var settings = await ResolvePortalSettingsAsync(pfxBytes, ct);
+                    var inputs = await prepareInputsAsync(ct);
+                    await HandOverParamsAsync(ipcDir, paramsFile, settings, inputs, outputDirectory, driverRootPath, toolsRootPath, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, ct);
+                }
+                catch
+                {
+                    await StopWaitingWorkerAsync(cancelFile, resultFile, elevatedProcess);
+                    throw;
+                }
+
                 // With privilege brokers (UAC's consent.exe, CyberArk EPM, etc.) the process
                 // handle returned by "runas" is frequently a short-lived launcher, NOT the
                 // real elevated worker: so HasExited is unreliable and can never fire (or
@@ -427,6 +437,50 @@ public sealed partial class BootImageGenerationService
         }
     }
 
+    private static async Task HandOverParamsAsync(
+        string ipcDir, string paramsFile, PortalSettings settings, GenerationInputs inputs, string outputDirectory, string? driverRootPath, string? toolsRootPath, bool enableCommandPromptAccess, MachineArchitecture architecture, bool includeAutopilotTooling, string? windowsSourcePath, CancellationToken ct)
+    {
+        string? pfxFilePath = null;
+        if (settings.PfxBytes is { Length: > 0 })
+        {
+            pfxFilePath = Path.Combine(ipcDir, "cert.pfx");
+            await File.WriteAllBytesAsync(pfxFilePath, settings.PfxBytes, ct);
+        }
+
+        string? logoFilePath = null;
+        if (settings.LogoBytes is { Length: > 0 })
+        {
+            logoFilePath = Path.Combine(ipcDir, "logo.png");
+            await File.WriteAllBytesAsync(logoFilePath, settings.LogoBytes, ct);
+        }
+
+        var request = new ElevatedGenerationParams(inputs.ClientBinariesPath, outputDirectory, driverRootPath, toolsRootPath, pfxFilePath, logoFilePath, settings.DeviceGatewayBaseUrl, enableCommandPromptAccess, architecture, includeAutopilotTooling, windowsSourcePath, inputs.HpFirmwareToolsPath);
+
+        // Renamed into place, so the waiting worker never reads a half-written file.
+        var pendingFile = paramsFile + ".pending";
+        await File.WriteAllTextAsync(pendingFile, JsonSerializer.Serialize(request), ct);
+        File.Move(pendingFile, paramsFile);
+    }
+
+    /// <summary>
+    /// Stops a worker still waiting for its parameters, so it never outlives a run whose preparation
+    /// failed or was cancelled. It has mounted nothing yet, so it only needs to see the cancel flag.
+    /// </summary>
+    private static async Task StopWaitingWorkerAsync(string cancelFile, string resultFile, System.Diagnostics.Process process)
+    {
+        try { File.WriteAllText(cancelFile, string.Empty); } catch { /* best effort */ }
+        var deadline = DateTime.UtcNow + WaitingWorkerStopTimeout;
+        while (!File.Exists(resultFile) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(200, CancellationToken.None);
+        }
+
+        if (!File.Exists(resultFile))
+        {
+            try { process.Kill(); } catch { /* best effort: a broker's launcher handle, or not ours to kill */ }
+        }
+    }
+
     private int TailProgress(string progressFile, int fromLine)
     {
         string[] lines;
@@ -463,8 +517,8 @@ public sealed partial class BootImageGenerationService
     /// <summary>
     /// Entry point for the elevated worker process. Invoked from App.OnStartup when this
     /// executable is relaunched with <see cref="ElevatedWorkerArg"/> by
-    /// <see cref="GenerateElevatedAsync"/>. Runs entirely non-interactively: reads generation
-    /// parameters from <paramref name="paramsFile"/>, performs the actual generation (this
+    /// <see cref="GenerateElevatedAsync"/>. Runs entirely non-interactively: waits for the generation
+    /// parameters in <paramref name="paramsFile"/>, performs the actual generation (this
     /// process IS elevated), and writes progress/result to the given IPC files.
     ///
     /// Watches <paramref name="cancelFile"/> for the duration of generation: when the parent
@@ -480,8 +534,25 @@ public sealed partial class BootImageGenerationService
         using var cts = new CancellationTokenSource();
         var cancelWatcherTask = ElevationHelper.WatchForCancelOrParentExitAsync(cancelFile, cts);
 
+        // Stream both progress/step updates and the command/output log back to the parent
+        // over the same append-only file, one typed line at a time (see TailProgress).
+        var ipcLock = new object();
+        void Append(string typedLine)
+        {
+            lock (ipcLock)
+            {
+                try { File.AppendAllText(progressFile, typedLine + Environment.NewLine); }
+                catch { /* best effort: parent will just miss this tick */ }
+            }
+        }
+
+        // "K" lines are never displayed; they only prove to the parent that this worker is alive,
+        // including while it still waits for its parameters.
+        _ = KeepAliveAsync(() => Append("K"), cts.Token);
+
         try
         {
+            await WaitForParamsAsync(paramsFile, cts.Token);
             var json = await File.ReadAllTextAsync(paramsFile);
             var p = JsonSerializer.Deserialize<ElevatedGenerationParams>(json)
                 ?? throw new InvalidOperationException("Could not parse generation parameters.");
@@ -490,24 +561,9 @@ public sealed partial class BootImageGenerationService
             byte[]? logoBytes = p.LogoFilePath is not null ? await File.ReadAllBytesAsync(p.LogoFilePath) : null;
 
             var svc = new BootImageGenerationService(loggerFactory.CreateLogger<BootImageGenerationService>());
-
-            // Stream both progress/step updates and the command/output log back to the parent
-            // over the same append-only file, one typed line at a time (see TailProgress).
-            var ipcLock = new object();
-            void Append(string typedLine)
-            {
-                lock (ipcLock)
-                {
-                    try { File.AppendAllText(progressFile, typedLine + Environment.NewLine); }
-                    catch { /* best effort: parent will just miss this tick */ }
-                }
-            }
             svc.ProgressChanged += (_, e) => Append($"P\t{e.Percent}\t{e.Message}");
             svc.LogMessage += (_, line) => Append($"L\t{line}");
             svc.LogHeartbeat += (_, line) => Append($"H\t{line}");
-
-            // "K" lines are never displayed; they only prove to the parent that this worker is alive.
-            _ = KeepAliveAsync(() => Append("K"), cts.Token);
 
             var result = await svc.GenerateAsync(p.ClientBinariesPath, pfxBytes, p.OutputDirectory, p.DriverRootPath, p.ToolsRootPath, logoBytes, p.DeviceGatewayBaseUrl, p.EnableCommandPromptAccess, p.Architecture, p.IncludeAutopilotTooling, p.WindowsSourcePath, p.HpFirmwareToolsPath, cts.Token);
 
@@ -544,6 +600,22 @@ public sealed partial class BootImageGenerationService
         }
     }
 
+    // The parent starts this worker before it downloads anything, so the UAC prompt comes first, and
+    // writes the parameters once they are ready. A missing IPC folder means the parent gave up.
+    private static async Task WaitForParamsAsync(string paramsFile, CancellationToken ct)
+    {
+        var ipcDir = Path.GetDirectoryName(paramsFile) ?? string.Empty;
+        while (!File.Exists(paramsFile))
+        {
+            if (!Directory.Exists(ipcDir))
+            {
+                throw new OperationCanceledException(ct);
+            }
+
+            await Task.Delay(300, ct);
+        }
+    }
+
     /// <summary>
     /// Writes the worker's outcome for the parent; never throws. Recreates the IPC folder in case it
     /// was swept away; if that still fails, the parent's stalled-worker detection reports it.
@@ -558,7 +630,10 @@ public sealed partial class BootImageGenerationService
                 Directory.CreateDirectory(dir);
             }
 
-            await File.WriteAllTextAsync(resultFile, JsonSerializer.Serialize(result));
+            // Renamed into place: the parent reads the file as soon as it exists.
+            var pendingFile = resultFile + ".pending";
+            await File.WriteAllTextAsync(pendingFile, JsonSerializer.Serialize(result));
+            File.Move(pendingFile, resultFile, overwrite: true);
         }
         catch { /* see doc comment above */ }
     }
@@ -570,7 +645,7 @@ public sealed partial class BootImageGenerationService
     /// Generates a WinPE boot image. <paramref name="pfxBytes"/>, <paramref name="logoBytes"/>,
     /// and <paramref name="deviceGatewayBaseUrl"/> must already be resolved by the caller (see
     /// <see cref="GenerateElevatedAsync"/>, which resolves all three from the Operator API
-    /// before elevation). This method only embeds whatever it is given and performs no
+    /// in the non-elevated process). This method only embeds whatever it is given and performs no
     /// Operator API calls of its own.
     /// </summary>
     /// <param name="clientBinariesPath">Folder containing the Cloud Imaging Client binaries.</param>
@@ -802,8 +877,8 @@ public sealed partial class BootImageGenerationService
                     LogBrandingLogoEmbedded(_logger, logoBytes.Length);
                 }
 
-                // Stamp the Device Gateway URL resolved by GenerateElevatedAsync (before
-                // elevation) into the Client's appsettings.json. Every boot image build picks
+                // Stamp the Device Gateway URL resolved by GenerateElevatedAsync (in the
+                // non-elevated process) into the Client's appsettings.json. Every boot image build picks
                 // up the current URL this way, regardless of what shipped in the source binaries
                 // (FR-062 config bootstrap).
                 if (deviceGatewayBaseUrl is { Length: > 0 })
@@ -944,7 +1019,7 @@ public sealed partial class BootImageGenerationService
             return;
         }
 
-        ReportProgress("Cleaning up after an interrupted run", 2);
+        ReportProgress("Cleaning up after an interrupted run", 5);
         await MountCleanup.SweepAsync(RaiseLog);
     }
 

@@ -21,6 +21,8 @@
       folder full of runtime *.resources.dll files that are never loaded.
     -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- release-mediabuilder.yml passes -p:Version from the tag. Any other build must not pass for a release (the SDK default 1.0.0 is one). -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
   </PropertyGroup>
 
   <!--

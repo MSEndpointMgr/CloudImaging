@@ -35,14 +35,11 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
     /// </summary>
     private string _currentStage = "DWN";
 
-    /// <summary>Label of the one step that is skipped (not done) when no driver path is given.</summary>
-    private const string DriverInjectionStepLabel = "Inject drivers (optional)";
+    /// <summary>Overall percent while the Client is downloaded, after the UAC prompt and before the elevated worker's first step.</summary>
+    private const int ClientDownloadPercent = 2;
 
-    /// <summary>Label of the one step that is skipped (not done) when no tools path is given.</summary>
-    private const string ToolsInjectionStepLabel = "Copy support tools (optional)";
-
-    /// <summary>Label of the step that only runs for a Windows RE base.</summary>
-    private const string WindowsReStepLabel = "Extract Windows RE";
+    /// <summary>Overall percent while HP's firmware tools are downloaded and checked.</summary>
+    private const int HpToolsDownloadPercent = 3;
 
     private bool _useGitHubSource = true;
     private string _localSourcePath = string.Empty;
@@ -93,7 +90,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _checkSource = sourceCheck ?? WindowsRecoverySource.CheckAsync;
         RefreshAutopilotToolingAvailability();
 
-        Steps = new ObservableCollection<GenerationStep>(CreateSteps());
+        Steps = new ObservableCollection<GenerationStep>();
 
         // Ticks the progress header's "Xm Ys elapsed" caption once a second while generating.
         // A timer (rather than deriving it from log timestamps) keeps it ticking smoothly even
@@ -101,26 +98,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _elapsedTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _elapsedTimer.Tick += (_, _) => UpdateElapsedTimeText();
 
-        _genService.ProgressChanged += (_, e) => OnUi(() =>
-        {
-            ProgressMessage = e.Message;
-            ProgressPercent = e.Percent;
-            UpdateSteps(e.Percent);
-            OnPropertyChanged(nameof(StepProgressLabel));
-
-            // Announce the step transition in the log itself as a banner line. Without this,
-            // the log only ever shows raw external-process output (dism.exe/cmd.exe/copype.cmd
-            // stdout): a step could go Active in the steps sidebar with nothing in the log to mark
-            // the transition, and the next thing shown might be an unrelated-sounding line from that
-            // step's own internal tooling (e.g. copype.cmd's own "Mounting ..." chatter), making the
-            // log look out of sync with the sidebar. This is done here (once, at the ViewModel) rather
-            // than in the service's ReportProgress, since that method also drives the IPC round-trip
-            // for elevated generation (see BootImageGenerationService.TailProgress): logging there
-            // would double up every banner line during elevated runs. Step messages are kept short
-            // and self-contained (no trailing "…") so they always fit the one-line progress header
-            // on their own: the same text is reused verbatim as the banner line here.
-            AppendLogLine(e.Message.TrimEnd());
-        });
+        _genService.ProgressChanged += (_, e) => OnUi(() => ShowProgress(e.Message, e.Percent));
 
         _genService.LogMessage += (_, line) => OnUi(() => AppendLogLine(line));
         _genService.LogHeartbeat += (_, line) => OnUi(() => UpdateHeartbeatLine(line));
@@ -598,8 +576,8 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 return $"Step {activeIndex + 1} of {Steps.Count}";
             }
 
-            var doneOrSkipped = Steps.Count(s => s.State is GenerationStepState.Done or GenerationStepState.Skipped);
-            return $"Step {Math.Min(doneOrSkipped + 1, Steps.Count)} of {Steps.Count}";
+            var done = Steps.Count(s => s.State == GenerationStepState.Done);
+            return $"Step {Math.Min(done + 1, Steps.Count)} of {Steps.Count}";
         }
     }
 
@@ -725,10 +703,19 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
 
     private async Task GenerateAsync()
     {
+        // The selection is fixed for the whole run, so the sidebar lists exactly the steps it performs.
+        var downloadClient = UseGitHubSource;
+        var clientSourcePath = LocalSourcePath;
+        var includeHpTools = IncludeHpFirmwareTools && AcceptHpLicence;
+        var driverRootPath = string.IsNullOrWhiteSpace(_driverRootPath) ? null : _driverRootPath;
+        var toolsRootPath = string.IsNullOrWhiteSpace(_toolsRootPath) ? null : _toolsRootPath;
+        var windowsSourcePath = IsWindowsReSelected ? WindowsSourcePath : null;
+
         ClearLog();
-        foreach (var step in Steps)
+        Steps.Clear();
+        foreach (var step in PlanSteps(downloadClient, includeHpTools, windowsSourcePath is not null, driverRootPath is not null, toolsRootPath is not null))
         {
-            step.State = GenerationStepState.Pending;
+            Steps.Add(step);
         }
 
         OnPropertyChanged(nameof(StepProgressLabel));
@@ -742,6 +729,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         WasCancelled = false;
         ErrorReference = null;
         ErrorMessage = null;
+        _currentStage = "DWN";
 
         _generationStartedAtUtc = DateTime.UtcNow;
         UpdateElapsedTimeText();
@@ -758,36 +746,47 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
                 ?? throw new InvalidOperationException("Sign in to the Operator API before generating a boot image.");
             _genService.SetOperatorApiAccessToken(token);
 
-            _currentStage = "DWN";
-            string clientBinariesPath = UseGitHubSource
-                ? await DownloadLatestClientAsync()
-                : LocalSourcePath;
-
-            // Downloaded here, before elevation: the elevated worker only copies the checked folder in.
-            if (IncludeHpFirmwareTools && AcceptHpLicence)
+            // The UAC prompt blocks this thread until it is answered, so let the progress view render first.
+            if (Application.Current?.Dispatcher.CheckAccess() == true)
             {
-                _currentStage = "HPT";
-                ProgressMessage = "Downloading HP firmware tools";
-                hpToolsPath = Path.Combine(Path.GetTempPath(), $"ci-hp-tools-{Guid.NewGuid():N}");
-                await HpFirmwareTools.DownloadAsync(GalleryClient, hpToolsPath, line => OnUi(() => AppendLogLine(line)), _cts.Token);
+                await Dispatcher.Yield(DispatcherPriority.Background);
             }
 
-            // GenerateElevatedAsync resolves the boot media certificate, branding logo, and
-            // Device Gateway URL internally from the Operator API before transparently
-            // relaunching this app elevated (one UAC prompt) if it isn't already running as
-            // Administrator, since DISM image mounting requires it.
+            // GenerateElevatedAsync prompts for elevation first (one UAC prompt, when this process
+            // isn't already Administrator, since DISM image mounting requires it), then resolves the
+            // portal settings and calls back here for the downloads while the elevated worker waits.
             _currentStage = "APL";
             var result = await _genService.GenerateElevatedAsync(
-                clientBinariesPath,
+                async ct =>
+                {
+                    var clientBinariesPath = clientSourcePath;
+                    if (downloadClient)
+                    {
+                        _currentStage = "DWN";
+                        OnUi(() => SetStepPercent(ClientDownloadPercent));
+                        clientBinariesPath = await DownloadLatestClientAsync(ct);
+                    }
+
+                    // Downloaded in this process: the elevated worker only copies the checked folder in.
+                    if (includeHpTools)
+                    {
+                        _currentStage = "HPT";
+                        OnUi(() => ShowProgress("Downloading HP firmware tools", HpToolsDownloadPercent));
+                        hpToolsPath = Path.Combine(Path.GetTempPath(), $"ci-hp-tools-{Guid.NewGuid():N}");
+                        await HpFirmwareTools.DownloadAsync(GalleryClient, hpToolsPath, line => OnUi(() => AppendLogLine(line)), ct);
+                    }
+
+                    _currentStage = "APL";
+                    return new BootImageGenerationService.GenerationInputs(clientBinariesPath, hpToolsPath);
+                },
                 pfxBytes: null,
                 _outputFolderPath,
-                driverRootPath: string.IsNullOrWhiteSpace(_driverRootPath) ? null : _driverRootPath,
-                toolsRootPath: string.IsNullOrWhiteSpace(_toolsRootPath) ? null : _toolsRootPath,
+                driverRootPath: driverRootPath,
+                toolsRootPath: toolsRootPath,
                 enableCommandPromptAccess: _enableCommandPromptAccess,
                 architecture: SelectedArchitecture,
                 includeAutopilotTooling: IncludeAutopilotTooling,
-                windowsSourcePath: IsWindowsReSelected ? WindowsSourcePath : null,
-                hpFirmwareToolsPath: hpToolsPath,
+                windowsSourcePath: windowsSourcePath,
                 ct: _cts.Token);
 
             ResultFilePath = result.WimPath;
@@ -888,7 +887,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _cts.Cancel();
     }
 
-    private async Task<string> DownloadLatestClientAsync()
+    private async Task<string> DownloadLatestClientAsync(CancellationToken ct)
     {
         void OnProgress(object? _, (string Message, int Percent, bool Replace) e) =>
             OnUi(() =>
@@ -909,7 +908,7 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         _gitHubReleasesClient.ProgressChanged += OnProgress;
         try
         {
-            return await _gitHubReleasesClient.DownloadLatestClientAsync(SelectedArchitecture, _cts!.Token);
+            return await _gitHubReleasesClient.DownloadLatestClientAsync(SelectedArchitecture, ct);
         }
         finally
         {
@@ -1052,19 +1051,75 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
         }
     }
 
-    private static IEnumerable<GenerationStep> CreateSteps() =>
-    [
-        new("Verify ADK installation", 5),
-        new("Copy WinPE base files", 15),
-        new(WindowsReStepLabel, 22, "Skipped (Windows PE base)"),
-        new("Mount WIM for customization", 30),
-        new("Inject Cloud Imaging Client", 50),
-        new(DriverInjectionStepLabel, 61, "Skipped (no drivers to inject)"),
-        new(ToolsInjectionStepLabel, 63, "Skipped (no support tools to copy)"),
-        new("Unmount and commit WIM", 75),
-        new("Copy output and hash", 88),
-        new("Complete", 100),
-    ];
+    /// <summary>
+    /// The steps one run performs, given the selection it started with; a step for an option that was
+    /// not chosen is left out. Percents below 5 belong to this process (1 is the UAC prompt and the
+    /// portal settings, then the downloads); the elevated worker's first step starts at 5.
+    /// </summary>
+    internal static List<GenerationStep> PlanSteps(bool downloadClient, bool hpTools, bool windowsRe, bool drivers, bool supportTools)
+    {
+        var steps = new List<GenerationStep>();
+        if (downloadClient)
+        {
+            steps.Add(new("Download Cloud Imaging Client", ClientDownloadPercent));
+        }
+
+        if (hpTools)
+        {
+            steps.Add(new("Download HP firmware tools", HpToolsDownloadPercent));
+        }
+
+        steps.Add(new("Verify ADK installation", 5));
+        steps.Add(new("Copy WinPE base files", 15));
+        if (windowsRe)
+        {
+            steps.Add(new("Extract Windows RE", 22));
+        }
+
+        steps.Add(new("Mount WIM for customization", 30));
+        steps.Add(new("Inject Cloud Imaging Client", 50));
+        if (drivers)
+        {
+            steps.Add(new("Inject drivers", 61));
+        }
+
+        if (supportTools)
+        {
+            steps.Add(new("Copy support tools", 63));
+        }
+
+        steps.Add(new("Unmount and commit WIM", 75));
+        steps.Add(new("Copy output and hash", 88));
+        steps.Add(new("Complete", 100));
+        return steps;
+    }
+
+    /// <summary>Moves the header, the percent and the steps to a new phase, and logs it as a banner line.</summary>
+    private void ShowProgress(string message, int percent)
+    {
+        ProgressMessage = message;
+        SetStepPercent(percent);
+
+        // Announce the step transition in the log itself as a banner line. Without this,
+        // the log only ever shows raw external-process output (dism.exe/cmd.exe/copype.cmd
+        // stdout): a step could go Active in the steps sidebar with nothing in the log to mark
+        // the transition, and the next thing shown might be an unrelated-sounding line from that
+        // step's own internal tooling (e.g. copype.cmd's own "Mounting ..." chatter), making the
+        // log look out of sync with the sidebar. This is done here (once, at the ViewModel) rather
+        // than in the service's ReportProgress, since that method also drives the IPC round-trip
+        // for elevated generation (see BootImageGenerationService.TailProgress): logging there
+        // would double up every banner line during elevated runs. Step messages are kept short
+        // and self-contained (no trailing "…") so they always fit the one-line progress header
+        // on their own: the same text is reused verbatim as the banner line here.
+        AppendLogLine(message.TrimEnd());
+    }
+
+    private void SetStepPercent(int percent)
+    {
+        ProgressPercent = percent;
+        UpdateSteps(percent);
+        OnPropertyChanged(nameof(StepProgressLabel));
+    }
 
     /// <summary>
     /// Advances step status from the overall percent: a step is Done once the percent has
@@ -1078,25 +1133,9 @@ public sealed class GenerateBootImageViewModel : INotifyPropertyChanged, IDispos
             var step = Steps[i];
             var nextStart = i + 1 < Steps.Count ? Steps[i + 1].StartPercent : 101;
             var isCompleted = (percent >= 100 && i == Steps.Count - 1) || percent >= nextStart;
-
-            if (isCompleted)
-            {
-                // The driver-injection and support-tools steps are optional (FR-051c/FR-051d):
-                // when no path was given for one, nothing was actually done for it, so it reads
-                // as Skipped rather than Done.
-                var noDriversToInject = step.Label == DriverInjectionStepLabel && string.IsNullOrWhiteSpace(_driverRootPath);
-                var noToolsToCopy = step.Label == ToolsInjectionStepLabel && string.IsNullOrWhiteSpace(_toolsRootPath);
-                var windowsPeBase = step.Label == WindowsReStepLabel && !_useWindowsRe;
-                step.State = (noDriversToInject || noToolsToCopy || windowsPeBase) ? GenerationStepState.Skipped : GenerationStepState.Done;
-            }
-            else if (percent >= step.StartPercent)
-            {
-                step.State = GenerationStepState.Active;
-            }
-            else
-            {
-                step.State = GenerationStepState.Pending;
-            }
+            step.State = isCompleted ? GenerationStepState.Done
+                : percent >= step.StartPercent ? GenerationStepState.Active
+                : GenerationStepState.Pending;
         }
     }
 
@@ -1161,9 +1200,6 @@ public enum GenerationStepState
     /// <summary>Finished successfully.</summary>
     Done,
 
-    /// <summary>Step was bypassed because its optional input was not provided (e.g. no drivers to inject).</summary>
-    Skipped,
-
     /// <summary>Generation ended (error or cancellation) while this was the active step.</summary>
     Failed,
 }
@@ -1173,7 +1209,7 @@ public enum GenerationStepState
 /// view. <see cref="StartPercent"/> is the overall-progress percentage at which the step
 /// becomes active (see GenerateBootImageViewModel.UpdateSteps).
 /// </summary>
-public sealed class GenerationStep(string label, int startPercent, string? skippedCaption = null) : INotifyPropertyChanged
+public sealed class GenerationStep(string label, int startPercent) : INotifyPropertyChanged
 {
     private GenerationStepState _state = GenerationStepState.Pending;
 
@@ -1196,24 +1232,15 @@ public sealed class GenerationStep(string label, int startPercent, string? skipp
             _state = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(Glyph));
-            OnPropertyChanged(nameof(IsSkipped));
-            OnPropertyChanged(nameof(Caption));
         }
     }
 
-    /// <summary>True while this step is in the <see cref="GenerationStepState.Skipped"/> state.</summary>
-    public bool IsSkipped => _state == GenerationStepState.Skipped;
-
-    /// <summary>Short explanatory line shown under a skipped step; null for every other state.</summary>
-    public string? Caption => IsSkipped ? skippedCaption ?? "Skipped" : null;
-
-    /// <summary>Symbol shown next to the step label: done ✓, active ▶, failed ✕, skipped , , pending ○.</summary>
+    /// <summary>Symbol shown next to the step label: done ✓, active ▶, failed ✕, pending ○.</summary>
     public string Glyph => _state switch
     {
         GenerationStepState.Done => "\u2713", // ✓
         GenerationStepState.Active => "\u25B6", // ▶
         GenerationStepState.Failed => "\u2715", // ✕
-        GenerationStepState.Skipped => "\u2013", // en dash
         _ => "\u25CB", // ○
     };
 

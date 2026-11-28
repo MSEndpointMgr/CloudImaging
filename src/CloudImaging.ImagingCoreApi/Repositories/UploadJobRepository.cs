@@ -289,7 +289,7 @@ public sealed class UploadJobRepository
         Name = e.GetString("Name"),
         Description = e.GetString("Description"),
         Architecture = ParseArchitecture(e.GetString("Architecture")),
-        WindowsRelease = Enum.TryParse<WindowsRelease>(e.GetString("WindowsRelease"), out var release) ? release : null,
+        WindowsRelease = WindowsRelease.TryParse(e.GetString("WindowsRelease"), out var release) ? release : null,
         SizeBytes = e.GetInt64("SizeBytes") ?? 0L,
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
         UpdatedAt = e.GetDateTimeOffset("UpdatedAt") ?? DateTimeOffset.UtcNow,

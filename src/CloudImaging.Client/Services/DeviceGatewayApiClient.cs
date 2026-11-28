@@ -109,7 +109,7 @@ public sealed partial class DeviceGatewayApiClient
     private static bool IsTransientTransportFailure(HttpRequestException ex) =>
         ex.HttpRequestError is HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError;
 
-    /// <summary>Manufacturer sent when the session was created; words the driver skip note (system ID or SKU).</summary>
+    /// <summary>Manufacturer sent when the session was created; words the driver skip note (baseboard or system SKU).</summary>
     public string? DeviceManufacturer { get; private set; }
 
     private async Task<CreateSessionResponse?> CreateSessionOnceAsync(

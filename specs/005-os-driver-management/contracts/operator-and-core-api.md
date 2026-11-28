@@ -50,6 +50,7 @@ header), `hasPreviousSet`, `pendingVersion`, `pending` (`{ changes, buildAt }` w
 | Function | Route | Rules and errors |
 |---|---|---|
 | `GetDriverVendors` | `GET vendors` | Vendors with sync flag, onboarded model count, match key type, `supported`. |
+| `GetWindowsReleases` | `GET windows-releases` | `{ releases, refreshedAt, problem }`: the built-in releases plus every deployable feature update Microsoft Graph lists (`beta/admin/windows/updates/catalog/entries`, `WindowsUpdates.Read.All`), newest first. Reads Graph again when the stored list is 12 hours old, 1 hour after a failed read; `problem` says why the last read failed. A release once read stays. Vendor model lists keep only these releases (FR-107). |
 | `SetDriverVendor` | `PUT vendors/{vendor}` | 400 for Lenovo; records change log. |
 | `GetDriverCatalogModels` | `GET catalog/models?vendor=&search=` | Returns `{ fetchedAt, catalogUrl, stale, warning?, models[] }`. When the vendor's stored list is missing or older than 7 days, fetches it first, whatever the vendor's sync switch (not a run, no limit). If that fetch fails and an older list is stored: 200 with `stale: true` and `warning` "Showing the model list from 2026-10-14 02:00. Can't reach catalog at https://hpia.hpcloud.hp.com.". If it fails and no list is stored: 503 `{ detail: "Can't reach catalog at https://hpia.hpcloud.hp.com. Make sure Imaging Core can reach it, then try again.", catalogUrl }`. |
 | `PreviewDriverModels` | `POST models/preview` | At most 20 models. Downloads component catalogs (24-hour cache) and resolves with current rules. 502 per model that could not be fetched, listed in `errors`. |
@@ -87,7 +88,7 @@ header), `hasPreviousSet`, `pendingVersion`, `pending` (`{ changes, buildAt }` w
 | `CreateCustomComponent` | `POST custom-components` `{ uploadId, name, version, action, category, installCommand?, targets: [{ modelId, replacesLineageKey? }] }` | 400 field errors, Offline actions without INF, Specialize without command; 409 when a lineage is already replaced on a model (names the other custom component). Marks every target pair dirty. |
 | `GetCustomComponents`, `UpdateCustomComponent`, `DeleteCustomComponent` | `custom-components`, `custom-components/{id}` | Update covers name, action, category, command and targets; a new package is a new upload with a new version. Delete marks targets dirty; running deployments keep their pinned files. |
 | `DismissCustomComponentNotice` | `POST custom-components/{id}/notices/{modelId}/dismiss` | Records who dismissed the banner for the current `NoticeVersion`. |
-| `PreviewDriverAssignment` | `POST assignment-preview` `{ osImageId, sessionIds[] }` | Read-only, no actor. At most 200 session IDs. 404 unknown image. Response: `{ release, architecture, options: [{ modelId, vendor, displayName, maxDownloadBytes, testing }], sessions: [{ sessionId, matchedModelId, testingModelId, skipReason, matchKey }] }`. `testingModelId` is the matched model when its only set for the release is in testing (`skipReason` `NoDriverSet`). `options` are the models with a current set for the image's release and architecture, plus one `testing: true` option per model with a set in testing, ordered by vendor, name, then current before testing; the portal shows testing options to Operators and Administrators only. Empty `options` with `release: null` when the image has none. Sessions that are not found or not assignable are left out. |
+| `PreviewDriverAssignment` | `POST assignment-preview` `{ osImageId, sessionIds[] }` | Read-only, no actor. At most 200 session IDs. 404 unknown image. Response: `{ release, architecture, options: [{ modelId, vendor, displayName, maxDownloadBytes, testing, release }], sessions: [{ sessionId, matchedModelId, testingModelId, skipReason, matchKey }] }`. `testingModelId` is the matched model when its only set for the release is in testing (`skipReason` `NoDriverSet`). `options` are the models with a current set for the image's release, or else for the newest earlier release of the same Windows version (that option's `release` names it; null otherwise, section 4), and architecture, plus one `testing: true` option per model with a set in testing for the image's release, ordered by vendor, name, then current before testing; the portal shows testing options to Operators and Administrators only. Empty `options` with `release: null` when the image has none. Sessions that are not found or not assignable are left out. |
 
 Every write requires `actor.upn` (or `changedBy`) and writes a `DriverChangeLog` row; 400 "The
 acting user is missing." otherwise. `PreviewDriverAssignment` is a read and is proxied by the
@@ -113,8 +114,11 @@ research R1).
 osImage)` after the setup profile pin and write the `DeviceSession` driver fields
 (data-model section 2). Resolution: image must have a `WindowsRelease` (else `NoWindowsRelease`);
 HP: any `MotherboardModel` in a model's match keys, Dell: `SystemSku` (else `NoMatchingModel`);
-the image's `Architecture` must equal the model's (else `ArchitectureMismatch`); release onboarded (else
-`ReleaseNotOnboarded`); current set exists (else `NoDriverSet`). The device's match key is stored
+the image's `Architecture` must equal the model's (else `ArchitectureMismatch`); then the model's
+current set for the image's release, or else for the newest earlier release of the same Windows
+version that has one (FR-108; never a newer release, another Windows version or a set in testing):
+`DriverRelease` is that set's release and `DriverFallbackFrom` the image's release. Without either:
+release not onboarded `ReleaseNotOnboarded`, otherwise `NoDriverSet`. The device's match key is stored
 in `DriverMatchKey` either way. When a set is pinned, the model vendor's critical categories are
 copied to `DriverCriticalCategories`.
 
@@ -123,12 +127,13 @@ accept optional `driverChoices: [{ sessionId, kind: "Model" | "Testing" | "None"
 `driverChoice: { kind, modelId }` (single), plus `actor: { upn, objectId }`, required when a choice
 is present (400 "The acting user is missing."). Before assigning any session, Core checks each
 choice for an assignable session: `Model` needs an existing model with the image's architecture
-and a current set for the image's release; `Testing` a set in testing for it ("<model> has no
+and a current set for the image's release or an earlier one ("<model> has no driver set for
+<release> or an earlier release."); `Testing` a set in testing for the image's release ("<model> has no
 driver set in testing for <release>."). Any invalid choice: 409 `{ detail, errors: [{ sessionId,
 reason }] }` and nothing is assigned ("The chosen driver model is no longer available for 2
 devices. Choose again."). A choice for a session ID not in `sessionIds`, two choices for one
 session, or `Model` or `Testing` without `modelId`: 400. Valid choices replace the match: `Model` pins that
-model's current set; `Testing` its set in testing; `None` pins `NoneChosen`; all set `DriverChosenManually = true` and
+model's current set, resolved as above; `Testing` its set in testing; `None` pins `NoneChosen`; all set `DriverChosenManually = true` and
 `DriverChosenBy = actor.upn`. The existing Operator API proxies (`AssignSessionFunction`,
 `BulkAssignFunction`) forward the body unchanged.
 

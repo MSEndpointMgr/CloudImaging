@@ -362,6 +362,29 @@ there cover this step.
 **Rollback**: an earlier backend answers only the unsigned check, so media built with the new
 Client cannot update itself on it until the upgrade is reapplied. Imaging is unaffected.
 
+### Grant the Windows release permission
+
+**Applies when** upgrading the backend stream to `mse-ci-v1.1.0` or later from an earlier release.
+
+The Windows releases offered for OS images and driver models come from Microsoft's list of
+feature updates, so a new release can be chosen the day Microsoft ships it, before any vendor
+publishes drivers for it. Imaging Core reads that list through Microsoft Graph, which needs the
+`WindowsUpdates.Read.All` permission on its managed identity and a licence that includes Windows
+Autopatch.
+
+1. Upgrade the backend ([Part 1](#part-1-upgrade-the-azure-components)).
+2. Rerun `post-install.ps1` from the new bundle with the same parameters as before
+   ([setup-instructions.md, Phase 3, Step 1](setup-instructions.md#step-1-complete-the-microsoft-entra-grants)).
+   It adds the new grant, reports the existing ones as already present, and restarts Imaging Core
+   so the grant takes effect.
+
+Without the grant, the portal offers the releases Cloud Imaging ships with, Windows 10,
+version 22H2 and Windows 11, versions 23H2 to 25H2, and the Windows release field says why newer
+ones are missing.
+
+**Rollback**: an earlier backend has no driver management and ignores the grant, which can stay in
+place.
+
 ---
 
 ## Rollback

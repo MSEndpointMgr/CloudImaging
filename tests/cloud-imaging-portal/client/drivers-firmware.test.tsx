@@ -216,6 +216,33 @@ describe('Drivers & Firmware: Firmware tab', () => {
     expect(screen.getByRole('button', { name: /Version history/ }).getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('a download that ends while the tab is open says how it went', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let state: 'downloading' | 'done' | 'failed' = 'downloading';
+    serve({
+      [`GET /api/drivers/models/${modelId}`]: { body: modelPage },
+      [`GET /api/drivers/models/${modelId}/firmware`]: () => ({ body: firmware({ rows: [bios({ releasedVersion: '01.02.04', downloading: state === 'downloading', downloadFailure: state === 'failed' ? 'The file does not match its checksum.' : null })], preProduction: [] }) }),
+    });
+    renderFirmware();
+    await screen.findByText('Downloading from HP. Devices get it once it is verified.');
+    expect(notify).not.toHaveBeenCalled();
+
+    state = 'done';
+    await act(async () => { await vi.advanceTimersByTimeAsync(FIRMWARE_POLL_MS); });
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'System BIOS 01.02.04 is downloaded.', description: 'Devices of this model with an older BIOS get it from their next deployment.' }));
+    cleanup();
+    notify.mockClear();
+
+    state = 'downloading';
+    renderFirmware();
+    await screen.findByText('Downloading from HP. Devices get it once it is verified.');
+    state = 'failed';
+    await act(async () => { await vi.advanceTimersByTimeAsync(FIRMWARE_POLL_MS); });
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'error', title: 'System BIOS 01.02.04 could not be downloaded.', description: 'The file does not match its checksum. The next sync tries again.' }));
+  });
+
   it('a downloading BIOS says so under its name with a moving edge, and a failed one says why in its icon', async () => {
     let failed = false;
     serve({
@@ -286,7 +313,7 @@ describe('Drivers & Firmware: Firmware tab', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'More actions' }));
 
-    expect(screen.getAllByRole('menuitem').map(i => i.getAttribute('aria-label'))).toEqual(['Remove model']);
+    expect(screen.getAllByRole('menuitem').map(i => i.textContent)).toEqual(['Remove model']);
   });
 
   it('a Dell model says it gets no BIOS updates', async () => {

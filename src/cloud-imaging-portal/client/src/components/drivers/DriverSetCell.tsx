@@ -1,10 +1,10 @@
 import React from 'react';
-import { CircleAlert, Undo2 } from 'lucide-react';
+import { CircleAlert, Info, Undo2 } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { Select, type SelectOption } from '../ui/select.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { cn } from '../../lib/utils.ts';
-import { NO_DRIVERS, formatBytes, noMatchText, optionLabel, optionValue, vendorLabel, type DriverAssignmentPreview } from '../../lib/drivers.ts';
+import { NO_DRIVERS, earlierSetText, formatBytes, noMatchText, optionLabel, optionValue, vendorLabel, type DriverAssignmentPreview } from '../../lib/drivers.ts';
 
 /** The options of one row: per vendor, the matched model first in its group (its set in testing after it), then No drivers. */
 function driverSetOptions(preview: DriverAssignmentPreview, matchedModelId: string | null): SelectOption[] {
@@ -75,6 +75,8 @@ export function DriverSetCell({ sessionId, serial, manufacturer, preview, choice
   // Only Operators get testing options, so only they are pointed at a set in testing.
   const testingName = preview.options.find(o => o.testing && o.modelId === session?.testingModelId)?.displayName;
   const reason = !matched && session ? noMatchText(session, manufacturer, preview.release, preview.architecture, testingName) : null;
+  const chosen = preview.options.find(o => optionValue(o) === value);
+  const earlier = chosen ? earlierSetText(chosen, preview.release) : null;
   const changed = choice !== undefined && choice !== matched;
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -91,6 +93,13 @@ export function DriverSetCell({ sessionId, serial, manufacturer, preview, choice
         <Tooltip content={reason}>
           <span tabIndex={0} aria-label={reason} className="inline-flex shrink-0">
             <CircleAlert className="h-4 w-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+          </span>
+        </Tooltip>
+      )}
+      {earlier && (
+        <Tooltip content={earlier}>
+          <span tabIndex={0} aria-label={earlier} className="inline-flex shrink-0">
+            <Info className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
           </span>
         </Tooltip>
       )}

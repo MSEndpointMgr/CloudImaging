@@ -76,19 +76,14 @@ public sealed class AutopilotToolingTests
     public async Task GenerateElevatedAsync_ThreadsIncludeAutopilotTooling_IntoElevatedWorkerParams()
     {
         string? capturedParamsJson = null;
+        var worker = new FakeElevatedWorker(onParams: json => capturedParamsJson = json);
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
-            {
-                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                capturedParamsJson = File.ReadAllText(files[0]);
-                File.WriteAllText(files[2], """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
-                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0") { UseShellExecute = false, CreateNoWindow = true })!;
-            });
+            startElevatedProcessOverride: worker.Start);
 
         await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath(),
             includeAutopilotTooling: true);

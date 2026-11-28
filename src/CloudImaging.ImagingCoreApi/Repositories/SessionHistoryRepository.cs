@@ -98,6 +98,7 @@ public sealed class SessionHistoryRepository
             ["FailedStepName"] = r.FailedStepName?.ToString(),
             ["ErrorDetail"] = r.ErrorDetail,
             ["CreatedAt"] = r.CreatedAt,
+            ["ImagingStartedAt"] = r.ImagingStartedAt,
             ["TerminalAt"] = r.TerminalAt,
             ["PurgeAt"] = r.TerminalAt + TimeSpan.FromDays(retentionDays),
         };
@@ -119,6 +120,7 @@ public sealed class SessionHistoryRepository
         FailedStepName = e.GetString("FailedStepName") is string fsn ? Enum.Parse<ImagingStepName>(fsn) : null,
         ErrorDetail = e.GetString("ErrorDetail"),
         CreatedAt = e.GetDateTimeOffset("CreatedAt") ?? DateTimeOffset.UtcNow,
+        ImagingStartedAt = e.GetDateTimeOffset("ImagingStartedAt"),
         TerminalAt = e.GetDateTimeOffset("TerminalAt") ?? DateTimeOffset.UtcNow,
     };
 }

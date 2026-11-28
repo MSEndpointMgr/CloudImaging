@@ -1,6 +1,4 @@
-using System.Diagnostics;
 using System.IO;
-using System.Text.RegularExpressions;
 using CloudImaging.MediaBuilder.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -54,7 +52,7 @@ public sealed class ElevatedGenerationTests
             });
 
         Func<Task> act = async () => await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
@@ -66,29 +64,14 @@ public sealed class ElevatedGenerationTests
     [Fact]
     public async Task GenerateElevatedAsync_RelaunchesElevated_AndSurfacesSuccessResult()
     {
+        var worker = new FakeElevatedWorker();
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
-            {
-                // Simulate the elevated worker process: parse the IPC file paths out of the
-                // command-line and write a canned success result directly, instead of really
-                // elevating and running BootImageGenerationService.RunElevatedWorkerAsync.
-                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                var resultFile = files[2];
-                File.WriteAllText(resultFile,
-                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
-
-                // Return a real, harmless, already-exiting process so HasExited/Dispose work.
-                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow  = true,
-                })!;
-            });
+            startElevatedProcessOverride: worker.Start);
 
         var result = await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
@@ -97,27 +80,112 @@ public sealed class ElevatedGenerationTests
     }
 
     [Fact]
-    public async Task GenerateElevatedAsync_SurfacesFailureResult_FromElevatedWorker()
+    public async Task GenerateElevatedAsync_PromptsForElevation_BeforePreparingInputs()
     {
+        var order = new List<string>();
+        var worker = new FakeElevatedWorker();
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
+            startElevatedProcessOverride: (exe, args) =>
             {
-                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                var resultFile = files[2];
-                File.WriteAllText(resultFile,
-                    """{"Success":false,"WimPath":null,"Sha256Hash":null,"Error":"dism.exe exited with code 1."}""");
-
-                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow  = true,
-                })!;
+                order.Add("elevate");
+                return worker.Start(exe, args);
             });
 
+        await svc.GenerateElevatedAsync(
+            _ =>
+            {
+                order.Add("prepare");
+                return Task.FromResult(new BootImageGenerationService.GenerationInputs(@"C:\DoesNotExist"));
+            },
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath());
+
+        order.Should().Equal(["elevate", "prepare"], "the UAC prompt comes before any download");
+        worker.ReceivedParams.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_StopsTheWaitingWorker_WhenPreparationFails()
+    {
+        var worker = new FakeElevatedWorker();
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: worker.Start);
+
         Func<Task> act = async () => await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            _ => throw new InvalidOperationException("Could not download the Cloud Imaging Client."),
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath());
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Could not download the Cloud Imaging Client.");
+        worker.WasStopped.Should().BeTrue("a worker that never gets its parameters must not keep waiting");
+        worker.ReceivedParams.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_StopsTheWaitingWorker_WhenCancelledDuringPreparation()
+    {
+        using var cts = new CancellationTokenSource();
+        var worker = new FakeElevatedWorker();
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: worker.Start);
+
+        Func<Task> act = async () => await svc.GenerateElevatedAsync(
+            async ct =>
+            {
+                await cts.CancelAsync();
+                await Task.Delay(Timeout.Infinite, ct);
+                throw new InvalidOperationException("Unreachable.");
+            },
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath(),
+            ct: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        worker.WasStopped.Should().BeTrue();
+        worker.ReceivedParams.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunElevatedWorkerAsync_WaitsForItsParameters_AndExitsCancelledWhenStoppedFirst()
+    {
+        var ipcDir = Directory.CreateTempSubdirectory("ci-worker-test-").FullName;
+        try
+        {
+            var resultFile = Path.Combine(ipcDir, "result.json");
+            var cancelFile = Path.Combine(ipcDir, "cancel.flag");
+            var worker = BootImageGenerationService.RunElevatedWorkerAsync(Path.Combine(ipcDir, "params.json"), Path.Combine(ipcDir, "progress.txt"), resultFile, cancelFile, NullLoggerFactory.Instance);
+
+            await Task.Delay(700);
+            File.Exists(resultFile).Should().BeFalse("the worker waits for the parent's parameters instead of failing");
+
+            File.WriteAllText(cancelFile, string.Empty);
+            await worker.WaitAsync(TimeSpan.FromSeconds(10));
+
+            File.ReadAllText(resultFile).Should().Contain("\"Success\":false").And.Contain("cancelled");
+        }
+        finally
+        {
+            Directory.Delete(ipcDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_SurfacesFailureResult_FromElevatedWorker()
+    {
+        var worker = new FakeElevatedWorker("""{"Success":false,"WimPath":null,"Sha256Hash":null,"Error":"dism.exe exited with code 1."}""");
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: worker.Start);
+
+        Func<Task> act = async () => await svc.GenerateElevatedAsync(
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
@@ -128,6 +196,7 @@ public sealed class ElevatedGenerationTests
     [Fact]
     public async Task GenerateElevatedAsync_ThrowsClearMessage_WhenElevationCancelled()
     {
+        var prepared = false;
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             isElevatedOverride: () => false,
@@ -135,12 +204,17 @@ public sealed class ElevatedGenerationTests
                 throw new System.ComponentModel.Win32Exception(1223, "The operation was canceled by the user."));
 
         Func<Task> act = async () => await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            _ =>
+            {
+                prepared = true;
+                return Task.FromResult(new BootImageGenerationService.GenerationInputs(@"C:\DoesNotExist"));
+            },
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*elevation was cancelled*");
+        prepared.Should().BeFalse("nothing is downloaded when the UAC prompt is declined");
     }
 
     [Fact]
@@ -149,27 +223,14 @@ public sealed class ElevatedGenerationTests
         // FR-051d: the "Enable command prompt access" opt-in must reach the elevated worker via
         // the same params.json IPC file used for driverRootPath/pfx/logo/deviceGatewayBaseUrl.
         string? capturedParamsJson = null;
+        var worker = new FakeElevatedWorker(onParams: json => capturedParamsJson = json);
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
-            {
-                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                var paramsFile = files[0];
-                var resultFile = files[2];
-                capturedParamsJson = File.ReadAllText(paramsFile);
-                File.WriteAllText(resultFile,
-                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
-
-                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow  = true,
-                })!;
-            });
+            startElevatedProcessOverride: worker.Start);
 
         await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath(),
             enableCommandPromptAccess: true);
@@ -184,32 +245,37 @@ public sealed class ElevatedGenerationTests
         // FR-051d: the support-tools folder path must reach the elevated worker via the same
         // params.json IPC file used for driverRootPath/pfx/logo/deviceGatewayBaseUrl.
         string? capturedParamsJson = null;
+        var worker = new FakeElevatedWorker(onParams: json => capturedParamsJson = json);
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
-            {
-                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                var paramsFile = files[0];
-                var resultFile = files[2];
-                capturedParamsJson = File.ReadAllText(paramsFile);
-                File.WriteAllText(resultFile,
-                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
-
-                return Process.Start(new ProcessStartInfo("cmd.exe", "/c exit 0")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow  = true,
-                })!;
-            });
+            startElevatedProcessOverride: worker.Start);
 
         await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath(),
             toolsRootPath: @"C:\tools");
 
         capturedParamsJson.Should().NotBeNull();
         capturedParamsJson.Should().Contain(@"""ToolsRootPath"":""C:\\tools""");
+    }
+
+    [Fact]
+    public async Task GenerateElevatedAsync_ThreadsThePreparedInputs_IntoElevatedWorkerParams()
+    {
+        string? capturedParamsJson = null;
+        var worker = new FakeElevatedWorker(onParams: json => capturedParamsJson = json);
+        var svc = new BootImageGenerationService(
+            NullLogger<BootImageGenerationService>.Instance,
+            isElevatedOverride: () => false,
+            startElevatedProcessOverride: worker.Start);
+
+        await svc.GenerateElevatedAsync(
+            _ => Task.FromResult(new BootImageGenerationService.GenerationInputs(@"C:\client", @"C:\hp-tools")),
+            pfxBytes: null,
+            outputDirectory: Path.GetTempPath());
+
+        capturedParamsJson.Should().Contain(@"""ClientBinariesPath"":""C:\\client""").And.Contain(@"""HpFirmwareToolsPath"":""C:\\hp-tools""");
     }
 }

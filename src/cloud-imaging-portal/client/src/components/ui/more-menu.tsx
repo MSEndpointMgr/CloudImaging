@@ -4,14 +4,13 @@ import { Button } from './button.tsx';
 import { Tooltip } from './tooltip.tsx';
 import { cn } from '../../lib/utils';
 
-/** One entry of a {@link MoreMenu}. */
+/** One entry of a {@link MoreMenu}: an icon and a one-line label, like every other entry. */
 export interface MoreMenuItem {
   label: string;
   icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' }>;
   onSelect: () => void;
-  disabled?: boolean;
-  /** A line under the label: what the entry does now, or why it is disabled, so the reason is on screen. */
-  hint?: string;
+  /** Disables the entry; shown in its tooltip, as a disabled button explains itself. */
+  disabledReason?: string;
   /** Removes or deletes something; drawn in the destructive colour. */
   destructive?: boolean;
 }
@@ -35,7 +34,7 @@ export function MoreMenu({ items, label = 'More actions', className }: { items: 
   // The first enabled entry takes focus when the menu opens, as a menu button does.
   React.useEffect(() => {
     if (!open) return undefined;
-    menu.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled])')?.focus();
+    menu.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([aria-disabled="true"])')?.focus();
     const outside = (event: MouseEvent) => {
       if (!menu.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) close(false);
     };
@@ -44,7 +43,8 @@ export function MoreMenu({ items, label = 'More actions', className }: { items: 
   }, [open, close]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const entries = [...(menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not([disabled])') ?? [])];
+    // Disabled entries stay reachable, so their tooltip can say why.
+    const entries = [...(menu.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
     const index = entries.indexOf(document.activeElement as HTMLButtonElement);
     if (event.key === 'Escape' || event.key === 'Tab') {
       event.preventDefault();
@@ -82,32 +82,29 @@ export function MoreMenu({ items, label = 'More actions', className }: { items: 
           role="menu"
           aria-label={label}
           onKeyDown={onKeyDown}
-          className="absolute right-0 top-10 z-50 w-72 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+          className="absolute right-0 top-10 z-50 w-max min-w-32 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
         >
-          {items.map((item, index) => {
+          {items.map(item => {
             const Icon = item.icon;
-            const hintId = `${menuId}-hint-${String(index)}`;
-            return (
+            const disabled = item.disabledReason !== undefined;
+            const entry = (
               <button
                 key={item.label}
                 type="button"
                 role="menuitem"
-                aria-label={item.label}
-                aria-describedby={item.hint ? hintId : undefined}
-                disabled={item.disabled}
-                onClick={() => { close(true); item.onSelect(); }}
+                aria-disabled={disabled || undefined}
+                onClick={() => { if (disabled) return; close(true); item.onSelect(); }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50',
+                  'flex w-full items-center gap-2 whitespace-nowrap rounded-md px-2 py-2 text-left text-sm hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+                  'aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent',
                   item.destructive && 'text-destructive',
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block whitespace-nowrap">{item.label}</span>
-                  {item.hint && <span id={hintId} className="block text-xs text-muted-foreground">{item.hint}</span>}
-                </span>
+                {item.label}
               </button>
             );
+            return disabled ? <Tooltip key={item.label} content={item.disabledReason} className="flex w-full">{entry}</Tooltip> : entry;
           })}
         </div>
       )}

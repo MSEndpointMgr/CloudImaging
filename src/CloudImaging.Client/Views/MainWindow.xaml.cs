@@ -58,7 +58,7 @@ public partial class MainWindow : FluentWindow
 
     private void ShowVersionInTitle()
     {
-        var version = BootImageDetails.ClientReleaseVersion();
+        var version = BootImageDetails.ClientVersionLabel();
         if (string.IsNullOrWhiteSpace(version))
             return;
 

@@ -9,18 +9,37 @@ portal. HP x64 models can also update their BIOS during imaging; see [BIOS updat
 
 ## How a device gets its drivers
 
-1. When imaging starts, Imaging Core matches the device to an onboarded model (HP by baseboard
-   system ID, Dell by system SKU) for the Windows release set on the OS image, and pins the
-   model's current driver set on the session. Later changes do not affect that deployment.
+1. When imaging starts, Imaging Core matches the device to an onboarded model (HP by baseboard,
+   Dell by system SKU) for the Windows release set on the OS image, and pins the model's current
+   driver set on the session. Later changes do not affect that deployment.
 2. After **Apply Windows image**, the Client runs **Install drivers**: per component it copies the
    file from the USB drive or downloads it, checks its SHA-256, extracts it and adds the drivers
    to the installed Windows with DISM. Components that install an application are handed to
    Windows setup and run during the Specialize pass.
-3. A device without a matching model, an OS image without a Windows release, or a release the
-   model is not onboarded for images without drivers. The step shows why.
+3. A device without a matching model, or an OS image without a Windows release, images without
+   drivers. The step shows why.
 
 Set the Windows release on every OS image (OS Images, edit the image). Without it no device gets
 drivers from that image.
+
+The releases offered come from Microsoft's list of Windows feature updates, which Imaging Core
+reads again once its copy is 12 hours old, so a new release can be set on an OS image the day
+Microsoft ships it. An HP
+model offers a release once HP lists the model for it; a Dell model offers every Windows 11
+release, because Dell's catalog does not distinguish them. Reading Microsoft's list needs the
+`WindowsUpdates.Read.All` permission and a licence that includes Windows Autopatch
+([setup-instructions.md](setup-instructions.md#step-1-complete-the-microsoft-entra-grants));
+without them, the releases Cloud Imaging ships with are offered and the Windows release field says
+why newer ones are missing.
+
+### A release the model has no driver set for yet
+
+Vendors publish drivers for a new Windows release weeks after Microsoft ships it. Until a model
+has a driver set for the OS image's release, its devices get the set of the newest earlier release
+of the same Windows version (for example the 25H2 set for a 26H2 image). It is never a Windows 10
+set for Windows 11, a newer release's set, or a set in testing. The **Driver set** column names the
+release ("HP EliteBook 840 G11 (25H2 set)") and the deployment timeline says so. When the model has
+no set for any earlier release either, the device images without drivers.
 
 ## Onboarding a model
 
@@ -134,10 +153,9 @@ someone is at the device. Cloud Imaging updates the system BIOS of HP x64 models
    until you choose **Update at restart**; the BIOS is then downloaded and checked against HP's
    hash.
 3. **Device**: a device of the model with an older BIOS gets the update. It must be on AC power to
-   start imaging (pre-flight check **AC power**). After **Configure boot**, the Client stages the
-   BIOS with HP's tools, and it flashes during the restart into Windows setup. **Start imaging**
-   says how many devices update their BIOS, and the device's completion screen asks to keep it on
-   AC power.
+   register (pre-flight check **AC power**). After **Configure boot**, the Client stages the
+   BIOS with HP's tools, and it flashes during the restart into Windows setup. The device's
+   completion screen asks to keep it on AC power.
 
 The step never fails a deployment. It is skipped, with the reason on the deployment timeline, when
 the device runs on battery, its BIOS is locked or needs HP Sure Admin authorization or a BIOS

@@ -417,7 +417,12 @@ The two grants are:
 
 1. **`DeviceManagementServiceConfig.Read.All`** on Microsoft Graph, to the Imaging Core API's
    managed identity, which the device pre-flight authorization check needs to read Windows
-   Autopilot and Intune corporate identifiers.
+   Autopilot and Intune corporate identifiers. The script also grants
+   **`WindowsUpdates.Read.All`**, which Imaging Core needs to read the Windows releases
+   Microsoft has shipped, so a new release can be chosen for OS images the day it ships. That
+   read also needs a licence that includes Windows Autopatch (for example Windows Enterprise E3
+   or E5, Education A3 or A5, or Microsoft 365 Business Premium). Without it, the portal offers
+   the releases Cloud Imaging ships with and says why newer ones are missing.
 2. **`CloudImaging.PortalAccess`** on the Operator API app registration, to the portal backend's
    managed identity, so the portal backend can call the Operator API. The portal's "Users and
    groups" picker only lists users and groups, never managed identities, which is why this cannot
@@ -812,8 +817,8 @@ the always-on-top Cloud Imaging Client window:
 
 - **Network button**: in the footer, names the connection in use (Ethernet, the Wi-Fi network, or
   No network with a red dot) and opens a panel with one line for Ethernet and one for Wi-Fi: the
-  adapter, its address, which one is in use, or the adapter Windows found without a driver. It has
-  **Check again** and, on Windows RE, **Connect to Wi-Fi**.
+  adapter and its address, marked **Connected** when it has one, or the adapter Windows found
+  without a driver. It has **Check again** and, on Windows RE, **Connect to Wi-Fi**.
 - **Connect to Wi-Fi**: shown only on Windows RE boot images; Windows PE has no Wi-Fi, so the
   button is not there at all. Lists the location's managed networks first (marked with a briefcase,
   joined without a password, hidden ones included), then every other network in range. Open and

@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-14
 
-**Updated**: 2026-11-15 (rewritten to the approved Firmware tab design)
+**Updated**: 2026-11-22 (every device on battery waits before Prepare disk; Start imaging no longer mentions firmware)
 
 **Status**: In implementation
 
@@ -28,6 +28,11 @@
 - Q: What if the device runs on battery? A: AC power is a pre-flight check, required only for a device that gets a BIOS update: it cannot register until the AC adapter is connected (Try again re-registers). If the adapter is removed during imaging, the Client skips the update and imaging completes.
 - Q: When is the BIOS decided? A: At registration, so the AC power check runs before imaging and Start imaging can say how many devices update their BIOS. Later changes do not change a registered session.
 - Q: Where do release notes come from? A: From the BIOS SoftPaq in HP's driver reference catalog, matched by version.
+
+### Session 2026-11-22
+
+- Q: Does Start imaging still remind the operator about AC power? A: No. The overlay names the OS image and says nothing about firmware; the device makes sure it is on AC power itself.
+- Q: What does a device on battery do when imaging starts? A: Every device that reports a battery, with or without a BIOS update, waits before Prepare disk until the AC adapter is connected, then continues by itself. The device shows "Connect the AC adapter" and the portal shows "Waiting for the AC adapter" on the step. The AC power pre-flight check at registration stays for devices that get a BIOS update, and Update firmware still skips the BIOS when the adapter is pulled later.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -63,9 +68,10 @@ An Administrator sets Newer versions to Pre-production first and the pre-product
 
 1. **Given** a device that gets a BIOS update and runs on battery when it registers, **Then** the AC power pre-flight check fails, the device shows "AC power: On battery" with "Connect the AC adapter", and Try again registers it again.
 2. **Given** a device on battery when the step runs, **Then** the outcome is "Skipped: the device runs on battery." and HP's tools are not run.
-3. **Given** HP's tools refuse, **Then** the outcome names the reason: UEFI mode, BIOS version locked, Sure Admin authorization required, BIOS password set, more than one EFI system partition, EFI system partition not found or full, file does not match the model, BIOS refused the update, tools incomplete, or HP's message.
-4. **Given** boot media without HP's tools or without PowerShell, **Then** the outcome says so and how to fix it.
-5. **Given** any skip or failure, **Then** the step is Completed with warnings, the session completes, and the completion screen says the BIOS was not updated.
+3. **Given** any device that reports a battery when imaging starts, **Then** it waits before Prepare disk with "Connect the AC adapter" on the device and "Waiting for the AC adapter" on the step in the portal, changes nothing on the disk, and continues by itself once the adapter is connected.
+4. **Given** HP's tools refuse, **Then** the outcome names the reason: UEFI mode, BIOS version locked, Sure Admin authorization required, BIOS password set, more than one EFI system partition, EFI system partition not found or full, file does not match the model, BIOS refused the update, tools incomplete, or HP's message.
+5. **Given** boot media without HP's tools or without PowerShell, **Then** the outcome says so and how to fix it.
+6. **Given** any skip or failure, **Then** the step is Completed with warnings, the session completes, and the completion screen says the BIOS was not updated.
 
 ### User Story 4 - Include HP's tools in boot media after accepting HP's licence (Priority: P1)
 
@@ -83,11 +89,11 @@ An Administrator sets Newer versions to Pre-production first and the pre-product
 1. **Given** the BIOS row's details, **Then** they show Platform ID, Criticality, Size, File and Released, the Release notes link when HP publishes one, and the Version history with Version, From, To, Change, By and Status (no Driver sets column).
 2. **Given** Roll back component, **Then** an earlier version is held for every location until HP publishes a newer one or someone undoes it; it is downloaded again when not stored. Devices never get an older BIOS than they have.
 
-### User Story 6 - Start imaging says which devices update (Priority: P2)
+### User Story 6 - Start imaging stays free of firmware (Priority: P2)
 
 **Acceptance Scenarios**:
 
-1. **Given** devices that get a BIOS update, **When** the Start imaging overlay opens, **Then** it says "<n> devices update their BIOS at restart. Keep them on AC power until Windows setup starts." Nothing about firmware is shown otherwise, and Coupled Devices is unchanged.
+1. **Given** devices that get a BIOS update, **When** the Start imaging overlay opens, **Then** it names the OS image and shows nothing about firmware or AC power, and Coupled Devices is unchanged.
 
 ### Edge Cases
 
@@ -115,8 +121,9 @@ An Administrator sets Newer versions to Pre-production first and the pre-product
 - **FR-010**: The Client MUST run Update firmware after Configure boot when the session has a BIOS, check AC power and the installed version again, run HP's tools in a restricted PowerShell process that cannot restart the device, map HP's messages to outcomes, and never fail the session.
 - **FR-011**: Media Builder MUST add HP's tools only after the operator accepts HP's licence, download them on the operator's machine at a pinned version, and refuse files without HP's valid signature.
 - **FR-012**: The BIOS row MUST mirror a driver component row: details, release notes link from HP's driver reference catalog, version history and Roll back component. The history's current version MUST say whether its file is Stored, Downloading, Download failed or Not downloaded (while the action is Skip), never Downloads on roll back.
-- **FR-013**: The deployment timeline MUST show Update firmware with the BIOS from and to versions and the device's outcome; Start imaging MUST show the AC power line when devices update their BIOS.
+- **FR-013**: The deployment timeline MUST show Update firmware with the BIOS from and to versions and the device's outcome. Start imaging MUST NOT show firmware or AC power details.
 - **FR-014**: Changes MUST be recorded in the change log with the user. Reads need Technician, changes need Operator.
+- **FR-015**: The Client MUST hold every device that reports a battery before Format disk, with or without a BIOS update, until the AC adapter is connected, and then continue by itself. It MUST show "Connect the AC adapter" on the device and report "Waiting for the AC adapter" as the Prepare disk step's note until it continues. A power source that cannot be read MUST NOT hold imaging.
 
 ### Key Entities
 

@@ -43,7 +43,7 @@ public sealed partial class DevicePostureDetector
         return posture;
     }
 
-    /// <summary>Reads whether the AC adapter is connected. A BIOS update is only staged on AC power.</summary>
+    /// <summary>Reads whether the AC adapter is connected. Imaging waits for it before Format disk, and a BIOS update is only staged on AC power.</summary>
     public PowerSource DetectPowerSource()
     {
         try

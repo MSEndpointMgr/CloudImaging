@@ -34,6 +34,7 @@ public sealed class DriverCatalogService
     private readonly DriverStorageService _storage;
     private readonly BlobContainerClient _container;
     private readonly IReadOnlyList<IDriverVendorAdapter> _adapters;
+    private readonly WindowsReleaseCatalogService _releases;
     private readonly TimeProvider _time;
 
     /// <param name="store">Driver tables.</param>
@@ -41,14 +42,16 @@ public sealed class DriverCatalogService
     /// <param name="storage">Vendor downloads.</param>
     /// <param name="container">The <c>drivers</c> container.</param>
     /// <param name="adapters">Vendor adapters.</param>
+    /// <param name="releases">The Windows releases models are offered for.</param>
     /// <param name="time">Clock.</param>
-    public DriverCatalogService(DriverStore store, DriverModelRepository models, DriverStorageService storage, BlobContainerClient container, IEnumerable<IDriverVendorAdapter> adapters, TimeProvider time)
+    public DriverCatalogService(DriverStore store, DriverModelRepository models, DriverStorageService storage, BlobContainerClient container, IEnumerable<IDriverVendorAdapter> adapters, WindowsReleaseCatalogService releases, TimeProvider time)
     {
         _store = store;
         _models = models;
         _storage = storage;
         _container = container;
         _adapters = adapters.ToList();
+        _releases = releases;
         _time = time;
     }
 
@@ -111,6 +114,7 @@ public sealed class DriverCatalogService
         var now = _time.GetUtcNow();
         var vendor = adapter.Vendor.ToString();
         var listRow = await _store.CatalogLists.GetAsync(DriverStore.ListPartition, vendor, ct);
+        var releases = (await _releases.GetAsync(ct)).Releases.ToHashSet();
         var read = await ReadAsync(adapter.Vendor, adapter.ModelListUrl, null, ct: ct);
         IReadOnlyList<DriverVendorModel>? parsed = null;
         var failure = read.Failure;
@@ -120,7 +124,7 @@ public sealed class DriverCatalogService
             {
                 try
                 {
-                    parsed = adapter.ParseModelList(content, now);
+                    parsed = adapter.ParseModelList(content, now, releases);
                 }
                 catch (Exception ex) when (ex is System.Xml.XmlException or InvalidDataException or FormatException)
                 {
