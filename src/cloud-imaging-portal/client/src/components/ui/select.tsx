@@ -1,8 +1,10 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
-import { cva, type VariantProps } from 'class-variance-authority';
+import { type VariantProps } from 'class-variance-authority';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils.ts';
+import { useAnchoredPosition } from './anchored-position.ts';
+import { selectTriggerVariants } from './select-trigger.ts';
 
 /**
  * A single choice in a {@link Select}.
@@ -24,29 +26,6 @@ export interface SelectOption {
   /** Right-aligned muted text, for example a size. Not matched by type-ahead. */
   meta?: string;
 }
-
-/**
- * Trigger geometry deliberately mirrors `Button` rather than inventing a second scale: 32px, the
- * portal's one control height. Selects are almost always laid out beside a button (the OS image
- * picker sits next to "Start Imaging") and a 4px height difference between two adjacent controls
- * reads as a rendering bug, which is what shipped while this defaulted to 36px.
- */
-const selectTriggerVariants = cva(
-  cn(
-    'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background text-sm shadow-sm',
-    'transition-colors hover:bg-accent/40',
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-    'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background',
-  ),
-  {
-    variants: {
-      size: {
-        sm: 'h-8 pl-3 pr-2',
-      },
-    },
-    defaultVariants: { size: 'sm' },
-  },
-);
 
 export interface SelectProps extends VariantProps<typeof selectTriggerVariants> {
   /** Currently selected option value. An empty string means nothing is selected. */
@@ -78,17 +57,6 @@ export interface SelectProps extends VariantProps<typeof selectTriggerVariants> 
 const TYPEAHEAD_RESET_MS = 500;
 /** 18rem. Roughly seven rows: enough to browse without the list dominating the viewport. */
 const MAX_LIST_HEIGHT = 288;
-/** Gap between the trigger and the list, and the minimum breathing room at the viewport edge. */
-const VIEWPORT_MARGIN = 8;
-
-interface ListPosition {
-  left: number;
-  width: number;
-  maxHeight: number;
-  /** Exactly one of `top`/`bottom` is set, depending on the side the list flipped to. */
-  top?: number;
-  bottom?: number;
-}
 
 /** One row of the list: label, optional description and meta, and the check mark when selected. */
 function SelectOptionRow({ option, index, listId, selected, active, onHover, onChoose }: {
@@ -154,7 +122,8 @@ function SelectOptionRow({ option, index, listId, selected, active, onHover, onC
  * The list is portalled to `document.body` and positioned from the trigger's viewport rect. That
  * is not cosmetic: several call sites sit inside `overflow-hidden` card headers, which would clip
  * an in-flow absolutely positioned list. Position is recomputed on scroll and resize, and the list
- * flips above the trigger when there is more room there.
+ * flips above the trigger when there is more room there. It opens exactly as wide as the trigger
+ * and only grows for an option that needs the room, so a long name is read rather than cut off.
  *
  * Keyboard and screen-reader behaviour follows the ARIA combobox pattern, with focus kept on the
  * trigger and the active row tracked through `aria-activedescendant`: arrows, Home/End, Enter,
@@ -181,11 +150,11 @@ export function Select({
 
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(-1);
-  const [position, setPosition] = React.useState<ListPosition | null>(null);
 
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const listRef = React.useRef<HTMLUListElement>(null);
   const typeahead = React.useRef({ buffer: '', at: 0 });
+  const position = useAnchoredPosition(triggerRef, open, { preferredHeight: MAX_LIST_HEIGHT, panelRef: listRef });
 
   const items = React.useMemo<SelectOption[]>(
     () => (allowEmpty ? [{ value: '', label: placeholder }, ...options] : options),
@@ -194,49 +163,6 @@ export function Select({
 
   const selectedIndex = items.findIndex(o => o.value === value);
   const selectedLabel = selectedIndex >= 0 ? items[selectedIndex].label : undefined;
-
-  const updatePosition = React.useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const rect = trigger.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN * 2;
-    const spaceAbove = rect.top - VIEWPORT_MARGIN * 2;
-    // Below unless it genuinely does not fit and there is more room above, so the list does not
-    // jump sides for a trigger that is merely close to the fold.
-    const placeBelow = spaceBelow >= MAX_LIST_HEIGHT || spaceBelow >= spaceAbove;
-
-    const width = rect.width;
-    const maxLeft = window.innerWidth - width - VIEWPORT_MARGIN;
-    const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, maxLeft));
-
-    setPosition({
-      left,
-      width,
-      maxHeight: Math.max(120, Math.min(MAX_LIST_HEIGHT, placeBelow ? spaceBelow : spaceAbove)),
-      ...(placeBelow
-        ? { top: rect.bottom + VIEWPORT_MARGIN }
-        : { bottom: window.innerHeight - rect.top + VIEWPORT_MARGIN }),
-    });
-  }, []);
-
-  React.useLayoutEffect(() => {
-    if (!open) {
-      setPosition(null);
-      return;
-    }
-    updatePosition();
-
-    // Capture phase so the list also tracks scrolling of any nested scroll container the trigger
-    // sits in, not just the window.
-    const onReflow = (): void => updatePosition();
-    window.addEventListener('scroll', onReflow, true);
-    window.addEventListener('resize', onReflow);
-    return () => {
-      window.removeEventListener('scroll', onReflow, true);
-      window.removeEventListener('resize', onReflow);
-    };
-  }, [open, updatePosition]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -435,7 +361,9 @@ export function Select({
               left: position.left,
               top: position.top,
               bottom: position.bottom,
-              width: position.width,
+              minWidth: position.minWidth,
+              maxWidth: position.maxWidth,
+              width: 'max-content',
               maxHeight: position.maxHeight,
             }}
             className={cn(

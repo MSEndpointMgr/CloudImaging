@@ -64,9 +64,9 @@ describe('Portal frontend: session details panel', () => {
     expect(screen.getByText('Finished')).toBeTruthy();
   });
 
-  it('renders an em dash for a missing location instead of an empty cell', () => {
+  it('renders a hyphen for a missing location instead of an empty cell', () => {
     render(<SessionDetailsPanel session={{ ...base, locationName: null }} />);
-    expect(screen.getAllByText('\u2014').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('-').length).toBeGreaterThan(0);
   });
 
   it('shows the MAC address, which is the closest thing to a network address we hold', () => {

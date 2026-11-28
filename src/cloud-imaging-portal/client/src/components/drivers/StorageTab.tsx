@@ -1,11 +1,12 @@
 import React, { Fragment, useCallback, useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, CircleCheck, CircleX, Download, HardDrive, Info, RefreshCw } from 'lucide-react';
+import { CircleCheck, CircleX, Download, HardDrive, Info, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button.tsx';
 import { Card, CardContent } from '../ui/card.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Select } from '../ui/select.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { RowToggle, RowToggleHead } from '../ui/row-toggle.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { useAuth } from '../../context/authContext.tsx';
 import { useToast } from '../../context/toastContext.tsx';
@@ -200,11 +201,11 @@ export function StorageTab(): React.ReactElement {
       <Card>
         <CardContent className="py-2">
           <div className="flex items-center gap-6 py-3">
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 space-y-1">
               <p className="text-sm font-medium">Previous versions</p>
-              <p className="text-sm text-muted-foreground">
-                {`Earlier versions of each component kept in storage, so rolling back to one is instant and does not depend on the vendor. Older versions are downloaded again from the vendor when someone rolls back to them. Uses ${formatSize(storage.previousVersionsBytes)} now.`}
-              </p>
+              <p className="text-sm text-muted-foreground">{`How many older versions of each driver and BIOS stay in storage after a sync replaces them with a newer one. They use ${formatSize(storage.previousVersionsBytes)} now.`}</p>
+              <p className="text-sm text-muted-foreground">Rolling a component back to a kept version takes effect at once. Any other older version is first downloaded again from the vendor, if the vendor still publishes it.</p>
+              <p className="text-sm text-muted-foreground">A lower number frees that space after the next sync. A higher number keeps more from now on, but does not bring back versions already removed.</p>
             </div>
             <Select
               value={String(storage.previousVersionsToKeep)}
@@ -222,7 +223,7 @@ export function StorageTab(): React.ReactElement {
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>
+              <RowToggleHead />
               <TableHead>Model</TableHead>
               <TableHead className="w-[100px]">Vendor</TableHead>
               <TableHead className="w-[260px]">Windows releases</TableHead>
@@ -244,16 +245,12 @@ export function StorageTab(): React.ReactElement {
               return (
                 <Fragment key={model.modelId}>
                   <TableRow className="h-14">
-                    <TableCell>
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-label={`${expanded ? 'Hide' : 'Show'} stored components of ${model.displayName}`}
-                        className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setOpen(expanded ? null : model.modelId)}
-                      >
-                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                      </button>
+                    <TableCell className="pr-0">
+                      <RowToggle
+                        expanded={expanded}
+                        label={`${expanded ? 'Hide' : 'Show'} stored components of ${model.displayName}`}
+                        onToggle={() => setOpen(expanded ? null : model.modelId)}
+                      />
                     </TableCell>
                     <TableCell className="truncate font-medium" title={model.displayName}>{model.displayName}</TableCell>
                     <TableCell>{vendorLabel(model.vendor)}</TableCell>

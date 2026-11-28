@@ -54,9 +54,9 @@ function DetailField({ label, children }: { label: string; children: React.React
   );
 }
 
-/** Renders an em dash for anything the API left null, so a gap never looks like a loading state. */
+/** Renders a hyphen for anything the API left null, so a gap never looks like a loading state. */
 function Maybe({ value }: { value: string | null | undefined }): React.ReactElement {
-  return value ? <>{value}</> : <span className="text-muted-foreground">—</span>;
+  return value ? <>{value}</> : <span className="text-muted-foreground">-</span>;
 }
 /**
  * The Client packs these as `"{label}|{value}"` because the hardware inventory is a flat string

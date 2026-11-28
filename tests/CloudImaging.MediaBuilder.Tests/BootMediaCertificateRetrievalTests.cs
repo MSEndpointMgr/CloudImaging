@@ -72,7 +72,7 @@ public sealed class BootMediaCertificateRetrievalTests
     // ── Real cert-resolution behavior via GenerateElevatedAsync (T173) ────────
 
     [Fact]
-    public async Task GenerateElevatedAsync_ResolvesCertBeforeElevation_WhenOperatorClientReturnsPfx()
+    public async Task GenerateElevatedAsync_ResolvesCertInTheParent_WhenOperatorClientReturnsPfx()
     {
         // The real, non-elevated → elevated relaunch path: cert bytes must be resolved by the
         // PARENT process (which has an authenticated OperatorApiClient) and threaded through to
@@ -94,35 +94,22 @@ public sealed class BootMediaCertificateRetrievalTests
             NullLogger<OperatorApiClient>.Instance);
 
         string? capturedCertFileContents = null;
+        var worker = new FakeElevatedWorker(onParams: paramsJson =>
+        {
+            var pfxFilePath = System.Text.Json.JsonDocument.Parse(paramsJson)
+                .RootElement.GetProperty("PfxFilePath").GetString();
+            capturedCertFileContents = pfxFilePath is not null && File.Exists(pfxFilePath)
+                ? Convert.ToBase64String(File.ReadAllBytes(pfxFilePath))
+                : null;
+        });
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             operatorApiClient: operatorApi,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
-            {
-                var files = System.Text.RegularExpressions.Regex
-                    .Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                var paramsFile = files[0];
-                var resultFile = files[2];
-
-                var paramsJson = File.ReadAllText(paramsFile);
-                var pfxFilePath = System.Text.Json.JsonDocument.Parse(paramsJson)
-                    .RootElement.GetProperty("PfxFilePath").GetString();
-                capturedCertFileContents = pfxFilePath is not null && File.Exists(pfxFilePath)
-                    ? Convert.ToBase64String(File.ReadAllBytes(pfxFilePath))
-                    : null;
-
-                File.WriteAllText(resultFile,
-                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
-                return System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c exit 0")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow  = true,
-                })!;
-            });
+            startElevatedProcessOverride: worker.Start);
 
         var result = await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
@@ -133,36 +120,38 @@ public sealed class BootMediaCertificateRetrievalTests
     }
 
     [Fact]
-    public async Task GenerateElevatedAsync_AbortsBeforeElevation_WhenCertCannotBeRetrieved()
+    public async Task GenerateElevatedAsync_StopsTheWorkerBeforeAnyDownload_WhenCertCannotBeRetrieved()
     {
         // FR-068/FR-070: boot media without an embedded certificate cannot complete mTLS with
-        // the Device Gateway API, so a missing/unretrievable cert must be a HARD failure —
-        // generation must never even attempt to elevate.
+        // the Device Gateway API, so a missing/unretrievable cert must be a HARD failure. The
+        // UAC prompt comes first, so the waiting worker is stopped and nothing is downloaded.
         var handler = new FakeHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
         var operatorApi = new OperatorApiClient(
             new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
             NullLogger<OperatorApiClient>.Instance);
 
-        var launcherCalled = false;
+        var prepared = false;
+        var worker = new FakeElevatedWorker();
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             operatorApiClient: operatorApi,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, _) =>
-            {
-                launcherCalled = true;
-                throw new InvalidOperationException("Should not elevate when the cert cannot be retrieved.");
-            });
+            startElevatedProcessOverride: worker.Start);
 
         Func<Task> act = async () => await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            _ =>
+            {
+                prepared = true;
+                return Task.FromResult(new BootImageGenerationService.GenerationInputs(@"C:\DoesNotExist"));
+            },
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*No active boot media certificate*");
-        launcherCalled.Should().BeFalse(
-            "generation must fail before any elevation is attempted when the cert cannot be retrieved");
+        prepared.Should().BeFalse("the certificate is checked before anything is downloaded");
+        worker.WasStopped.Should().BeTrue("the waiting worker must not outlive the failed run");
+        worker.ReceivedParams.Should().BeFalse();
     }
 
     private sealed class FakeHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler

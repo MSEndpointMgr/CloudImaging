@@ -36,7 +36,9 @@ public sealed class DriverSetResolverTests
         HardwareMetadata = new DeviceHardwareMetadata { MotherboardModel = systemId, SystemSku = sku },
     };
 
-    internal static OsImage Image(WindowsRelease? release = DriverSyncHarness.Release, MachineArchitecture architecture = MachineArchitecture.X64) => new()
+    internal static OsImage Image(MachineArchitecture architecture = MachineArchitecture.X64) => Image(DriverSyncHarness.Release, architecture);
+
+    internal static OsImage Image(WindowsRelease? release, MachineArchitecture architecture = MachineArchitecture.X64) => new()
     {
         ImageId = Guid.NewGuid(),
         Name = "Windows 11",
@@ -111,14 +113,98 @@ public sealed class DriverSetResolverTests
     }
 
     [Fact]
-    public async Task ReleaseNotOnboarded_IsPinned()
+    public async Task ReleaseNotOnboarded_IsPinned_WhenNoEarlierReleaseHasASet()
     {
         await ActiveModelWithSetAsync();
 
-        var pin = await _resolver.ResolveAsync(Device("8C26"), Image(WindowsRelease.Windows11Version25H2));
+        var pin = await _resolver.ResolveAsync(Device("8C26"), Image(WindowsRelease.Windows11Version23H2));
 
-        pin.SkipReason.Should().Be(DriverSkipReason.ReleaseNotOnboarded);
-        pin.Release.Should().Be(WindowsRelease.Windows11Version25H2);
+        pin.SkipReason.Should().Be(DriverSkipReason.ReleaseNotOnboarded, "a newer release's set is never used");
+        pin.Release.Should().Be(WindowsRelease.Windows11Version23H2);
+        pin.FallbackFrom.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task NewerRelease_WithoutASet_PinsTheNewestEarlierReleasesSet_AndNamesTheImagesRelease()
+    {
+        var model = await ActiveModelWithSetAsync();
+        WindowsRelease.TryParse("Windows11_26H2", out var release26H2).Should().BeTrue();
+
+        var pin = await _resolver.ResolveAsync(Device("8C26"), Image(release26H2));
+
+        pin.Should().Be(new DriverPin(model.ModelId, "HP EliteBook 840 G11", DriverSyncHarness.Release, 1, null, "8C26", "[]", release26H2));
+        var applied = pin.ApplyTo(Device("8C26"));
+        applied.DriverRelease.Should().Be(DriverSyncHarness.Release);
+        applied.DriverFallbackFrom.Should().Be(release26H2);
+    }
+
+    [Fact]
+    public async Task Fallback_PrefersTheNewestEarlierRelease_SkipsOnesWithoutASet_AndNeverCrossesWindowsVersions()
+    {
+        var model = await ActiveModelWithSetAsync();
+        var row = (await _h.Bed.Models.GetAsync(model.ModelId))!;
+        await _h.Bed.Models.TryUpdateAsync(row.Value with { Releases = [WindowsRelease.Windows10Version22H2, WindowsRelease.Windows11Version23H2, DriverSyncHarness.Release, WindowsRelease.Windows11Version25H2] }, row.ETag);
+        foreach (var (release, version) in new[] { (WindowsRelease.Windows10Version22H2, 7), (WindowsRelease.Windows11Version23H2, 5) })
+        {
+            var pointer = await _h.Bed.Pointers.GetOrCreateAsync(model.ModelId, release);
+            await _h.Bed.Pointers.TryUpdateAsync(model.ModelId, release, pointer.Value with { CurrentVersion = version, LastVersion = version }, pointer.ETag);
+        }
+
+        // 25H2 is onboarded but its first set is not built yet, so 24H2's set is used.
+        var pin = await _resolver.ResolveAsync(Device("8C26"), Image(WindowsRelease.Windows11Version25H2));
+        pin.Release.Should().Be(DriverSyncHarness.Release);
+        pin.SetVersion.Should().Be(1);
+        pin.FallbackFrom.Should().Be(WindowsRelease.Windows11Version25H2);
+
+        // A Windows 10 image never gets a Windows 11 set, and the reverse.
+        (await _resolver.ResolveAsync(Device("8C26"), Image(WindowsRelease.Windows10Version22H2))).Should().Match<DriverPin>(p => p.SetVersion == 7 && p.FallbackFrom == null);
+        (await _resolver.ResolveAsync(Device("8C26"), Image(WindowsRelease.Windows11Version23H2))).SetVersion.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task Fallback_IsAnOptionNamingItsRelease_AndAModelChoicePinsIt()
+    {
+        var model = await ActiveModelWithSetAsync();
+        var image = Image(WindowsRelease.Windows11Version25H2);
+
+        var options = await _resolver.OptionsAsync(image, _h.Bed.SetDocuments);
+        options.Should().ContainSingle().Which.Should().Match<DriverAssignmentOption>(o => o.ModelId == model.ModelId && !o.Testing && o.Release == DriverSyncHarness.Release && o.MaxDownloadBytes > 0);
+        (await _resolver.OptionsAsync(Image(), _h.Bed.SetDocuments)).Single().Release.Should().BeNull("the option is the image's own release");
+
+        var (pin, reason) = await _resolver.ResolveChoiceAsync(Device("8A3B"), image, new DriverChoice { Kind = DriverChoiceKind.Model, ModelId = model.ModelId });
+        reason.Should().BeNull();
+        pin!.Release.Should().Be(DriverSyncHarness.Release);
+        pin.FallbackFrom.Should().Be(WindowsRelease.Windows11Version25H2);
+        pin.MatchKey.Should().Be("8A3B");
+    }
+
+    [Fact]
+    public async Task ModelChoice_WithNoSetForTheReleaseOrAnEarlierOne_IsRefused()
+    {
+        var model = await ActiveModelWithSetAsync();
+
+        var (pin, reason) = await _resolver.ResolveChoiceAsync(Device("8C26"), Image(WindowsRelease.Windows11Version23H2), new DriverChoice { Kind = DriverChoiceKind.Model, ModelId = model.ModelId });
+
+        pin.Should().BeNull();
+        reason.Should().Be("HP EliteBook 840 G11 has no driver set for Windows 11, version 23H2 or an earlier release.");
+    }
+
+    [Fact]
+    public async Task SetInTesting_ForTheImagesRelease_IsNotUsedAsAFallback()
+    {
+        var model = await ActiveModelWithSetAsync();
+        var row = (await _h.Bed.Models.GetAsync(model.ModelId))!;
+        await _h.Bed.Models.TryUpdateAsync(row.Value with { Releases = [DriverSyncHarness.Release, WindowsRelease.Windows11Version25H2] }, row.ETag);
+        var current = (await _h.Bed.SetDocuments.GetAsync(model.ModelId, DriverSyncHarness.Release, 1))!;
+        await _h.Bed.SetDocuments.SaveAsync(current with { Release = WindowsRelease.Windows11Version25H2, Version = 1 });
+        var pointer = await _h.Bed.Pointers.GetOrCreateAsync(model.ModelId, WindowsRelease.Windows11Version25H2);
+        await _h.Bed.Pointers.TryUpdateAsync(model.ModelId, WindowsRelease.Windows11Version25H2, pointer.Value with { TestingVersion = 1, LastVersion = 1 }, pointer.ETag);
+        var image = Image(WindowsRelease.Windows11Version25H2);
+
+        var pin = await _resolver.ResolveAsync(Device("8C26"), image);
+        pin.Release.Should().Be(DriverSyncHarness.Release, "only current sets are matched");
+        pin.FallbackFrom.Should().Be(WindowsRelease.Windows11Version25H2);
+        (await _resolver.OptionsAsync(image, _h.Bed.SetDocuments)).Select(o => (o.Testing, o.Release)).Should().Equal((false, (WindowsRelease?)DriverSyncHarness.Release), (true, (WindowsRelease?)null));
     }
 
     [Fact]

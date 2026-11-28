@@ -119,6 +119,9 @@ public sealed record DeviceSession
     /// <summary>Windows release of the pinned driver set.</summary>
     public WindowsRelease? DriverRelease { get; init; }
 
+    /// <summary>The image's release when the model had no set for it and <see cref="DriverRelease"/> is an earlier release's set.</summary>
+    public WindowsRelease? DriverFallbackFrom { get; init; }
+
     /// <summary>Pinned driver set version. Never changes after assignment.</summary>
     public int? DriverSetVersion { get; init; }
 

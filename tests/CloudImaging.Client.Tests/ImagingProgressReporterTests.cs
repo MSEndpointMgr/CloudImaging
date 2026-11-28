@@ -126,6 +126,30 @@ public sealed class ImagingProgressReporterTests
     }
 
     [Fact]
+    public async Task ReportAsync_SendsTheStepNote_AndAnEmptyNoteClearsIt()
+    {
+        var handler = new TestDoubles.RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+        var gateway = new DeviceGatewayApiClient(new HttpClient(handler) { BaseAddress = new Uri("https://gw.example.com") });
+        var reporter = new ImagingProgressReporter(gateway, Guid.NewGuid(), NullLogger<ImagingProgressReporter>.Instance, new FakeTimeProvider());
+
+        await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress, statusNote: "Waiting for the AC adapter");
+        await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.InProgress, statusNote: string.Empty);
+        await reporter.ReportAsync(ImagingStepName.FormatDisk, ImagingStepStatus.Completed);
+
+        string? Note(int index)
+        {
+            using var body = System.Text.Json.JsonDocument.Parse(handler.Requests[index].Body!);
+            var note = body.RootElement.GetProperty("statusNote");
+            return note.ValueKind == System.Text.Json.JsonValueKind.Null ? null : note.GetString();
+        }
+
+        handler.Requests.Should().HaveCount(3);
+        Note(0).Should().Be("Waiting for the AC adapter");
+        Note(1).Should().BeEmpty();
+        Note(2).Should().BeNull("a report without a note leaves the stored note as it is");
+    }
+
+    [Fact]
     public async Task ReportResultAsync_IsNeverThrottled_AndPercentUpdatesStayThrottled()
     {
         var (handler, gateway) = CreateGateway();

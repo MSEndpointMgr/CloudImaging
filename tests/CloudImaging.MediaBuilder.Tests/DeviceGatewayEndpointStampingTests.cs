@@ -148,7 +148,7 @@ public sealed class DeviceGatewayEndpointStampingTests
     // ── Real URL-resolution behavior via GenerateElevatedAsync ────
 
     [Fact]
-    public async Task GenerateElevatedAsync_ResolvesDeviceGatewayUrlBeforeElevation_AndThreadsThroughToWorker()
+    public async Task GenerateElevatedAsync_ResolvesDeviceGatewayUrlInTheParent_AndThreadsThroughToWorker()
     {
         // Same relaunch path as the boot media certificate (see BootMediaCertificateRetrievalTests):
         // the URL must be resolved by the PARENT process (which has an authenticated
@@ -168,30 +168,16 @@ public sealed class DeviceGatewayEndpointStampingTests
             NullLogger<OperatorApiClient>.Instance);
 
         string? capturedBaseUrl = null;
+        var worker = new FakeElevatedWorker(onParams: paramsJson =>
+            capturedBaseUrl = JsonDocument.Parse(paramsJson).RootElement.GetProperty("DeviceGatewayBaseUrl").GetString());
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             operatorApiClient: operatorApi,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, args) =>
-            {
-                var files = Regex.Matches(args, "\"([^\"]+)\"").Select(m => m.Groups[1].Value).ToArray();
-                var paramsFile = files[0];
-                var resultFile = files[2];
-
-                var paramsJson = File.ReadAllText(paramsFile);
-                capturedBaseUrl = JsonDocument.Parse(paramsJson).RootElement.GetProperty("DeviceGatewayBaseUrl").GetString();
-
-                File.WriteAllText(resultFile,
-                    """{"Success":true,"WimPath":"C:\\out\\cloud-imaging-boot.wim","Sha256Hash":"deadbeef"}""");
-                return System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c exit 0")
-                {
-                    UseShellExecute = false,
-                    CreateNoWindow  = true,
-                })!;
-            });
+            startElevatedProcessOverride: worker.Start);
 
         var result = await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
@@ -202,12 +188,12 @@ public sealed class DeviceGatewayEndpointStampingTests
     }
 
     [Fact]
-    public async Task GenerateElevatedAsync_AbortsBeforeElevation_WhenDeviceGatewayUrlCannotBeResolved()
+    public async Task GenerateElevatedAsync_StopsTheWorker_WhenDeviceGatewayUrlCannotBeResolved()
     {
         // A boot image with no working Device Gateway URL configured is non-functional, so a
-        // failed/empty resolution must be a HARD failure, generation must never even attempt to
-        // elevate (matching the boot media certificate's fatal-failure behavior). The cert route
-        // succeeds here so the Device Gateway resolution step is what's actually under test.
+        // failed/empty resolution must be a HARD failure (matching the boot media certificate's
+        // fatal-failure behavior): the waiting worker is stopped before it gets any parameters.
+        // The cert route succeeds here so the Device Gateway resolution step is what's under test.
         var handler = new FakeHttpMessageHandler(req => req.RequestUri!.AbsolutePath switch
         {
             "/api/bootmedia/certificate/pfx" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([1, 2, 3, 4]) },
@@ -217,25 +203,21 @@ public sealed class DeviceGatewayEndpointStampingTests
             new HttpClient(handler) { BaseAddress = new Uri("https://example.com") },
             NullLogger<OperatorApiClient>.Instance);
 
-        var launcherCalled = false;
+        var worker = new FakeElevatedWorker();
         var svc = new BootImageGenerationService(
             NullLogger<BootImageGenerationService>.Instance,
             operatorApiClient: operatorApi,
             isElevatedOverride: () => false,
-            startElevatedProcessOverride: (_, _) =>
-            {
-                launcherCalled = true;
-                throw new InvalidOperationException("Should not elevate when the Device Gateway URL cannot be resolved.");
-            });
+            startElevatedProcessOverride: worker.Start);
 
         Func<Task> act = async () => await svc.GenerateElevatedAsync(
-            clientBinariesPath: @"C:\DoesNotExist",
+            FakeElevatedWorker.Inputs(),
             pfxBytes: null,
             outputDirectory: Path.GetTempPath());
 
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*Could not resolve the Device Gateway API URL*");
-        launcherCalled.Should().BeFalse(
-            "generation must fail before any elevation is attempted when the Device Gateway URL cannot be resolved");
+        worker.WasStopped.Should().BeTrue("the waiting worker must not outlive the failed run");
+        worker.ReceivedParams.Should().BeFalse();
     }
 }

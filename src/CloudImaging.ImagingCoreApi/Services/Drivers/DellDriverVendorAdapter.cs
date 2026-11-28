@@ -22,9 +22,6 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
     private const string DownloadBase = "https://downloads.dell.com/";
     private const string ArmCollector = "ARM64";
 
-    /// <summary>Dell has no release granularity: a model is offered for every Windows 11 release.</summary>
-    private static readonly WindowsRelease[] Windows11Releases = [WindowsRelease.Windows11Version23H2, WindowsRelease.Windows11Version24H2, WindowsRelease.Windows11Version25H2];
-
     /// <inheritdoc/>
     public DriverVendor Vendor => DriverVendor.Dell;
 
@@ -44,8 +41,12 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
     public static string ModelKey(string name) => string.Join('_', name.Trim().ToUpperInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));
 
     /// <inheritdoc/>
-    public IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt)
+    public IReadOnlyList<DriverVendorModel> ParseModelList(Stream content, DateTimeOffset seenAt, IReadOnlyCollection<WindowsRelease> releases)
     {
+        ArgumentNullException.ThrowIfNull(releases);
+
+        // Dell has no release granularity: a model is offered for every Windows 11 release.
+        var windows11 = releases.Where(r => r.Major == 11).Order().ToList();
         var skus = new List<(string Name, DriverSkuCatalog Catalog, bool Arm)>();
         foreach (var group in ReadElements(content, "GroupManifest"))
         {
@@ -76,7 +77,7 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
                 Name = g.First().Name,
                 MatchKeys = g.Select(s => s.Catalog.Sku).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
                 Architecture = g.All(s => s.Arm) ? MachineArchitecture.Arm64 : MachineArchitecture.X64,
-                Releases = Windows11Releases,
+                Releases = windows11,
                 SkuCatalogs = g.Select(s => s.Catalog).DistinctBy(c => c.Sku, StringComparer.Ordinal).OrderBy(c => c.Sku, StringComparer.Ordinal).ToList(),
                 SeenAt = seenAt,
             }))
@@ -101,7 +102,7 @@ public sealed class DellDriverVendorAdapter : IDriverVendorAdapter
     public IReadOnlyList<DriverVendorComponent> ParseComponents(Stream content, DriverCatalogModelRecord model, WindowsRelease release, DateTimeOffset seenAt)
     {
         ArgumentNullException.ThrowIfNull(model);
-        var windows = release == WindowsRelease.Windows10Version22H2 ? "Windows 10" : "Windows 11";
+        var windows = release.Major == 10 ? "Windows 10" : "Windows 11";
         var architecture = model.Architecture == MachineArchitecture.Arm64 ? "ARM64" : "x64";
         var newest = new Dictionary<string, DriverVendorComponent>(StringComparer.Ordinal);
         foreach (var entry in ReadElements(content, "SoftwareComponent"))

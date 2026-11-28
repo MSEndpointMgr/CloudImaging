@@ -1,9 +1,10 @@
 import React, { Fragment, useEffect, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Info, Lock, Package, Trash2, Undo2 } from 'lucide-react';
+import { Check, Info, Lock, Package, Trash2, Undo2 } from 'lucide-react';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { Select } from '../ui/select.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { RowToggle, RowToggleHead } from '../ui/row-toggle.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { actionLabel, rollBackText, vendorLabel, type DriverAction, type DriverComponentRow, type DriverVendor } from '../../lib/drivers.ts';
 import { cn } from '../../lib/utils.ts';
@@ -158,7 +159,7 @@ export function ComponentTable({ components, total, locked = [], editing, histor
       <Table className="table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[64px]"><span className="sr-only">Details</span></TableHead>
+            <RowToggleHead className="w-14" />
             <TableHead>Component</TableHead>
             <TableHead className="w-[128px]">Version</TableHead>
             <TableHead className="w-[132px] whitespace-nowrap">Last updated</TableHead>
@@ -185,19 +186,15 @@ export function ComponentTable({ components, total, locked = [], editing, histor
             return (
               <Fragment key={component.lineageKey}>
                 <TableRow id={`component-${component.lineageKey}`} className={cn('h-14', waiting && 'bg-amber-50/60 dark:bg-amber-950/20', downloading && 'relative bg-blue-50/60 dark:bg-blue-950/30', component.action === 'Skip' && 'text-muted-foreground')}>
-                  {/* The icon of a file on its way sits between the chevron and the name, centred on both lines. */}
+                  {/* gap-1 plus the chevron button's padding matches the name cell's padding: equal space on both sides of the icon. */}
                   <TableCell className="pr-0">
-                    <span className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        aria-expanded={expanded}
-                        aria-controls={detailsId}
-                        aria-label={`${expanded ? 'Hide' : 'Show'} details of ${component.name}`}
-                        className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setOpen(expanded ? null : component.lineageKey)}
-                      >
-                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                      </button>
+                    <span className="flex items-center gap-1">
+                      <RowToggle
+                        expanded={expanded}
+                        label={`${expanded ? 'Hide' : 'Show'} details of ${component.name}`}
+                        controls={detailsId}
+                        onToggle={() => setOpen(expanded ? null : component.lineageKey)}
+                      />
                       {download && <RowDownloadIcon download={download} />}
                     </span>
                     {downloading && <RowDownloadEdge label={`Downloading ${component.name}`} />}

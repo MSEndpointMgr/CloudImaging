@@ -1,11 +1,12 @@
-import React, { Fragment, useCallback, useEffect, useId, useState } from 'react';
-import { ChevronDown, ChevronRight, Cpu, ExternalLink, FlaskConical, Info, RefreshCw, Rocket, Undo2 } from 'lucide-react';
+import React, { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Cpu, ExternalLink, FlaskConical, Info, RefreshCw, Rocket, Undo2 } from 'lucide-react';
 import { ConfirmImpactDialog } from '../ConfirmImpactDialog.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Select } from '../ui/select.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { RowToggle, RowToggleHead } from '../ui/row-toggle.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { useToast } from '../../context/toastContext.tsx';
 import {
@@ -186,6 +187,24 @@ export function FirmwareTab({ modelId, vendor, canManage, refreshKey = 0 }: {
     return () => window.clearInterval(timer);
   }, [downloading, load]);
 
+  // A download that ends while the tab is open says how it went.
+  const downloadingBefore = useRef<Map<string, boolean> | null>(null);
+  useEffect(() => {
+    if (!page) return;
+    const before = downloadingBefore.current;
+    downloadingBefore.current = new Map(page.rows.map(r => [r.platformId, r.downloading]));
+    if (!before) return;
+    for (const row of page.rows) {
+      if (!before.get(row.platformId) || row.downloading || row.action !== 'UpdateAtRestart') continue;
+      const name = page.rows.length > 1 ? `${row.name} (${row.platformId})` : row.name;
+      const pre = page.preProduction.find(p => p.platformId === row.platformId);
+      const version = pre?.version ?? row.releasedVersion;
+      notify(row.downloadFailure
+        ? { status: 'error', title: `${name} ${version} could not be downloaded.`, description: `${row.downloadFailure} The next sync tries again.` }
+        : { status: 'success', title: `${name} ${version} is downloaded.`, description: `Devices ${pre ? `at ${page.preProductionLocationName ?? 'the pre-production location'}` : 'of this model'} with an older BIOS get it from their next deployment.` });
+    }
+  }, [page, notify]);
+
   if (loadError) {
     return (
       <div className="rounded-md border border-border">
@@ -262,7 +281,7 @@ export function FirmwareTab({ modelId, vendor, canManage, refreshKey = 0 }: {
         <Table className="table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[64px]"><span className="sr-only">Details</span></TableHead>
+              <RowToggleHead className="w-14" />
               <TableHead>Component</TableHead>
               <TableHead className="w-[128px]">Version</TableHead>
               <TableHead className="w-[132px] whitespace-nowrap">Last updated</TableHead>
@@ -297,18 +316,15 @@ export function FirmwareTab({ modelId, vendor, canManage, refreshKey = 0 }: {
               return (
                 <Fragment key={row.platformId}>
                   <TableRow className={cn('h-14', download?.status === 'Downloading' && 'relative bg-blue-50/60 dark:bg-blue-950/30', row.action === 'Skip' && 'text-muted-foreground')}>
+                    {/* gap-1 plus the chevron button's padding matches the name cell's padding: equal space on both sides of the icon. */}
                     <TableCell className="pr-0">
-                      <span className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          aria-expanded={expanded}
-                          aria-controls={detailsId}
-                          aria-label={`${expanded ? 'Hide' : 'Show'} details of ${name}`}
-                          className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => setOpen(expanded ? null : row.platformId)}
-                        >
-                          {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                        </button>
+                      <span className="flex items-center gap-1">
+                        <RowToggle
+                          expanded={expanded}
+                          label={`${expanded ? 'Hide' : 'Show'} details of ${name}`}
+                          controls={detailsId}
+                          onToggle={() => setOpen(expanded ? null : row.platformId)}
+                        />
                         {download && <RowDownloadIcon download={download} />}
                       </span>
                       {download?.status === 'Downloading' && <RowDownloadEdge label={`Downloading ${name}`} />}

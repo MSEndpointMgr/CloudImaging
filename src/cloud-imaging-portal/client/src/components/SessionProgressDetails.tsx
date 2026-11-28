@@ -368,6 +368,9 @@ function InstallDriversCard({ pin, step, sessionId }: { pin: SessionDriverPin | 
   return (
     <div className="mt-5 rounded-md border border-border bg-muted/30 p-4">
       <p className="text-sm font-medium">{title}</p>
+      {pin?.driverFallbackFrom && pin.driverSetVersion != null && (
+        <p className="text-sm text-muted-foreground">{`This model has no driver set for ${shortRelease(pin.driverFallbackFrom)} yet, so its ${shortRelease(pin.driverRelease)} set is used.`}</p>
+      )}
       {pin?.driverChosenManually && pin.driverChosenBy && <p className="text-sm text-muted-foreground">{`Chosen manually by ${pin.driverChosenBy}`}</p>}
       {(summary.length > 0 || (Boolean(sessionId) && totalCount > 0)) && (
         <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
@@ -557,6 +560,7 @@ export function SessionProgressDetails({
             <p className={cn('text-sm font-medium', failed && 'text-destructive')}>
               {failed ? `${failed.label} failed` : focus.label}
             </p>
+            {!failed && focus.statusNote && <p className="mt-1 text-sm text-foreground">{focus.statusNote}</p>}
             {focus.errorDetail && (
               <p className="mt-1 select-text text-sm text-foreground">{focus.errorDetail}</p>
             )}

@@ -122,7 +122,7 @@ export default function DriverModelPage(): React.ReactElement {
   const { modelId = '' } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const release = (searchParams.get('release') ?? undefined) as WindowsRelease | undefined;
+  const release: WindowsRelease | undefined = searchParams.get('release') ?? undefined;
   const view: ModelView = searchParams.get('view') === 'firmware' ? 'firmware' : 'drivers';
   const { canManageDrivers } = useAuth();
   const { notify } = useToast();
@@ -217,6 +217,21 @@ export default function DriverModelPage(): React.ReactElement {
       window.clearTimeout(timer);
     };
   }, [checkRunId, load, notify]);
+
+  // A driver set whose downloads end while the page is open says so.
+  const preparingBefore = useRef<{ release: string; setVersion: number } | null>(null);
+  useEffect(() => {
+    if (!page) return;
+    const before = preparingBefore.current;
+    preparingBefore.current = page.preparing && !page.preparing.queued ? { release: page.release, setVersion: page.preparing.setVersion } : null;
+    if (!before || page.preparing || before.release !== page.release) return;
+    const set = `Driver set ${before.setVersion} for ${releaseLabel(page.release)}`;
+    const failed = page.components.filter(c => c.download?.status === 'Failed').length;
+    const failures = failed === 0 ? '' : ` ${failed === 1 ? '1 component' : `${failed} components`} could not be downloaded; the next sync tries again.`;
+    notify(page.testing?.setVersion === before.setVersion
+      ? { status: 'success', title: `${set} is in testing.`, description: `Only devices an Operator chooses it for at imaging start get it.${failures}` }
+      : { status: 'success', title: `${set} is ready.`, description: `Devices of this model get it from their next deployment.${failures}` });
+  }, [page, notify]);
 
   // Check for updates becomes available at its time without a reload.
   const availableAt = page?.checkAvailableAt ? Date.parse(page.checkAvailableAt) : NaN;
@@ -446,7 +461,6 @@ export default function DriverModelPage(): React.ReactElement {
     destructive: true,
   };
   const removal = confirm?.kind === 'removeModel';
-  const rollBackHint = previousSet ? `Devices get driver set ${previousSet} instead of ${page.setVersion} from their next deployment` : 'No previous driver set to roll back to';
   const history = {
     modelId: model.modelId,
     release: page.release,
@@ -481,7 +495,7 @@ export default function DriverModelPage(): React.ReactElement {
   const menuItems: MoreMenuItem[] = view === 'firmware' ? [removeItem] : [
     { label: 'Add custom component', icon: Plus, onSelect: () => void openAddCustom() },
     { label: 'Windows releases', icon: Monitor, onSelect: () => setEditingReleases(true) },
-    { label: 'Roll back driver set', icon: Undo2, onSelect: () => open({ kind: 'rollback' }), disabled: !previousSet, hint: rollBackHint },
+    { label: 'Roll back driver set', icon: Undo2, onSelect: () => open({ kind: 'rollback' }), disabledReason: previousSet ? undefined : 'No previous driver set to roll back to.' },
     removeItem,
   ];
 

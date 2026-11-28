@@ -301,6 +301,7 @@ public partial class App : Application
                         checkBootImageUpdate: _ => Task.FromResult(new BootImageUpdateCheck(BootImageUpdateStatus.UpdateAvailable, "2026.10.22.1")),
                         applyBootImageUpdate: DevSimulateBootImageUpdateAsync,
                         restartDevice: new SystemRestartService(lf.CreateLogger<SystemRestartService>()).Restart))),
+                ("14 · Imaging Progress: waiting for AC power", () => window.NavigateTo(BuildSampleAcPowerWaitView())),
             ]);
         launcher.Show();
     }
@@ -348,6 +349,16 @@ public partial class App : Application
         vm.StatusMessage = "Downloading operating system image…";
         vm.AppendActivity("Starting image download from https://cistoragedev.blob.core.windows.net/images/…");
         vm.OverallPercent = 45;
+        return new ProgressView { DataContext = vm };
+    }
+
+    /// <summary>DEV-ONLY: ProgressView held before Format disk while the device runs on battery.</summary>
+    private static ProgressView BuildSampleAcPowerWaitView()
+    {
+        var vm = new ProgressViewModel();
+        vm.AppendActivity("Firmware mode detected: UEFI. Using GPT layout with UEFI boot files.");
+        vm.AppendActivity("The device runs on battery. Waiting for the AC adapter before the disk is formatted.");
+        vm.IsWaitingForAcPower = true;
         return new ProgressView { DataContext = vm };
     }
 #endif

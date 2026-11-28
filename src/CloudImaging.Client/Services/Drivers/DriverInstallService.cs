@@ -81,7 +81,7 @@ public sealed partial class DriverInstallService
     public static string SkipNote(DriverSkipReason reason, string? matchKey, string? manufacturer) => reason switch
     {
         DriverSkipReason.NoMatchingModel when !string.IsNullOrWhiteSpace(matchKey) =>
-            $"No onboarded model matches this device ({(manufacturer?.Contains("Dell", StringComparison.OrdinalIgnoreCase) == true ? "system SKU" : "system ID")} {matchKey}).",
+            $"No onboarded model matches this device ({(manufacturer?.Contains("Dell", StringComparison.OrdinalIgnoreCase) == true ? "system SKU" : "baseboard")} {matchKey}).",
         DriverSkipReason.NoMatchingModel => "No onboarded model matches this device.",
         DriverSkipReason.NoWindowsRelease => "The OS image has no Windows release set.",
         DriverSkipReason.ReleaseNotOnboarded => "This model is not onboarded for the image's Windows release.",

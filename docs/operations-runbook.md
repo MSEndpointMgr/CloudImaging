@@ -159,8 +159,8 @@ is picked up without a click. Ethernet always wins: when it gets an address whil
 the Client leaves the Wi-Fi network and says so under the operation cards.
 
 The network button in the footer names the connection in use (Ethernet, the Wi-Fi network, or No
-network) and opens a panel with one line for Ethernet and one for Wi-Fi: the adapter, its address,
-which one is in use, or the adapter that has no driver in the boot image.
+network) and opens a panel with one line for Ethernet and one for Wi-Fi: the adapter and its address,
+marked **Connected** when it has one, or the adapter that has no driver in the boot image.
 For a missing network driver, add the driver package under **Drivers** in Media Builder → Generate
 Boot Image, regenerate the boot image and prepare the USB drive again. The Client log (**View Log**)
 records each check's outcome on a `Startup checks:` line.

@@ -1,12 +1,13 @@
 import React, { Fragment, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronDown, ChevronRight, History, Trash2 } from 'lucide-react';
+import { History, Trash2 } from 'lucide-react';
 import { ConfirmImpactDialog } from '../ConfirmImpactDialog.tsx';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { EmptyState } from '../ui/empty-state.tsx';
 import { Skeleton, TableSkeletonRows } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { RowToggle, RowToggleHead } from '../ui/row-toggle.tsx';
 import { useFittedColumnWidths } from '../../lib/useColumnWidths.tsx';
 import { formatTimestamp } from '../../lib/utils.ts';
 import {
@@ -142,7 +143,7 @@ export function SyncHistory({ runs, onClear }: {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                {expandable && <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>}
+                {expandable && <RowToggleHead />}
                 <TableHead className="w-[168px]">Started</TableHead>
                 <TableHead className="w-[150px]">Result</TableHead>
                 <TableHead>Details</TableHead>
@@ -164,17 +165,13 @@ export function SyncHistory({ runs, onClear }: {
                   <Fragment key={run.runId}>
                     <TableRow>
                       {expandable && (
-                        <TableCell>
+                        <TableCell className="pr-0">
                           {hasItems(run) && (
-                            <button
-                              type="button"
-                              aria-expanded={expanded}
-                              aria-label={`${expanded ? 'Hide' : 'Show'} the changes of the run started ${formatTimestamp(run.startedAt)}`}
-                              className="inline-flex rounded-md p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                              onClick={() => setOpen(expanded ? null : run.runId)}
-                            >
-                              {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-                            </button>
+                            <RowToggle
+                              expanded={expanded}
+                              label={`${expanded ? 'Hide' : 'Show'} the changes of the run started ${formatTimestamp(run.startedAt)}`}
+                              onToggle={() => setOpen(expanded ? null : run.runId)}
+                            />
                           )}
                         </TableCell>
                       )}

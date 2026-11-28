@@ -105,7 +105,7 @@ Install drivers is an optional step that installs the device model's [driver set
 
 - **Pinning**: when imaging starts, the session records the matched model, the Windows release of the OS image and the model's current driver set version, or the model or "no drivers" chosen on the Devices page. Sets built later do not change what the device receives.
 - **Work**: per component, the Client copies the file from the USB drive or downloads it ("Downloading drivers (3 of 26)"), checks its SHA-256, extracts it and adds the drivers with DISM. Installers for the Specialize pass are handed to Prepare setup. The timeline card shows the set, a summary (for example "24 installed offline", "24 from the USB drive, 2 downloaded") and every component under **Show details**, failures first.
-- **Skipped**: when no set applies the step completes with a note: no onboarded model matches the device (with its system ID or system SKU), the OS image has no Windows release, the model is not onboarded for that release, the model has no driver set yet, or the architectures differ. Imaging continues without drivers.
+- **Skipped**: when no set applies the step completes with a note: no onboarded model matches the device (with its baseboard or system SKU), the OS image has no Windows release, the model has no driver set for that release or an earlier one (it is not onboarded for it, or has no set yet), or the architectures differ. Imaging continues without drivers. A model without a set for the image's release but with one for an earlier release of the same Windows version gets that set instead, and the timeline says so.
 - **Warnings or failure**: a component that fails leaves the step `Completed` with a warning. A component in a category marked critical on the **Rules** tab fails the step and the session, naming the components, the cause and the fix.
 
 ### Prepare setup
@@ -117,6 +117,10 @@ Prepare setup is an optional step that applies the device's [setup profile](setu
 - **Warnings or failure**: with the profile's failure handling set to **Complete with warnings**, a failed item leaves the step `Completed` with an amber warning marker and the session completes. With **Fail the deployment**, the first failed item stops the step, later items are reported as not run, Configure boot does not run, and the session fails. Fix the profile or the OS image and retry.
 - **Specialize work** runs during Windows setup after the restart, when the portal no longer tracks the device. Its results are only in `C:\Windows\Logs\CloudImaging\SetupRunner.log` on the device.
 - **Not run**: a device whose boot image predates setup profiles images without its profile. The finished session shows Prepare setup as **Not run**, with a tooltip asking to update the boot image.
+
+### AC power
+
+A device that runs on battery waits before Prepare disk until the AC adapter is connected, then continues by itself. The device shows **Connect the AC adapter**, and on the **Devices** page the session's step reads *Waiting for the AC adapter*. Nothing on the disk changes while it waits. A device without a battery, or one whose power source cannot be read, does not wait. A device that gets a [BIOS update](drivers.md#bios-updates-hp) is also checked when it registers.
 
 ### Disk layout and firmware mode
 

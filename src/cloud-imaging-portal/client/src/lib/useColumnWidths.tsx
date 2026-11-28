@@ -8,12 +8,16 @@ const MIN_COLUMN_PCT = 5;
  * edge trades width with its right-hand neighbour, so the row total (and `table-fixed` layout) never
  * changes; the last column therefore has no handle. Columns left out (expand toggles, fixed-px
  * actions) keep their own width.
+ *
+ * Beside a fixed-px column, name a `fill` column: it gets no width and takes whatever the others
+ * leave. Without one, `table-fixed` hands the leftover to the fixed column, so a 36px row toggle
+ * renders 50px wide. Dragging still works, because the fill column absorbs every change.
  */
-export function useColumnWidths<K extends string>(defaults: Readonly<Record<K, number>>) {
+export function useColumnWidths<K extends string>(defaults: Readonly<Record<K, number>>, fill?: NoInfer<K>) {
   const [widths, setWidths] = useState<Record<K, number>>({ ...defaults });
   const keys = Object.keys(defaults) as K[];
 
-  const style = (key: K): CSSProperties => ({ width: `${widths[key]}%` });
+  const style = (key: K): CSSProperties | undefined => (key === fill ? undefined : { width: `${widths[key]}%` });
 
   const handle = (key: K, label: string): ReactElement | null => {
     const next = keys[keys.indexOf(key) + 1];

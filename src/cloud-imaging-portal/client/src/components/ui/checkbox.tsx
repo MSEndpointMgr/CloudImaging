@@ -18,6 +18,10 @@ export interface CheckboxProps {
   id?: string;
 }
 
+const BOX = 'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors';
+const BOX_ON = 'border-primary bg-primary text-primary-foreground';
+const BOX_OFF = 'border-input bg-background';
+
 /**
  * Multi-select control for lists (e.g. picking locations). A Switch reads as "turn a setting on",
  * which is wrong for "include this row", and a switch per row does not scale to hundreds of rows.
@@ -36,9 +40,9 @@ export function Checkbox({ checked, onCheckedChange, label, labelledBy, disabled
       disabled={disabled}
       onClick={() => onCheckedChange(!on)}
       className={cn(
-        'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors',
+        BOX,
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-        on || mixed ? 'border-primary bg-primary text-primary-foreground' : 'border-input bg-background',
+        on || mixed ? BOX_ON : BOX_OFF,
         disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
         className,
       )}
@@ -46,6 +50,18 @@ export function Checkbox({ checked, onCheckedChange, label, labelledBy, disabled
       {on && <Check className="h-3 w-3" strokeWidth={3} aria-hidden="true" />}
       {mixed && <Minus className="h-3 w-3" strokeWidth={3} aria-hidden="true" />}
     </button>
+  );
+}
+
+/**
+ * The box alone, for a row that carries the checked state itself (an option of a multi-select
+ * list), where a second focusable checkbox inside the row would be announced twice.
+ */
+export function CheckboxIndicator({ checked }: { checked: boolean }): React.ReactElement {
+  return (
+    <span aria-hidden="true" className={cn(BOX, checked ? BOX_ON : BOX_OFF)}>
+      {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+    </span>
   );
 }
 

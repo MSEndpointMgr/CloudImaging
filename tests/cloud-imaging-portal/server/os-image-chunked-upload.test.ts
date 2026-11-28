@@ -51,6 +51,7 @@ describe('Portal backend: OS image upload with a Windows release', () => {
     expect((await request(app()).post('/api/images/upload/start').send(body)).status).toBe(200);
     expect(operatorApi.startOsImageUpload).toHaveBeenLastCalledWith(body);
     expect((await request(app()).post('/api/images/upload/start').send({ ...body, windowsRelease: null })).status).toBe(200);
+    expect((await request(app()).post('/api/images/upload/start').send({ ...body, windowsRelease: 'Windows11_26H2' })).status).toBe(200);
   });
 });
 

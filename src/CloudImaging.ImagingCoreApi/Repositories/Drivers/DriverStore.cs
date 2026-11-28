@@ -19,6 +19,9 @@ public sealed class DriverStore
     /// <summary>Row key of the settings row.</summary>
     public const string SettingsRow = "default";
 
+    /// <summary>Row key of the Windows release catalog, in the settings partition.</summary>
+    public const string WindowsReleasesRow = "windows-releases";
+
     /// <summary>Partition of the model list freshness rows.</summary>
     public const string ListPartition = "list";
 
@@ -39,6 +42,7 @@ public sealed class DriverStore
     {
         VendorSettings = new(tables, DriverTables.VendorSettings);
         SyncSettings = new(tables, DriverTables.SyncSettings);
+        WindowsReleases = new(tables, DriverTables.SyncSettings);
         CatalogModels = new(tables, DriverTables.CatalogModels);
         CatalogLists = new(tables, DriverTables.CatalogModels);
         Components = new(tables, DriverTables.Components);
@@ -81,6 +85,9 @@ public sealed class DriverStore
 
     /// <summary>Sync and storage settings (PK <c>settings</c>, RK <c>default</c>).</summary>
     public DriverJsonTable<DriverSyncSettingsRecord> SyncSettings { get; }
+
+    /// <summary>Windows release catalog (PK <c>settings</c>, RK <c>windows-releases</c>), in the same table.</summary>
+    public DriverJsonTable<WindowsReleaseCatalogRecord> WindowsReleases { get; }
 
     /// <summary>Vendor model lists (PK vendor, RK catalog model key).</summary>
     public DriverJsonTable<DriverCatalogModelRecord> CatalogModels { get; }
@@ -229,7 +236,7 @@ public sealed class DriverSetDocumentRepository(BlobContainerClient container)
             var parts = blob.Name.Split('/');
             if (parts.Length == 4
                 && Guid.TryParse(parts[1], out var modelId)
-                && Enum.TryParse<WindowsRelease>(parts[2], out var release)
+                && WindowsRelease.TryParse(parts[2], out var release)
                 && int.TryParse(Path.GetFileNameWithoutExtension(parts[3]), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var version))
             {
                 documents.Add((modelId, release, version));

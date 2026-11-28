@@ -93,6 +93,26 @@ public sealed class ReportProgressOrderingTests
     }
 
     [Fact]
+    public async Task SessionHistory_RecordsWhenImagingStarted_NotWhenTheDeviceRegistered()
+    {
+        var session = await _bed.AddSessionAsync(SessionState.SessionStarted);
+        var id = session.SessionId;
+        await ReportAsync(id, new { stepName = "FormatDisk", status = "InProgress" });
+        var started = (await StepAsync(id, ImagingStepName.FormatDisk)).StartedAt;
+
+        foreach (var step in new[] { "FormatDisk", "DownloadImage", "ApplyImage", "ConfigureBoot", "ApplyRecoveryImage" })
+        {
+            await ReportAsync(id, new { stepName = step, status = "Completed" });
+        }
+
+        var history = await new SessionHistoryRepository(_bed.Tables).QueryAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue).SingleAsync();
+        history.FinalState.Should().Be(SessionState.SessionCompleted);
+        started.Should().NotBeNull();
+        history.ImagingStartedAt.Should().Be(started);
+        history.CreatedAt.Should().Be(session.CreatedAt);
+    }
+
+    [Fact]
     public async Task PercentReport_ThatRacesItsStepsEndReport_IsJudgedAgainAgainstIt()
     {
         var session = await _bed.AddSessionAsync(SessionState.SessionInProgress);

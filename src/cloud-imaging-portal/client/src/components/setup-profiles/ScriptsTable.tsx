@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Eye, GripVertical, Pencil, Trash2 } from 'lucide-react';
+import { Eye, GripVertical, Pencil, Search, SquareTerminal, Trash2 } from 'lucide-react';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { Input } from '../ui/input.tsx';
@@ -9,6 +9,7 @@ import { Tooltip } from '../ui/tooltip.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { TargetingBadges } from '../TargetingBadges.tsx';
 import type { PickerLocation } from '../LocationPicker.tsx';
+import { SectionTableEmpty } from './SectionCard.tsx';
 import { cn } from '../../lib/utils.ts';
 import {
   SCRIPT_PHASE_SHORT_LABELS,
@@ -84,10 +85,12 @@ export function ScriptsTable({ scripts, targeting, locations, profileLocations, 
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <SearchInput value={search} onValueChange={setSearch} placeholder="Search scripts" aria-label="Search scripts" wrapperClassName="min-w-40 flex-1" />
-        <Select id="scripts-location-filter" aria-label="Show the scripts for" value={locationId} onValueChange={setLocationId} options={filterOptions} wrapperClassName="w-[260px]" />
-      </div>
+      {scripts.length > 0 && (
+        <div className="flex items-center gap-2">
+          <SearchInput value={search} onValueChange={setSearch} placeholder="Search scripts" aria-label="Search scripts" wrapperClassName="min-w-40 flex-1" />
+          <Select id="scripts-location-filter" aria-label="Show the scripts for" value={locationId} onValueChange={setLocationId} options={filterOptions} wrapperClassName="w-[260px]" />
+        </div>
+      )}
       <div className="overflow-hidden rounded-md border border-border">
         <Table className="table-fixed">
           <TableHeader>
@@ -101,10 +104,10 @@ export function ScriptsTable({ scripts, targeting, locations, profileLocations, 
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visible.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={6} className="text-muted-foreground">No scripts match.</TableCell>
-              </TableRow>
+            {scripts.length === 0 ? (
+              <SectionTableEmpty colSpan={6} icon={SquareTerminal} title="No scripts" />
+            ) : visible.length === 0 && (
+              <SectionTableEmpty colSpan={6} icon={Search} title="No scripts match" description="Clear the search or choose All scripts." />
             )}
             {visible.map((s) => {
               const key = keyOf(s);
@@ -204,10 +207,12 @@ export function ScriptsTable({ scripts, targeting, locations, profileLocations, 
             })}
           </TableBody>
         </Table>
-        <div className="flex justify-between gap-4 border-t border-border px-3 py-2 text-xs text-muted-foreground">
-          <span>{footer}</span>
-          <span>Order is the run order within each phase</span>
-        </div>
+        {scripts.length > 0 && (
+          <div className="flex justify-between gap-4 border-t border-border px-3 py-2 text-xs text-muted-foreground">
+            <span>{footer}</span>
+            <span>Order is the run order within each phase</span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,7 +5,7 @@ export default function SessionsPage(): React.ReactElement {
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId, Fragment } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ChevronRight, ChevronDown, ShieldCheck, Ban, ShieldOff, Play, PlugZap } from 'lucide-react';
+import { RefreshCw, FileDown, AlertTriangle, Smartphone, CheckCircle2, Activity, Trash2, CircleAlert, ShieldCheck, Ban, ShieldOff, Play } from 'lucide-react';
 import { apiFetch, apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Input } from '../components/ui/input.tsx';
@@ -16,6 +16,7 @@ import { EmptyState } from '../components/ui/empty-state.tsx';
 import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { RelativeTime } from '../components/ui/relative-time.tsx';
 import { Tooltip } from '../components/ui/tooltip.tsx';
+import { RowToggle, RowToggleHead } from '../components/ui/row-toggle.tsx';
 import { ConfirmImpactDialog, type ConfirmImpactCopy } from '../components/ConfirmImpactDialog.tsx';
 import { StartImagingProfileLines } from '../components/setup-profiles/StartImagingProfileLines.tsx';
 import { DriverSetCell, StartImagingDriverLines } from '../components/drivers/DriverSetCell.tsx';
@@ -25,9 +26,9 @@ import { SessionProgressDetails } from '../components/SessionProgressDetails.tsx
 import { formatOsImageInventoryName } from '../lib/imageInventoryFormatting.ts';
 import { architectureLabel, type ImageArchitecture } from '../lib/wimMetadata.ts';
 import { assignableImages, compatibleSessions } from '../lib/assignmentCompatibility.ts';
-import { progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
+import { completionWarnings, currentStepText, imagingDurationMs, imagingStartedAt, progressStepLabel, type ImagingStepDetails } from '../lib/imagingProgress.ts';
 import type { SetupProfilePin } from '../lib/setupProfiles.ts';
-import { cn, formatDateTime } from '../lib/utils.ts';
+import { cn, formatDateTime, formatDuration } from '../lib/utils.ts';
 import { useSort, sortRows } from '../lib/tableSort.ts';
 import { useToast } from '../context/toastContext.tsx';
 import { useAuth } from '../context/authContext.tsx';
@@ -259,20 +260,24 @@ function SessionsPageImpl(): React.ReactElement {
   const [availableSort, toggleAvailableSort] = useSort<'serial' | 'device' | 'location' | 'state' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [coupledSort, toggleCoupledSort]     = useSort<'serial' | 'device' | 'architecture' | 'location' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [monitorSort, toggleMonitorSort]     = useSort<'serial' | 'device' | 'location' | 'registered' | 'state' | 'progress' | 'step'>({ key: 'registered', dir: 'desc' });
-  const [successSort, toggleSuccessSort]     = useSort<'serial' | 'device' | 'location' | 'finished'>({ key: 'finished', dir: 'desc' });
+  const [successSort, toggleSuccessSort]     = useSort<'serial' | 'device' | 'location' | 'state' | 'started' | 'finished' | 'duration'>({ key: 'finished', dir: 'desc' });
   const [failedSort, toggleFailedSort]       = useSort<'serial' | 'device' | 'location' | 'state' | 'step' | 'registered'>({ key: 'registered', dir: 'asc' });
   const [blockedSort, toggleBlockedSort]     = useSort<'serial' | 'device' | 'location' | 'registered'>({ key: 'registered', dir: 'desc' });
   const [overrideSort, toggleOverrideSort]   = useSort<'serial' | 'device' | 'location' | 'approvedBy' | 'expires'>({ key: 'expires', dir: 'asc' });
 
-  const availableCols = useColumnWidths({ serial: 18, device: 24, location: 16, state: 12, passcode: 13, registered: 13 });
-  const coupledCols = useColumnWidths({ serial: 20, device: 28, architecture: 12, location: 16, registered: 16 });
+  // table-fixed sizes columns as percent plus fixed px of the table's own width, so the percentages
+  // leave room for the fixed columns; summing past 100% pushed the row wider than its container.
+  // Beside the 36px row toggle, Model fills what the others leave, so the toggle stays 36px.
+  // Serial is the same 13% on every tab, enough for a ten-character serial and its copy button.
+  const availableCols = useColumnWidths({ serial: 13, device: 29, location: 16, state: 12, passcode: 13, registered: 13 }, 'device');
+  const coupledCols = useColumnWidths({ serial: 13, device: 35, architecture: 12, location: 16, registered: 16 });
   // With the Driver set column the percentages still leave room for the fixed Actions column, so nothing scrolls.
   const coupledDriverCols = useColumnWidths({ serial: 13, device: 21, architecture: 11, location: 11, driverSet: 26, registered: 11 });
-  const monitorCols = useColumnWidths({ serial: 14, device: 17, location: 10, registered: 15, state: 9, progress: 15, step: 16 });
-  const successCols = useColumnWidths({ serial: 15, device: 25, location: 15, progress: 20, finished: 20 });
-  const failedCols = useColumnWidths({ serial: 12, device: 17, location: 11, state: 10, step: 14, registered: 11, actions: 20 });
-  const blockedCols = useColumnWidths({ serial: 15, device: 22, location: 14, checks: 18, registered: 13, actions: 13 });
-  const overrideCols = useColumnWidths({ serial: 14, device: 18, location: 12, checks: 16, approvedBy: 18, expires: 11, actions: 11 });
+  const monitorCols = useColumnWidths({ serial: 14, device: 17, location: 10, registered: 15, state: 9, progress: 15, step: 16 }, 'device');
+  const successCols = useColumnWidths({ serial: 13, device: 20, location: 10, state: 14, started: 15, finished: 15, duration: 9 }, 'device');
+  const failedCols = useColumnWidths({ serial: 13, device: 16, location: 11, state: 10, step: 14, registered: 11, actions: 20 }, 'device');
+  const blockedCols = useColumnWidths({ serial: 13, device: 24, location: 14, checks: 18, registered: 13, actions: 13 }, 'device');
+  const overrideCols = useColumnWidths({ serial: 13, device: 19, location: 12, checks: 16, approvedBy: 18, expires: 11, actions: 11 });
 
   // Uploaded diagnostic logs per failed session, looked up once the Failed tab is opened. A
   // session only has a log if the Client managed a best-effort upload before reboot, so the
@@ -447,7 +452,10 @@ function SessionsPageImpl(): React.ReactElement {
       serial:   (s: Session) => s.deviceSerialNumber,
       device:   (s: Session) => `${s.deviceManufacturer} ${s.deviceModel}`,
       location: (s: Session) => s.locationName ?? '',
+      state:    (s: Session) => completionWarnings(s.steps)?.count ?? 0,
+      started:  (s: Session) => { const startedAt = imagingStartedAt(s.steps); return startedAt ? Date.parse(startedAt) : 0; },
       finished: (s: Session) => s.terminalAt ? new Date(s.terminalAt).getTime() : 0,
+      duration: (s: Session) => imagingDurationMs(s.steps, s.terminalAt) ?? 0,
     },
   ), [locationFiltered, successSort]);
   const failed = useMemo(() => sortRows(
@@ -648,7 +656,6 @@ function SessionsPageImpl(): React.ReactElement {
   };
 
   const selectedImageLabel = images.find(i => i.imageId === selectedImageId);
-  const biosUpdates = targetSessions.filter(s => s.firmwareVersion).length;
   const excludedCount = coupled.length - targetSessions.length;
   const excludedNote = selectedImageLabel && excludedCount > 0
     ? ` ${excludedCount} ${architectureLabel(selectedImageLabel.architecture) === 'x64' ? 'ARM64' : 'x64'} device${excludedCount !== 1 ? 's' : ''} stay coupled until an image of that architecture is assigned.`
@@ -657,7 +664,7 @@ function SessionsPageImpl(): React.ReactElement {
   const bulkAssignCopy: ConfirmImpactCopy = {
     confirmTitle: `Start imaging on ${targetSessions.length} device${targetSessions.length !== 1 ? 's' : ''}?`,
     impact: selectedImageLabel
-      ? `This assigns "${selectedImageLabel.version}" (${architectureLabel(selectedImageLabel.architecture)}) to ${targetSessions.length} coupled ${architectureLabel(selectedImageLabel.architecture)} device${targetSessions.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.${excludedNote}`
+      ? `This assigns "${selectedImageLabel.name}" (${architectureLabel(selectedImageLabel.architecture)}) to ${targetSessions.length} coupled ${architectureLabel(selectedImageLabel.architecture)} device${targetSessions.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.${excludedNote}`
       : `This assigns the selected OS image to ${targetSessions.length} coupled device${targetSessions.length !== 1 ? 's' : ''} and immediately begins imaging. This cannot be undone.`,
     confirmLabel: 'Start Imaging',
     destructive: false,
@@ -759,9 +766,7 @@ function SessionsPageImpl(): React.ReactElement {
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
-                  {/* The remaining widths already summed to 96%, leaving exactly this much for the
-                      toggle without redistributing the existing columns. */}
-                  <TableHead className="w-[4%]"><span className="sr-only">Expand device details</span></TableHead>
+                  <RowToggleHead />
                   <SortableHead label="Serial" sortKey="serial" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('serial')}>{availableCols.handle('serial', 'Serial')}</SortableHead>
                   <SortableHead label="Model" sortKey="device" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('device')}>{availableCols.handle('device', 'Model')}</SortableHead>
                   <SortableHead label="Location" sortKey="location" sort={availableSort} onSort={toggleAvailableSort} className="relative" style={availableCols.style('location')}>{availableCols.handle('location', 'Location')}</SortableHead>
@@ -774,7 +779,7 @@ function SessionsPageImpl(): React.ReactElement {
                 {loading && sessions.length === 0 ? (
                   Array.from({ length: 3 }).map((_, i) => (
                     <TableRow key={`av-skeleton-${i}`} className="hover:bg-transparent">
-                      <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                      <TableCell className="pr-0"><Skeleton className="ml-1 h-4 w-4" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -796,25 +801,19 @@ function SessionsPageImpl(): React.ReactElement {
                 ) : available.map(s => (
                   <Fragment key={s.sessionId}>
                     <TableRow>
-                      <TableCell>
-                        <Tooltip content={isExpanded(s.sessionId) ? 'Hide details' : 'Show details'}>
-                          <button
-                            type="button"
-                            onClick={() => toggleExpanded(s.sessionId)}
-                            aria-expanded={isExpanded(s.sessionId)}
-                            aria-controls={`${detailsId}-${s.sessionId}`}
-                            aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} details for ${s.deviceSerialNumber}`}
-                            className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                          >
-                            {isExpanded(s.sessionId) ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                          </button>
-                        </Tooltip>
+                      <TableCell className="pr-0">
+                        <RowToggle
+                          expanded={isExpanded(s.sessionId)}
+                          label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} details for ${s.deviceSerialNumber}`}
+                          controls={`${detailsId}-${s.sessionId}`}
+                          onToggle={() => toggleExpanded(s.sessionId)}
+                        />
                       </TableCell>
                       <TableCell>
                         <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                       </TableCell>
                       <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                      <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                      <TableCell className="text-muted-foreground">{s.locationName ?? '-'}</TableCell>
                       <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                       <TableCell>
                         <PasscodeCouplingCell onCoupled={handleRefresh} />
@@ -912,7 +911,7 @@ function SessionsPageImpl(): React.ReactElement {
                     <TableCell>
                       <Badge variant="outline">{architectureLabel(s.architecture)}</Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.locationName ?? '-'}</TableCell>
                     {showDriverColumn && (
                       <TableCell>
                         {!selectedImageId ? (
@@ -969,11 +968,7 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All eight widths are percentages that sum to exactly 100%: table-fixed sizes
-                    columns as (percent + fixed px) of the table's own width, so mixing in a
-                    fixed px column (State was a flat 140px) made the row wider than its
-                    container on anything above ~1750px and forced a horizontal scrollbar. */}
-                <TableHead className="w-[4%]"><span className="sr-only">Details</span></TableHead>
+                <RowToggleHead />
                 <SortableHead label="Serial / Session" sortKey="serial" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('serial')}>{monitorCols.handle('serial', 'Serial / Session')}</SortableHead>
                 <SortableHead label="Model" sortKey="device" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('device')}>{monitorCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={monitorSort} onSort={toggleMonitorSort} className="relative" style={monitorCols.style('location')}>{monitorCols.handle('location', 'Location')}</SortableHead>
@@ -987,7 +982,7 @@ function SessionsPageImpl(): React.ReactElement {
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={`mon-skeleton-${i}`} className="hover:bg-transparent">
-                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                    <TableCell className="pr-0"><Skeleton className="ml-1 h-4 w-4" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -1010,19 +1005,13 @@ function SessionsPageImpl(): React.ReactElement {
               ) : monitor.map(s => (
                 <Fragment key={s.sessionId}>
                 <TableRow>
-                  <TableCell>
-                    <Tooltip content={isExpanded(s.sessionId) ? 'Hide progress details' : 'Show progress details'}>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => toggleExpanded(s.sessionId)}
-                        aria-expanded={isExpanded(s.sessionId)}
-                        aria-controls={`${detailsId}-${s.sessionId}`}
-                        aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
-                      >
-                        {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
-                      </Button>
-                    </Tooltip>
+                  <TableCell className="pr-0">
+                    <RowToggle
+                      expanded={isExpanded(s.sessionId)}
+                      label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
+                      controls={`${detailsId}-${s.sessionId}`}
+                      onToggle={() => toggleExpanded(s.sessionId)}
+                    />
                   </TableCell>
                   <TableCell>
                     <div className="min-w-0 space-y-1">
@@ -1035,7 +1024,7 @@ function SessionsPageImpl(): React.ReactElement {
                     </div>
                   </TableCell>
                   <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                  <TableCell className="text-muted-foreground">{s.locationName ?? '-'}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">
                     <time dateTime={s.createdAt}>{formatDateTime(s.createdAt)}</time>
                   </TableCell>
@@ -1048,7 +1037,7 @@ function SessionsPageImpl(): React.ReactElement {
                       <span className="text-xs text-muted-foreground">{s.overallProgressPercent}%</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{progressStepLabel(s.currentStep)}</TableCell>
+                  <TableCell className="text-muted-foreground">{currentStepText(s.currentStep, s.steps)}</TableCell>
                 </TableRow>
                 {isExpanded(s.sessionId) && (
                   <TableRow className="hover:bg-transparent">
@@ -1075,29 +1064,33 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <RowToggleHead />
                 <SortableHead label="Serial" sortKey="serial" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('serial')}>{successCols.handle('serial', 'Serial')}</SortableHead>
                 <SortableHead label="Model" sortKey="device" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('device')}>{successCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('location')}>{successCols.handle('location', 'Location')}</SortableHead>
-                <TableHead className="relative" style={successCols.style('progress')}>Progress{successCols.handle('progress', 'Progress')}</TableHead>
-                <SortableHead label="Finished" sortKey="finished" sort={successSort} onSort={toggleSuccessSort} style={successCols.style('finished')} />
+                <SortableHead label="State" sortKey="state" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('state')}>{successCols.handle('state', 'State')}</SortableHead>
+                <SortableHead label="Started" sortKey="started" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('started')}>{successCols.handle('started', 'Started')}</SortableHead>
+                <SortableHead label="Finished" sortKey="finished" sort={successSort} onSort={toggleSuccessSort} className="relative" style={successCols.style('finished')}>{successCols.handle('finished', 'Finished')}</SortableHead>
+                <SortableHead label="Duration" sortKey="duration" sort={successSort} onSort={toggleSuccessSort} style={successCols.style('duration')} />
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={`success-skeleton-${i}`} className="hover:bg-transparent">
-                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                    <TableCell className="pr-0"><Skeleton className="ml-1 h-4 w-4" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                    <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-28" /></TableCell>
-                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-12" /></TableCell>
                   </TableRow>
                 ))
               ) : success.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="p-0">
+                  <TableCell colSpan={8} className="p-0">
                     <EmptyState
                       icon={CheckCircle2}
                       title="No successful deployments yet"
@@ -1105,59 +1098,63 @@ function SessionsPageImpl(): React.ReactElement {
                     />
                   </TableCell>
                 </TableRow>
-              ) : success.map(s => (
-                <Fragment key={s.sessionId}>
-                  <TableRow>
-                    <TableCell>
-                      <Tooltip content={isExpanded(s.sessionId) ? 'Hide progress details' : 'Show progress details'}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleExpanded(s.sessionId)}
-                          aria-expanded={isExpanded(s.sessionId)}
-                          aria-controls={`${detailsId}-${s.sessionId}`}
-                          aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
-                        >
-                          {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
-                        </Button>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell>
-                      <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
-                    </TableCell>
-                    <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                    <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-                          <div className="h-full w-full rounded-full bg-emerald-500" />
-                        </div>
-                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">100%</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {s.terminalAt ? (
-                        <time dateTime={s.terminalAt}>{formatDateTime(s.terminalAt)}</time>
-                      ) : '\u2014'}
-                    </TableCell>
-                  </TableRow>
-                  {isExpanded(s.sessionId) && (
-                    <TableRow className="hover:bg-transparent">
-                      <TableCell colSpan={6} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
-                        <SessionProgressDetails
-                          overallPercent={s.overallProgressPercent}
-                          currentStep={s.currentStep}
-                          steps={s.steps}
-                          sessionId={s.sessionId}
-                          setupProfile={s.setupProfile}
-                          driverPin={s}
-                          terminal={Boolean(s.terminalAt)}
+              ) : success.map(s => {
+                const startedAt = imagingStartedAt(s.steps);
+                const durationMs = imagingDurationMs(s.steps, s.terminalAt);
+                const warnings = completionWarnings(s.steps);
+                return (
+                  <Fragment key={s.sessionId}>
+                    <TableRow>
+                      <TableCell className="pr-0">
+                        <RowToggle
+                          expanded={isExpanded(s.sessionId)}
+                          label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
+                          controls={`${detailsId}-${s.sessionId}`}
+                          onToggle={() => toggleExpanded(s.sessionId)}
                         />
                       </TableCell>
+                      <TableCell>
+                        <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
+                      </TableCell>
+                      <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
+                      <TableCell className="text-muted-foreground">{s.locationName ?? '-'}</TableCell>
+                      <TableCell>
+                        {warnings ? (
+                          <Tooltip content={warnings.text}>
+                            <Badge variant="warning" dot tabIndex={0}>With warnings</Badge>
+                          </Tooltip>
+                        ) : (
+                          <Badge variant="success" dot>Completed</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {startedAt ? <time dateTime={startedAt}>{formatDateTime(startedAt)}</time> : '-'}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        {s.terminalAt ? <time dateTime={s.terminalAt}>{formatDateTime(s.terminalAt)}</time> : '-'}
+                      </TableCell>
+                      <TableCell className="text-xs tabular-nums text-muted-foreground">
+                        {durationMs === null ? '-' : formatDuration(durationMs)}
+                      </TableCell>
                     </TableRow>
-                  )}
-                </Fragment>
-              ))}
+                    {isExpanded(s.sessionId) && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={8} className="border-t-0 bg-muted/20 p-0" id={`${detailsId}-${s.sessionId}`}>
+                          <SessionProgressDetails
+                            overallPercent={s.overallProgressPercent}
+                            currentStep={s.currentStep}
+                            steps={s.steps}
+                            sessionId={s.sessionId}
+                            setupProfile={s.setupProfile}
+                            driverPin={s}
+                            terminal={Boolean(s.terminalAt)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
@@ -1166,11 +1163,7 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                {/* All eight widths are percentages that sum to exactly 100%: see the Monitor
-                    table's comment above for why fixed-px columns (State/Actions were
-                    140px/150px) can't be mixed in here without pushing the row past the
-                    container width. */}
-                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <RowToggleHead />
                 <SortableHead label="Serial" sortKey="serial" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('serial')}>{failedCols.handle('serial', 'Serial')}</SortableHead>
                 <SortableHead label="Model" sortKey="device" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('device')}>{failedCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={failedSort} onSort={toggleFailedSort} className="relative" style={failedCols.style('location')}>{failedCols.handle('location', 'Location')}</SortableHead>
@@ -1184,7 +1177,7 @@ function SessionsPageImpl(): React.ReactElement {
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={`fail-skeleton-${i}`} className="hover:bg-transparent">
-                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                    <TableCell className="pr-0"><Skeleton className="ml-1 h-4 w-4" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -1211,25 +1204,19 @@ function SessionsPageImpl(): React.ReactElement {
                 return (
                   <Fragment key={s.sessionId}>
                   <TableRow>
-                    <TableCell>
-                      <Tooltip content={isExpanded(s.sessionId) ? 'Hide progress details' : 'Show progress details'}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleExpanded(s.sessionId)}
-                          aria-expanded={isExpanded(s.sessionId)}
-                          aria-controls={`${detailsId}-${s.sessionId}`}
-                          aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
-                        >
-                          {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
-                        </Button>
-                      </Tooltip>
+                    <TableCell className="pr-0">
+                      <RowToggle
+                        expanded={isExpanded(s.sessionId)}
+                        label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} progress details for ${s.deviceSerialNumber}`}
+                        controls={`${detailsId}-${s.sessionId}`}
+                        onToggle={() => toggleExpanded(s.sessionId)}
+                      />
                     </TableCell>
                     <TableCell>
                       <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
                     </TableCell>
                     <TableCell>{s.deviceManufacturer} {s.deviceModel}</TableCell>
-                    <TableCell className="text-muted-foreground">{s.locationName ?? '\u2014'}</TableCell>
+                    <TableCell className="text-muted-foreground">{s.locationName ?? '-'}</TableCell>
                     <TableCell><Badge variant={stateBadgeVariant(s.state)} dot>{stateLabel(s.state)}</Badge></TableCell>
                     <TableCell className="text-muted-foreground">{progressStepLabel(s.currentStep)}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
@@ -1276,7 +1263,7 @@ function SessionsPageImpl(): React.ReactElement {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="w-[5%]"><span className="sr-only">Details</span></TableHead>
+                <RowToggleHead />
                 <SortableHead label="Serial" sortKey="serial" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('serial')}>{blockedCols.handle('serial', 'Serial')}</SortableHead>
                 <SortableHead label="Model" sortKey="device" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('device')}>{blockedCols.handle('device', 'Model')}</SortableHead>
                 <SortableHead label="Location" sortKey="location" sort={blockedSort} onSort={toggleBlockedSort} className="relative" style={blockedCols.style('location')}>{blockedCols.handle('location', 'Location')}</SortableHead>
@@ -1289,7 +1276,7 @@ function SessionsPageImpl(): React.ReactElement {
               {loading && sessions.length === 0 ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={`blocked-skeleton-${i}`} className="hover:bg-transparent">
-                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
+                    <TableCell className="pr-0"><Skeleton className="ml-1 h-4 w-4" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-20" /></TableCell>
@@ -1311,19 +1298,13 @@ function SessionsPageImpl(): React.ReactElement {
               ) : blocked.map(s => (
                 <Fragment key={s.sessionId}>
                   <TableRow>
-                    <TableCell>
-                      <Tooltip content={isExpanded(s.sessionId) ? 'Hide details' : 'Show details'}>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleExpanded(s.sessionId)}
-                          aria-expanded={isExpanded(s.sessionId)}
-                          aria-controls={`${detailsId}-${s.sessionId}`}
-                          aria-label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} details for ${s.deviceSerialNumber}`}
-                        >
-                          {isExpanded(s.sessionId) ? <ChevronDown /> : <ChevronRight />}
-                        </Button>
-                      </Tooltip>
+                    <TableCell className="pr-0">
+                      <RowToggle
+                        expanded={isExpanded(s.sessionId)}
+                        label={`${isExpanded(s.sessionId) ? 'Hide' : 'Show'} details for ${s.deviceSerialNumber}`}
+                        controls={`${detailsId}-${s.sessionId}`}
+                        onToggle={() => toggleExpanded(s.sessionId)}
+                      />
                     </TableCell>
                     <TableCell>
                       <CopyableId value={s.deviceSerialNumber} label="device serial number" className="font-mono text-sm font-medium text-foreground" />
@@ -1446,17 +1427,10 @@ function SessionsPageImpl(): React.ReactElement {
           onCancel={() => setPendingBulkAssign(false)}
           onConfirm={() => { void handleStartImaging(); }}
           titleId="bulk-assign-confirm-title"
-          details={(canViewSetupProfiles || (showDriverColumn && driverPreview.preview) || biosUpdates > 0) ? (
+          details={(canViewSetupProfiles || (showDriverColumn && driverPreview.preview)) ? (
             <div className="space-y-3">
               {canViewSetupProfiles && <StartImagingProfileLines sessions={targetSessions} />}
               {showDriverColumn && driverPreview.preview && <StartImagingDriverLines sessionIds={targetIds} preview={driverPreview.preview} choices={driverChoices} />}
-              {/* The last moment before the operator walks away, so the one firmware fact that matters goes here. */}
-              {biosUpdates > 0 && (
-                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm dark:border-amber-900 dark:bg-amber-950/40">
-                  <PlugZap className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-                  <span>{`${biosUpdates === 1 ? '1 device updates its' : `${biosUpdates} devices update their`} BIOS at restart. Keep ${biosUpdates === 1 ? 'it' : 'them'} on AC power until Windows setup starts.`}</span>
-                </div>
-              )}
             </div>
           ) : undefined}
         />

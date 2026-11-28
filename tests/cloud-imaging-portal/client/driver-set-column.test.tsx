@@ -151,7 +151,7 @@ describe('Devices page: Driver set column, sets in testing', () => {
     renderPage();
     await chooseImage();
 
-    expect(await screen.findByLabelText('This model has no driver set for Windows 11, version 24H2 yet.')).toBeTruthy();
+    expect(await screen.findByLabelText('This model has no driver set for Windows 11, version 24H2 or an earlier release.')).toBeTruthy();
   });
 });
 
@@ -181,7 +181,7 @@ describe('Devices page: Driver set column', () => {
     const unmatchedSelect = screen.getByRole('combobox', { name: 'Driver set for 5CG2222' });
     expect(unmatchedSelect.textContent).toContain('No match, choose a set');
     expect(unmatchedSelect.className).toContain('border-amber-500');
-    const alert = screen.getByLabelText('System ID 8A3B is not onboarded for Windows 11, version 24H2.');
+    const alert = screen.getByLabelText('Baseboard 8A3B is not onboarded for Windows 11, version 24H2.');
     expect(alert.getAttribute('tabindex')).toBe('0');
     expect(calls.find(c => c.key === 'POST /api/drivers/assignment-preview')?.body).toEqual({ osImageId: 'img-1', sessionIds: [matched.sessionId, unmatched.sessionId] });
   });
@@ -197,6 +197,30 @@ describe('Devices page: Driver set column', () => {
     expect(screen.getAllByRole('option').map(o => o.getAttribute('title'))).toEqual(['HP EliteBook 840 G11', 'HP ZBook Firefly 14', 'No drivers']);
     expect(screen.getByText('2.41 GB')).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/Set \d/);
+  });
+
+  it('names an earlier release\'s set in the choice, explains it, and lists it in the overlay', async () => {
+    const earlier = {
+      ...preview,
+      release: 'Windows11_26H2',
+      options: [{ ...preview.options[1], release: 'Windows11_24H2' }, preview.options[0]],
+    };
+    serve(base({ 'POST /api/drivers/assignment-preview': { body: earlier } }));
+    renderPage();
+    await chooseImage();
+
+    const select = await screen.findByRole('combobox', { name: 'Driver set for 5CG1111' });
+    expect(select.textContent).toContain('HP EliteBook 840 G11 (24H2 set)');
+    const info = screen.getByLabelText('HP EliteBook 840 G11 has no driver set for Windows 11, version 26H2 yet, so its Windows 11, version 24H2 set is used.');
+    expect(info.getAttribute('tabindex')).toBe('0');
+    fireEvent.click(select);
+    expect(screen.getAllByRole('option').map(o => o.getAttribute('title'))).toEqual(['HP EliteBook 840 G11 (24H2 set)', 'HP ZBook Firefly 14', 'No drivers']);
+    fireEvent.click(screen.getByRole('option', { name: /^HP ZBook Firefly 14/ }));
+    expect(screen.queryByLabelText(/has no driver set for Windows 11, version 26H2 yet/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Use the matched set' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Start Imaging \(2\)/ }));
+    expect(within(screen.getByRole('dialog')).getAllByRole('listitem').map(li => li.textContent)).toContain('1 device: HP EliteBook 840 G11 (24H2 set)');
   });
 
   it('a change shows the undo button, which restores the match, and choices are cleared when the image changes', async () => {

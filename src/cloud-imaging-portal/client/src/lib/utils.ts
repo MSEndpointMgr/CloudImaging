@@ -47,7 +47,7 @@ const DAY = 24 * HOUR;
  */
 export function formatRelativeTime(iso: string, now: number = Date.now()): string {
   const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '\u2014';
+  if (Number.isNaN(then)) return '-';
 
   const elapsed = now - then;
   if (elapsed < MINUTE) return 'just now';

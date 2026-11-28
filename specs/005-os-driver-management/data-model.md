@@ -21,7 +21,7 @@ string enums (`JsonSerializerDefaults.Web` plus `JsonStringEnumConverter`).
 | `DriverRuleScope` | `AllVendors`, `Hp`, `Dell` | |
 | `DriverRuleMatch` | `Category`, `NamePattern`, `ComponentId` | Specificity: ComponentId > NamePattern > Category. |
 | `DriverComponentState` | `Active`, `WaitingForApproval`, `Withdrawn` | See section 6. |
-| `WindowsRelease` | `Windows10_22H2`, `Windows11_23H2`, `Windows11_24H2`, `Windows11_25H2` | Label "Windows 11, version 24H2". Extended in code. |
+| `WindowsRelease` | `Windows10_22H2`, `Windows11_23H2`, `Windows11_24H2`, `Windows11_25H2`, and any later `Windows10_` or `Windows11_` release such as `Windows11_26H2` | A value type, not an enum: Windows version (10 or 11) and release (`26H2`). Label "Windows 11, version 26H2". Table keys and blob names keep the stored form `Windows11Version26H2`. The releases offered come from the release list (3.2a, FR-107). |
 | `DriverSyncSchedule` | `Daily`, `SelectedDays`, `Manual` | |
 | `DriverSyncTrigger` | `Scheduled`, `Manual`, `Check`, `ModelCheck` | `Scheduled` and `Manual` (Sync now) are syncs: they refresh the vendors' model lists and check every onboarded model. `Check`: Check for updates on the Models tab, every onboarded model, components only. `ModelCheck`: Check for updates on one model. |
 | `DriverSyncResult` | `Running`, `Completed`, `PartlyFailed`, `Failed` | |
@@ -38,7 +38,7 @@ string enums (`JsonSerializerDefaults.Web` plus `JsonStringEnumConverter`).
 |---|---|
 | `OsImage` | `WindowsRelease? WindowsRelease`. Set on upload or edit by Operator or Administrator; null means no driver work. |
 | `DeviceHardwareMetadata` | `string? SystemSku` (`Win32_ComputerSystem.SystemSKUNumber`, trimmed, at most 64 chars). Copied in `DeviceGatewayApiClient.SignPayload`. |
-| `DeviceSession` | `Guid? DriverModelId`, `string? DriverModelName`, `WindowsRelease? DriverRelease`, `int? DriverSetVersion`, `DriverSkipReason? DriverSkipReason`, `string? DriverMatchKey` (the device's HP system ID or Dell SKU used for matching, for the skip note), `bool DriverChosenManually`, `string? DriverChosenBy` (UPN from the token, at most 256 chars), `string? DriverCriticalCategories` (JSON array of the pinned model's vendor categories that were critical at assignment). Written once at assignment. |
+| `DeviceSession` | `Guid? DriverModelId`, `string? DriverModelName`, `WindowsRelease? DriverRelease` (the pinned set's release), `WindowsRelease? DriverFallbackFrom` (the image's release when the model had no set for it and an earlier release's set is pinned, FR-108; null otherwise), `int? DriverSetVersion`, `DriverSkipReason? DriverSkipReason`, `string? DriverMatchKey` (the device's HP system ID or Dell SKU used for matching, for the skip note), `bool DriverChosenManually`, `string? DriverChosenBy` (UPN from the token, at most 256 chars), `string? DriverCriticalCategories` (JSON array of the pinned model's vendor categories that were critical at assignment). Written once at assignment. |
 | `ImagingStepItem` | `DriverAction? DriverAction` (null for non-driver items), `string? ComponentVersion`, `DriverComponentOrigin? DriverOrigin`, `bool? FromUsbCache` (true when the file came from the USB drive). |
 | `UsbPreparationManifest` (Media Builder, `BOOT:\cloudimaging-manifest.json`) | `List<PreloadedDriverSet>? DriverSets`: `ModelId`, `ModelName`, `Release`, `SetVersion`, `Components`, `Bytes`. Informational only; nothing is pinned from it. |
 | Step progress report and `ImagingStep` | `string? StatusNote` (at most 300 chars), shown under the step, used for a skipped step. |
@@ -70,6 +70,15 @@ and match keys are stored upper-case.
 | `LastScheduledSlotUtc` | DateTimeOffset? | Written with ETag when a scheduled run starts (at most once per slot). |
 | `LastRunStartedAt` | DateTimeOffset? | `Scheduled`, `Manual` and `Check` runs; drives the 60-minute limit shared by Sync now and Check for updates on the Models tab, and the Models tab's "Last checked" time. |
 | `ChangedAt`, `ChangedBy` | DateTimeOffset?, string? | From the token (portal server). |
+
+### 3.2a `WindowsReleaseCatalog` (PK `settings`, RK `windows-releases`, in the `DriverSyncSettings` table)
+
+| Field | Type | Rules |
+|---|---|---|
+| `Releases` | list of `{ release, build, releasedAt }` | Every deployable feature update read from Microsoft Graph. Merged on each read; a release Microsoft stops listing stays. |
+| `CheckedAt` | DateTimeOffset? | Last read, successful or not. Read again 12 hours later, or 1 hour after a failed read. |
+| `RefreshedAt` | DateTimeOffset? | Last successful read. |
+| `LastError` | string? | Why the last read failed; null after a successful one. Shown in the Windows release field. |
 
 ### 3.3 `DriverCatalogModels` (PK vendor, RK catalog model key)
 
@@ -368,7 +377,8 @@ to its own action. A new version of the replaced lineage sets `NoticeVersion` an
 until dismissed.
 
 **Session pin**: written once at assignment; never updated. A manual choice replaces the match
-before resolution (model chosen: its current set for the image's release; No drivers:
+before resolution (model chosen: its current set for the image's release, or else the newest
+earlier release's of the same Windows version, FR-108; No drivers:
 `NoneChosen`) and sets `DriverChosenManually` and `DriverChosenBy`. The model vendor's critical
 categories are copied to `DriverCriticalCategories`. Files of the pinned set are protected from
 clean-up while the session is in the `active` partition.
@@ -385,6 +395,6 @@ clean-up while the session is in the `active` partition.
 | Previous versions | Core: `PreviousVersionsToKeep` 0 to 3. |
 | Vendor URL allowlist | Core before any copy. |
 | Windows release value | Contracts enum; Core 400 on unknown. |
-| Manual driver choice | Core at assignment: model exists, same architecture as the image, current set for the image's release; otherwise 409 for the whole request, naming the sessions. At most one choice per session ID; a choice for a session not in the request is 400. |
+| Manual driver choice | Core at assignment: model exists, same architecture as the image, current set for the image's release or an earlier one of the same Windows version; otherwise 409 for the whole request, naming the sessions. At most one choice per session ID; a choice for a session not in the request is 400. |
 | Component roll back | Core: the version is in the component's history and is not the current one; 409 when the file cannot be downloaded or verified again (reason relayed). |
 | Custom component | Core on upload: at most 5 GB; ZIP with at least one `.inf` entry for Offline actions; installer and command for Specialize; name, version and category set; target models onboarded; one replacement per vendor lineage per model (409 names the other custom component). |

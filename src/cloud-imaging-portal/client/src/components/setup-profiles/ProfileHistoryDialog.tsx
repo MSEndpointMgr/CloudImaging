@@ -1,10 +1,11 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Eye, Undo2, X } from 'lucide-react';
+import { Eye, Undo2, X } from 'lucide-react';
 import { Badge } from '../ui/badge.tsx';
 import { Button } from '../ui/button.tsx';
 import { TableSkeletonRows } from '../ui/skeleton.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
+import { RowToggle, RowToggleHead } from '../ui/row-toggle.tsx';
 import { Tooltip } from '../ui/tooltip.tsx';
 import { ConfirmImpactDialog } from '../ConfirmImpactDialog.tsx';
 import { cn, formatTimestamp } from '../../lib/utils.ts';
@@ -120,7 +121,7 @@ export function ProfileHistoryDialog({ profile, retention, canRestore, onClose, 
                 <Table className="table-fixed">
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-[44px]"><span className="sr-only">Details</span></TableHead>
+                      <RowToggleHead />
                       <TableHead className="w-[90px] text-right">Version</TableHead>
                       <TableHead className="w-[160px]">Modified</TableHead>
                       <TableHead className="w-[140px]">Modified by</TableHead>
@@ -138,11 +139,8 @@ export function ProfileHistoryDialog({ profile, retention, canRestore, onClose, 
                       return (
                         <Fragment key={v.version}>
                           <TableRow>
-                            <TableCell>
-                              <Button variant="ghost" size="icon" className="text-muted-foreground" aria-label={open ? 'Hide changes' : 'Show changes'} aria-expanded={open} aria-controls={detailsId}
-                                onClick={() => setExpanded(open ? null : v.version)}>
-                                <ChevronDown className={cn('transition-transform', open && 'rotate-180')} />
-                              </Button>
+                            <TableCell className="pr-0">
+                              <RowToggle expanded={open} label={open ? 'Hide changes' : 'Show changes'} controls={detailsId} onToggle={() => setExpanded(open ? null : v.version)} />
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{v.version}</TableCell>
                             <TableCell className="tabular-nums">{formatTimestamp(v.createdAt)}</TableCell>

@@ -45,7 +45,7 @@ public sealed class DriverOnboardingFunctionsTests
         rows[0].GetProperty("supported").GetBoolean().Should().BeTrue();
         rows[0].GetProperty("syncEnabled").GetBoolean().Should().BeTrue();
         rows[0].GetProperty("onboardedModels").GetInt32().Should().Be(1);
-        rows[0].GetProperty("matchKeyType").GetString().Should().Be("system ID");
+        rows[0].GetProperty("matchKeyType").GetString().Should().Be("baseboard");
         rows[2].GetProperty("supported").GetBoolean().Should().BeFalse();
         rows[2].GetProperty("syncEnabled").GetBoolean().Should().BeFalse();
     }

@@ -55,6 +55,12 @@ public sealed class SessionHistoryRecord
     /// <summary>When the session was created.</summary>
     public required DateTimeOffset CreatedAt { get; init; }
 
+    /// <summary>
+    /// When the device started its first imaging step; null when it never started one, and on
+    /// records written before it was kept. The reports' Started and Duration use it.
+    /// </summary>
+    public DateTimeOffset? ImagingStartedAt { get; init; }
+
     /// <summary>When the session reached <see cref="FinalState"/>.</summary>
     public required DateTimeOffset TerminalAt { get; init; }
 

@@ -82,7 +82,7 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
 }): React.ReactElement {
   const message = (content: React.ReactNode) => (
     <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={8} className="p-0">{content}</TableCell>
+      <TableCell colSpan={9} className="p-0">{content}</TableCell>
     </TableRow>
   );
   return (
@@ -92,6 +92,7 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
       <TableHeader>
         <TableRow>
           <TableHead className="w-full">Model</TableHead>
+          <TableHead className="whitespace-nowrap">Baseboard / SKU</TableHead>
           <TableHead className="whitespace-nowrap">Vendor</TableHead>
           <TableHead className="whitespace-nowrap">Windows releases</TableHead>
           <TableHead className="whitespace-nowrap text-right">Included</TableHead>
@@ -105,19 +106,23 @@ export function ModelsTable({ models, total, loadError, onRetry, emptyAction, on
         {loadError ? message(
           <EmptyState icon={RefreshCw} title="Could not load driver models" description={loadError} action={<Button variant="outline" onClick={onRetry}><RefreshCw />Try again</Button>} />,
         ) : models === null ? (
-          <TableSkeletonRows columns={8} rows={3} />
+          <TableSkeletonRows columns={9} rows={3} />
         ) : total === 0 ? message(
           <EmptyState icon={Cpu} title="No models onboarded yet" action={emptyAction} />,
         ) : models.length === 0 ? message(
           <EmptyState icon={Search} title="No models match" description="Clear the search or choose All vendors to see every model." />,
         ) : models.map(model => {
           const releases = model.releases.map(releaseLabel).join(', ');
+          const keys = model.matchKeys.join(', ');
           return (
             <TableRow key={model.modelId} className="h-14 cursor-pointer" onClick={() => onOpen(model.modelId)}>
               {/* max-w-0 lets the long names truncate instead of widening the column. */}
               <TableCell className="max-w-0">
                 <div className="truncate font-medium" title={model.displayName}>{model.displayName}</div>
-                <div className="truncate text-xs text-muted-foreground">{model.matchKeys.join(', ')}</div>
+              </TableCell>
+              {/* A Dell model can have many system SKUs; the full list is in the title. */}
+              <TableCell>
+                <div className="max-w-40 truncate" title={keys}>{keys}</div>
               </TableCell>
               <TableCell className="whitespace-nowrap">{vendorLabel(model.vendor)}</TableCell>
               <TableCell>

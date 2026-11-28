@@ -64,7 +64,9 @@ public sealed partial class RecoveryImageService
 
         var windowsRecoveryWimPath = GetWindowsRecoveryWimPath(windowsVolume);
         Directory.CreateDirectory(Path.GetDirectoryName(windowsRecoveryWimPath)!);
-        File.Copy(recoveryWimPath, windowsRecoveryWimPath, overwrite: true);
+
+        // Winre.wim runs to hundreds of MB: copied on the caller's thread it would freeze the progress screen.
+        await Task.Run(() => File.Copy(recoveryWimPath, windowsRecoveryWimPath, overwrite: true), ct);
 
         await FinalizeApplyAsync(windowsVolume, recoveryVolume, ct);
     }
@@ -114,7 +116,7 @@ public sealed partial class RecoveryImageService
         var windowsRecoveryWimPath = GetWindowsRecoveryWimPath(windowsVolume);
         var partitionRecoveryDir = Path.Combine($"{recoveryVolume}\\", "Recovery", "WindowsRE");
         Directory.CreateDirectory(partitionRecoveryDir);
-        File.Copy(windowsRecoveryWimPath, Path.Combine(partitionRecoveryDir, "Winre.wim"), overwrite: true);
+        await Task.Run(() => File.Copy(windowsRecoveryWimPath, Path.Combine(partitionRecoveryDir, "Winre.wim"), overwrite: true), ct);
 
         await RunReagentcAsync(
             windowsVolume,

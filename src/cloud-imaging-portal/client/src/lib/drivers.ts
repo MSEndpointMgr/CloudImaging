@@ -12,7 +12,8 @@ export type DriverAction = 'Offline' | 'OfflineAndSpecialize' | 'Specialize' | '
 
 export type DriverActionSource = 'Locked' | 'ReplacedByCustom' | 'Custom' | 'RolledBack' | 'Override' | 'Rule' | 'Default';
 
-export type WindowsRelease = 'Windows10_22H2' | 'Windows11_23H2' | 'Windows11_24H2' | 'Windows11_25H2';
+/** A Windows release such as `Windows11_26H2`. Core lists the ones offered, so a new release needs no portal change. */
+export type WindowsRelease = string;
 
 export type DriverModelState = 'Draft' | 'Active';
 
@@ -39,12 +40,7 @@ const VENDOR_LABELS: Record<DriverVendor, string> = {
   Lenovo: 'Lenovo',
 };
 
-const RELEASE_LABELS: Record<WindowsRelease, string> = {
-  Windows10_22H2: 'Windows 10, version 22H2',
-  Windows11_23H2: 'Windows 11, version 23H2',
-  Windows11_24H2: 'Windows 11, version 24H2',
-  Windows11_25H2: 'Windows 11, version 25H2',
-};
+const RELEASE_PATTERN = /^Windows(\d+)_(\d{2}H[12])$/;
 
 /** Label of a driver action. */
 export function actionLabel(action: DriverAction): string {
@@ -56,14 +52,44 @@ export function vendorLabel(vendor: DriverVendor): string {
   return VENDOR_LABELS[vendor];
 }
 
-/** Label of a Windows release, naming the Windows version. */
+/** Label of a Windows release, naming the Windows version: "Windows 11, version 26H2". */
 export function releaseLabel(release: WindowsRelease): string {
-  return RELEASE_LABELS[release];
+  const match = RELEASE_PATTERN.exec(release);
+  return match ? `Windows ${match[1]}, version ${match[2]}` : release;
 }
 
 /** The release's version alone, "24H2", for compact badges next to the full name elsewhere. */
 export function releaseVersion(release: WindowsRelease): string {
   return release.slice(release.indexOf('_') + 1);
+}
+
+/** Distinct releases, newest first. The values compare as text because both parts have a fixed width. */
+export function sortReleases(releases: Iterable<WindowsRelease>): WindowsRelease[] {
+  return [...new Set(releases)].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+}
+
+/** The releases offered for OS images and models, and why Microsoft's list could not be read. */
+export interface WindowsReleaseList {
+  releases: WindowsRelease[];
+  refreshedAt: string | null;
+  problem: string | null;
+}
+
+export function fetchWindowsReleases(): Promise<WindowsReleaseList> {
+  return driversGet<WindowsReleaseList>('windows-releases', 'The Windows releases could not be loaded.');
+}
+
+/** The offered releases, read when the component mounts. */
+export function useWindowsReleases(): { list: WindowsReleaseList | null; error: string | null } {
+  const [state, setState] = useState<{ list: WindowsReleaseList | null; error: string | null }>({ list: null, error: null });
+  useEffect(() => {
+    let cancelled = false;
+    fetchWindowsReleases()
+      .then(list => { if (!cancelled) setState({ list, error: null }); })
+      .catch((err: unknown) => { if (!cancelled) setState({ list: null, error: err instanceof Error ? err.message : 'The Windows releases could not be loaded.' }); });
+    return () => { cancelled = true; };
+  }, []);
+  return state;
 }
 
 /** The tab named in `?tab=`, or Models. */
@@ -219,8 +245,6 @@ export interface DriverModelPage {
   tiles: { offline: number; offlineAndSpecialize: number; specialize: number; skip: number; downloadPerDeviceBytes: number };
   components: DriverComponentRow[];
 }
-
-export const WINDOWS_RELEASES: readonly WindowsRelease[] = ['Windows11_25H2', 'Windows11_24H2', 'Windows11_23H2', 'Windows10_22H2'];
 
 export const DRIVER_ACTIONS: readonly DriverAction[] = ['Offline', 'OfflineAndSpecialize', 'Specialize', 'Skip'];
 
@@ -641,6 +665,8 @@ export interface DriverAssignmentOption {
   maxDownloadBytes: number;
   /** The model's set in testing rather than its current set; offered to Operators only. */
   testing?: boolean;
+  /** The earlier release whose set this option gives, when the model has no set for the image's release yet. */
+  release?: WindowsRelease | null;
 }
 
 export interface DriverAssignmentPreview {
@@ -660,9 +686,16 @@ export function optionValue(option: DriverAssignmentOption): string {
   return option.testing ? `${TESTING_PREFIX}${option.modelId}` : option.modelId;
 }
 
-/** "HP EliteBook 840 G11", or "HP EliteBook 840 G11 (testing)" for its set in testing. */
+/** "HP EliteBook 840 G11", "HP EliteBook 840 G11 (testing)" for its set in testing, or "HP EliteBook 840 G11 (25H2 set)" for an earlier release's set. */
 export function optionLabel(option: DriverAssignmentOption): string {
-  return option.testing ? `${option.displayName} (testing)` : option.displayName;
+  if (option.testing) return `${option.displayName} (testing)`;
+  return option.release ? `${option.displayName} (${releaseVersion(option.release)} set)` : option.displayName;
+}
+
+/** Why an option gives an earlier release's set, for the tooltip beside the Driver set column's choice. */
+export function earlierSetText(option: DriverAssignmentOption, release: WindowsRelease): string | null {
+  if (!option.release) return null;
+  return `${option.displayName} has no driver set for ${releaseLabel(release)} yet, so its ${releaseLabel(option.release)} set is used.`;
 }
 
 /** A choice as Start imaging sends it. */
@@ -679,9 +712,9 @@ export function choiceFor(sessionId: string, value: string): DriverChoice {
 }
 
 /**
- * Why a coupled device has no matched set, with its match key: "System ID 8D41 is not onboarded
- * for Windows 11, version 24H2." Dell devices are named by system SKU. `testingName` is the
- * matched model when its only set is in testing and the user may choose it.
+ * Why a coupled device has no matched set, with its match key: "Baseboard 8D41 is not onboarded
+ * for Windows 11, version 24H2." Dell devices are named by system SKU, as the Models tab does.
+ * `testingName` is the matched model when its only set is in testing and the user may choose it.
  */
 export function noMatchText(
   session: { skipReason: DriverSkipReason | null; matchKey: string | null },
@@ -690,7 +723,7 @@ export function noMatchText(
   imageArchitecture: MachineArchitecture,
   testingName?: string,
 ): string {
-  const keyName = /dell/i.test(manufacturer) ? 'System SKU' : 'System ID';
+  const keyName = /dell/i.test(manufacturer) ? 'System SKU' : 'Baseboard';
   switch (session.skipReason) {
     case 'ArchitectureMismatch': {
       const image = imageArchitecture === 'Arm64' ? 'ARM64' : 'x64';
@@ -701,11 +734,11 @@ export function noMatchText(
     case 'NoDriverSet':
       return testingName
         ? `The driver set of ${testingName} for ${releaseLabel(release)} is in testing. Choose ${testingName} (testing) to use it.`
-        : `This model has no driver set for ${releaseLabel(release)} yet.`;
+        : `This model has no driver set for ${releaseLabel(release)} or an earlier release.`;
     default:
       return session.matchKey
         ? `${keyName} ${session.matchKey} is not onboarded for ${releaseLabel(release)}.`
-        : `No ${keyName.toLowerCase()} was read from this device.`;
+        : `This device did not report its ${keyName === 'Baseboard' ? 'baseboard' : 'system SKU'}.`;
   }
 }
 

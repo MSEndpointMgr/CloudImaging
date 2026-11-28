@@ -1,9 +1,13 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, Search } from 'lucide-react';
 import { Input } from '../ui/input.tsx';
+import { useAnchoredPosition, useDismissOnOutsidePress } from '../ui/anchored-position.ts';
 import { cn } from '../../lib/utils.ts';
 import type { DriverTimeZone } from '../../lib/drivers.ts';
+
+/** Search field, the 18rem list and the padding between them. */
+const POPOVER_HEIGHT = 352;
 
 /**
  * Searchable time zone picker: the Windows display names in the Windows order, with the browser's
@@ -20,10 +24,11 @@ export function TimeZonePicker({ zones, value, browser, disabled, onChange }: {
 }): React.ReactElement {
   const id = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [active, setActive] = useState(0);
-  const [position, setPosition] = useState<{ left: number; top: number; width: number }>({ left: 0, top: 0, width: 440 });
+  const position = useAnchoredPosition(triggerRef, open, { preferredHeight: POPOVER_HEIGHT, panelRef: popoverRef, keepWidth: true });
   const current = zones.find(z => z.ianaId === value);
 
   const groups = useMemo(() => {
@@ -37,17 +42,8 @@ export function TimeZonePicker({ zones, value, browser, disabled, onChange }: {
   }, [zones, browser, search]);
   const flat = groups.flatMap(g => g.items);
 
-  useEffect(() => {
-    if (!open) return;
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect) setPosition({ left: rect.left, top: rect.bottom + 4, width: rect.width });
-    const close = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!document.getElementById(`${id}-popover`)?.contains(target) && !triggerRef.current?.contains(target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open, id]);
+  const close = useCallback(() => setOpen(false), []);
+  useDismissOnOutsidePress([triggerRef, popoverRef], open, close);
 
   const choose = (zone: DriverTimeZone) => {
     setOpen(false);
@@ -91,11 +87,18 @@ export function TimeZonePicker({ zones, value, browser, disabled, onChange }: {
         <span className="truncate">{current?.displayName ?? value}</span>
         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       </button>
-      {open && createPortal(
+      {open && position && createPortal(
         <div
+          ref={popoverRef}
           id={`${id}-popover`}
           className="fixed z-50 space-y-2 rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-xl"
-          style={{ left: position.left, top: position.top, width: Math.max(position.width, 440) }}
+          style={{
+            left: position.left,
+            minWidth: position.minWidth,
+            maxWidth: position.maxWidth,
+            width: 'max-content',
+            ...(position.top !== undefined ? { top: position.top } : { bottom: position.bottom }),
+          }}
         >
           <div className="relative flex items-center">
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground" />

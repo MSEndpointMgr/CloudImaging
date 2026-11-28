@@ -112,6 +112,49 @@ public sealed class ImagingWorkflowViewModelTests
         vm.Steps.Single(s => s.Step == ImagingStepName.ApplyImage).State.Should().Be(ProgressStepState.Pending, "ApplyImage is Pending");
     }
 
+    // ── AC power wait before Format disk ──────────────────────────────────────
+
+    [Theory]
+    [InlineData(PowerSource.Ac)]
+    [InlineData(PowerSource.Unknown)]
+    public async Task AcPowerWait_DoesNotHoldADevice_ThatIsNotOnBattery(PowerSource power)
+    {
+        var notified = 0;
+        var delays = new List<TimeSpan>();
+
+        var waited = await ImagingWorkflowViewModel.WaitWhileOnBatteryAsync(() => power, () => { notified++; return Task.CompletedTask; }, (delay, _) => { delays.Add(delay); return Task.CompletedTask; }, CancellationToken.None);
+
+        waited.Should().BeFalse();
+        notified.Should().Be(0);
+        delays.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AcPowerWait_HoldsUntilTheAdapterIsConnected_AndAnnouncesTheWaitOnce()
+    {
+        var readings = new Queue<PowerSource>([PowerSource.Battery, PowerSource.Battery, PowerSource.Battery, PowerSource.Ac]);
+        var notified = 0;
+        var delays = new List<TimeSpan>();
+
+        var waited = await ImagingWorkflowViewModel.WaitWhileOnBatteryAsync(readings.Dequeue, () => { notified++; return Task.CompletedTask; }, (delay, _) => { delays.Add(delay); return Task.CompletedTask; }, CancellationToken.None);
+
+        waited.Should().BeTrue();
+        notified.Should().Be(1);
+        delays.Should().Equal(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+        readings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AcPowerWait_EndsWhenThePowerSourceCanNoLongerBeRead()
+    {
+        var readings = new Queue<PowerSource>([PowerSource.Battery, PowerSource.Unknown]);
+
+        var waited = await ImagingWorkflowViewModel.WaitWhileOnBatteryAsync(readings.Dequeue, () => Task.CompletedTask, (_, _) => Task.CompletedTask, CancellationToken.None);
+
+        waited.Should().BeTrue();
+        readings.Should().BeEmpty();
+    }
+
     // ── Background processing must not block UI thread ────────────────────────
 
     [Fact]

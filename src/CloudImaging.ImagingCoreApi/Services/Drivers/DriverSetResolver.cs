@@ -9,12 +9,13 @@ namespace CloudImaging.ImagingCoreApi.Services.Drivers;
 /// <summary>The driver set pinned on a session at assignment, or why none applies.</summary>
 /// <param name="ModelId">Matched model.</param>
 /// <param name="ModelName">Matched model's name.</param>
-/// <param name="Release">The image's Windows release.</param>
+/// <param name="Release">The release of the pinned set: the image's, or an earlier one when <paramref name="FallbackFrom"/> is set. The image's when no set applies.</param>
 /// <param name="SetVersion">Pinned set version; null when no set applies.</param>
 /// <param name="SkipReason">Why no set applies.</param>
 /// <param name="MatchKey">The device's HP system ID or Dell SKU.</param>
 /// <param name="CriticalCategories">JSON array of the vendor's critical categories, when a set is pinned.</param>
-public sealed record DriverPin(Guid? ModelId, string? ModelName, WindowsRelease? Release, int? SetVersion, DriverSkipReason? SkipReason, string? MatchKey, string? CriticalCategories)
+/// <param name="FallbackFrom">The image's release when the model had no set for it and an earlier release's set is pinned.</param>
+public sealed record DriverPin(Guid? ModelId, string? ModelName, WindowsRelease? Release, int? SetVersion, DriverSkipReason? SkipReason, string? MatchKey, string? CriticalCategories, WindowsRelease? FallbackFrom = null)
 {
     /// <summary>Writes the pin onto a session.</summary>
     public DeviceSession ApplyTo(DeviceSession session)
@@ -29,14 +30,17 @@ public sealed record DriverPin(Guid? ModelId, string? ModelName, WindowsRelease?
             DriverSkipReason = SkipReason,
             DriverMatchKey = MatchKey,
             DriverCriticalCategories = CriticalCategories,
+            DriverFallbackFrom = FallbackFrom,
         };
     }
 }
 
 /// <summary>
 /// Matches a device to an onboarded model and pins the model's current set for the image's
-/// Windows release (FR-011 to FR-014, operator-and-core-api section 4). Drafts match nothing.
-/// The pin is written once; later syncs, edits, critical category changes or removal never change it.
+/// Windows release (FR-011 to FR-014, operator-and-core-api section 4). When the model has no
+/// current set for that release, the newest earlier release of the same Windows version that has
+/// one is pinned instead (FR-108). Drafts match nothing. The pin is written once; later syncs,
+/// edits, critical category changes or removal never change it.
 /// </summary>
 public sealed class DriverSetResolver
 {
@@ -99,24 +103,19 @@ public sealed class DriverSetResolver
             return new DriverPin(model.ModelId, model.DisplayName, release, null, DriverSkipReason.ArchitectureMismatch, matchKey, null);
         }
 
-        if (!model.Releases.Contains(release))
+        if (await CurrentSetAsync(model, release, ct) is not (var setRelease, var version))
         {
-            return new DriverPin(model.ModelId, model.DisplayName, release, null, DriverSkipReason.ReleaseNotOnboarded, matchKey, null);
+            var reason = model.Releases.Contains(release) ? DriverSkipReason.NoDriverSet : DriverSkipReason.ReleaseNotOnboarded;
+            return new DriverPin(model.ModelId, model.DisplayName, release, null, reason, matchKey, null);
         }
 
-        if ((await _pointers.GetAsync(model.ModelId, release, ct))?.Value.CurrentVersion is not { } version)
-        {
-            return new DriverPin(model.ModelId, model.DisplayName, release, null, DriverSkipReason.NoDriverSet, matchKey, null);
-        }
-
-        var critical = (await _store.CriticalCategories.ListPartitionAsync(model.Vendor.ToString(), ct)).Select(r => r.Value.Category ?? r.RowKey).ToList();
-        return new DriverPin(model.ModelId, model.DisplayName, release, version, null, matchKey, JsonSerializer.Serialize(critical));
+        return new DriverPin(model.ModelId, model.DisplayName, setRelease, version, null, matchKey, await CriticalCategoriesAsync(model, ct), FallbackFrom(setRelease, release));
     }
 
     /// <summary>
     /// The pin for a manual choice when imaging starts, or null with the reason when the chosen
     /// model can no longer be used: it was removed, is a draft, has another architecture or has no
-    /// current set for the image's release. The device's match key is kept either way.
+    /// current set for the image's release or an earlier one. The device's match key is kept either way.
     /// </summary>
     public async Task<(DriverPin? Pin, string? Reason)> ResolveChoiceAsync(DeviceSession session, OsImage image, DriverChoice choice, CancellationToken ct = default)
     {
@@ -143,23 +142,30 @@ public sealed class DriverSetResolver
             return (null, $"{model.DisplayName} is onboarded for {ArchitectureLabel(model.Architecture)}, the OS image is {ArchitectureLabel(image.Architecture)}.");
         }
 
-        var pointer = model.Releases.Contains(release) ? (await _pointers.GetAsync(model.ModelId, release, ct))?.Value : null;
-        var chosenVersion = choice.Kind == DriverChoiceKind.Testing ? pointer?.TestingVersion : pointer?.CurrentVersion;
-        if (chosenVersion is not { } version)
+        if (choice.Kind == DriverChoiceKind.Testing)
         {
-            return (null, choice.Kind == DriverChoiceKind.Testing
-                ? $"{model.DisplayName} has no driver set in testing for {DriverModelService.ReleaseLabel(release)}."
-                : $"{model.DisplayName} has no driver set for {DriverModelService.ReleaseLabel(release)}.");
+            var pointer = model.Releases.Contains(release) ? (await _pointers.GetAsync(model.ModelId, release, ct))?.Value : null;
+            if (pointer?.TestingVersion is not { } testing)
+            {
+                return (null, $"{model.DisplayName} has no driver set in testing for {DriverModelService.ReleaseLabel(release)}.");
+            }
+
+            return (new DriverPin(model.ModelId, model.DisplayName, release, testing, null, automatic.MatchKey, await CriticalCategoriesAsync(model, ct)), null);
         }
 
-        var critical = (await _store.CriticalCategories.ListPartitionAsync(model.Vendor.ToString(), ct)).Select(r => r.Value.Category ?? r.RowKey).ToList();
-        return (new DriverPin(model.ModelId, model.DisplayName, release, version, null, automatic.MatchKey, JsonSerializer.Serialize(critical)), null);
+        if (await CurrentSetAsync(model, release, ct) is not (var setRelease, var version))
+        {
+            return (null, $"{model.DisplayName} has no driver set for {DriverModelService.ReleaseLabel(release)} or an earlier release.");
+        }
+
+        return (new DriverPin(model.ModelId, model.DisplayName, setRelease, version, null, automatic.MatchKey, await CriticalCategoriesAsync(model, ct), FallbackFrom(setRelease, release)), null);
     }
 
     /// <summary>
     /// The sets a device can be given for an image: each active model of the same architecture with
-    /// a current set for the image's release, plus its set in testing as a separate option; ordered by
-    /// vendor then name, with the size of each set.
+    /// a current set for the image's release, or else for the newest earlier release of the same
+    /// Windows version (the option then names that release), plus its set in testing for the
+    /// image's release as a separate option; ordered by vendor then name, with the size of each set.
     /// </summary>
     public async Task<IReadOnlyList<DriverAssignmentOption>> OptionsAsync(OsImage image, DriverSetDocumentRepository sets, CancellationToken ct = default)
     {
@@ -173,24 +179,54 @@ public sealed class DriverSetResolver
         var options = new List<DriverAssignmentOption>();
         foreach (var model in await _models.ListAsync(ct))
         {
-            if (model.State != DriverModelState.Active || model.Architecture != image.Architecture || !model.Releases.Contains(release)
-                || (await _pointers.GetAsync(model.ModelId, release, ct))?.Value is not { } pointer)
+            if (model.State != DriverModelState.Active || model.Architecture != image.Architecture)
             {
                 continue;
             }
 
-            foreach (var (version, testing) in new[] { (pointer.CurrentVersion, false), (pointer.TestingVersion, true) })
+            if (await CurrentSetAsync(model, release, ct) is (var setRelease, var version))
             {
-                if (version is { } v)
-                {
-                    var document = await sets.GetAsync(model.ModelId, release, v, ct);
-                    options.Add(new DriverAssignmentOption { ModelId = model.ModelId, Vendor = model.Vendor, DisplayName = model.DisplayName, MaxDownloadBytes = document?.Items.Sum(i => i.Size) ?? 0, Testing = testing });
-                }
+                options.Add(await OptionAsync(model, setRelease, version, isTesting: false, setRelease == release ? null : setRelease));
+            }
+
+            if (model.Releases.Contains(release) && (await _pointers.GetAsync(model.ModelId, release, ct))?.Value.TestingVersion is { } testingVersion)
+            {
+                options.Add(await OptionAsync(model, release, testingVersion, isTesting: true, null));
             }
         }
 
         return options.OrderBy(o => o.Vendor).ThenBy(o => o.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(o => o.Testing).ToList();
+
+        async Task<DriverAssignmentOption> OptionAsync(DriverModelRecord model, WindowsRelease setRelease, int version, bool isTesting, WindowsRelease? earlierRelease)
+        {
+            var document = await sets.GetAsync(model.ModelId, setRelease, version, ct);
+            return new DriverAssignmentOption { ModelId = model.ModelId, Vendor = model.Vendor, DisplayName = model.DisplayName, MaxDownloadBytes = document?.Items.Sum(i => i.Size) ?? 0, Testing = isTesting, Release = earlierRelease };
+        }
     }
+
+    /// <summary>
+    /// The model's current set for <paramref name="release"/>, or else for the newest earlier
+    /// release of the same Windows version that has one: a vendor publishes drivers for a new
+    /// release weeks after Microsoft ships it. Never a set in testing, and never a newer release.
+    /// </summary>
+    private async Task<(WindowsRelease Release, int Version)?> CurrentSetAsync(DriverModelRecord model, WindowsRelease release, CancellationToken ct)
+    {
+        foreach (var candidate in model.Releases.Where(r => r.Major == release.Major && r <= release).OrderDescending())
+        {
+            if ((await _pointers.GetAsync(model.ModelId, candidate, ct))?.Value.CurrentVersion is { } version)
+            {
+                return (candidate, version);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<string> CriticalCategoriesAsync(DriverModelRecord model, CancellationToken ct) =>
+        JsonSerializer.Serialize((await _store.CriticalCategories.ListPartitionAsync(model.Vendor.ToString(), ct)).Select(r => r.Value.Category ?? r.RowKey).ToList());
+
+    private static WindowsRelease? FallbackFrom(WindowsRelease setRelease, WindowsRelease imageRelease) =>
+        setRelease == imageRelease ? null : imageRelease;
 
     private static string ArchitectureLabel(MachineArchitecture architecture) => architecture == MachineArchitecture.Arm64 ? "ARM64" : "x64";
 

@@ -16,7 +16,7 @@ public sealed class HpDriverVendorAdapterTests
     [Fact]
     public void ParseModelList_PlatformList_YieldsX64AndArm64ModelsWithReleases()
     {
-        var models = _adapter.ParseModelList(Decompress("platformList.cab"), Seen);
+        var models = _adapter.ParseModelList(Decompress("platformList.cab"), Seen, WindowsReleaseCatalogService.BuiltIn);
 
         var g11 = models.Single(m => m.Key == "8C26_X64").Model;
         g11.Name.Should().Be("HP EliteBook 830 13 inch G11 Notebook PC");
@@ -28,6 +28,38 @@ public sealed class HpDriverVendorAdapterTests
         arm.Architecture.Should().Be(MachineArchitecture.Arm64);
         arm.Releases.Should().Equal(WindowsRelease.Windows11Version24H2);
         models.Should().HaveCountGreaterThan(400);
+    }
+
+    [Fact]
+    public void ParseModelList_KeepsOnlyTheOfferedReleases_AndDropsModelsWithNone()
+    {
+        var models = _adapter.ParseModelList(Decompress("platformList.cab"), Seen, [WindowsRelease.Windows11Version25H2]);
+
+        models.Single(m => m.Key == "8C26_X64").Model.Releases.Should().Equal(WindowsRelease.Windows11Version25H2);
+        models.Should().NotContain(m => m.Key == "8CBE_ARM64");
+        models.Should().OnlyContain(m => m.Model.Releases.SequenceEqual(new[] { WindowsRelease.Windows11Version25H2 }));
+    }
+
+    [Fact]
+    public void ParseModelList_AReleaseNewerThanTheBuiltInOnes_IsKeptWhenHpListsIt()
+    {
+        WindowsRelease.TryParse("Windows11_26H2", out var next).Should().BeTrue();
+        var platformList = """
+            <ImagePal>
+              <Platform>
+                <SystemID>8C26</SystemID>
+                <ProductName>HP EliteBook 830 13 inch G11 Notebook PC</ProductName>
+                <OS><OSDescription>Microsoft Windows 11 64-bit</OSDescription><OSReleaseIdFilename>25H2</OSReleaseIdFilename></OS>
+                <OS><OSDescription>Microsoft Windows 11 64-bit</OSDescription><OSReleaseIdFilename>26h2</OSReleaseIdFilename></OS>
+              </Platform>
+            </ImagePal>
+            """;
+
+        var models = _adapter.ParseModelList(new MemoryStream(System.Text.Encoding.UTF8.GetBytes(platformList)), Seen, [.. WindowsReleaseCatalogService.BuiltIn, next]);
+
+        models.Single().Model.Releases.Should().Equal(WindowsRelease.Windows11Version25H2, next);
+        var x64 = new DriverCatalogModelRecord { Name = "G11", MatchKeys = ["8C26"], Architecture = MachineArchitecture.X64 };
+        _adapter.ComponentCatalogUrls(x64, next).Should().Equal("https://hpia.hpcloud.hp.com/ref/8c26/8c26_64_11.0.26h2.cab");
     }
 
     [Fact]

@@ -28,6 +28,7 @@ public sealed class DriverContractTests
     {
         { "GetDriverVendors", "GET", "drivers/vendors", "/api/internal/drivers/vendors", "" },
         { "GetDriverCatalogModels", "GET", "drivers/catalog/models?vendor=Hp&search=840", "/api/internal/drivers/catalog/models?vendor=Hp&search=840", "" },
+        { "GetWindowsReleases", "GET", "drivers/windows-releases", "/api/internal/drivers/windows-releases", "" },
         { "PreviewDriverModels", "POST", "drivers/models/preview", "/api/internal/drivers/models/preview", OnboardBody },
         { "OnboardDriverModels", "POST", "drivers/models", "/api/internal/drivers/models", OnboardBody },
         { "GetDriverModels", "GET", "drivers/models", "/api/internal/drivers/models", "" },
@@ -86,6 +87,7 @@ public sealed class DriverContractTests
     {
         ["GetDriverVendors"] = (f, r, c) => f.GetDriverVendors(r, c),
         ["GetDriverCatalogModels"] = (f, r, c) => f.GetDriverCatalogModels(r, c),
+        ["GetWindowsReleases"] = (f, r, c) => f.GetWindowsReleases(r, c),
         ["PreviewDriverModels"] = (f, r, c) => f.PreviewDriverModels(r, c),
         ["OnboardDriverModels"] = (f, r, c) => f.OnboardDriverModels(r, c),
         ["GetDriverModels"] = (f, r, c) => f.GetDriverModels(r, c),

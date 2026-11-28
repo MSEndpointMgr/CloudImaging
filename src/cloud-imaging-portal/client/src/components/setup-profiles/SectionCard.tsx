@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '../ui/card.tsx';
+import { EmptyState } from '../ui/empty-state.tsx';
+import { TableCell, TableRow } from '../ui/table.tsx';
 import { UndoChangeButton } from '../ui/unsaved-change.tsx';
 import { unsavedRail } from '../../lib/unsavedChanges.ts';
 import { cn } from '../../lib/utils.ts';
@@ -64,5 +66,21 @@ export function SettingRow({ label, help, htmlFor, changed = false, onUndo, chil
         {children}
       </div>
     </div>
+  );
+}
+
+/** The empty row of a section card's table: less padding than a page table, as a profile stacks several. */
+export function SectionTableEmpty({ colSpan, icon, title, description }: {
+  colSpan: number;
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+}): React.ReactElement {
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={colSpan} className="p-0">
+        <EmptyState icon={icon} title={title} description={description} className="py-6" />
+      </TableCell>
+    </TableRow>
   );
 }

@@ -74,7 +74,7 @@ descriptor, so the timeline shows what was installed after the set is gone, and 
 
 | Case | Status | Warning count | `statusNote` |
 |---|---|---|---|
-| `skipReason` set | `Completed` | 1 (0 for NoneChosen) | NoMatchingModel "No onboarded model matches this device (system ID 8D41)." ("system SKU" for Dell; without a `matchKey` the parenthesis is left out); NoWindowsRelease "The OS image has no Windows release set."; ReleaseNotOnboarded "This model is not onboarded for the image's Windows release."; NoDriverSet "This model has no driver set yet. Run a sync."; ArchitectureMismatch "The OS image's architecture does not match this model."; NoneChosen "No drivers were chosen for this device when imaging started." |
+| `skipReason` set | `Completed` | 1 (0 for NoneChosen) | NoMatchingModel "No onboarded model matches this device (baseboard 8D41)." ("system SKU" for Dell; without a `matchKey` the parenthesis is left out); NoWindowsRelease "The OS image has no Windows release set."; ReleaseNotOnboarded "This model is not onboarded for the image's Windows release."; NoDriverSet "This model has no driver set yet. Run a sync."; ArchitectureMismatch "The OS image's architecture does not match this model."; NoneChosen "No drivers were chosen for this device when imaging started." |
 | A component in a critical category failed | `Failed` | failed count | Error detail lists the failed critical components (at most 500 chars). Prepare setup and Configure boot do not run; the existing retry path applies. |
 | Other failures | `Completed` | failed count | |
 | All succeeded | `Completed` | 0 | |

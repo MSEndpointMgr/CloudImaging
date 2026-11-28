@@ -74,7 +74,7 @@ export function VersionHistoryBox({ source, vendor, setVersion, rolledBack, onRo
     setError(null);
     const [first, second] = key.split('|');
     const read = kind === 'component'
-      ? fetchComponentVersions(modelId, first as WindowsRelease, second)
+      ? fetchComponentVersions(modelId, first, second)
       : fetchFirmwareVersions(modelId, first);
     read
       .then(list => { if (current) setVersions(list); })

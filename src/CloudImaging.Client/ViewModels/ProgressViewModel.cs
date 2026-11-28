@@ -90,6 +90,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     private readonly DispatcherTimer _elapsedTimer;
     private readonly Dictionary<ImagingStepName, DateTime> _stepStartedAtUtc = new();
     private readonly List<string> _activityLines = new();
+    private readonly object _activityGate = new();
 
     private int _overallPercent;
     private int _stepPercent;
@@ -97,6 +98,7 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     private string _statusMessage = "Initialising…";
     private string? _errorMessage;
     private string? _supportReferenceCode;
+    private bool _isWaitingForAcPower;
     private string _logText = string.Empty;
 
     /// <summary>Builds the step sidebar with its 5 fixed pipeline stages, all pending.</summary>
@@ -275,6 +277,9 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
     /// <summary>True when <see cref="ErrorMessage"/> is set.</summary>
     public bool HasError => ErrorMessage is not null;
 
+    /// <summary>True while imaging waits before Format disk for the AC adapter to be connected.</summary>
+    public bool IsWaitingForAcPower { get => _isWaitingForAcPower; set { _isWaitingForAcPower = value; OnPropertyChanged(); } }
+
     /// <summary>The last few <see cref="StatusMessage"/> updates, each timestamped, newline-joined
     /// for direct binding to a read-only TextBox "ticker" (FR-007: light live detail).</summary>
     public string LogText { get => _logText; private set { _logText = value; OnPropertyChanged(); } }
@@ -415,13 +420,17 @@ public sealed class ProgressViewModel : INotifyPropertyChanged
             return;
         }
 
-        _activityLines.Add($"{DateTime.Now:HH:mm:ss}  {message}");
-        while (_activityLines.Count > MaxActivityLines)
+        // Step services log from the thread pool (formatting, drivers) as well as from the UI thread.
+        lock (_activityGate)
         {
-            _activityLines.RemoveAt(0);
-        }
+            _activityLines.Add($"{DateTime.Now:HH:mm:ss}  {message}");
+            while (_activityLines.Count > MaxActivityLines)
+            {
+                _activityLines.RemoveAt(0);
+            }
 
-        LogText = string.Join('\n', _activityLines);
+            LogText = string.Join('\n', _activityLines);
+        }
     }
 
     /// <inheritdoc/>

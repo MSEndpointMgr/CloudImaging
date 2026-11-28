@@ -38,7 +38,7 @@ public enum ConnectivityMessageKind
 /// <param name="Symbol">Adapter icon.</param>
 /// <param name="Title">"Ethernet", "Wi-Fi", or the name of a device without a driver.</param>
 /// <param name="Detail">Adapter, address and state.</param>
-/// <param name="Badge">"In use" on the connection traffic goes through.</param>
+/// <param name="Badge">"Connected" on an adapter that has an address.</param>
 /// <param name="IsWarning">True for a device without a driver.</param>
 public sealed record NetworkPanelRow(SymbolRegular Symbol, string Title, string Detail, string? Badge = null, bool IsWarning = false)
 {
@@ -313,13 +313,12 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
     /// </summary>
     internal static IReadOnlyList<NetworkPanelRow> BuildNetworkRows(NetworkSnapshot network, string? wifiSsid, bool wifiSupported)
     {
-        var inUse = network.Ethernet ?? network.WiFi;
         var rows = new List<NetworkPanelRow>
         {
             Best(NetworkAdapterKind.Ethernet) switch
             {
                 null => new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "Ethernet", "No Ethernet adapter found"),
-                { State: NetworkAdapterState.Connected } a => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", a.Display, ReferenceEquals(a, inUse) ? "In use" : null),
+                { State: NetworkAdapterState.Connected } a => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", a.Display, "Connected"),
                 { State: NetworkAdapterState.NoDriver } a => new NetworkPanelRow(SymbolRegular.Warning24, "Ethernet", $"{a.Name} has no driver in the boot image", IsWarning: true),
                 { State: NetworkAdapterState.NoAddress } a => new NetworkPanelRow(SymbolRegular.PlugConnected24, "Ethernet", $"{a.Name}, no IP address"),
                 var a => new NetworkPanelRow(SymbolRegular.PlugDisconnected24, "Ethernet", $"{a.Name}, cable unplugged"),
@@ -332,7 +331,7 @@ public sealed partial class OperationSelectionViewModel : INotifyPropertyChanged
             rows.Add(wifi switch
             {
                 null => new NetworkPanelRow(SymbolRegular.WifiOff24, "Wi-Fi", "No Wi-Fi adapter found"),
-                { State: NetworkAdapterState.Connected } a => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", wifiSsid is null ? a.Display : $"{wifiSsid}, {a.Display}", ReferenceEquals(a, inUse) ? "In use" : null),
+                { State: NetworkAdapterState.Connected } a => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", wifiSsid is null ? a.Display : $"{wifiSsid}, {a.Display}", "Connected"),
                 { State: NetworkAdapterState.NoDriver } a => new NetworkPanelRow(SymbolRegular.Warning24, "Wi-Fi", $"{a.Name} has no driver in the boot image", IsWarning: true),
                 _ when !wifiSupported => new NetworkPanelRow(SymbolRegular.WifiOff24, "Wi-Fi", "Not available in this boot image"),
                 { State: NetworkAdapterState.NoAddress } a => new NetworkPanelRow(SymbolRegular.Wifi124, "Wi-Fi", $"{wifiSsid ?? a.Name}, no IP address"),

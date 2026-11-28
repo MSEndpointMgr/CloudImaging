@@ -126,30 +126,6 @@ public enum DriverComponentState
     Withdrawn,
 }
 
-/// <summary>
-/// Windows release an OS image installs and a model is onboarded for. Extended in code when
-/// Microsoft ships a new release. Wire values keep the <c>Windows11_24H2</c> form.
-/// </summary>
-[JsonConverter(typeof(JsonStringEnumConverter))]
-public enum WindowsRelease
-{
-    /// <summary>Windows 10, version 22H2.</summary>
-    [JsonStringEnumMemberName("Windows10_22H2")]
-    Windows10Version22H2,
-
-    /// <summary>Windows 11, version 23H2.</summary>
-    [JsonStringEnumMemberName("Windows11_23H2")]
-    Windows11Version23H2,
-
-    /// <summary>Windows 11, version 24H2.</summary>
-    [JsonStringEnumMemberName("Windows11_24H2")]
-    Windows11Version24H2,
-
-    /// <summary>Windows 11, version 25H2.</summary>
-    [JsonStringEnumMemberName("Windows11_25H2")]
-    Windows11Version25H2,
-}
-
 /// <summary>When the driver sync runs.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DriverSyncSchedule

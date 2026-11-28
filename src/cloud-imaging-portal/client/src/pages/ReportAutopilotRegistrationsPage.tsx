@@ -1,33 +1,35 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, BadgeCheck, FileDown, RefreshCw } from 'lucide-react';
+import { BadgeCheck, FileDown } from 'lucide-react';
 import { apiFetchWithRetry, extractErrorDetail } from '../lib/apiClient.ts';
 import { formatDateTime } from '../lib/utils.ts';
 import { toCsv, downloadBlob } from '../lib/csv.ts';
 import { resolvePreset, type DateRange } from '../lib/dateRange.ts';
 import { sortRows, useSort } from '../lib/tableSort.ts';
 import { useDebouncedValue } from '../hooks/useDebouncedValue.ts';
-import { groupTagChange, preProvisioningLabel, stateLabel, stateVariant, type AutopilotRequest } from '../lib/autopilot.ts';
+import { groupTagChange, preProvisioningLabel, stateLabel, stateVariant, type AutopilotRequest, type AutopilotState } from '../lib/autopilot.ts';
+import { durationStats, formatDuration, locationFilterOptions, recordsForLocations } from '../lib/locationStatistics.ts';
+import { SUMMARY_COLORS, share } from '../lib/reportSummary.ts';
+import { useUserPreferences } from '../context/userPreferencesContext.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Card, CardContent } from '../components/ui/card.tsx';
 import { DateRangeSelect } from '../components/ui/date-range-select.tsx';
+import { MultiSelect } from '../components/ui/multi-select.tsx';
 import { SearchInput } from '../components/ui/search-input.tsx';
 import { ReportFilterBar, type AppliedFilter } from '../components/ReportFilterBar.tsx';
+import { ReportLoadError } from '../components/ReportLoadError.tsx';
+import { ReportSummary } from '../components/ReportSummary.tsx';
 import { SortableHead } from '../components/ui/sortable-head.tsx';
-import { Select } from '../components/ui/select.tsx';
-import { Skeleton, TableSkeletonRows } from '../components/ui/skeleton.tsx';
+import { TableSkeletonRows } from '../components/ui/skeleton.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { CopyableId } from '../components/ui/copyable-id.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Table, TableHeader, TableBody, TableRow, TableCell } from '../components/ui/table.tsx';
 
-const OUTCOME_FILTERS: { value: string; label: string }[] = [
-  { value: '', label: 'All outcomes' },
-  { value: 'Imported', label: 'Imported' },
-  { value: 'AlreadyRegistered', label: 'Already registered' },
-  { value: 'GroupTagUpdated', label: 'Group tag updated' },
-  { value: 'Rejected', label: 'Rejected' },
-  { value: 'Expired', label: 'Expired' },
-];
+const OUTCOMES: readonly AutopilotState[] = ['Imported', 'AlreadyRegistered', 'GroupTagUpdated', 'Rejected', 'Expired'];
+
+// Each dot takes the colour of the outcome's badge: the three approvals are green, the rest muted.
+const outcomeColor = (state: AutopilotState): string => (stateVariant(state) === 'success' ? SUMMARY_COLORS.success : SUMMARY_COLORS.muted);
+
+const OUTCOME_OPTIONS = OUTCOMES.map(value => ({ value, label: stateLabel(value), dotClassName: outcomeColor(value) }));
 
 function deviceLabel(r: AutopilotRequest): string {
   return `${r.manufacturer} ${r.model}`.trim();
@@ -39,16 +41,25 @@ function outcomeNote(r: AutopilotRequest): string | null {
   return r.importErrorName ?? null;
 }
 
+/** Time from submission to the approver's decision, for requests someone decided. */
+function waitForApproval(r: AutopilotRequest): number | null {
+  if (!r.decidedAt) return null;
+  const wait = Date.parse(r.decidedAt) - Date.parse(r.submittedAt);
+  return Number.isFinite(wait) && wait >= 0 ? wait : null;
+}
+
 /**
  * Audit report of handled Autopilot registration requests: imported, already registered,
  * rejected and expired. Handled requests leave the approval queue immediately and are kept here
  * until the retention period set under Configuration, Autopilot deletes them.
  */
 export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
+  const { locations } = useUserPreferences();
   const [range, setRange] = useState<DateRange>(() => resolvePreset('last30')!);
   const [records, setRecords] = useState<AutopilotRequest[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState('');
+  const [locationIds, setLocationIds] = useState<string[]>([]);
+  const [outcomes, setOutcomes] = useState<string[]>([]);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [attempt, setAttempt] = useState(0);
@@ -81,10 +92,14 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 
+  const locationOptions = useMemo(() => locationFilterOptions(locations, records ?? []), [locations, records]);
+  // The summary covers the period and the chosen locations; outcomes and the search narrow the table.
+  const locationRecords = useMemo(() => recordsForLocations(records ?? [], locationIds), [records, locationIds]);
+
   const filtered = useMemo(() => {
     const needle = debouncedSearch.trim().toLowerCase();
-    const matching = (records ?? []).filter((r) =>
-      (!outcome || r.state === outcome)
+    const matching = locationRecords.filter((r) =>
+      (outcomes.length === 0 || outcomes.includes(r.state))
       && (!needle || [r.serialNumber, r.referenceCode, deviceLabel(r), r.locationName ?? '', r.groupTag ?? '', r.decidedByUpn ?? '']
         .some((v) => v.toLowerCase().includes(needle))));
 
@@ -98,30 +113,29 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
       decidedBy: (r: AutopilotRequest) => r.decidedByUpn ?? '',
       closed:    (r: AutopilotRequest) => new Date(r.updatedAt).getTime(),
     });
-  }, [records, outcome, debouncedSearch, sort]);
+  }, [locationRecords, outcomes, debouncedSearch, sort]);
 
   const appliedFilters = useMemo<AppliedFilter[]>(() => {
     const chips: AppliedFilter[] = [];
     if (search) chips.push({ key: 'search', label: `Search: ${search}`, onClear: () => setSearch('') });
-    if (outcome) {
-      const label = OUTCOME_FILTERS.find((o) => o.value === outcome)?.label ?? outcome;
-      chips.push({ key: 'outcome', label: `Outcome: ${label}`, onClear: () => setOutcome('') });
+    for (const id of locationIds) {
+      const label = locationOptions.find(o => o.value === id)?.label ?? id;
+      chips.push({ key: `location:${id}`, label: `Location: ${label}`, onClear: () => setLocationIds(ids => ids.filter(v => v !== id)) });
+    }
+    for (const value of outcomes) {
+      chips.push({ key: `outcome:${value}`, label: `Outcome: ${stateLabel(value as AutopilotState)}`, onClear: () => setOutcomes(values => values.filter(v => v !== value)) });
     }
     return chips;
-  }, [search, outcome]);
+  }, [search, locationIds, locationOptions, outcomes]);
 
   const counts = useMemo(() => {
-    const c = { total: 0, imported: 0, alreadyRegistered: 0, tagUpdated: 0, rejected: 0, expired: 0 };
-    for (const r of records ?? []) {
-      c.total++;
-      if (r.state === 'Imported') c.imported++;
-      else if (r.state === 'AlreadyRegistered') c.alreadyRegistered++;
-      else if (r.state === 'GroupTagUpdated') c.tagUpdated++;
-      else if (r.state === 'Rejected') c.rejected++;
-      else if (r.state === 'Expired') c.expired++;
-    }
+    const c: Record<AutopilotState, number> = { PendingApproval: 0, Importing: 0, Imported: 0, ImportFailed: 0, Rejected: 0, Expired: 0, AlreadyRegistered: 0, GroupTagUpdated: 0 };
+    for (const r of locationRecords) c[r.state] = (c[r.state] ?? 0) + 1;
     return c;
-  }, [records]);
+  }, [locationRecords]);
+  const waits = useMemo(() => durationStats(locationRecords.map(waitForApproval)), [locationRecords]);
+  const total = locationRecords.length;
+  const tagShare = share(counts.GroupTagUpdated, total);
 
   const handleExport = () => {
     const csv = toCsv(filtered, [
@@ -162,7 +176,7 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
 
       <ReportFilterBar
         applied={appliedFilters}
-        onClearAll={() => { setSearch(''); setOutcome(''); }}
+        onClearAll={() => { setSearch(''); setLocationIds([]); setOutcomes([]); }}
         actions={
           <Button variant="outline" onClick={handleExport} disabled={filtered.length === 0}>
             <FileDown /> Export CSV
@@ -183,48 +197,61 @@ export default function ReportAutopilotRegistrationsPage(): React.ReactElement {
           onValueChange={setRange}
           wrapperClassName="w-44"
         />
-        <Select
+        <MultiSelect
+          id="autopilot-report-location"
+          aria-label="Locations"
+          values={locationIds}
+          onValuesChange={setLocationIds}
+          options={locationOptions}
+          placeholder="All locations"
+          countLabel={n => `${n} locations`}
+          searchPlaceholder="Search locations"
+          wrapperClassName="w-52"
+        />
+        <MultiSelect
           id="autopilot-report-outcome"
-          aria-label="Outcome"
-          value={outcome}
-          onValueChange={setOutcome}
-          options={OUTCOME_FILTERS}
+          aria-label="Outcomes"
+          values={outcomes}
+          onValuesChange={setOutcomes}
+          options={OUTCOME_OPTIONS}
+          placeholder="All outcomes"
+          countLabel={n => `${n} outcomes`}
           wrapperClassName="w-44"
         />
       </ReportFilterBar>
 
       {loadError && (
-        <div role="alert" className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/5 p-4">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
-          <div className="flex-1 space-y-1">
-            <p className="text-sm font-medium">Could not load handled registrations</p>
-            <p className="text-sm text-muted-foreground">{loadError}</p>
-          </div>
-          <Button variant="outline" onClick={retry}><RefreshCw /> Try again</Button>
-        </div>
+        <ReportLoadError title="Could not load handled registrations" detail={loadError} onRetry={retry} />
       )}
 
       {!loadError && (
         <>
-          <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {[
-              { label: 'Handled requests', value: counts.total },
-              { label: 'Imported', value: counts.imported },
-              { label: 'Already registered', value: counts.alreadyRegistered },
-              { label: 'Group tag updated', value: counts.tagUpdated },
-              { label: 'Rejected', value: counts.rejected },
-              { label: 'Expired', value: counts.expired },
-            ].map((stat) => (
-              <Card key={stat.label}>
-                <CardContent className="p-4">
-                  <p className="text-xs text-muted-foreground">{stat.label}</p>
-                  <div className="mt-1 text-2xl font-semibold tabular-nums">
-                    {records ? stat.value : <Skeleton className="h-7 w-10" />}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <ReportSummary
+            loading={records === null}
+            total={total}
+            noun={['handled request', 'handled requests']}
+            parts={OUTCOMES.map(state => ({
+              key: state,
+              label: stateLabel(state),
+              count: counts[state],
+              colorClassName: outcomeColor(state),
+              // Counted in the bar, but its own figure shows it, so the legend keeps to one line.
+              inLegend: state !== 'GroupTagUpdated',
+            }))}
+            emptyText={locationIds.length > 0 ? 'No requests were handled in this period at the chosen locations.' : 'No requests were handled in this period.'}
+            figures={[
+              {
+                label: 'Average wait for approval',
+                value: waits.average === null ? null : formatDuration(waits.average),
+                detail: waits.longest === null ? 'No decided requests' : `Longest ${formatDuration(waits.longest)}`,
+              },
+              {
+                label: 'Group tag updated',
+                value: total === 0 ? null : String(counts.GroupTagUpdated),
+                detail: tagShare === null ? 'No handled requests' : `${tagShare}% of handled requests`,
+              },
+            ]}
+          />
 
           <div className="overflow-hidden rounded-md border border-border">
             <Table>

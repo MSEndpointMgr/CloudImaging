@@ -53,4 +53,21 @@ public sealed class BootImageDetailsTests
             ("Started from", "Other media"),
             ("Location", "None"));
     }
+
+    [Theory]
+    [InlineData("1.1.0+f7157877540118aa446dcb4873e8f097a0b0a5af", "1.1.0")]
+    [InlineData("1.1.0", "1.1.0")]
+    [InlineData("0.0.0-dev+f7157877540118aa446dcb4873e8f097a0b0a5af", "dev f715787")]
+    [InlineData("0.0.0-dev", "dev")]
+    [InlineData(null, null)]
+    public void VersionLabel_ShowsTheRelease_OrDevAndTheCommit(string? informationalVersion, string? expected)
+    {
+        BootImageDetails.VersionLabel(informationalVersion).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ABuildNotMadeFromAReleaseTag_DoesNotPassForARelease()
+    {
+        BootImageDetails.ClientVersionLabel().Should().StartWith("dev", "only release-client.yml stamps a release version");
+    }
 }

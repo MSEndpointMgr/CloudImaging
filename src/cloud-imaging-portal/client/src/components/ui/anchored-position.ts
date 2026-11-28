@@ -5,7 +5,10 @@ export const VIEWPORT_MARGIN = 8;
 
 export interface AnchoredPosition {
   left: number;
-  width: number;
+  /** The anchor's width, or the requested minimum when wider: a panel never ends short of its trigger. */
+  minWidth: number;
+  /** The viewport less its margins: as far as a panel may grow for content that needs the room. */
+  maxWidth: number;
   maxHeight: number;
   /** Exactly one of `top`/`bottom` is set, depending on the side the panel flipped to. */
   top?: number;
@@ -15,8 +18,20 @@ export interface AnchoredPosition {
 interface AnchoredPositionOptions {
   /** Height the panel would like. Drives the decision to flip above the anchor. */
   preferredHeight: number;
-  /** Panels wider than their anchor (a date range picker) set this; lists leave it at 0. */
+  /** Width the panel needs whatever its anchor's (a date range's two date fields); lists leave it at 0. */
   minWidth?: number;
+  /**
+   * The rendered panel. Panels are as wide as their anchor and only grow for content that needs
+   * it (`width: max-content`), so the panel is measured to keep a grown one inside the viewport.
+   */
+  panelRef?: React.RefObject<HTMLElement | null>;
+  /** Hold the width the panel opened with, so filtering its rows does not shrink it while typing. */
+  keepWidth?: boolean;
+}
+
+function samePosition(a: AnchoredPosition, b: AnchoredPosition): boolean {
+  return a.left === b.left && a.minWidth === b.minWidth && a.maxWidth === b.maxWidth && a.maxHeight === b.maxHeight
+    && a.top === b.top && a.bottom === b.bottom;
 }
 
 /**
@@ -29,9 +44,10 @@ interface AnchoredPositionOptions {
 export function useAnchoredPosition(
   anchorRef: React.RefObject<HTMLElement | null>,
   open: boolean,
-  { preferredHeight, minWidth = 0 }: AnchoredPositionOptions,
+  { preferredHeight, minWidth = 0, panelRef, keepWidth = false }: AnchoredPositionOptions,
 ): AnchoredPosition | null {
   const [position, setPosition] = React.useState<AnchoredPosition | null>(null);
+  const openedWidth = React.useRef(0);
 
   const update = React.useCallback(() => {
     const anchor = anchorRef.current;
@@ -44,22 +60,28 @@ export function useAnchoredPosition(
     // jump sides for an anchor that is merely close to the fold.
     const placeBelow = spaceBelow >= preferredHeight || spaceBelow >= spaceAbove;
 
-    const width = Math.max(rect.width, minWidth);
-    const maxLeft = window.innerWidth - width - VIEWPORT_MARGIN;
-    const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, maxLeft));
+    const measured = panelRef?.current?.offsetWidth ?? 0;
+    if (keepWidth && measured > openedWidth.current) openedWidth.current = measured;
+    const maxWidth = Math.max(0, window.innerWidth - VIEWPORT_MARGIN * 2);
+    const floor = Math.min(maxWidth, Math.max(rect.width, minWidth, keepWidth ? openedWidth.current : 0));
+    const width = Math.min(maxWidth, Math.max(floor, measured));
+    const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN));
 
-    setPosition({
+    const next: AnchoredPosition = {
       left,
-      width,
+      minWidth: floor,
+      maxWidth,
       maxHeight: Math.max(120, Math.min(preferredHeight, placeBelow ? spaceBelow : spaceAbove)),
       ...(placeBelow
         ? { top: rect.bottom + VIEWPORT_MARGIN }
         : { bottom: window.innerHeight - rect.top + VIEWPORT_MARGIN }),
-    });
-  }, [anchorRef, preferredHeight, minWidth]);
+    };
+    setPosition(current => (current && samePosition(current, next) ? current : next));
+  }, [anchorRef, preferredHeight, minWidth, panelRef, keepWidth]);
 
   React.useLayoutEffect(() => {
     if (!open) {
+      openedWidth.current = 0;
       setPosition(null);
       return;
     }
@@ -75,6 +97,12 @@ export function useAnchoredPosition(
       window.removeEventListener('resize', onReflow);
     };
   }, [open, update]);
+
+  // A panel sized by its content can only be measured once it is on screen, so place it again then.
+  const shown = position !== null;
+  React.useLayoutEffect(() => {
+    if (open && shown) update();
+  }, [open, shown, update]);
 
   return position;
 }

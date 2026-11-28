@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useColumnWidths } from '../../../src/cloud-imaging-portal/client/src/lib/useColumnWidths.tsx';
 
-function Harness() {
-  const cols = useColumnWidths({ serial: 20, device: 30, step: 50 });
+function Harness({ fill }: { fill?: 'device' }) {
+  const cols = useColumnWidths({ serial: 20, device: 30, step: 50 }, fill);
   return (
     <table>
       <thead>
@@ -47,6 +47,16 @@ describe('Portal frontend: useColumnWidths', () => {
     fireEvent.doubleClick(deviceHandle);
 
     expect(width('device')).toBe('30%');
+    expect(width('step')).toBe('50%');
+  });
+
+  it('leaves the fill column without a width, so it takes what a fixed toggle column leaves', () => {
+    render(<Harness fill="device" />);
+
+    expect(width('device')).toBe('');
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize Serial column' }), { key: 'ArrowRight' });
+    expect(width('serial')).toBe('22%');
+    expect(width('device')).toBe('');
     expect(width('step')).toBe('50%');
   });
 });

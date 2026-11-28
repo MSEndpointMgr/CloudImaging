@@ -86,6 +86,7 @@ public sealed partial class UsbPartitionProvisioningService
 
         var label = string.IsNullOrWhiteSpace(diskLabel) ? $"disk {diskNumber}" : diskLabel;
         LogStarting(_logger, diskNumber);
+        using var formatPromptPause = await ShellHardwareDetectionPause.BeginAsync(_logger);
 
         onProgress?.Invoke($"Erasing and initializing {label}…", 0);
         await RunDiskpartScriptAsync(BuildCleanAndConvertScript(diskNumber), ct);
@@ -181,11 +182,12 @@ public sealed partial class UsbPartitionProvisioningService
          """;
 
     /// <summary>Stage 2: create, format (FAT32), activate, and assign the WinPE boot partition.</summary>
+    /// <remarks><c>override</c> dismounts the new volume first if Explorer already has it open.</remarks>
     private static string BuildBootPartitionScript(uint diskNumber) =>
         $"""
          select disk {diskNumber}
          create partition primary size={BootPartitionSizeMb}
-         format quick fs=fat32 label="BOOT"
+         format quick fs=fat32 label="BOOT" override
          active
          assign
          exit
@@ -196,7 +198,7 @@ public sealed partial class UsbPartitionProvisioningService
         $"""
          select disk {diskNumber}
          create partition primary
-         format quick fs=ntfs label="CACHE"
+         format quick fs=ntfs label="CACHE" override
          assign
          exit
          """;

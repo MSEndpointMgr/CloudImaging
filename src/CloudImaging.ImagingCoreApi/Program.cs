@@ -104,7 +104,16 @@ var host = new HostBuilder()
             sp.GetRequiredService<DriverStorageService>(),
             sp.GetRequiredService<Azure.Storage.Blobs.BlobServiceClient>().GetBlobContainerClient(DriverTables.Container),
             sp.GetServices<IDriverVendorAdapter>(),
+            sp.GetRequiredService<WindowsReleaseCatalogService>(),
             sp.GetRequiredService<TimeProvider>()));
+
+        // New Windows releases come from Microsoft's feature update catalog (WindowsUpdates.Read.All on the managed identity).
+        services.AddHttpClient<IWindowsReleaseSource, WindowsReleaseGraphClient>(client =>
+        {
+            client.BaseAddress = new Uri("https://graph.microsoft.com/");
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
+        services.AddSingleton<WindowsReleaseCatalogService>();
         services.AddSingleton<DriverSyncService>();
         services.AddSingleton<DriverModelService>();
         services.AddSingleton<DriverPolicyService>();

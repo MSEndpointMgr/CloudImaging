@@ -94,6 +94,20 @@ export function isValidRange(range: DateRange): boolean {
   return rangeDayCount(range) !== null;
 }
 
+/** The period of the same length that ends the day before `range` starts, or null for an invalid range. */
+export function previousRange(range: DateRange): DateRange | null {
+  const days = rangeDayCount(range);
+  const from = utcDay(range.from);
+  if (days === null || from === null) return null;
+  return { from: toIsoDate(new Date(from - days * DAY_MS)), to: toIsoDate(new Date(from - DAY_MS)) };
+}
+
+/** "Previous 30 days", or "Previous day" for a one-day range. */
+export function previousRangeLabel(range: DateRange): string {
+  const days = rangeDayCount(range) ?? 0;
+  return days === 1 ? 'Previous day' : `Previous ${days} days`;
+}
+
 function formatDay(iso: string): string {
   const ms = utcDay(iso);
   if (ms === null) return iso;

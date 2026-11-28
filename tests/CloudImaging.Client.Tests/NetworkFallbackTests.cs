@@ -320,8 +320,16 @@ public sealed class NetworkFallbackTests
         ]), wifiSsid: null, wifiSupported: true);
 
         rows.Select(r => (r.Symbol, r.Title, r.Detail, r.Badge, r.IsWarning)).Should().Equal(
-            (SymbolRegular.PlugConnected24, "Ethernet", $"{Usb} (10.20.4.40)", "In use", false),
+            (SymbolRegular.PlugConnected24, "Ethernet", $"{Usb} (10.20.4.40)", "Connected", false),
             (SymbolRegular.WifiOff24, "Wi-Fi", "Not connected", (string?)null, false));
+    }
+
+    [Fact]
+    public void NetworkRows_MarkEveryConnectedAdapter()
+    {
+        var rows = OperationSelectionViewModel.BuildNetworkRows(new NetworkSnapshot([Ethernet, WiFi]), wifiSsid: "Office", wifiSupported: true);
+
+        rows.Select(r => (r.Title, r.Badge)).Should().Equal(("Ethernet", "Connected"), ("Wi-Fi", "Connected"));
     }
 
     [Fact]

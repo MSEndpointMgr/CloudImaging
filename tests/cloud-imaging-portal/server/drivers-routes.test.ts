@@ -286,6 +286,25 @@ describe('Portal backend: driver routes (vendors, sync settings, run items, chec
     expect(operatorApi.drivers).toHaveBeenCalledWith('GET', 'vendors');
   });
 
+  it('lists the Windows releases for Technicians', async () => {
+    operatorApi.drivers.mockResolvedValue({ status: 200, data: { releases: ['Windows11_26H2', 'Windows11_25H2'], refreshedAt: null, problem: null } });
+
+    const res = await request(appFor(technician)).get('/api/drivers/windows-releases');
+
+    expect(res.status).toBe(200);
+    expect(res.body.releases).toEqual(['Windows11_26H2', 'Windows11_25H2']);
+    expect(operatorApi.drivers).toHaveBeenCalledWith('GET', 'windows-releases');
+  });
+
+  it('accepts a release newer than the ones shipped, and refuses one that is not a release', async () => {
+    const app = appFor(operator);
+
+    expect((await request(app).post(`/api/drivers/models/${modelId}/releases/Windows11_26H2/build`).send({})).status).toBe(200);
+    expect((await request(app).post(`/api/drivers/models/${modelId}/releases/Windows11_26H3/build`).send({})).status).toBe(400);
+    expect((await request(app).post(`/api/drivers/models/${modelId}/releases/Windows12_26H2/build`).send({})).status).toBe(400);
+    expect(operatorApi.drivers).toHaveBeenCalledTimes(1);
+  });
+
   it('2: switches a vendor with only syncEnabled and the token actor, and refuses an unknown vendor', async () => {
     await request(appFor(operator)).put('/api/drivers/vendors/Hp').send({ syncEnabled: false, actor: { upn: 'mallory@contoso.com' } });
     const bad = await request(appFor(operator)).put('/api/drivers/vendors/Surface').send({ syncEnabled: true });

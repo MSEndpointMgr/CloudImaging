@@ -70,6 +70,7 @@ public sealed partial class DeviceSessionLifecycleService
     private readonly PortalConfigurationRepository _configRepo;
     private readonly PreFlightOverrideRepository _overrideRepo;
     private readonly ImagingStepItemRepository _itemRepo;
+    private readonly ImagingStepRepository _stepRepo;
     private readonly ILogger<DeviceSessionLifecycleService> _logger;
 
     /// <param name="sessionRepo">Device session repository.</param>
@@ -77,6 +78,7 @@ public sealed partial class DeviceSessionLifecycleService
     /// <param name="configRepo">Portal configuration repository.</param>
     /// <param name="overrideRepo">Pre-flight override repository.</param>
     /// <param name="itemRepo">Per-item step outcomes, deleted with their session.</param>
+    /// <param name="stepRepo">Step progress, for when an ended session started imaging.</param>
     /// <param name="logger">Logger for this service.</param>
     public DeviceSessionLifecycleService(
         DeviceSessionRepository sessionRepo,
@@ -84,6 +86,7 @@ public sealed partial class DeviceSessionLifecycleService
         PortalConfigurationRepository configRepo,
         PreFlightOverrideRepository overrideRepo,
         ImagingStepItemRepository itemRepo,
+        ImagingStepRepository stepRepo,
         ILogger<DeviceSessionLifecycleService> logger)
     {
         _sessionRepo = sessionRepo;
@@ -91,6 +94,7 @@ public sealed partial class DeviceSessionLifecycleService
         _configRepo = configRepo;
         _overrideRepo = overrideRepo;
         _itemRepo = itemRepo;
+        _stepRepo = stepRepo;
         _logger = logger;
     }
 
@@ -208,14 +212,13 @@ public sealed partial class DeviceSessionLifecycleService
 
     /// <summary>
     /// Records a SessionHistory (Reports audit) entry for an inactivity-driven terminal
-    /// transition. FailedStepName is intentionally left unset here: unlike
-    /// <c>ReportProgressFunction</c>, this path doesn't have direct access to the per-step
-    /// records, only the session's free-text <see cref="DeviceSession.CurrentStep"/> snapshot.
-    /// ErrorDetail instead captures a synthesized, still-diagnostically-useful reason.
+    /// transition. FailedStepName is intentionally left unset here: no step failed, the device went
+    /// silent, so ErrorDetail captures a synthesized, still-diagnostically-useful reason instead.
     /// </summary>
     private async Task WriteHistoryAsync(DeviceSession s, CancellationToken ct)
     {
         var config = await _configRepo.GetAsync(ct);
+        var steps = await _stepRepo.GetBySessionAsync(s.SessionId, ct);
         var history = new SessionHistoryRecord
         {
             SessionId = s.SessionId,
@@ -233,6 +236,7 @@ public sealed partial class DeviceSessionLifecycleService
                 ? $"Session inactivity timeout while in progress (last step: {s.CurrentStep ?? "unknown"})."
                 : null,
             CreatedAt = s.CreatedAt,
+            ImagingStartedAt = steps.Min(step => step.StartedAt),
             TerminalAt = s.TerminalAt ?? DateTimeOffset.UtcNow,
         };
         await _historyRepo.CreateAsync(history, config.SessionHistoryRetentionDays, ct);

@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models.Drivers;
 using CloudImaging.ImagingCoreApi.Repositories.Drivers;
@@ -124,32 +123,11 @@ public sealed class DriverModelService
     }
 
     /// <summary>Label of a Windows release, as the portal shows it.</summary>
-    public static string ReleaseLabel(WindowsRelease release) => release switch
-    {
-        WindowsRelease.Windows10Version22H2 => "Windows 10, version 22H2",
-        WindowsRelease.Windows11Version23H2 => "Windows 11, version 23H2",
-        WindowsRelease.Windows11Version24H2 => "Windows 11, version 24H2",
-        WindowsRelease.Windows11Version25H2 => "Windows 11, version 25H2",
-        _ => release.ToString(),
-    };
+    public static string ReleaseLabel(WindowsRelease release) => release.Label;
 
     /// <summary>Reads a release from its wire value (<c>Windows11_24H2</c>).</summary>
-    public static WindowsRelease? ParseRelease(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<WindowsRelease>(JsonSerializer.Serialize(value), DriverJson.Options);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    public static WindowsRelease? ParseRelease(string? value) =>
+        WindowsRelease.TryParse(value, out var release) ? release : null;
 
     /// <summary>
     /// The vendor's model list. A list that is missing or older than 7 days is read first,

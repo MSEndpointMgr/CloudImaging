@@ -120,13 +120,16 @@ Capture into `tests/fixtures/drivers/`: `platformList.cab`, `8c26_64_11.0.24h2.c
    device.", deployment succeeds.
 5. Mark "Driver - Network" critical and corrupt one network component's blob. Expected: step
    Failed naming it, session fails before Configure boot, Retry works after fixing.
-6. As a Technician, couple an onboarded HP device and one whose system ID is not onboarded, and
+6. As a Technician, couple an onboarded HP device and one whose baseboard is not onboarded, and
    select the OS image. Expected: the Driver set column preselects the matched model; the other
-   row shows "No match, choose a set" with a tooltip naming its system ID. Pick the G11 model for
+   row shows "No match, choose a set" with a tooltip naming its baseboard. Pick the G11 model for
    it and No drivers for the matched device; the undo button returns a row to its match. The
    Start imaging overlay lists both choices as "(chosen manually)". After start, each session
    pins what was chosen; the timeline shows "Chosen manually by <upn>" and, for No drivers, the
    step note without a warning.
+   Then select an OS image of a newer release the model has no set for (for example 26H2).
+   Expected: the matched row reads "HP EliteBook 840 G11 (25H2 set)" with an information icon
+   explaining why, and the deployment's timeline says the 25H2 set is used.
 7. Remove the chosen model in another tab before pressing Start imaging. Expected: 409 naming the
    device, nothing assigned, the column reloads.
 8. Image a device of a model with the custom component and a rolled-back component. Expected: the

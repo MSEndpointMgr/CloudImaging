@@ -24,15 +24,15 @@ public sealed class DellDriverVendorAdapterTests
         return output;
     }
 
-    private DriverCatalogModelRecord Model(string key) => _adapter.ParseModelList(Decompress("CatalogIndexPC.cab"), Seen).Single(m => m.Key == key).Model;
+    private DriverCatalogModelRecord Model(string key) => _adapter.ParseModelList(Decompress("CatalogIndexPC.cab"), Seen, WindowsReleaseCatalogService.BuiltIn).Single(m => m.Key == key).Model;
 
-    private IReadOnlyList<DriverVendorComponent> Parse(string fixture, MachineArchitecture architecture = MachineArchitecture.X64, WindowsRelease release = WindowsRelease.Windows11Version24H2) =>
-        _adapter.ParseComponents(Decompress(fixture), new DriverCatalogModelRecord { Name = "Latitude", MatchKeys = ["0CB4"], Architecture = architecture }, release, Seen);
+    private IReadOnlyList<DriverVendorComponent> Parse(string fixture, MachineArchitecture architecture = MachineArchitecture.X64, WindowsRelease? release = null) =>
+        _adapter.ParseComponents(Decompress(fixture), new DriverCatalogModelRecord { Name = "Latitude", MatchKeys = ["0CB4"], Architecture = architecture }, release ?? WindowsRelease.Windows11Version24H2, Seen);
 
     [Fact]
     public void ModelList_GroupsSkusByModelName_WithEachSkusCatalogPathAndSha256()
     {
-        var models = _adapter.ParseModelList(Decompress("CatalogIndexPC.cab"), Seen);
+        var models = _adapter.ParseModelList(Decompress("CatalogIndexPC.cab"), Seen, WindowsReleaseCatalogService.BuiltIn);
 
         var latitude = models.Single(m => m.Key == "LATITUDE_5450").Model;
         latitude.Name.Should().Be("Latitude 5450");
@@ -68,7 +68,7 @@ public sealed class DellDriverVendorAdapterTests
     {
         var bed = new DriverTestBed();
         var storage = new DriverStorageService(new Azure.Storage.Blobs.BlobServiceClient("UseDevelopmentStorage=true"), bed.Blobs, bed.Http, bed.Time);
-        var catalogs = new DriverCatalogService(bed.Store, bed.Models, storage, bed.Blobs, [_adapter], bed.Time);
+        var catalogs = new DriverCatalogService(bed.Store, bed.Models, storage, bed.Blobs, [_adapter], FakeWindowsReleaseSource.Catalog(bed), bed.Time);
         var model = Model("LATITUDE_5450") with { SkuCatalogs = [new DriverSkuCatalog("0CB4", "FOLDER15162537M/1/Latitude_0CB4.cab", new string('0', 64))] };
         bed.Vendor.ServeFixture("https://downloads.dell.com/FOLDER15162537M/1/Latitude_0CB4.cab", "Latitude_0CB4.cab");
 
@@ -83,7 +83,7 @@ public sealed class DellDriverVendorAdapterTests
     {
         var bed = new DriverTestBed();
         var storage = new DriverStorageService(new Azure.Storage.Blobs.BlobServiceClient("UseDevelopmentStorage=true"), bed.Blobs, bed.Http, bed.Time);
-        var catalogs = new DriverCatalogService(bed.Store, bed.Models, storage, bed.Blobs, [_adapter], bed.Time);
+        var catalogs = new DriverCatalogService(bed.Store, bed.Models, storage, bed.Blobs, [_adapter], FakeWindowsReleaseSource.Catalog(bed), bed.Time);
         var model = Model("LATITUDE_5450");
         foreach (var sku in model.SkuCatalogs)
         {

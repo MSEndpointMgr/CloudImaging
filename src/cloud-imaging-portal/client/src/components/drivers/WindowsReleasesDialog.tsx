@@ -6,7 +6,7 @@ import { Checkbox } from '../ui/checkbox.tsx';
 import { Skeleton } from '../ui/skeleton.tsx';
 import { cn } from '../../lib/utils.ts';
 import {
-  WINDOWS_RELEASES, addRelease, fetchCatalogModels, fetchModelPage, fetchRemovalImpact, formatSize, previewModels, releaseLabel, removeRelease, vendorLabel,
+  addRelease, fetchCatalogModels, fetchModelPage, fetchRemovalImpact, formatSize, previewModels, releaseLabel, removeRelease, sortReleases, vendorLabel,
   type DriverModelRow, type DriverRemovalImpact, type WindowsRelease,
 } from '../../lib/drivers.ts';
 import { useDialogFocus } from './useDialogFocus.ts';
@@ -47,7 +47,7 @@ export function WindowsReleasesDialog({ model, onClose, onSaved }: {
       .then(list => {
         if (cancelled) return;
         const entry = list.models.find(m => m.onboardedModelId === model.modelId);
-        const offered = WINDOWS_RELEASES.filter(r => model.releases.includes(r) || entry?.releases.includes(r));
+        const offered = sortReleases([...model.releases, ...(entry?.releases ?? [])]);
         setReleases(offered);
         for (const release of offered) {
           if (model.releases.includes(release)) {

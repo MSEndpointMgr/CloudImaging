@@ -60,7 +60,7 @@ function settings(overrides: Record<string, unknown> = {}) {
 }
 
 const vendors = [
-  { vendor: 'Hp', supported: true, syncEnabled: true, onboardedModels: 3, matchKeyType: 'system ID' },
+  { vendor: 'Hp', supported: true, syncEnabled: true, onboardedModels: 3, matchKeyType: 'baseboard' },
   { vendor: 'Lenovo', supported: false, syncEnabled: false, onboardedModels: 0, matchKeyType: null },
 ];
 
@@ -294,7 +294,7 @@ describe('Drivers: Sync tab', () => {
     serve(syncRoutes({ 'PUT /api/drivers/vendors/Hp': { body: { ...vendors[0], syncEnabled: false } } }));
     renderAt('/drivers?tab=sync');
 
-    expect(await screen.findByText('3 onboarded models, matched on system ID.')).toBeTruthy();
+    expect(await screen.findByText('3 onboarded models, matched on baseboard.')).toBeTruthy();
     expect(screen.getByText('Not supported yet.')).toBeTruthy();
     expect((screen.getByRole('switch', { name: 'Sync Lenovo' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole('switch', { name: 'Sync HP' }));

@@ -10,7 +10,7 @@ import { Select } from '../ui/select.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table.tsx';
 import { cn, formatTimestamp } from '../../lib/utils.ts';
 import {
-  WINDOWS_RELEASES, fetchCatalogModels, formatSize, onboardModels, previewModels, releaseLabel, vendorLabel,
+  fetchCatalogModels, formatSize, onboardModels, previewModels, releaseLabel, sortReleases, vendorLabel,
   type DriverCatalogModelList, type DriverPreviewResult, type DriverVendor, type DriverVendorRow, type WindowsRelease,
 } from '../../lib/drivers.ts';
 import { SizeHead } from './ModelsTable.tsx';
@@ -75,7 +75,7 @@ export function OnboardModelDialog({ vendors, onClose }: OnboardModelDialogProps
     return term ? models.filter(m => m.displayName.toLowerCase().includes(term) || m.matchKeys.some(k => k.toLowerCase().includes(term))) : models;
   }, [models, search]);
   const chosen = models.filter(m => selected.includes(m.catalogModelKey));
-  const shared = WINDOWS_RELEASES.filter(r => chosen.length > 0 && chosen.every(m => m.releases.includes(r)));
+  const shared = sortReleases(chosen[0]?.releases ?? []).filter(r => chosen.every(m => m.releases.includes(r)));
   const vendorRow = vendors.find(v => v.vendor === vendor);
   const name = vendorLabel(vendor);
 

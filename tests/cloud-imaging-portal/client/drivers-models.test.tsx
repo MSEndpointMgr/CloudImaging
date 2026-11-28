@@ -1,6 +1,6 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const { apiFetch, notify, auth } = vi.hoisted(() => ({
@@ -26,7 +26,7 @@ vi.mock('../../../src/cloud-imaging-portal/client/src/context/authContext.tsx', 
 vi.mock('../../../src/cloud-imaging-portal/client/src/context/toastContext.tsx', () => ({ useToast: () => ({ notify, update: vi.fn(), dismiss: vi.fn() }) }));
 
 import DriversPage from '../../../src/cloud-imaging-portal/client/src/pages/DriversPage.tsx';
-import DriverModelPage from '../../../src/cloud-imaging-portal/client/src/pages/DriverModelPage.tsx';
+import DriverModelPage, { MODEL_POLL_MS } from '../../../src/cloud-imaging-portal/client/src/pages/DriverModelPage.tsx';
 
 type Handler = (init?: RequestInit) => { status?: number; body?: unknown };
 
@@ -42,7 +42,7 @@ function serve(routes: Record<string, Handler | { status?: number; body?: unknow
 
 const modelId = '8f0c3c5e-6c1f-4c55-9a43-2f5d8c1e7a10';
 const vendors = [
-  { vendor: 'Hp', supported: true, syncEnabled: false, onboardedModels: 1, matchKeyType: 'system ID' },
+  { vendor: 'Hp', supported: true, syncEnabled: false, onboardedModels: 1, matchKeyType: 'baseboard' },
   { vendor: 'Dell', supported: false, syncEnabled: false, onboardedModels: 0, matchKeyType: null },
 ];
 
@@ -83,11 +83,12 @@ function renderAt(path: string): void {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
   auth.canManageDrivers = true;
 });
 
 describe('Drivers: Models tab', () => {
-  it('lists models with name and match keys, vendor, releases, counts, size and status icon labels', async () => {
+  it('lists models with name, baseboard or SKU, vendor, releases, counts, size and status icon labels', async () => {
     serve({
       'GET /api/drivers/models': { body: [row(), row({ modelId: 'b', displayName: 'HP ProBook 450 G10', state: 'Draft' }), row({ modelId: 'c', displayName: 'HP ZBook', status: { waitingForApproval: 0, failedItems: 0, syncOff: false, downloading: { done: 12, total: 33 } } }), row({ modelId: 'd', displayName: 'HP Elite Mini', status: { waitingForApproval: 0, failedItems: 1, failureReason: "Intel Graphics: The file's SHA-256 does not match the vendor's catalog.", syncOff: false, downloading: null } })] },
       'GET /api/drivers/vendors': { body: vendors },
@@ -97,13 +98,15 @@ describe('Drivers: Models tab', () => {
 
     await screen.findByText('HP EliteBook 840 G11');
     const headers = screen.getAllByRole('columnheader').map(h => h.textContent);
-    expect(headers.slice(0, 7)).toEqual(['Model', 'Vendor', 'Windows releases', 'Included', 'Skipped', 'Size', 'Status']);
+    expect(headers.slice(0, 8)).toEqual(['Model', 'Baseboard / SKU', 'Vendor', 'Windows releases', 'Included', 'Skipped', 'Size', 'Status']);
     // Model takes the width the other columns do not need, so long names stay readable.
     expect(screen.getAllByRole('columnheader')[0].className).toContain('w-full');
-    expect(screen.getAllByRole('columnheader')[6].className).toContain('whitespace-nowrap');
+    expect(screen.getAllByRole('columnheader')[7].className).toContain('whitespace-nowrap');
+    const cells = within(screen.getByText('HP EliteBook 840 G11').closest('tr')!).getAllByRole('cell');
+    expect(cells[0].textContent).toBe('HP EliteBook 840 G11');
+    expect(cells[1].textContent).toBe('8C26');
     expect(screen.getByText('Ready')).toBeTruthy();
     expect(screen.getByText('Drivers installed during deployment, per device model and Windows release.')).toBeTruthy();
-    expect(screen.getAllByText('8C26').length).toBeGreaterThan(0);
     expect(screen.getByText('Draft')).toBeTruthy();
     expect(screen.getByText('Downloading 12 of 33')).toBeTruthy();
     expect(screen.getByText('1 failed')).toBeTruthy();
@@ -302,6 +305,22 @@ describe('Drivers: model page', () => {
     expect(screen.getByLabelText('The file does not match its checksum.')).toBeTruthy();
     expect(screen.queryByText('sp200')).toBeNull();
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+  });
+
+  it('a driver set that finishes downloading while the page is open gets a toast, naming any failure', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const [wireless, , services] = page().components;
+    let done = false;
+    serve({ [`GET /api/drivers/models/${modelId}`]: () => ({ body: done
+      ? page({ setVersion: 8, components: [wireless, { ...wireless, lineageKey: 'sp104', name: 'AMD Chipset Driver', download: { status: 'Failed', failureReason: 'The file does not match its checksum.' } }, services] })
+      : page({ pendingVersion: 8, preparing: { setVersion: 8, done: 1, total: 2 }, components: [{ ...wireless, download: { status: 'Downloading' } }, services] }) }) });
+    renderAt(`/drivers/models/${modelId}`);
+    await screen.findByText('Preparing driver set 8 for Windows 11, version 24H2: 1 of 2 components downloaded.');
+
+    done = true;
+    await act(async () => { await vi.advanceTimersByTimeAsync(MODEL_POLL_MS); });
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith({ status: 'success', title: 'Driver set 8 for Windows 11, version 24H2 is ready.', description: 'Devices of this model get it from their next deployment. 1 component could not be downloaded; the next sync tries again.' }));
   });
 
   it('expands a component to its labelled fields and release notes, never a hash or install command', async () => {

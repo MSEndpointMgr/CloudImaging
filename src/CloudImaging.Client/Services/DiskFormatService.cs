@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Management;
 using System.Text;
+using System.Text.RegularExpressions;
 using CloudImaging.Contracts.Enums;
 using CloudImaging.Contracts.Models;
 using Microsoft.Extensions.Logging;
@@ -42,6 +43,9 @@ public sealed partial class DiskFormatService
     /// <summary>MBR addresses at most 2 TiB (2^32 sectors of 512 bytes); space beyond it is left unused.</summary>
     internal const long MbrMaxDiskMb = 2L * 1024 * 1024;
 
+    /// <summary>diskpart opens with three banner lines: its version, the copyright and the computer name.</summary>
+    private const int DiskpartBannerLines = 3;
+
     private readonly ILogger<DiskFormatService> _logger;
 
     /// <summary>Builds the service over the given logger.</summary>
@@ -57,7 +61,13 @@ public sealed partial class DiskFormatService
     /// partition type, the disk is too small for the configured sizes, the firmware mode is
     /// unknown, or diskpart failed.
     /// </exception>
-    public async Task<DiskFormatResult> FormatTargetDiskAsync(PartitioningScheme scheme, FirmwareMode firmwareMode, CancellationToken ct = default)
+    public Task<DiskFormatResult> FormatTargetDiskAsync(PartitioningScheme scheme, FirmwareMode firmwareMode, CancellationToken ct = default)
+    {
+        // The WMI disk queries and diskpart run on the thread pool, so they never hold up the progress screen.
+        return Task.Run(() => FormatAsync(scheme, firmwareMode, ct), ct);
+    }
+
+    private async Task<DiskFormatResult> FormatAsync(PartitioningScheme scheme, FirmwareMode firmwareMode, CancellationToken ct)
     {
         WinPeEnvironmentGuard.EnsureRunningInWinPe("Formatting the target disk");
 
@@ -346,8 +356,11 @@ public sealed partial class DiskFormatService
         };
 
         process.Start();
-        var stdOut = await process.StandardOutput.ReadToEndAsync(ct);
-        var stdErr = await process.StandardError.ReadToEndAsync(ct);
+
+        // Both pipes are drained at once, so a full error pipe can never stall diskpart.
+        var stdErrTask = process.StandardError.ReadToEndAsync(ct);
+        var stdOut = await ReadDiskpartOutputAsync(process.StandardOutput, line => LogDiskpartOutput(_logger, line), ct);
+        var stdErr = await stdErrTask;
         await process.WaitForExitAsync(ct);
 
         if (process.ExitCode != 0)
@@ -357,11 +370,48 @@ public sealed partial class DiskFormatService
         }
     }
 
+    /// <summary>
+    /// Reads diskpart's output as it is written and hands each result line to
+    /// <paramref name="onLine"/>, so the activity list and the log show which command is running
+    /// and when it finished. The banner, blank lines and format percentages are left out.
+    /// Returns the whole output for the failure message.
+    /// </summary>
+    internal static async Task<string> ReadDiskpartOutputAsync(TextReader output, Action<string> onLine, CancellationToken ct)
+    {
+        var transcript = new StringBuilder();
+        var bannerLines = DiskpartBannerLines;
+        while (await output.ReadLineAsync(ct) is { } line)
+        {
+            transcript.AppendLine(line);
+            if (string.IsNullOrWhiteSpace(line) || DiskpartPercentLine().IsMatch(line))
+            {
+                continue;
+            }
+
+            if (bannerLines > 0)
+            {
+                bannerLines--;
+                continue;
+            }
+
+            onLine(line.Trim());
+        }
+
+        return transcript.ToString();
+    }
+
+    /// <summary>A format progress line such as "  10 percent completed", in any language.</summary>
+    [GeneratedRegex(@"^\s*\d{1,3}\s")]
+    private static partial Regex DiskpartPercentLine();
+
     [LoggerMessage(Level = LogLevel.Information, Message = "Target disk selected for formatting: disk {DiskIndex}.")]
     private static partial void LogTargetDiskSelected(ILogger logger, int diskIndex);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Disk {DiskIndex} formatted and assigned drive {DriveLetter}:.")]
     private static partial void LogFormatCompleted(ILogger logger, int diskIndex, string driveLetter);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "{Line}")]
+    private static partial void LogDiskpartOutput(ILogger logger, string line);
 
     [LoggerMessage(Level = LogLevel.Error, Message = "diskpart failed with exit code {ExitCode}. Output: {Output}")]
     private static partial void LogDiskpartFailed(ILogger logger, int exitCode, string output);

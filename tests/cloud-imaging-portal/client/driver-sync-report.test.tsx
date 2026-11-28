@@ -99,10 +99,16 @@ describe('Driver Synchronization report: figures', () => {
   });
 
   it('narrows by vendor, trigger and search, keeping only matching runs and items', () => {
-    expect(filterSyncReport(report, { search: '', vendor: 'Dell', trigger: '' }).map(r => [r.run.runId, r.items.length, r.run.vendors.length])).toEqual([['r1', 2, 1], ['r3', 1, 0], ['r4', 1, 1]]);
-    expect(filterSyncReport(report, { search: '', vendor: 'Dell', trigger: '' })[1].run.plannedVendors).toEqual(['Dell']);
-    expect(filterSyncReport(report, { search: '', vendor: '', trigger: 'Check' }).map(r => r.run.runId)).toEqual(['r2']);
-    expect(filterSyncReport(report, { search: 'touchpad', vendor: '', trigger: '' }).map(r => [r.run.runId, r.items.length])).toEqual([['r1', 1]]);
+    expect(filterSyncReport(report, { search: '', vendors: ['Dell'], triggers: [] }).map(r => [r.run.runId, r.items.length, r.run.vendors.length])).toEqual([['r1', 2, 1], ['r3', 1, 0], ['r4', 1, 1]]);
+    expect(filterSyncReport(report, { search: '', vendors: ['Dell'], triggers: [] })[1].run.plannedVendors).toEqual(['Dell']);
+    expect(filterSyncReport(report, { search: '', vendors: [], triggers: ['Check'] }).map(r => r.run.runId)).toEqual(['r2']);
+    expect(filterSyncReport(report, { search: 'touchpad', vendors: [], triggers: [] }).map(r => [r.run.runId, r.items.length])).toEqual([['r1', 1]]);
+  });
+
+  it('keeps the runs of any chosen vendor or trigger', () => {
+    expect(filterSyncReport(report, { search: '', vendors: ['Hp', 'Dell'], triggers: [] }).map(r => [r.run.runId, r.items.length])).toEqual([['r1', 4], ['r2', 1], ['r3', 1], ['r4', 1]]);
+    expect(filterSyncReport(report, { search: '', vendors: [], triggers: ['Scheduled', 'Check'] }).map(r => r.run.runId)).toEqual(['r1', 'r2', 'r3', 'r4']);
+    expect(filterSyncReport(report, { search: '', vendors: ['Hp'], triggers: ['Check'] }).map(r => r.run.runId)).toEqual(['r2']);
   });
 
   it('groups a run\'s items by model and release, with shared downloads apart and run failures left out', () => {
@@ -124,15 +130,18 @@ describe('Driver Synchronization report: page', () => {
     render(<MemoryRouter><ReportDriverSyncPage /></MemoryRouter>);
   }
 
-  it('asks for the last 30 days and shows the tiles and one row per synchronization', async () => {
+  it('asks for the last 30 days and shows the breakdown, the figures and one row per synchronization', async () => {
     serve(report);
     renderPage();
 
     expect(await screen.findByText('3 scheduled, 1 started by hand')).toBeTruthy();
     const url = String(apiFetch.mock.calls[0][0]);
     expect(url).toMatch(/^\/api\/drivers\/reports\/sync\?from=\d{4}-\d{2}-\d{2}T00%3A00%3A00\.000Z&to=\d{4}-\d{2}-\d{2}T23%3A59%3A59\.999Z$/);
-    expect(screen.getByText('50%')).toBeTruthy();
+    const breakdown = screen.getByText('synchronizations').closest('div.rounded-xl') as HTMLElement;
+    expect([...breakdown.querySelectorAll('li')].map(li => li.textContent)).toEqual(['Completed250%', 'Partly failed125%', 'Failed125%']);
     expect(screen.getByText('2.20 GB')).toBeTruthy();
+    expect(screen.getByText('3 updated, 1 new, 0 withdrawn')).toBeTruthy();
+    expect(screen.getByText('1 component, 3 vendor catalogs, 1 synchronization')).toBeTruthy();
     expect(screen.getByText('2 updated, 1 new, 1 failed')).toBeTruthy();
     expect(screen.getByText('HP EliteBook 860 G11: 1 updated')).toBeTruthy();
     expect(screen.getByText('The sync did not finish within 2 hours.')).toBeTruthy();
@@ -178,15 +187,22 @@ describe('Driver Synchronization report: page', () => {
     expect((screen.getByRole('button', { name: /Export CSV/ }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('the vendor filter shows a chip and narrows the rows', async () => {
+  it('the vendor filter takes several vendors, with a chip for each', async () => {
     serve(report);
     renderPage();
 
-    fireEvent.click(await screen.findByRole('combobox', { name: 'Vendor' }));
+    fireEvent.click(await screen.findByRole('combobox', { name: 'Vendors' }));
     fireEvent.click(screen.getByRole('option', { name: 'Dell' }));
 
     expect(await screen.findByRole('button', { name: /Vendor: Dell/ })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: 'Vendors' }).textContent).toBe('Dell');
     await waitFor(() => expect(screen.queryByText('HP EliteBook 860 G11: 1 updated')).toBeNull());
+
+    fireEvent.click(screen.getByRole('option', { name: 'HP' }));
+
+    expect(screen.getByRole('combobox', { name: 'Vendors' }).textContent).toBe('HP, Dell');
+    expect(screen.getByRole('button', { name: /Vendor: HP/ })).toBeTruthy();
+    expect(await screen.findByText('HP EliteBook 860 G11: 1 updated')).toBeTruthy();
   });
 
   it('shows the error with Try again, and an empty period says so', async () => {

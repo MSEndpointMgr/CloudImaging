@@ -69,6 +69,7 @@ public sealed class SessionHistoryRepositoryTests
         FailedStepName = failedStepName,
         ErrorDetail = errorDetail,
         CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+        ImagingStartedAt = DateTimeOffset.UtcNow.AddMinutes(-20),
         TerminalAt = DateTimeOffset.UtcNow,
     };
 
@@ -97,6 +98,7 @@ public sealed class SessionHistoryRepositoryTests
         captured["DeviceSerialNumber"].Should().Be(record.DeviceSerialNumber);
         captured["LocationId"].Should().Be(record.LocationId?.ToString());
         captured["LocationName"].Should().Be(record.LocationName);
+        captured["ImagingStartedAt"].Should().Be(record.ImagingStartedAt);
         var purgeAt = (DateTimeOffset)captured["PurgeAt"];
         purgeAt.Should().BeCloseTo(record.TerminalAt.AddDays(retentionDays), TimeSpan.FromSeconds(1));
     }
@@ -119,16 +121,23 @@ public sealed class SessionHistoryRepositoryTests
             ["FailedStepName"] = record.FailedStepName?.ToString(),
             ["ErrorDetail"] = record.ErrorDetail,
             ["CreatedAt"] = record.CreatedAt,
+            ["ImagingStartedAt"] = record.ImagingStartedAt,
             ["TerminalAt"] = record.TerminalAt,
             ["PurgeAt"] = record.TerminalAt.AddDays(90),
         };
+        var older = new TableEntity("history", Guid.NewGuid().ToString())
+        {
+            ["FinalState"] = nameof(SessionState.SessionCompleted),
+            ["CreatedAt"] = record.CreatedAt,
+            ["TerminalAt"] = record.TerminalAt,
+        };
 
-        var (repo, _) = BuildRepo(new[] { entity });
+        var (repo, _) = BuildRepo(new[] { entity, older });
 
         var results = await repo.QueryAsync(
             record.TerminalAt.AddDays(-1), record.TerminalAt.AddDays(1)).ToListAsync();
 
-        results.Should().ContainSingle();
+        results.Should().HaveCount(2);
         var mapped = results[0];
         mapped.SessionId.Should().Be(record.SessionId);
         mapped.FinalState.Should().Be(SessionState.SessionFailed);
@@ -136,6 +145,8 @@ public sealed class SessionHistoryRepositoryTests
         mapped.LocationName.Should().Be(record.LocationName);
         mapped.FailedStepName.Should().Be(ImagingStepName.ApplyImage);
         mapped.ErrorDetail.Should().Be("disk write failed");
+        mapped.ImagingStartedAt.Should().Be(record.ImagingStartedAt);
+        results[1].ImagingStartedAt.Should().BeNull("records written before the imaging start was kept have none");
     }
 
     [Fact]

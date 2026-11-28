@@ -16,6 +16,7 @@ Operator only.
 | # | Method and path | Guard | Upstream (Operator API) | Success |
 |---|---|---|---|---|
 | 1 | `GET /vendors` | Technician | `GET /api/drivers/vendors` | 200 vendor rows |
+| 1a | `GET /windows-releases` | Technician | `GET /api/drivers/windows-releases` | 200 `{ releases[], refreshedAt, problem }`, releases newest first (FR-107) |
 | 2 | `PUT /vendors/:vendor` `{ syncEnabled }` | Operator | `PUT /api/drivers/vendors/{vendor}` | 200 |
 | 3 | `GET /catalog/models?vendor=&search=` | Operator | `GET /api/drivers/catalog/models` | 200 catalog models, onboarded ones flagged |
 | 4 | `POST /models/preview` `{ vendor, catalogModelKeys[], releases[] }` | Operator | `POST /api/drivers/models/preview` | 200 per model counts per action and size |
@@ -72,8 +73,9 @@ passes through this server. Route 37a asks Core to commit the block list, comput
 count `.inf` entries; route 37b deletes the staged blob. Both use `requireGuidParams('uploadId')`.
 
 Path parameters: `:vendor` is `Hp`, `Dell` or `Lenovo` (else 400 without an upstream call);
-`:release` is a `WindowsRelease` value (else 400); `:lineageKey` matches `^[A-Za-z0-9_.-]{1,80}$`
-(else 400).
+`:release` is a `WindowsRelease` value, `Windows10_` or `Windows11_` followed by a release such as
+`26H2` (else 400; Core decides which releases are offered); `:lineageKey` matches
+`^[A-Za-z0-9_.-]{1,80}$` (else 400).
 
 Existing route changed: `PATCH /api/images/:imageId` and the OS image upload start accept
 `windowsRelease` (Operator, as today); the image list returns it.

@@ -206,6 +206,7 @@ const ROUTES: Row[] = [
   ['get', '/api/setup-profiles/:profileId/content/:sha256', TECH, PA_USERS, null],
 
   ['get', '/api/drivers/vendors', TECH, PA_USERS, null],
+  ['get', '/api/drivers/windows-releases', TECH, PA_USERS, null],
   ['get', '/api/drivers/catalog/models', OPS, OPS_USERS, null],
   ['post', '/api/drivers/models/preview', OPS, OPS_USERS, null],
   ['post', '/api/drivers/models', OPS, OPS_USERS, null],
@@ -411,7 +412,7 @@ describe('Portal backend: route-by-role matrix', () => {
   it('lists every route the 19 routers register exactly once', () => {
     const table = ROUTES.map(([method, path]) => `${method.toUpperCase()} ${path}`);
     expect(MOUNTS).toHaveLength(19);
-    expect(ROUTES).toHaveLength(144);
+    expect(ROUTES).toHaveLength(145);
     expect(new Set(table).size).toBe(table.length);
     expect([...registeredRoutes()].sort()).toEqual([...table].sort());
   });

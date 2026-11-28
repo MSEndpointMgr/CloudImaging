@@ -201,6 +201,31 @@ public sealed record DriverCatalogListRecord
     public string? LastError { get; init; }
 }
 
+/// <summary>
+/// Windows releases read from Microsoft's feature update catalog (row <c>settings/windows-releases</c>).
+/// A release once read stays, because OS images and models keep using it.
+/// </summary>
+public sealed record WindowsReleaseCatalogRecord
+{
+    /// <summary>Releases read so far.</summary>
+    public IReadOnlyList<WindowsReleaseEntry> Releases { get; init; } = [];
+
+    /// <summary>When reading the catalog was last tried.</summary>
+    public DateTimeOffset? CheckedAt { get; init; }
+
+    /// <summary>When the catalog was last read.</summary>
+    public DateTimeOffset? RefreshedAt { get; init; }
+
+    /// <summary>Why the last try failed; null when it succeeded.</summary>
+    public string? LastError { get; init; }
+}
+
+/// <summary>A release from Microsoft's feature update catalog.</summary>
+/// <param name="Release">The release.</param>
+/// <param name="Build">Its build number, such as <c>26300</c>.</param>
+/// <param name="ReleasedAt">When Microsoft released it.</param>
+public sealed record WindowsReleaseEntry(WindowsRelease Release, string? Build, DateTimeOffset? ReleasedAt);
+
 /// <summary>An onboarded model (3.4).</summary>
 public sealed record DriverModelRecord
 {

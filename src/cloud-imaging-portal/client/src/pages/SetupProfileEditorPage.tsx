@@ -15,7 +15,7 @@ import { RegistryValueDialog } from '../components/setup-profiles/RegistryValueD
 import { ProfileHistoryDialog } from '../components/setup-profiles/ProfileHistoryDialog.tsx';
 import { ScriptDialog } from '../components/setup-profiles/ScriptDialog.tsx';
 import { ScriptsTable } from '../components/setup-profiles/ScriptsTable.tsx';
-import { SectionCard, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
+import { SectionCard, SectionTableEmpty, SettingRow } from '../components/setup-profiles/SectionCard.tsx';
 import { TargetingSection } from '../components/setup-profiles/TargetingSection.tsx';
 import { useAuth } from '../context/authContext.tsx';
 import { useToast } from '../context/toastContext.tsx';
@@ -398,50 +398,47 @@ export default function SetupProfileEditorPage(): React.ReactElement {
           </Tooltip>
         )}
       >
-        {registryValues.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No registry values.</p>
-        ) : (
-          <div className="overflow-hidden rounded-md border border-border">
-            <Table className="table-fixed">
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-[30%]">Name</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead className="w-[80px]">Data</TableHead>
-                  {!readOnly && <TableHead className="w-[96px]">Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {registryValues.map((v, i) => (
-                  <TableRow key={v.id ?? `new-${String(i)}`}>
-                    <TableCell><p className="truncate">{v.name}</p></TableCell>
+        <div className="overflow-hidden rounded-md border border-border">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[30%]">Name</TableHead>
+                <TableHead>Value</TableHead>
+                <TableHead className="w-[80px]">Data</TableHead>
+                {!readOnly && <TableHead className="w-[96px]">Actions</TableHead>}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {registryValues.length === 0 && <SectionTableEmpty colSpan={readOnly ? 3 : 4} icon={Database} title="No registry values" />}
+              {registryValues.map((v, i) => (
+                <TableRow key={v.id ?? `new-${String(i)}`}>
+                  <TableCell><p className="truncate">{v.name}</p></TableCell>
+                  <TableCell>
+                    <Tooltip content={registryValueTooltip(v)} className="min-w-0 max-w-full">
+                      <span tabIndex={0} className="block truncate font-mono text-xs text-muted-foreground">{registryValuePath(v)}</span>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell><p className="truncate font-mono text-xs">{v.type === 'MultiString' ? v.data.split('\n').join(', ') : v.data}</p></TableCell>
+                  {!readOnly && (
                     <TableCell>
-                      <Tooltip content={registryValueTooltip(v)} className="min-w-0 max-w-full">
-                        <span tabIndex={0} className="block truncate font-mono text-xs text-muted-foreground">{registryValuePath(v)}</span>
-                      </Tooltip>
+                      <div className="flex gap-1">
+                        <Tooltip content="Edit">
+                          <Button variant="ghost" size="icon" aria-label={`Edit ${v.name}`} onClick={() => setRegistryDialog({ mode: 'edit', index: i })}><Pencil /></Button>
+                        </Tooltip>
+                        <Tooltip content="Delete">
+                          <Button variant="ghost" size="icon" aria-label={`Delete ${v.name}`} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setContent({ registryValues: registryValues.filter((_, j) => j !== i) })}>
+                            <Trash2 />
+                          </Button>
+                        </Tooltip>
+                      </div>
                     </TableCell>
-                    <TableCell><p className="truncate font-mono text-xs">{v.type === 'MultiString' ? v.data.split('\n').join(', ') : v.data}</p></TableCell>
-                    {!readOnly && (
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Tooltip content="Edit">
-                            <Button variant="ghost" size="icon" aria-label={`Edit ${v.name}`} onClick={() => setRegistryDialog({ mode: 'edit', index: i })}><Pencil /></Button>
-                          </Tooltip>
-                          <Tooltip content="Delete">
-                            <Button variant="ghost" size="icon" aria-label={`Delete ${v.name}`} className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => setContent({ registryValues: registryValues.filter((_, j) => j !== i) })}>
-                              <Trash2 />
-                            </Button>
-                          </Tooltip>
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </SectionCard>
 
       <SectionCard
@@ -456,20 +453,16 @@ export default function SetupProfileEditorPage(): React.ReactElement {
           </Tooltip>
         )}
       >
-        {scripts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No scripts.</p>
-        ) : (
-          <ScriptsTable
-            scripts={scripts}
-            targeting={draft.targeting}
-            locations={locations}
-            profileLocations={profileLocations}
-            readOnly={readOnly}
-            onChange={(next) => setContent({ scripts: next })}
-            onEdit={(index) => setScriptDialog({ mode: 'edit', index })}
-            onDelete={(index) => setContent({ scripts: renumberScripts(scripts.filter((_, j) => j !== index)) })}
-          />
-        )}
+        <ScriptsTable
+          scripts={scripts}
+          targeting={draft.targeting}
+          locations={locations}
+          profileLocations={profileLocations}
+          readOnly={readOnly}
+          onChange={(next) => setContent({ scripts: next })}
+          onEdit={(index) => setScriptDialog({ mode: 'edit', index })}
+          onDelete={(index) => setContent({ scripts: renumberScripts(scripts.filter((_, j) => j !== index)) })}
+        />
       </SectionCard>
 
       <SectionCard
@@ -478,6 +471,9 @@ export default function SetupProfileEditorPage(): React.ReactElement {
         description="Optional. Your own unattend.xml for Windows setup, for settings this profile has no control for."
         changed={sectionChanged('answerFile')}
         onUndo={() => setContent({ answerFile: saved.content.answerFile })}
+        action={!readOnly && !answerFile && (
+          <Button variant="outline" onClick={() => setAnswerDialog({ serverProblems: [] })}><Plus />Add answer file</Button>
+        )}
       >
         <div className="overflow-hidden rounded-md border border-border">
           <Table className="table-fixed">
@@ -528,17 +524,7 @@ export default function SetupProfileEditorPage(): React.ReactElement {
                   )}
                 </TableRow>
               ) : (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell className="text-muted-foreground">No answer file</TableCell>
-                  <TableCell />
-                  <TableCell />
-                  <TableCell />
-                  {!readOnly && (
-                    <TableCell>
-                      <Button variant="outline" onClick={() => setAnswerDialog({ serverProblems: [] })}><Plus />Add</Button>
-                    </TableCell>
-                  )}
-                </TableRow>
+                <SectionTableEmpty colSpan={readOnly ? 4 : 5} icon={FileCode} title="No answer file" />
               )}
             </TableBody>
           </Table>
